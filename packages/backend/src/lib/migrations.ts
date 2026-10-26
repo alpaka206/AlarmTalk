@@ -3534,6 +3534,56 @@ export const migrations: Migration[] = [
     ],
   },
   {
+    // **사용 기록 2판의 정해진 칸**(2026-10-26, `docs/spec/usage-events.md` §7). 지시서 10장 — 준비시간·첫 경험·
+    // 저장·직접 입력·광고·결제 계측. 큰 JSON 을 `detail` 에 끼우지 않고 칸마다 열을 하나씩 둔다(`UsageEventPropsSchema`
+    // 와 한 쌍 — 칸을 늘리면 둘 다). 옛 행(1판)은 전부 NULL 이고 `schema_version` NULL 은 1판이다.
+    // `entitlement_source` 는 앱이 아니라 서버가 **받는 순간** 계정 상태로 찍는다(paid/trial/admin/promo/free).
+    // 문구 원문·관심기업·기사 원문을 담을 칸은 없다. 보관은 기존 행과 같이 1년(`USAGE_EVENT_RETENTION_DAYS`).
+    //
+    // ⚠ 배포 직후 창: 새 쓰기 경로(`routes/events.ts`)는 이 열을 **언제나** 넣으므로 열이 없으면 INSERT 가 던져
+    //   500 이다 — 앱은 큐를 지우지 않고 다시 보낸다(fail-closed, 잃는 것 없음). 옛 열만 넣는 갈래를 두지 않는다.
+    id: 142,
+    name: 'usage-events-v2-fields',
+    statements: [
+      `ALTER TABLE usage_events ADD COLUMN schema_version INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN platform TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN app_version TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN feature_version TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN attempt_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN entitlement_source TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN scope TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN language TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN revision TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN cache_state TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN target_count INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN completed_count INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN bytes INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN duration_ms INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN error_code TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN outcome TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN reason TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN method TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN step TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN pack_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN is_first INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN prepared INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN reuse_location TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN charged_source TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN usage_month TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN result_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN request_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN char_count INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN content_mode TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN surface TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN product_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN store_offer TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN from_plan TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN to_plan TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_attempt ON usage_events (attempt_id) WHERE attempt_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_user_type_time ON usage_events (user_id, type, occurred_at)`,
+    ],
+  },
+  {
     // **응원 변주·짧은 기상 인사**(2026-10-26, v1.3 W09 — `docs/spec/voice-and-message.md` §5-4).
     //  - `stock_content_releases`: 환경마다 공개한 문구 묶음(`cheer_v2`·`wake_v1`). 게시 스크립트가 4목소리 × 3언어가 다
     //    올라간 것을 확인한 뒤 적고(`publish:stock -- --release`), 매니페스트·`expected_variants`·클론 보충이 한 요청에서

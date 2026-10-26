@@ -124,7 +124,13 @@ internal fun VoiceAudioCard(
         // **그 목소리만** 막고 준비 화면으로 보낸다 —
         // 알람 만들기 자체는 막지 않는다(다른 목소리로는 지금 만들 수 있어야 한다).
         // iOS `AlarmEditorSheet.needsPreparation` 과 같은 판정이다.
-        if (option.id != VoiceSources.LOCAL_AUDIO && onNeedsClipPreparation(option.id)) {
+        val needsPreparation = option.id != VoiceSources.LOCAL_AUDIO && onNeedsClipPreparation(option.id)
+        // 목소리를 **골랐다**(`voice_selected`, `docs/spec/usage-events.md` §7.1) — 준비 화면으로 가는 갈래도 고른 것이다
+        // (`prepared = false`). 직접 녹음은 목소리 선택이 아니라 적지 않는다.
+        if (option.id != VoiceSources.LOCAL_AUDIO) {
+            com.alarmtalk.app.data.UsageSignals.voiceSelected(context, option.id, prepared = !needsPreparation)
+        }
+        if (needsPreparation) {
             onOpenClipPreparation(option.id)
         } else {
         if (option.id == VoiceSources.LOCAL_AUDIO) {

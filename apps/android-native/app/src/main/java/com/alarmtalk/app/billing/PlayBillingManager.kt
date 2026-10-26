@@ -238,6 +238,11 @@ class PlayBillingManager(
      *   (레거시 허용 — 서버도 부재 시 허용).
      * @return 결제 플로우 실행에 성공했으면 true. false 면 시트 자체가 뜨지 않은 것.
      */
+    /** 마지막으로 연 결제 시트의 (상품, 스토어 조건). 사용 기록 전용 — 결제 판정에 쓰지 않는다. */
+    @Volatile
+    var lastLaunchedOffer: Pair<String, String>? = null
+        private set
+
     suspend fun launchPurchase(
         activity: Activity,
         productId: String,
@@ -253,13 +258,25 @@ class PlayBillingManager(
         // Play 는 이 사용자가 '자격 있는' 오퍼만 돌려준다. 여러 개면(기본가 + 무료체험/인트로 오퍼)
         // 첫 페이즈 가격이 가장 싼 오퍼를 고른다 — 체험이 있으면 체험으로 시작하는 게 사용자에게 유리.
         // firstOrNull 은 임의 선택이라 체험이 있어도 기본가부터 청구될 수 있다.
-        val offerToken = productDetails.subscriptionOfferDetails
+        val chosenOffer = productDetails.subscriptionOfferDetails
             ?.minByOrNull { offer ->
                 offer.pricingPhases.pricingPhaseList.firstOrNull()?.priceAmountMicros ?: Long.MAX_VALUE
             }
-            ?.offerToken ?: run {
+        val offerToken = chosenOffer?.offerToken ?: run {
             Log.w(TAG, "Play subscription offer not found productId=$productId")
             return false
+        }
+        // 사용 기록(`store_purchase_verified` 의 `store_offer`)용 — 이 시트가 **어떤 조건으로 열렸는가**. Play 는 구매 결과에
+        // 체험 여부를 싣지 않으므로 고른 오퍼의 첫 페이즈로 가른다(0원 = 무료 체험, 뒤 페이즈보다 싸면 첫 구독 할인).
+        lastLaunchedOffer = productId to chosenOffer.pricingPhases.pricingPhaseList.let { phases ->
+            val first = phases.firstOrNull()?.priceAmountMicros
+            val last = phases.lastOrNull()?.priceAmountMicros
+            when {
+                first == null -> com.alarmtalk.app.data.UsageEventProps.OFFER_UNKNOWN
+                first == 0L -> com.alarmtalk.app.data.UsageEventProps.OFFER_FREE_TRIAL
+                last != null && first < last -> com.alarmtalk.app.data.UsageEventProps.OFFER_INTRO
+                else -> com.alarmtalk.app.data.UsageEventProps.OFFER_NONE
+            }
         }
         val flowParamsBuilder = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(

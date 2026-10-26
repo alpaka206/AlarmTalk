@@ -544,6 +544,11 @@ struct TtsGenerateResponse: Decodable, Equatable {
     var cacheKey: String?
     var cacheHit: Bool?
     var provider: String?
+    /// 직접 입력 한 번을 **무엇으로 셌나**(`base` 기본 제공분 / `ad` 광고 보상 / `none` 세지 않음). 옛 서버면 nil.
+    /// 사용 기록 `generation_outcome` 의 `charged_source` 로만 쓴다(`docs/spec/usage-events.md` §7.2).
+    var chargedSource: String?
+    /// 기본 제공분에서 차감한 원래 사용월(KST `YYYY-MM`). 기본분이 아니거나 옛 서버면 nil. 사용 기록 전용.
+    var usageMonth: String?
     /// 랜덤 프롬프트가 사용된 경우, 백엔드가 선택한 실제 컨텍스트(다양화/감사 용).
     /// Android `TtsApi.kt:37`.
     var randomContext: String?

@@ -729,14 +729,18 @@ internal fun VoiceProfileManagementPanel(
                     player.release()
                     return@runCatching
                 }
+                var sample: com.alarmtalk.app.data.SamplePlayback? = null
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
+                        // 끝까지 들었다(`sample_completed`). 멈추면 이 콜백이 오지 않는다.
+                        sample?.completed()
                         it.release()
                         if (mediaPlayer === it) mediaPlayer = null
                         if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
                     }
                     start()
                 }
+                sample = com.alarmtalk.app.data.SamplePlayback.start(context, voiceId, surface = "voices")
             }.onFailure { error ->
                 AlarmTalkLog.reportError(failureLog, error)
                 if (greetingPreviewRequestId == requestId) {
@@ -802,14 +806,17 @@ internal fun VoiceProfileManagementPanel(
                 return
             }
             playingGreetingVoiceId = profile.id
+            var sample: com.alarmtalk.app.data.SamplePlayback? = null
             mediaPlayer = player.apply {
                 setOnCompletionListener {
+                    sample?.completed()
                     it.release()
                     if (mediaPlayer === it) mediaPlayer = null
                     if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
                 }
                 start()
             }
+            sample = com.alarmtalk.app.data.SamplePlayback.start(context, profile.id, surface = "voices")
             return
         }
         playGreetingClip(profile.id, failureLog = "Failed to play greeting preview")

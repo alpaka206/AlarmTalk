@@ -15,6 +15,9 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     /// 지금 소리를 낼 수 있는 미리듣기 — **한 번에 하나만** 운다. 플레이어가 여럿이라(목소리 탭·추가 팩·편집기·랜딩) 서로를
     /// 모르면 샘플이 겹친다(코덱스 #960 — 팩 샘플과 기본·클론 샘플). 안드로이드는 미리듣기 플레이어가 하나다.
     private static weak var current: AudioPreviewPlayer?
+    /// **끝까지** 재생됐을 때만 한 번 부른다 — 정지·다음 재생·오류로 끊기면 부르지 않는다(샘플 완료 기록,
+    /// `docs/spec/usage-events.md` §7.1). [play] 가 성공한 **뒤**에 건다 — [play]·[stop] 이 지운다.
+    var onPlayedToEnd: (() -> Void)?
 
     private var player: AVAudioPlayer?
     /// stopAfterMs 윈도우를 위한 예약 정지 작업. AVAudioPlayer 는 종료 시각 지정을
@@ -113,6 +116,7 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     func stop() {
         cancelAutoStop()
         if Self.current === self { Self.current = nil }
+        onPlayedToEnd = nil
         player?.stop()
         player = nil
         isPlaying = false
@@ -136,8 +140,15 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let finished = ObjectIdentifier(player)
         Task { @MainActor [weak self] in
             guard let self else { return }
+            // 끝난 것이 지금 플레이어일 때만 — 그 사이 다음 재생이 시작됐으면 그쪽의 완료가 아니다.
+            if flag, let current = self.player, ObjectIdentifier(current) == finished {
+                let playedToEnd = self.onPlayedToEnd
+                self.onPlayedToEnd = nil
+                playedToEnd?()
+            }
             self.cancelAutoStop()
             if Self.current === self { Self.current = nil }
             self.isPlaying = false

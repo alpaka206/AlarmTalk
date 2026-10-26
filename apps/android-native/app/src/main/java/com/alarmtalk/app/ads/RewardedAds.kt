@@ -147,11 +147,16 @@ internal object RewardedAds {
         )
     }
 
-    /** 불러온 광고를 띄운다. 서버의 시작 승인을 받은 **뒤에만** 부른다. */
-    suspend fun show(activity: Activity, ad: RewardedAd): RewardedAdOutcome =
+    /**
+     * 불러온 광고를 띄운다. 서버의 시작 승인을 받은 **뒤에만** 부른다. [onShown] 은 광고가 **실제로 화면에 뜬 순간** 한 번
+     * 부른다 — 표시 실패는 부르지 않는다.
+     */
+    suspend fun show(activity: Activity, ad: RewardedAd, onShown: () -> Unit = {}): RewardedAdOutcome =
         suspendCancellableCoroutine { cont ->
             var earned = false
             ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdShowedFullScreenContent() = onShown()
+
                 override fun onAdDismissedFullScreenContent() {
                     if (cont.isActive) cont.resume(if (earned) RewardedAdOutcome.EARNED else RewardedAdOutcome.DISMISSED)
                 }

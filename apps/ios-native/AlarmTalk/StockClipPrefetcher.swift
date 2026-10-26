@@ -84,6 +84,115 @@ final class StockClipPrefetcher: ObservableObject {
         self.api = api
     }
 
+    /// 한 번의 `start`(재시도 회차를 다 합친 **한 작업**)의 준비 기록(`docs/spec/usage-events.md` §7.1·§7.3).
+    ///
+    /// ⚠ **이 작업이 소유자다** — 받기 화면·관문·클론 구동이 같은 다운로드를 지켜봐도 기록은 여기 한 곳에서만 남는다.
+    /// 시작은 **받을 것이 있을 때만** 적는다(포그라운드 복귀마다 도는 '빠진 것 보충' 이 다 있으면 아무것도 적지 않는다).
+    /// 다른 `start` 가 이 회차를 끊으면(대상이 넓어짐·취소) 완료도 실패도 적지 않는다 — 새 시도다.
+    private final class PreparationReport {
+        let attemptID = UsageEventContract.newAttemptID()
+        let scope: UsageEventProps.Scope
+        var language: String?
+        let voiceProfileID: String?
+        var startedAt: ContinuousClock.Instant?
+        var cacheState: UsageEventProps.CacheState?
+        var targetCount = 0
+        var completedCount = 0
+        var bytes = 0
+        var errorCode: String?
+        /// 이 회차를 시작한 계정. 기록기는 **지금 로그인한 계정**으로 적으므로, 회차 도중 다른 계정이 로그인했으면 적지 않는다 —
+        /// 앞 계정의 준비가 뒤 계정의 기록으로 올라가면 안 된다(코덱스 #958, 안드로이드 `stillStartingAccount` 짝).
+        let ownerUserID = KeychainStore.readSession()?.user.id
+
+        private var stillOwner: Bool { ownerUserID != nil && KeychainStore.readSession()?.user.id == ownerUserID }
+
+        /// 끝났을 때 이 묶음의 클립이 다 있었는가 — 묶음마다 따로 판정한다.
+        var allCached = false
+
+        init(scope: UsageEventProps.Scope, voiceProfileID: String?, language: String?) {
+            self.scope = scope
+            self.voiceProfileID = voiceProfileID
+            self.language = language
+        }
+
+
+        func props(durationMs: Int? = nil, errorCode: String? = nil) -> UsageEventProps {
+            UsageEventProps(
+                scope: scope,
+                language: language,
+                cacheState: cacheState,
+                targetCount: targetCount,
+                completedCount: completedCount,
+                bytes: bytes,
+                durationMs: durationMs,
+                errorCode: errorCode
+            )
+        }
+
+        /// [contentLanguages] 는 받는 클립들의 언어 — 클론은 등록 때 고른 언어 한 벌이라 기기 언어와 다를 수 있다. 하나면 그것,
+        /// 섞였으면 비운다(코덱스 #958, 안드로이드 `downloadAllPresetClips` 짝).
+        func recordStartIfNeeded(target: Int, missing: Int, contentLanguages: Set<String>? = nil) {
+            guard startedAt == nil, missing > 0, stillOwner else { return }
+            if scope == .selectedVoice, let contentLanguages {
+                language = contentLanguages.count == 1 ? contentLanguages.first : nil
+            }
+            startedAt = .now
+            targetCount = target
+            completedCount = target - missing
+            cacheState = missing == target ? .cold : .partial
+            UsageEventQueue.shared.record(
+                .voicePreparationStarted,
+                voiceProfileID: voiceProfileID,
+                attemptID: attemptID,
+                props: props()
+            )
+        }
+
+        func recordEnd(succeeded: Bool) {
+            guard let startedAt, stillOwner else { return }
+            let elapsed = UsageEventContract.elapsedMs(since: startedAt)
+            if succeeded {
+                completedCount = targetCount
+                UsageEventQueue.shared.record(
+                    .voicePreparationReady,
+                    voiceProfileID: voiceProfileID,
+                    attemptID: attemptID,
+                    props: props(durationMs: elapsed)
+                )
+            } else {
+                UsageEventQueue.shared.record(
+                    .voicePreparationFailed,
+                    voiceProfileID: voiceProfileID,
+                    attemptID: attemptID,
+                    props: props(durationMs: elapsed, errorCode: errorCode ?? "incomplete")
+                )
+            }
+        }
+    }
+
+    /// 한 회차의 준비 기록 — **받는 대상으로 나눈다**(코덱스 #958). 회차는 기본 목소리와 내 목소리(클론) 사전렌더를 함께 받지만,
+    /// 둘을 한 기록으로 적으면 클론을 가진 계정의 기본 목소리 받기가 그 클론의 준비로 잡힌다. 기본 목소리 묶음은 `all_voices`,
+    /// 클론 묶음은 `selected_voice`(클론이 하나면 그 id)다. 받을 것이 없는 묶음은 아무것도 적지 않는다.
+    private final class PreparationReports {
+        let system: PreparationReport
+        let clone: PreparationReport
+
+        init(ownedVoiceProfileIDs: Set<String>, language: String) {
+            system = PreparationReport(scope: .allVoices, voiceProfileID: nil, language: language)
+            clone = PreparationReport(
+                scope: .selectedVoice,
+                voiceProfileID: ownedVoiceProfileIDs.count == 1 ? ownedVoiceProfileIDs.first : nil,
+                language: nil
+            )
+        }
+
+        func report(for clip: StockClip) -> PreparationReport {
+            isSystemVoiceId(clip.voiceProfileId) ? system : clone
+        }
+
+        var all: [PreparationReport] { [system, clone] }
+    }
+
     /// 실패 사이 대기(초). 안드로이드 WorkManager 의 `BackoffPolicy.LINEAR, 30초` 와 같은 뜻이다.
     private static let retryDelaySeconds: UInt64 = 30
     /// 한 번의 호출에서 최대 시도 횟수.
@@ -140,6 +249,7 @@ final class StockClipPrefetcher: ObservableObject {
         // 로만 쓰인다. ⚠ 공개 판정에 이 토큰을 대조하지 않는다(`StockClipManifestStore.save`
         // 주석): 롤링 갱신으로 키체인 토큰이 바뀌면 회차마다 `.superseded` 가 반복돼 아무도
         // 매니페스트를 공개하지 못했다. 계정 경계는 파일 임자 + `clear` 의 표 무효화가 지킨다.
+        let report = PreparationReports(ownedVoiceProfileIDs: owned, language: language)
         task = Task { [weak self] in
             // ⚠ **재시도가 없으면 한 번의 일시 실패가 영구가 된다.** 안드로이드는 WorkManager
             // 가 30초 백오프로 다시 돌리는데, iOS 에는 그 장치가 없어 콜드 스타트에서 한 번
@@ -153,12 +263,17 @@ final class StockClipPrefetcher: ObservableObject {
                     language: language,
                     ownedVoiceProfileIDs: owned,
                     manifestDepartedAfter: departedAfter,
-                    gen: gen
+                    gen: gen,
+                    report: report
                 )
                 guard await self?.state == .failed else { break }
                 if attempt < Self.maxAttempts - 1 {
                     try? await Task.sleep(nanoseconds: Self.retryDelaySeconds * 1_000_000_000)
                 }
+            }
+            // 끊기지 않고 끝난 작업만 결과를 적는다 — 끊긴 회차는 다음 `start` 가 새 시도로 잇는다.
+            if self?.generation == gen, !Task.isCancelled {
+                for part in report.all { part.recordEnd(succeeded: part.allCached) }
             }
             // **받은 추가 음성팩**은 기본 목소리·내 클론 **다음**에 받는다(지시서 7.3 의 4번 '선택한 추가 팩',
             // `docs/spec/voice-packs.md` §7). 이 회차의 상태(`state`)를 건드리지 않는다 — 받기 화면·알람 설정 관문은
@@ -431,7 +546,8 @@ final class StockClipPrefetcher: ObservableObject {
         language: String,
         ownedVoiceProfileIDs: Set<String> = [],
         manifestDepartedAfter: Date? = nil,
-        gen: Int
+        gen: Int,
+        report: PreparationReports
     ) async {
         setState(.running(done: 0, total: 0), gen: gen)
         let token = session.token
@@ -455,6 +571,17 @@ final class StockClipPrefetcher: ObservableObject {
 
             var missing = await Self.missingClipsOffMain(clips)
             setState(.running(done: clips.count - missing.count, total: clips.count), gen: gen)
+            if gen == generation, !Task.isCancelled {
+                for (part, partClips) in [(report.system, clips.filter { isSystemVoiceId($0.voiceProfileId) }),
+                                          (report.clone, clips.filter { !isSystemVoiceId($0.voiceProfileId) })] {
+                    let partMissing = missing.filter { report.report(for: $0) === part }.count
+                    part.recordStartIfNeeded(
+                        target: partClips.count,
+                        missing: partMissing,
+                        contentLanguages: Set(partClips.map { $0.language ?? "ko" })
+                    )
+                }
+            }
 
             // ⚠ **'하나라도 받았으면 끝' 으로 판정하지 말 것**(2026-09-17 실기기). 예전에는
             // `done == 0 ? .failed : .finished` 라, 일부가 실패해도 받기 화면이 닫히고 메인으로
@@ -470,7 +597,8 @@ final class StockClipPrefetcher: ObservableObject {
                     let batch = Array(remaining.prefix(Self.parallelism))
                     remaining.removeFirst(batch.count)
                     if Task.isCancelled || gen != generation { return }
-                    await withTaskGroup(of: Void.self) { group in
+                    // 자식은 받은 파일의 바이트(실패면 0과 오류 코드)를 돌려준다 — 준비 기록의 실제 바이트다.
+                    let results = await withTaskGroup(of: (bytes: Int, error: String?, system: Bool).self) { group in
                         for clip in batch {
                             group.addTask { [api] in
                                 do {
@@ -479,18 +607,29 @@ final class StockClipPrefetcher: ObservableObject {
                                         token: token
                                     )
                                     try Task.checkCancellation()
-                                    _ = try await AudioCacheStore.cacheStockClipOffMain(
+                                    let cached = try await AudioCacheStore.cacheStockClipOffMain(
                                         audio: response,
                                         messageId: clip.messageId,
                                         cacheKey: AudioCacheStore.stockCacheKey(messageId: clip.messageId)
                                     )
+                                    let size = (try? cached.url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+                                    return (size, nil, isSystemVoiceId(clip.voiceProfileId))
                                 } catch {
                                     // 한 클립이 실패해도 나머지는 계속 받는다. 성공 여부는 아래에서
                                     // **캐시를 다시 세어** 판정한다 — 옛 별칭 실패(`legacyAliasFailed`)
                                     // 처럼 정본은 저장된 경우도 그렇게 해야 정확하다.
+                                    return (0, UsageEventContract.errorCode(for: error), isSystemVoiceId(clip.voiceProfileId))
                                 }
                             }
                         }
+                        var collected: [(bytes: Int, error: String?, system: Bool)] = []
+                        for await result in group { collected.append(result) }
+                        return collected
+                    }
+                    for result in results {
+                        let part = result.system ? report.system : report.clone
+                        part.bytes += result.bytes
+                        if let error = result.error, part.errorCode == nil { part.errorCode = error }
                     }
                     setState(
                         .running(done: clips.count - (await Self.missingClipsOffMain(clips)).count, total: clips.count),
@@ -499,8 +638,17 @@ final class StockClipPrefetcher: ObservableObject {
                 }
                 missing = await Self.missingClipsOffMain(clips)
             }
+            for part in report.all {
+                let partClips = clips.filter { report.report(for: $0) === part }
+                let partMissing = missing.filter { report.report(for: $0) === part }.count
+                part.completedCount = partClips.count - partMissing
+                part.allCached = partMissing == 0
+            }
             setState(missing.isEmpty ? .finished : .failed, gen: gen)
         } catch {
+            for part in report.all where part.errorCode == nil {
+                part.errorCode = UsageEventContract.errorCode(for: error)
+            }
             setState(.failed, gen: gen)
         }
     }

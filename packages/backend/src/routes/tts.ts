@@ -1521,6 +1521,9 @@ tts.post('/generate', async (c) => {
             random_context: randomRequested ? randomContext : null,
             manual_quota: manualQuotaResult,
             charged_source: chargedSource,
+            // 기본 제공분에서 실제로 차감한 **원래 사용월**(KST) — 사용 기록 `generation_outcome` 의 `usage_month`
+            // (`docs/spec/usage-events.md` §7.2). 광고 보상·차감 없음은 null(기본분 달에서 빼지 않았다 — 그 갈래는 이 값을 채우지 않는다).
+            usage_month: manualQuotaMonth,
             preview_playback_token: activePreviewClaimToken,
             preview_playback_confirmed: false,
           },

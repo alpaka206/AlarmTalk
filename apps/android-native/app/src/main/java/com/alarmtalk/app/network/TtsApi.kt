@@ -40,6 +40,12 @@ data class TtsGenerateResponse(
     @SerializedName("random_context") val randomContext: String? = null,
     @SerializedName("preview_playback_token") val previewPlaybackToken: String? = null,
     @SerializedName("preview_playback_confirmed") val previewPlaybackConfirmed: Boolean = false,
+    /** 서버가 내 기존 결과를 다시 준 것인가(세지 않는다). 옛 서버는 없다 — 그때는 null(모름). 사용 기록 전용. */
+    @SerializedName("cache_hit") val cacheHit: Boolean? = null,
+    /** 이번 요청을 무엇으로 셌나(`base`·`ad`·`none`). 옛 서버는 없다 — null 이면 기록에 비운다. */
+    @SerializedName("charged_source") val chargedSource: String? = null,
+    /** 기본 제공분에서 차감한 원래 사용월(KST `YYYY-MM`). 기본분이 아니거나 옛 서버면 null. 사용 기록 전용. */
+    @SerializedName("usage_month") val usageMonth: String? = null,
 )
 
 /** 직접 입력 문구 만들기 월 한도 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). */

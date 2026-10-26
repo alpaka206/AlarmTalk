@@ -206,10 +206,11 @@ export function emptyState(title: string, body: string, action?: string): string
 
 // ── 레이아웃 ───────────────────────────────────────────────────────────────────
 
-export type NavKey = 'overview' | 'users' | 'push' | 'packs';
+export type NavKey = 'overview' | 'usage' | 'users' | 'push' | 'packs';
 
 const NAV: Array<{ key: NavKey; href: string; label: string }> = [
   { key: 'overview', href: '/admin', label: '개요' },
+  { key: 'usage', href: '/admin/usage', label: '사용 지표' },
   { key: 'users', href: '/admin/users', label: '사용자' },
   { key: 'push', href: '/admin/push', label: '알림 보내기' },
   { key: 'packs', href: '/admin/voice-packs', label: '음성팩' },

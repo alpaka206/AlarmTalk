@@ -158,6 +158,16 @@ internal fun AlarmListScreen(
 
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    // 결제 화면을 열었다(`paywall_viewed`, `docs/spec/usage-events.md` §7.1) — 이 탭에 들어온 순간 한 번.
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == NativeTab.Billing) {
+            com.alarmtalk.app.data.UsageSignals.record(
+                context,
+                com.alarmtalk.app.data.UsageEvents.PAYWALL_VIEWED,
+                props = com.alarmtalk.app.data.UsageEventProps(surface = "billing"),
+            )
+        }
+    }
 
     val homeGradient = homeGradientBrush()
     // 다중 선택 삭제 — 롱프레스로 들어가고, 하나도 안 남으면 자동으로 빠져나온다.

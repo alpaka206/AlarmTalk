@@ -775,7 +775,7 @@ final class AuthViewModel: ObservableObject {
                 nextSession.user.appleUserId = hint
             }
             // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
-            await adoptSignedInSession(nextSession, accountRequest: accountRequest)
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest, method: "apple")
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
             // 필수 약관 미동의면 동의 화면으로 게이팅.
@@ -888,7 +888,7 @@ final class AuthViewModel: ObservableObject {
             let accountRequest = beginAccountRequest()
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
             // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
-            await adoptSignedInSession(nextSession, accountRequest: accountRequest)
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest, method: "email")
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
             // 필수 약관 미동의면 동의 화면으로 게이팅.
@@ -922,7 +922,7 @@ final class AuthViewModel: ObservableObject {
                 verificationCode: verificationCode
             )
             // 가입 응답이 곧 서버 값이다 — 가입 경로는 `/auth/me` 를 따로 부르지 않는다.
-            await adoptSignedInSession(nextSession, accountRequest: accountRequest)
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest, method: "email_register")
             statusMessage = String(localized: "환영해요! 계정이 만들어졌어요.")
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
             await checkConsentStatus()
@@ -1035,7 +1035,8 @@ final class AuthViewModel: ObservableObject {
     /// ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
     /// 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
     /// **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-    private func adoptSignedInSession(_ nextSession: AuthSession, accountRequest: AccountRequest) async {
+    /// - Parameter method: 로그인 수단 코드(`apple`·`email`·`email_register`) — `auth_result` 기록용.
+    private func adoptSignedInSession(_ nextSession: AuthSession, accountRequest: AccountRequest, method: String) async {
         PendingSignOutStore.clear(nextSession.user.id)
         if await claimAlarmsForExpiredOwnerBeforeSignIn() {
             // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
@@ -1047,15 +1048,37 @@ final class AuthViewModel: ObservableObject {
         persistSession(nextSession)
         recordAccountAnswer(accountRequest)
         lastNetworkError = nil
+        // 로그인 결과(`docs/spec/usage-events.md` §7.1). ⚠ 계정이 생긴 **뒤**에만 적는다 — 실패·취소는 계정이 없어
+        // 남기지 않고, 가입 전 기록을 모아 두었다 붙여 보내지도 않는다(§7.4). 신규 가입자는 동의 전이라 서버가 버린다.
+        UsageEventQueue.shared.record(
+            .authResult,
+            props: UsageEventProps(outcome: .success, method: method),
+            userID: nextSession.user.id
+        )
     }
 
     private func persistSession(_ nextSession: AuthSession) {
+        let previous = session
         do {
             try KeychainStore.saveSession(nextSession)
         } catch {
             Self.keychainLogger.error("Failed to persist session to Keychain: \(String(describing: error), privacy: .public)")
         }
         session = nextSession
+        recordPlanChangeIfNeeded(from: previous, to: nextSession)
+    }
+
+    /// 앱이 본 플랜이 **같은 계정에서 실제로 바뀌었을 때만** 적는다(`entitlement_changed` —
+    /// `docs/spec/usage-events.md` §7.1). 로그인·계정 전환은 바뀐 것이 아니다. 권한 출처(결제·체험·관리자 지급)는
+    /// 서버가 받는 순간 찍는다 — 앱은 앞뒤 플랜만 싣는다. 모든 세션 쓰기가 이 함수를 지나므로 여기 한 곳이다.
+    private func recordPlanChangeIfNeeded(from previous: AuthSession?, to next: AuthSession) {
+        guard let previous, previous.user.id == next.user.id,
+              previous.user.plan != next.user.plan else { return }
+        UsageEventQueue.shared.record(
+            .entitlementChanged,
+            props: UsageEventProps(fromPlan: previous.user.plan, toPlan: next.user.plan),
+            userID: next.user.id
+        )
     }
 
     /// 다른 경로(`SocialFeatureViewModel.refreshAll`)가 `/auth/me` 에서 받은 **굴러온 토큰**을
