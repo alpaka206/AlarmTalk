@@ -365,6 +365,14 @@ final class AlarmTalkAPI: @unchecked Sendable {
             let voice_profile_id: String?
             let message_id: String?
             let detail: String?
+            // 2판(`docs/spec/usage-events.md` §7.2). 옛 큐의 기록은 아래가 비어 1판으로 간다 — nil 은 키째 빠진다.
+            let schema_version: Int?
+            /// 1판 기록에는 싣지 않는다 — 서버가 요청 헤더로 채운다(같은 기기라 바뀌지 않는다).
+            let platform: String?
+            let app_version: String?
+            let feature_version: String?
+            let attempt_id: String?
+            let props: UsageEventProps?
         }
         struct Body: Encodable { let events: [Payload] }
         // 서버 스키마가 오프셋 있는 ISO-8601 을 요구한다(`z.string().datetime({ offset: true })`).
@@ -378,7 +386,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 alarm_id: event.alarmID,
                 voice_profile_id: event.voiceProfileID,
                 message_id: event.messageID,
-                detail: event.detail
+                detail: event.detail,
+                schema_version: event.schemaVersion,
+                platform: event.schemaVersion == nil ? nil : "ios",
+                app_version: event.appVersion,
+                feature_version: event.featureVersion,
+                attempt_id: event.attemptID,
+                props: event.props
             )
         }
         let _: EmptyResponse = try await request(

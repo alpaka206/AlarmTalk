@@ -566,6 +566,16 @@ struct RootView: View {
     /// 그 파일이 사라지면 이 화면이 다시 떠야 한다.
     private func completeVoiceSetup() {
         voiceSetupDone = true
+        recordOnboardingStep("voice_setup_completed")
+    }
+
+    /// 로그인 뒤 첫 경험 단계(`onboarding_step` — `docs/spec/usage-events.md` §7.1). 이 화면은 로그인·동의 뒤에만 뜬다.
+    private func recordOnboardingStep(_ step: String) {
+        UsageEventQueue.shared.record(
+            .onboardingStep,
+            props: UsageEventProps(step: step),
+            userID: auth.session?.user.id
+        )
     }
 
     /// 사용자가 '나중에 받기' 를 눌렀다. 이때만 '안 받겠다' 를 영구 기록한다 —
@@ -573,6 +583,7 @@ struct RootView: View {
     private func skipVoiceSetup() {
         DefaultVoicePreferenceStore().markSkipped(userID: auth.session?.user.id)
         voiceSetupDone = true
+        recordOnboardingStep("voice_setup_skipped")
     }
 }
 

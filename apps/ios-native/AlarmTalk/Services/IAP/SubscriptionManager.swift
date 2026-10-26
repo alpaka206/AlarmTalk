@@ -308,6 +308,7 @@ final class SubscriptionManager: ObservableObject {
             case .success(let verificationResult):
                 let transaction = try checkVerified(verificationResult)
                 let outcome = await syncWithBackend(transaction: transaction)
+                recordPurchaseVerified(transaction: transaction, outcome: outcome)
                 // 확정 여부와 무관하게 끝낸다 — 구독은 `currentEntitlements` 에 남아 다음 동기화가
                 // 따라잡는다. ⚠ 확정 전에는 끝내지 않던 선물(소모성) 갈래는 2026-10-14 에 없앴다
                 // (App Store 지침 3.1.1 두 번째 반려 — 되살리지 말 것, 할인·무료 이용은 스토어 오퍼 코드).
@@ -350,6 +351,31 @@ final class SubscriptionManager: ObservableObject {
                 )
             )
         }
+    }
+
+    /// 사용자가 시작한 구매를 서버가 확인했는가(`store_purchase_verified` — `docs/spec/usage-events.md` §7.1).
+    /// 체험과 결제는 **스토어가 말한 조건**(`store_offer`)으로 가른다 — 서버는 아직 체험 구간을 모른다(§7.2).
+    private func recordPurchaseVerified(transaction: Transaction, outcome: ConfirmOutcome) {
+        UsageEventQueue.shared.record(
+            .storePurchaseVerified,
+            props: UsageEventProps(
+                errorCode: outcome.confirmed ? nil : (outcome.rejection == nil ? "not_confirmed" : "rejected"),
+                outcome: outcome.confirmed ? .success : .failure,
+                productID: transaction.productID,
+                storeOffer: Self.storeOffer(paymentMode: transaction.offer?.paymentMode, hasOffer: transaction.offer != nil)
+            ),
+            userID: authProvider()?.user.id
+        )
+    }
+
+    /// 거래의 오퍼 → `store_offer`. 무료 체험(결제 방식 freeTrial) / 그 밖의 오퍼(첫 구독 할인·오퍼 코드) / 오퍼 없음.
+    nonisolated static func storeOffer(
+        paymentMode: Transaction.Offer.PaymentMode?,
+        hasOffer: Bool
+    ) -> UsageEventProps.StoreOffer {
+        guard hasOffer else { return .none }
+        guard let paymentMode else { return .unknown }
+        return paymentMode == .freeTrial ? .freeTrial : .intro
     }
 
     /// 다른 기기에서 구매한 구독을 현재 기기로 가져온다.
