@@ -122,6 +122,16 @@
    표시. ⚠ 광고를 켜기 전에는 앱 매니페스트가 광고 SDK 의 `AD_ID`·`ACCESS_ADSERVICES_*` 권한을 **뺀다**(`tools:node="remove"`,
    1.2.16 — 쓰지 않는 광고 ID 를 두면 Play 가 신고를 요구한다). 켜는 회차에 그 줄을 지운다. 유럽 등의 동의 양식(UMP)은 앱에 있다 — AdMob 콘솔의 '개인정보 보호 및 메시지' 에서 GDPR 메시지를 만들어 게시해야
    실제로 뜬다.
+5. **공개 문구 — 출시 때 추가할 문장**(2026-10-26, v1.3 W17). 지금의 랜딩·`llms.txt`·스토어 설명 원문((D))에는 광고 보상을
+   **쓰지 않았다** — 운영에 나가지 않은 기능을 광고하면 메타데이터가 실제 기능과 어긋난다(App Store 2.3·Play 메타데이터 정책).
+   운영 스위치를 켜는 회차에 아래 문장을 더한다. **Android 에만** 해당한다(iOS 에는 광고가 없다 — §5). 그래서 App Store 설명에는
+   넣지 않고, 랜딩·`llms.txt` 에는 'Android에서는' 을 붙인다.
+   - 자리: 랜딩 FAQ '직접 입력은 몇 번 쓸 수 있나요?' 답의 끝(`apps/landing/messages/{ko,en,ja}.json`), `llms.txt` 「직접 입력
+     횟수」 절의 끝, Play (D) 의 「무료」 절 직접 입력 줄 바로 뒤(`docs/product/play-store-listing.md`).
+   - ko: "Android에서는 무료 3회를 다 쓴 뒤 광고를 끝까지 보면 기본 목소리로 한 번 더 만들 수 있어요(광고로 받는 횟수는 한 달에 최대 10번)."
+   - en: "On Android, after your 3 free ones, watching an ad to the end lets you make one more with a default voice (up to 10 from ads a month)."
+   - ja: "Androidでは、無料の3回を使い切ったあと広告を最後まで見ると、基本の声でもう1回作れます(広告で受け取れるのは月10回まで)。"
+   - "무료 3 + 광고 10 = 월 최대 13" 처럼 합쳐 쓰지 않는다(§1 — 보상은 이월된다). 숫자는 `AD_REWARD_MONTHLY_LIMIT` 를 다시 보고 쓴다.
 
 ## 구현 지도
 
