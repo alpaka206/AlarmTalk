@@ -13,7 +13,8 @@
     "format": "prettier --write \"packages/**/*.{ts,tsx,css}\"",
     "format:check": "prettier --check \"packages/**/*.{ts,tsx,css}\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm test --workspaces --if-present"
+    "test": "npm test --workspaces --if-present",
+    "eval": "npm run eval --workspace @alarmtalk/voice --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

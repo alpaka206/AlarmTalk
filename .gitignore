@@ -122,3 +122,5 @@ qa-shots/
 
 # 프롬프트·모델 평가 결과(packages/backend/scripts/eval-gemini-prompts.ts) — 모델 응답 원문이 들어 있다.
 packages/backend/.eval/
+# 알람 문구 오프라인 평가 결과 — 출력 원문이 들어간다(packages/voice/text-quality)
+packages/voice/.text-quality-reports/
