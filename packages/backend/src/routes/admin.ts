@@ -21,6 +21,8 @@ import { renderGrantConfirm, renderUserDetail } from '../lib/admin/grant-pages';
 import { loadUserDetail } from '../lib/admin/user-detail';
 import { loadRenderBacklog, loadTtsUsage } from '../lib/admin/tts-ops';
 import { isRerenderKind } from '../lib/render-backlog';
+import { loadUsageMetrics, parseUsageFilter } from '../lib/admin/usage-metrics';
+import { renderUsage } from '../lib/admin/usage-pages';
 import {
   createPlanGrant,
   grantEndFor,
@@ -214,7 +216,7 @@ function html(c: Context<AppEnv>, render: (nonce: string) => string, status: 200
 }
 
 /** 표가 아직 없는 창(배포 → 마이그레이션, 1분 남짓)과 DB 오류를 같은 화면으로 말한다. */
-function unavailable(nonce: string, err: unknown, active: 'overview' | 'users' | 'push'): string {
+function unavailable(nonce: string, err: unknown, active: 'overview' | 'usage' | 'users' | 'push'): string {
   const missing = /no such table|no such column/i.test(String(err));
   return page({
     title: '잠시 뒤 다시',
@@ -280,6 +282,16 @@ admin.get('/tts/usage', async (c) => {
   } catch (err) {
     console.error('[admin] tts usage failed', err);
     return jsonError(c, 500, 'INTERNAL_ERROR', 'Could not read the synthesis usage.');
+  }
+});
+
+admin.get('/usage', async (c) => {
+  try {
+    const metrics = await loadUsageMetrics(getDB(c.env), parseUsageFilter((key) => c.req.query(key)));
+    return html(c, (nonce) => renderUsage(nonce, metrics));
+  } catch (err) {
+    console.error('[admin] usage failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'usage'), 500);
   }
 });
 

@@ -216,6 +216,101 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
 는 `users` 의 FK 자식이라, 파기에서 빼먹으면 `DELETE FROM users` 가 FK 로 던져 **탈퇴가
 통째로 롤백된다**(마지막 기록이 1년을 채울 때까지 계정을 지울 수 없다).
 
+## 7. 2판 — 준비시간·첫 경험·저장·직접 입력·광고·결제(2026-10-26)
+
+v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 더한다.** 옛 앱·옛 큐가 보내는 1판 기록은 계속 받는다.
+
+### 7.1 새 종류
+
+| 영역 | 종류 | 뜻 | 누가 적나 |
+| --- | --- | --- | --- |
+| 첫 경험 | `sample_started` / `sample_completed` | 샘플(목소리 미리듣기)이 **실제로 재생을 시작**했다 / **끝까지** 갔다. 화면 노출이 아니다 | 재생기(재생 시작 콜백·끝 콜백) |
+| | `onboarding_step` | 로그인 뒤 첫 경험의 한 단계를 지났다(`step`) | 그 단계 화면 |
+| | `auth_result` | 로그인 결과(`outcome`·`method`). 계정이 생긴 **뒤**에만 적힌다(§7.4) — 실패는 계정이 없어 적히지 않는다 | 로그인 처리 |
+| 목소리 선택 | `voice_selected` | 알람에 쓸 목소리를 **골랐다**(미리 골라 둔 값은 아니다). `is_first`(이 계정 첫 선택)·`prepared`(그 순간 기기에 준비돼 있었나)·`pack_id` | 편집기 |
+| 음성 준비 | `voice_preparation_started` / `_ready` / `_failed` | 범위(`scope`)·언어·`revision`·시작 캐시(`cache_state`)·대상/완료 수·바이트·`duration_ms`·`error_code` | **작업 소유자 한 곳**(§7.3) |
+| 알람 저장 | `alarm_save_attempt` / `alarm_save_blocked` / `alarm_ready` | 저장을 눌렀다 / 요청 전에 막혔다(`reason`) / OS 예약과 오디오 파일이 **둘 다** 갖춰졌다 | 편집기 저장 흐름 |
+| 직접 입력 | `manual_result_reused` | 이미 만든 결과를 다시 썼다(`reuse_location` = `local` 기기 캐시 / `server` 서버 재사용). 차감 없음 | 직접 입력 생성 흐름 |
+| | `generation_outcome` | 새 제작의 결과 — `outcome`·`charged_source`(base/ad/none)·`usage_month`(실제 원래 사용월)·`result_id`·`request_id`·`char_count` | 같음 |
+| 광고 | `reward_offer` / `reward_view_started` / `reward_pending` / `reward_granted` / `reward_spent` | 제안을 보였다 / 시청 시작 / 시청이 끝나 서버 확인(SSV) 대기 / 적립 확인(`duration_ms` = 대기) / 보상을 썼다 | 광고 보상 흐름 |
+| 콘텐츠 | `content_selected` / `dated_alarm_saved` / `pack_selected` | 고정/다양하게(`content_mode`), 날짜 알람 저장, 팩별 사용 | **스키마만** — 그 기능 PR 이 심는다 |
+| 소식 | `briefing_opened` / `source_opened` / `briefing_audio_requested` | 공시·정책뉴스 사용. **관심기업·기사 원문을 싣지 않는다** | **스키마만** — 그 기능 PR 이 심는다 |
+| 결제 | `paywall_viewed` / `store_purchase_verified` / `entitlement_changed` | 결제 화면(`surface`) / 스토어 구매를 서버가 확인했다(`product_id`·`store_offer`·`outcome`) / 앱이 본 플랜이 바뀌었다(`from_plan`→`to_plan`) | 결제 화면·구매 흐름·플랜 갱신 |
+
+⚠ **기존 `alarm_created` 를 저장 시도로 재해석하지 않는다.** `alarm_created` 는 '로컬 행이 생겼다' 이고, 저장 시도·막힘·
+준비 완료는 새 종류가 따로 말한다. 이름이 겹치는 종류는 없다(1판·2판 목록은 shared 에서 서로 겹치지 않음을 테스트가 고정).
+
+### 7.2 공통 필드와 정해진 칸
+
+- `id`(= 지시서의 `event_id`, 기기 UUID — §3 그대로) · `schema_version`(없으면 1, 2판은 2) · `occurred_at` · `received_at`(서버)
+  · `platform`(android|ios) · `app_version`(**적는 순간의** 안드로이드 versionCode·iOS 빌드 번호) · `feature_version`(그 기록을
+  만든 흐름의 판 — 흐름을 바꾸면 올려 집계를 가른다) · `attempt_id`(한 시도를 묶는 UUID).
+- 나머지는 `props` 의 **정해진 칸**이다(`UsageEventPropsSchema`). 서버는 칸마다 열을 하나씩 두고(#142) 그대로 옮긴다 —
+  ⚠ 큰 JSON 을 `detail`(120자)에 끼워 넣지 않는다.
+- 칸은 모양을 막는다: 사유·단계·수단·코드 칸은 영문 소문자 코드(`^[a-z0-9][a-z0-9_.-]{0,63}$`)만, 수는 범위를 둔다.
+  **모르는 칸·모르는 종류는 400** 이다 — 앱이 서버보다 앞서 나가도 조용히 버려지지 않게(§1 과 같은 이유). 새 칸·종류는
+  **서버를 먼저** 올린다.
+- 1판 기록의 `platform` 은 요청 헤더(`X-App-Platform`)로 채운다 — 같은 기기라 큐를 건너도 바뀌지 않는다. `app_version` 은
+  채우지 않는다 — 업데이트를 건너 남은 큐의 사건은 보내는 앱의 버전에서 일어나지 않았다.
+- **권한 출처(`entitlement_source`)는 서버가 찍는다** — 앱은 보내지 않는다(보내면 400). 받는 순간의 계정 상태로 하나를 고르고
+  (`paid` > `trial` > `admin` > `promo` > `free`), 한 기록에 값이 하나라 출처별 사람을 더해도 같은 사람이 두 번 세지지 않는다.
+  ⚠ 서버의 구독 행에는 아직 스토어 무료 체험 구간 표식이 없어 **`trial` 은 찍히지 않고 체험 구독은 `paid` 로 섞인다.**
+  체험과 결제는 `store_purchase_verified` 의 `store_offer`(앱이 스토어에서 읽은 조건)로 가른다. 표식이 생기면
+  `lib/usage-entitlement.ts` 에 갈래 하나를 더한다. 며칠 밀린 배치는 '받은 시각의 권한' 이다.
+- 제작은 `charged_source` = `base`(기본 제공분)/`ad`(광고 보상)/`none`(유료 월 한도 안·재사용·실패)과 **실제 원래 사용월**
+  (`usage_month` — 서버가 차감한 달. 월 경계를 넘긴 재시도도 처음 달), `result_id`·`request_id` 를 함께 적어 결과와 요청을
+  내부에서 잇는다. 문구 원문은 싣지 않고 `char_count` 만 남긴다.
+
+### 7.3 한 번만, 정확한 시간으로
+
+- **같은 다운로드를 여러 화면이 지켜봐도 작업 소유자(워커·프리페처) 한 곳만** 준비 기록을 적는다. 화면은 적지 않는다.
+- `duration_ms` 는 **단조 시계**로 잰다(안드로이드 `SystemClock.elapsedRealtime`, iOS `ContinuousClock`). 벽시계 차이로 재면
+  시계를 돌린 구간에서 음수·거대값이 나온다.
+- 시작·완료·실패는 같은 `attempt_id` 를 쓴다. **앱을 다시 켜면 새 시도다** — 이전의 미완료 시작은 실패로 세지 않는다
+  (관리자 화면은 '끝나지 않은 시작' 으로 따로 센다). 완료·실패도 시작의 `cache_state` 를 그대로 싣는다 — 이미 다 있던
+  시도(`warm`)는 대기시간에서 뺀다.
+- **준비 시작 → 알람 저장의 차이는 다운로드 대기시간이 아니다** — 사이에 사용자가 고르는 시간이 섞인다. 대기시간은 작업이 잰
+  `duration_ms` 만 쓴다.
+- 울림 경로는 1판 그대로 **로컬 큐에 적기만** 한다(§2). 2판 종류 중 울림 경로에서 적는 것은 없다.
+
+### 7.4 가입 전 수집은 하지 않는다 — 익명 세션은 **별도 동의·계약 필요, 미구현**
+
+- 기록기는 계정을 모르면 적지 않는다(§4). 그래서 로그인 전 샘플·선택·로그인 실패는 **남지 않는다.**
+- ⚠ **가입 전 사건을 모아 두었다가 로그인 뒤 계정을 붙여 보내는 우회를 만들지 않는다**(지시서 10.3). 지금의 수신은 처리방침
+  고지(동의) 이전 사건을 받지 않는 구조이고(§3), 그 우회는 그 구조를 그대로 무너뜨린다.
+- 로그인 전 퍼널을 재려면 **별도 계약**이 먼저다: 고지·필요 동의 상태, 측정 거부자는 그대로 쓰고 수집하지 않음, 분모는
+  '측정 허용 신규 세션' 임을 표시, 광고 ID·기기 지문을 분석 식별자로 쓰지 않음, 익명 세션과 계정의 연결은 허용한 범위에서만,
+  세션 만료·삭제. **미구현**이다 — 이 계약 없이 익명 기록 경로를 만들지 말 것.
+- 그래서 관리자 퍼널의 첫 칸은 '앱을 처음 연 사람' 이 아니라 '로그인·동의한 계정 중 그 단계를 한 사람' 이다.
+
+### 7.5 고지가 먼저다 — 2판 칸은 처리방침 8판 동의자부터
+
+2판의 칸(앱 버전·플랫폼·준비시간·바이트·글자 수·실패 코드·정산 수단·권한 출처·결제 화면·광고 보상 단계)과 2판 종류는
+지금 처리방침(7판) 1.2 「서비스 이용 기록」이 고지한 범위("사건 시각과 알람·음성 프로필·문구의 식별자만")를 넘는다.
+그래서 서버는 **`USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION`(8) 이상의 privacy 동의를 연속으로 충족하기 시작한 뒤의 사건만**
+2판으로 저장한다(`lib/consent.ts` 의 `usageEventDetailConsentSince`). 그 전 사건은:
+
+- 1판 종류는 **2판 칸을 비워** 1판으로 저장한다(`schema_version` 1 — 집계에서 2판과 섞이지 않는다).
+- 2판 종류는 **버린다.** 둘 다 200 으로 답해 앱이 큐를 비운다(§3 과 같은 이유 — 고지 전 기록을 나중에 받아 주지 않는다).
+
+⚠ **지금은 일부러 꺼져 있다.** 8판이 아직 없어(저장된 미래 버전은 읽을 때 0 이 된다) 2판 칸은 하나도 저장되지 않는다. 앱은
+그래도 적고 보낸다 — 켜는 날부터 새 사건이 모인다. 켜는 순서: ① 처리방침 1.2 에 아래 취지의 고지를 더한 8판(서버 먼저 —
+`CLAUDE.md` 「법무 문서 버전」) ② 8판을 실은 앱 게재 ③ 기존 사용자까지 모으려면 privacy 최소 버전을 8 로 올려 재동의(그
+판단은 오너·법무). 숫자를 낮춰 7판 동의자에게 소급하지 말 것.
+
+고지에 더할 취지(문안은 법무 검토 뒤 확정): 앱 버전·운영체제 종류, 음성 준비에 걸린 시간·내려받은 용량·실패 코드, 알람 저장
+시도·막힌 사유, 직접 입력 음성의 새 제작·재사용 여부·글자 수·차감 수단, 광고 보상의 제안·시청·지급·사용 단계, 결제 화면 열람·
+스토어 구매 확인 결과·이용권 출처. 문구 원문·음성 파일·관심기업·기사 원문은 담지 않는다. 보관은 1년(§6) 그대로다.
+
+### 7.6 집계
+
+관리자 콘솔 「사용 지표」(`/admin/usage`, `docs/spec/admin-console.md`)가 기간·플랫폼·앱 버전·권한 출처로 거른다.
+
+- ⚠ **iOS 에서 관측하지 못한 울림을 0회로 단정하지 않는다**(§2 — 아무도 안 누른 울림은 적히지 않는다). 화면은 '관측한 울림' 이라
+  부르고, iOS 칸이 비면 '관측 없음' 이라 쓴다.
+- ⚠ **해제를 기상 성공으로 세지 않는다.** `screen_off`·`left_screen` 해제는 사람이 끄지 않은 해제다(§1).
+- 광고 지급 누락은 '대기로 적힌 지 30분이 지났는데 같은 시도의 지급이 없는 것' 이다. 순수익·제작 비용은 이 기록으로 알 수 없다.
+
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
@@ -238,3 +333,9 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
 | 미래 시각의 기록 제외 | — (2xx 라 큐를 비운다) | 같음 | `routes/events.ts`의 원본 발생 시각 필터(`receivedAtMs` 이하), 통과 뒤 UTC 정규화 — `usage-events.test.ts` |
 | 보관 기간 | — | — | `index.ts` 의 `USAGE_EVENT_RETENTION_DAYS` |
 | 계정 파기 시 삭제 | — | — | `lib/account-deletion.ts` 의 `purgeUserAccount` |
+| 2판 종류·칸 | (7.1 표 — 안드로이드 행은 아래) | (같음) | `packages/shared/src/schemas/usage-event.ts` 의 `USAGE_EVENT_V2_TYPES`·`UsageEventPropsSchema` |
+| 2판 열 | — | — | 마이그레이션 #142(`usage-events-v2-fields`), `routes/events.ts` 의 `PROP_COLUMNS` — `usage-events.test.ts` 「2판」 |
+| 권한 출처(서버가 찍음) | — | — | `lib/usage-entitlement.ts` 의 `loadEntitlementSource` — `admin-usage-metrics.test.ts` 「권한 출처」 |
+| 고지 전이면 1판으로 줄이거나 버림 | — (2xx 라 큐를 비운다) | 같음 | `lib/consent.ts` 의 `USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION`·`usageEventDetailConsentSince` → `routes/events.ts` 의 `toV1` — `consent.test.ts`·`usage-events.test.ts` |
+| 1판 기록의 플랫폼 | — | — | `routes/events.ts`(요청 헤더 `X-App-Platform`) |
+| 집계 | — | — | `lib/admin/usage-metrics.ts`·`lib/admin/usage-pages.ts`, `routes/admin.ts` 의 `/usage` |

@@ -534,5 +534,9 @@
   "139": {
     "name": "render-fingerprint-and-tts-usage",
     "sha": "b1fb25f29e986655"
+  },
+  "142": {
+    "name": "usage-events-v2-fields",
+    "sha": "2bbba95abd1631e6"
   }
 }
