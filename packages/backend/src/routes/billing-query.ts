@@ -21,11 +21,6 @@ import { computedUserPlan, loadPersonalPromoField, resolvePersonalPromo } from '
 
 const billingQuery = new Hono<AppEnv>();
 
-// 옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다. 초대 코드는 없앴다(커플·가족 이용권 폐지).
-// 옛 앱 둘은 이 목록을 구독 조회와 **함께** 받아(한쪽이 실패하면 구독 답까지 버린다) 빈 배열로 답한다.
-// DB 를 읽지 않는다.
-billingQuery.get('/vouchers', (c) => c.json({ vouchers: [] }));
-
 billingQuery.get('/subscription', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
@@ -163,9 +158,6 @@ billingQuery.get('/subscription', async (c) => {
         name: String(r.plan_name),
         plan_type: String(r.plan_type),
         period_days: Number(r.period_days),
-        // 옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다. 정원 칸은 DB 에서 없앴지만 옛 iOS 의
-        // `BillingPlan` 디코더가 이 키를 필수로 읽는다(빠지면 구독 답 전체가 실패한다).
-        max_members: 1,
         price_krw: Number(r.price_krw),
       },
       next_plan: nextPlanId

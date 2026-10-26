@@ -59,7 +59,7 @@ Android·iOS 양쪽을 다룬다** — 정책 버전 5 에서 Apple 로그인·A
     `docs/spec/gates-and-overlays.md`), 제7조(앱 화면 문구·`docs/spec/voice-and-message.md`).
   - **서버 먼저**(버전 6 부터의 순서 — `CLAUDE.md` 「배포 / 환경」의 법무 문서 버전): `CURRENT_POLICY_VERSION = '7'`·
     `ACCEPTED_POLICY_VERSIONS = ['7', '6']` 을 `main` 에 먼저 내고, 7판을 실은 앱을 그 뒤에 게재한다. 옛 앱은 6 으로
-    계속 받힌다. `'6'` 은 7판 앱이 두 스토어에 게재되고 `minSupported` 로 6판 앱을 막은 뒤에 목록에서 지운다
+    계속 받혔다. `'6'` 은 7판 앱(안드로이드 36·iOS 14)을 `minSupported` 로 강제한 뒤 2026-10-26 에 목록에서 지웠다
     (`docs/spec/plan-gates.md` 「커플·가족 이용권 — 폐지」의 강제 업데이트 순서).
   - 같은 개정에서 '목소리를 잃은 알람은 기본 알람음으로' 를 실제 동작(2026-09-29 부터 기본 목소리)에 맞게 고쳤다.
   - 본문의 새 문장에는 줄표(—)를 쓰지 않는다 — 공개 페이지와 앱의 동의 화면에 그대로 보인다.

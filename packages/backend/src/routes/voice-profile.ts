@@ -674,12 +674,6 @@ voiceProfile.get('/draft-quota', async (c) => {
   });
 });
 
-// 옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다. 같은 그룹이 공유한 목소리 목록이었다(목소리 공유는
-// 2026-10-20 에 없앴다). 옛 앱 둘은 목소리 목록을 새로 받을 때마다 이것도 받아야 내 목소리의 접근권 재조정을
-// 끝낸다(안드로이드 `VoiceAccessSyncWorker` 는 실패하면 계속 재시도한다). 공유가 없던 계정이 받던 답 그대로이고,
-// DB 를 읽지 않는다. ⚠ 자리는 그대로 둔다 — Hono 는 등록 순서로 맞추므로, `/:id` 꼴 GET 뒤로 가면 가려진다.
-voiceProfile.get('/family', (c) => c.json({ profiles: [] }));
-
 voiceProfile.post('/:id/preview-played', async (c) => {
   const ids = ownerIds(c);
   const db = getDB(c.env);

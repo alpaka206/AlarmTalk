@@ -1275,20 +1275,6 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  GET /vp/family — 옛 앱 호환                                         */
-/* ------------------------------------------------------------------ */
-// 공유받은 목소리 목록이었다(목소리 공유는 2026-10-20 에 없앴다). 옛 앱은 이 답을 받아야 내 목소리 접근권
-// 재조정을 끝낸다 — 공유가 없던 계정이 받던 답 그대로이고 DB 를 읽지 않는다.
-describe('GET /family — 옛 앱 호환 (voice-profile)', () => {
-  it('언제나 200 { profiles: [] } — DB 를 보지 않는다', async () => {
-    const res = await req(buildApp(), new Request('http://localhost/vp/family'));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ profiles: [] });
-    expect(mockDB.calls).toHaveLength(0);
-  });
-});
-
-/* ------------------------------------------------------------------ */
 /*  Edge cases — GET / pagination                                      */
 /* ------------------------------------------------------------------ */
 describe('GET / — pagination edge cases (voice-profile)', () => {

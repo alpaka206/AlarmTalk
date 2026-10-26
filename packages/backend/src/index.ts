@@ -42,8 +42,6 @@ import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
 import adsRoutes from './routes/ads';
 import billingApple from './routes/billing-apple';
-import familyRoutes from './routes/family';
-import codeRoutes from './routes/code';
 import pushRoutes from './routes/push';
 import eventsRoutes from './routes/events';
 import holidayRoutes from './routes/holiday';
@@ -293,8 +291,6 @@ api.route('/alarm', alarmRoutes);
 api.route('/user', userRoutes);
 api.route('/billing', billingApple);
 api.route('/billing', billingRoutes);
-api.route('/family', familyRoutes);
-api.route('/code', codeRoutes);
 api.route('/push', pushRoutes);
 // 사용 기록 — 앱이 오프라인에 쌓아 둔 이벤트를 모아 보낸다(routes/events.ts).
 api.route('/events', eventsRoutes);
@@ -304,6 +300,11 @@ api.route('/events', eventsRoutes);
 app.route('/admin', adminRoutes);
 
 app.route('/api', api);
+
+// 없는 경로도 **코드가 있는 404** 다(`docs/spec/error-codes.md` §1 — 모든 4xx 는 코드를 갖는다). Hono 기본은 본문이
+// 글자 하나인 404 라, 강제 업데이트 뒤 지운 옛 앱 호환 경로(2026-10-26 — 가족 그룹·초대 코드·받은 알람)를 옛 기기의
+// 배경 작업이 부르면 코드 없는 실패가 된다.
+app.notFound((c) => c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404));
 
 app.onError((err, c) => {
   // ⚠ 여기서 sentry.captureException 을 직접 부르지 말 것 — logRouteError 가 이미 보낸다.

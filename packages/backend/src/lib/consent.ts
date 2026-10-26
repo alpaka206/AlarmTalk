@@ -114,15 +114,15 @@ export const CURRENT_POLICY_VERSION = '7';
  * 문서 전문은 앱에 실려 있고 두 스토어의 게재 시점은 다르다. 한 버전만 받으면 그 사이 한쪽 앱의 가입·재동의가 409
  * (`POLICY_VERSION_MISMATCH`)로 막힌다 — 새 앱이 먼저 나오면 새 앱이, 서버가 먼저 오르면 옛 앱이. 그래서 개정 동안은
  * 앞 버전도 함께 받고, **보낸 버전 그대로** 기록한다(본 적 없는 문서에 동의한 기록이 남지 않는다).
- * 지금은 7 과 6 이다(2026-10-20 개정 — 서버 먼저). 스토어의 두 앱은 6 을 싣고 있으므로 6 을 빼면 그 앱의 가입·재동의가
- * 전부 409 다. '6' 은 7 을 실은 두 앱이 게재되고 `minSupported` 로 6 을 실은 옛 앱을 막은 **뒤에** 지운다.
+ * 지금은 7 하나다. 6 은 2026-10-26 에 지웠다 — 7 을 실은 두 앱(안드로이드 36·iOS 14)을 `minSupported` 로 강제했다
+ * (`lib/app-version.ts`). 다음 개정 때 다시 [새, 앞] 둘을 받는다(서버 먼저).
  * (5 는 2026-10-16 에 지웠다 — Android 33 이하는 `minSupported` 34 로 막았고, iOS 1.2.13(빌드 10, 문서 5)은 실사용자가
  * 없었다.)
  * ⚠ 재동의를 요구하는 개정(그 유형의 `CONSENT_MIN_POLICY_VERSION` 을 올릴 때)도 나눠 낸다 — ① 새 버전도 받되 최소
  *   버전은 그대로 ② 새 앱 게재·옛 앱 차단 ③ 최소 버전 상향·앞 버전 제거. 앞 버전 수락은 ③의 최소 버전을 채우지
  *   못하므로 재동의가 새지 않는다(`docs/spec/consent.md`).
  */
-export const ACCEPTED_POLICY_VERSIONS: readonly string[] = [CURRENT_POLICY_VERSION, '6'];
+export const ACCEPTED_POLICY_VERSIONS: readonly string[] = [CURRENT_POLICY_VERSION];
 
 /**
  * 유형별 **최소 정책 버전** — 기록된 동의가 이 버전 이상이어야 유효하다.
