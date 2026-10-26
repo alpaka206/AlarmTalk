@@ -44,7 +44,13 @@ export type ClaimOutcome =
    * 미스를 보고 첫 회차가 먼저 끝냈으면, 둘째는 여기서 그 결과를 받는다(Codex #942). 결과가 정말 지워졌으면(30일 정리)
    * 그때만 새로 만든다.
    */
-  | { kind: 'claimed'; claim: ManualRequestClaim; reclaimedDone: boolean }
+  | {
+      kind: 'claimed';
+      claim: ManualRequestClaim;
+      reclaimedDone: boolean;
+      /** 이 id 의 표식이 이미 있었다(끝났거나 버려진 표식을 다시 잡았다) — 사용량 장부가 재시도로 센다. */
+      retried: boolean;
+    }
   | { kind: 'in_progress' }
   | { kind: 'conflict' };
 
@@ -58,7 +64,8 @@ export async function claimManualRequest(
     sql: `SELECT status FROM manual_tts_requests WHERE user_id = ? AND request_id = ?`,
     args: [input.userPk, input.requestId],
   });
-  const wasDone = before.rows.length > 0 && String(before.rows[0]!.status) === 'done';
+  const wasPresent = before.rows.length > 0;
+  const wasDone = wasPresent && String(before.rows[0]!.status) === 'done';
   const staleBefore = new Date(now.getTime() - MANUAL_REQUEST_STALE_MS).toISOString();
   // 없으면 넣고, 같은 입력의 버려진(2분) 표식·끝난 표식(결과가 지워져 다시 만드는 경우)이면 가져간다 — 한 문장이라
   // 동시에 온 두 요청 중 하나만 잡는다.
@@ -77,6 +84,7 @@ export async function claimManualRequest(
       kind: 'claimed',
       claim: { userPk: input.userPk, requestId: input.requestId, claimedAt },
       reclaimedDone: wasDone,
+      retried: wasPresent,
     };
   }
   const existing = await db.execute({

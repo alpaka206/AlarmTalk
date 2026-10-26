@@ -530,5 +530,9 @@
   "138": {
     "name": "store-downloads",
     "sha": "dad6f5173cdd0a1f"
+  },
+  "139": {
+    "name": "render-fingerprint-and-tts-usage",
+    "sha": "b1fb25f29e986655"
   }
 }

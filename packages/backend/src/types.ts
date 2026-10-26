@@ -129,6 +129,19 @@ export interface Env {
    * 꺼진 것이다(콜백은 200 으로 받되 적립하지 않는다). 스펙: `docs/spec/ad-rewards.md`.
    */
   ADMOB_REWARDED_AD_UNITS?: string;
+  /**
+   * **합성 예산**(`lib/tts-budget.ts`, `docs/spec/tts-render-and-budget.md` §3) — 운영자가 정하는 양의 정수(글자·개수).
+   * 비밀값은 아니지만 값이 운영 판단이라 코드·저장소에 적지 않는다. 비어 있으면 그 예산은 **없다**: 대량 작업은 dry-run,
+   * 공급자 잔여 경보는 조회하지 않는다.
+   *  - `TTS_DEV_MONTHLY_CHAR_BUDGET` — dev 의 KST 월 합성 글자 상한. **운영(production)에서는 읽지 않는다.**
+   *  - `TTS_RERENDER_BATCH_MAX_CHARS` — 대량 다시 굽기 한 회차의 글자 상한.
+   *  - `TTS_RERENDER_CONCURRENCY` — 대량 다시 굽기의 동시 합성 수.
+   *  - `TTS_PROVIDER_REMAINING_ALERT_CHARS` — 공급자 계정의 남은 글자가 이 밑이면 cron 이 경보한다(시간당 한 번 조회).
+   */
+  TTS_DEV_MONTHLY_CHAR_BUDGET?: string;
+  TTS_RERENDER_BATCH_MAX_CHARS?: string;
+  TTS_RERENDER_CONCURRENCY?: string;
+  TTS_PROVIDER_REMAINING_ALERT_CHARS?: string;
   INIT_DB_SECRET?: string;
   BILLING_STUB_ENABLED?: string;
   SENTRY_DSN?: string;

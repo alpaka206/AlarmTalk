@@ -19,6 +19,8 @@ import {
 import { emptyState, newNonce, page, securityHeaders } from '../lib/admin/ui';
 import { renderGrantConfirm, renderUserDetail } from '../lib/admin/grant-pages';
 import { loadUserDetail } from '../lib/admin/user-detail';
+import { loadRenderBacklog, loadTtsUsage } from '../lib/admin/tts-ops';
+import { isRerenderKind } from '../lib/render-backlog';
 import {
   createPlanGrant,
   grantEndFor,
@@ -242,6 +244,42 @@ admin.get('/', async (c) => {
   } catch (err) {
     console.error('[admin] overview failed', err);
     return html(c, (nonce) => unavailable(nonce, err, 'overview'), 500);
+  }
+});
+
+// --- 합성 운영(JSON — `docs/spec/tts-render-and-budget.md` §4·§5). 읽기만 한다. ---
+
+/** 다시 구울 목록과 예상 글자. `?kind=` 를 주면 그 종류의 대상 한 쪽(`limit` ≤100·`offset`), `?legacy=1` 은 지문 이전 행도. */
+admin.get('/tts/render-backlog', async (c) => {
+  const kind = c.req.query('kind');
+  if (kind !== undefined && !isRerenderKind(kind)) {
+    return jsonError(c, 400, 'INVALID_REQUEST', 'kind must be one of system_stock, clone_prerender, manual, other.');
+  }
+  try {
+    const body = await loadRenderBacklog(getDB(c.env), c.env, {
+      kind: kind ?? null,
+      includeLegacy: c.req.query('legacy') === '1',
+      limit: Number(c.req.query('limit') ?? 50),
+      offset: Number(c.req.query('offset') ?? 0),
+    });
+    return c.json(body);
+  } catch (err) {
+    console.error('[admin] render backlog failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', 'Could not read the render backlog.');
+  }
+});
+
+/** 요청 종류별 합성 사용량·예산 설정·클론 슬롯. `?days=`(1~100, 기본 31), `?provider=1` 이면 공급자 잔여도 조회한다. */
+admin.get('/tts/usage', async (c) => {
+  try {
+    const body = await loadTtsUsage(getDB(c.env), c.env, {
+      days: Number(c.req.query('days') ?? 31),
+      provider: c.req.query('provider') === '1',
+    });
+    return c.json(body);
+  } catch (err) {
+    console.error('[admin] tts usage failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', 'Could not read the synthesis usage.');
   }
 });
 

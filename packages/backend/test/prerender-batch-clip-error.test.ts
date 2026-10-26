@@ -100,7 +100,7 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       id TEXT PRIMARY KEY, user_id TEXT, voice_profile_id TEXT, message_id TEXT,
       provider TEXT, provider_voice_id TEXT, model_id TEXT, language TEXT,
       request_hash TEXT UNIQUE, text TEXT, audio_url TEXT, audio_object_key TEXT,
-      audio_format TEXT, mime_type TEXT, created_at TEXT DEFAULT (datetime('now'))
+      render_fingerprint TEXT, render_revision TEXT, logical_key TEXT, audio_format TEXT, mime_type TEXT, created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE user_consents (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, consent_type TEXT NOT NULL,
@@ -110,6 +110,17 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
     CREATE TABLE pending_external_deletions (
       id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT,
       UNIQUE(kind, ref)
+    );
+    CREATE TABLE tts_synthesis_usage (
+      usage_day TEXT NOT NULL, request_kind TEXT NOT NULL,
+      outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure')),
+      request_count INTEGER NOT NULL DEFAULT 0, retry_count INTEGER NOT NULL DEFAULT 0,
+      character_count INTEGER NOT NULL DEFAULT 0, latency_ms_total INTEGER NOT NULL DEFAULT 0,
+      latency_ms_max INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (usage_day, request_kind, outcome)
+    );
+    CREATE TABLE tts_dev_budget_holds (
+      id TEXT PRIMARY KEY, usage_month TEXT NOT NULL, characters INTEGER NOT NULL, created_at TEXT NOT NULL
     );
     INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id)
       VALUES ('vp1', 'u1', '엄마 목소리', 'eleven-1');
@@ -199,6 +210,39 @@ describe('사전렌더 배치 — 클립 1건이 실패하면', () => {
       // 내용 위반이 아니므로 사유가 없다 — cron 은 이걸 보고 `transport` 태그를 붙인다.
       expect(failures[0]!.reason).toBeNull();
       expect(failures[0]!.category).toBe('greeting');
+    } finally {
+      cleanup(db, path);
+    }
+  });
+});
+
+describe('사전렌더 배치 — dev 월 예산', () => {
+  beforeEach(() => {
+    generateCalls = 0;
+    failOnCall = null;
+    failWith = null;
+  });
+
+  it('클립마다 실제로 보낼 글자로 본다 — 모자라면 굽지 않고 남기고, 실패로 세지 않는다(코덱스 #954)', async () => {
+    const { db, path } = await prerenderDb();
+    try {
+      // 클립 하나가 22자 남짓이다 — 30자 예산이면 첫 클립만 들어간다. 회차 앞에서 '한 글자라도 남았나' 만 보면 셋 다 굽는다.
+      const budgetEnv = { ...(ENV as object), ENVIRONMENT: 'development', TTS_DEV_MONTHLY_CHAR_BUDGET: '30' } as never;
+      const failures: PrerenderClipFailure[] = [];
+      await runPrerenderBatch(db as never, budgetEnv, {
+        maxClips: 3,
+        maxVoices: 1,
+        onClipError: (_err, failure) => failures.push(failure),
+      });
+      const published = await db.execute('SELECT COUNT(*) AS n FROM messages WHERE COALESCE(is_preset,0) = 1');
+      expect(Number(published.rows[0]!.n)).toBe(1);
+      expect(failures, '미룬 것을 실패로 올렸다').toEqual([]);
+      const queue = await db.execute(
+        "SELECT status, claim_token, attempts FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
+      );
+      expect(String(queue.rows[0]!.status)).toBe('pending');
+      expect(queue.rows[0]!.claim_token, '임대를 반납하지 않았다').toBeNull();
+      expect(Number(queue.rows[0]!.attempts)).toBe(0);
     } finally {
       cleanup(db, path);
     }

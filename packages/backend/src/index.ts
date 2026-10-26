@@ -743,40 +743,72 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 특정 목소리만 다시 굽는 수동 도구는 남아 있다: `POST /api/admin/seed-stock-clips`
   // (`?voice=`·`?reset=`). 새 프리셋을 추가했는데 미리 굽지 않았다면 그걸로 채운다.
 
+  // 공급자 계정의 남은 글자 — 문턱(`TTS_PROVIDER_REMAINING_ALERT_CHARS`)을 정했을 때만, 한 시간에 한 번 조회한다
+  // (`lib/tts-provider-quota.ts`). dev·prod 가 같은 키라 둘 다 같은 계정을 본다. 키는 로그·경보에 싣지 않는다.
+  try {
+    const { checkProviderRemaining, isProviderQuotaCheckTick, ProviderRemainingLowError } = await import(
+      './lib/tts-provider-quota'
+    );
+    if (isProviderQuotaCheckTick(now)) {
+      const check = await checkProviderRemaining(env);
+      if (check.status === 'low') {
+        captureCron('scheduled.tts_provider_remaining', new ProviderRemainingLowError(check.quota.remaining, check.threshold), {
+          remaining: String(check.quota.remaining),
+          threshold: String(check.threshold),
+        });
+      }
+    }
+  } catch (err) {
+    captureCron('scheduled.tts_provider_remaining', err);
+  }
+
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
   // 대상이라 전유저 스캔이 없고, 한 건 실패가 나머지를 막지 않도록 격리한다.
   try {
-    const { runPrerenderBatch } = await import('./lib/stock-clips');
-    // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드다.
-    //
-    // ⚠ **6 → 10 으로 올렸다**(2026-08-20). 6은 목소리 1개 풀셋(21클립)에 4틱 = 20분이
-    // 걸린다는 뜻이었고, 실기기 QA 에서 그 대기가 문제로 지적됐다. 상한을 넘겨 서브리퀘스트가
-    // 소진되면 `runPrerenderBatch` 가 즉시 멈추고 pending 을 유지해 다음 틱이 이어받으므로,
-    // 올려서 손해 보는 경우가 "그 틱이 조금 일찍 끝난다" 뿐이다 — 그 안전장치가 이미
-    // 검증돼 있어서 올릴 수 있다. 등록 직후 첫 배치는 요청 쪽에서 따로 돈다(promote).
-    const result = await runPrerenderBatch(db, env, {
-      maxClips: 10,
-      maxVoices: 5,
-      // ⚠ **어느 목소리의 어느 클립인지 함께 올린다.** 예전에는 에러만 보내서, Sentry 에
-      // 한 줄이 떠도 대상을 특정할 수 없었다(ALARMTALK-BACKEND-9 — 실제로 1건을 끝내
-      // 못 짚었다). `clip_failure` 는 원인 갈래다: 사유 식별자면 모델이 낸 **내용**이
-      // 걸린 것이고, `transport` 면 전송이 죽은 것이다 — 봐야 할 곳이 정반대라 갈라 둔다.
-      onClipError: (genErr, failure) =>
-        captureCron('scheduled.stock_clips.generate', genErr, {
-          voice_profile_id: failure.voiceProfileId,
-          clip_category: failure.category,
-          clip_variant: String(failure.variant),
-          clip_language: failure.language,
-          clip_failure: failure.reason ?? 'transport',
-        }),
-    });
-    if (result.rendered > 0) {
-      logStructured('info', {
+    // dev 월 합성 예산(`TTS_DEV_MONTHLY_CHAR_BUDGET`)을 다 썼으면 이 틱은 굽지 않는다 — 큐는 그대로 남아 다음 달(또는 예산을
+    // 올린 뒤) 이어 굽는다. 운영이거나 예산을 정하지 않았으면 DB 를 부르지 않고 통과한다.
+    const { checkDevBudget } = await import('./lib/tts-budget');
+    const devBudget = await checkDevBudget(db, env, 1, now);
+    if (!devBudget.ok) {
+      logStructured('warn', {
         at: 'scheduled.stock_clips',
-        rendered: result.rendered,
-        claimed: result.claimed,
+        skipped: 'dev_budget_exhausted',
+        used: devBudget.used,
+        budget: devBudget.budget,
       });
+    } else {
+      const { runPrerenderBatch } = await import('./lib/stock-clips');
+      // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드다.
+      //
+      // ⚠ **6 → 10 으로 올렸다**(2026-08-20). 6은 목소리 1개 풀셋(21클립)에 4틱 = 20분이
+      // 걸린다는 뜻이었고, 실기기 QA 에서 그 대기가 문제로 지적됐다. 상한을 넘겨 서브리퀘스트가
+      // 소진되면 `runPrerenderBatch` 가 즉시 멈추고 pending 을 유지해 다음 틱이 이어받으므로,
+      // 올려서 손해 보는 경우가 "그 틱이 조금 일찍 끝난다" 뿐이다 — 그 안전장치가 이미
+      // 검증돼 있어서 올릴 수 있다. 등록 직후 첫 배치는 요청 쪽에서 따로 돈다(promote).
+      const result = await runPrerenderBatch(db, env, {
+        maxClips: 10,
+        maxVoices: 5,
+        // ⚠ **어느 목소리의 어느 클립인지 함께 올린다.** 예전에는 에러만 보내서, Sentry 에
+        // 한 줄이 떠도 대상을 특정할 수 없었다(ALARMTALK-BACKEND-9 — 실제로 1건을 끝내
+        // 못 짚었다). `clip_failure` 는 원인 갈래다: 사유 식별자면 모델이 낸 **내용**이
+        // 걸린 것이고, `transport` 면 전송이 죽은 것이다 — 봐야 할 곳이 정반대라 갈라 둔다.
+        onClipError: (genErr, failure) =>
+          captureCron('scheduled.stock_clips.generate', genErr, {
+            voice_profile_id: failure.voiceProfileId,
+            clip_category: failure.category,
+            clip_variant: String(failure.variant),
+            clip_language: failure.language,
+            clip_failure: failure.reason ?? 'transport',
+          }),
+      });
+      if (result.rendered > 0) {
+        logStructured('info', {
+          at: 'scheduled.stock_clips',
+          rendered: result.rendered,
+          claimed: result.claimed,
+        });
+      }
     }
   } catch (err) {
     captureCron('scheduled.stock_clips', err);

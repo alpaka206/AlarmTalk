@@ -23,6 +23,7 @@ import {
   markPrerenderDone,
   notifyVoicePrerenderComplete,
   prerenderRefreshColumnReady,
+  PrerenderBudgetDeferredError,
   PrerenderSupersededError,
   releasePrerenderClaim,
   retiredIsNullClause,
@@ -2906,6 +2907,9 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
         superseded = true;
         break;
       }
+      // dev 월 예산이 이 클립을 못 받는다 — 실패가 아니라 미룬 것이다. 남은 대상은 큐에 그대로 두고 이 호출을 끝낸다
+      // (`generateStockClip` 이 실제 보낼 글자로 본다 — 요청 경로도 예산을 거친다, 코덱스 #954).
+      if (genErr instanceof PrerenderBudgetDeferredError) break;
       logRouteError(c, genErr);
       // 서브리퀘스트 소진이면 이 호출에서 더 만들 수 없다 — 즉시 반환하고 클라가 재호출.
       if (String(genErr).includes('Too many subrequests')) break;

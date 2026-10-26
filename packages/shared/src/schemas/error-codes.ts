@@ -97,6 +97,11 @@ export const ERROR_CODES = [
   'TEXT_PREPARATION_FAILED',
   'TEXT_TOO_LONG',
   'TRANSLATION_NOT_CONFIGURED',
+  /**
+   * dev 의 월 합성 예산(`TTS_DEV_MONTHLY_CHAR_BUDGET`)을 다 썼다 — **운영에서는 나지 않는다**(`lib/tts-budget.ts`).
+   * dev 앱에는 503 폴백 문구로 보인다.
+   */
+  'TTS_BUDGET_EXHAUSTED',
   'TTS_GENERATION_FAILED',
   /** 같은 `request_id` 에 다른 입력이 왔다 — 앱의 버그다(문구를 바꾸면 새 id). */
   'TTS_REQUEST_ID_CONFLICT',
@@ -332,6 +337,8 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   // 않는다). 그 고장은 사용자가 고칠 수 없어 경보로 올린다(`docs/spec/error-codes.md` §3).
   'VOICE_CLONE_NO_SPEECH',
   'TTS_GENERATION_FAILED',
+  // dev 합성 예산 소진 — dev 테스트가 막혔고, 예산을 올릴지 정하는 것은 운영자다(운영에서는 나지 않는다).
+  'TTS_BUDGET_EXHAUSTED',
   'PERSO_FAILED',
   // 결제 확정이 거절된 갈래. 2026-09-19 사고에서 우리는 증상(VOICE_FEATURE_REQUIRES_PAID_PLAN)만
   // 보고 원인은 한 줄도 못 봤다 — 거절이 구조화 로그에만 남아 있었다. 사용자는 이미 돈을 냈는데

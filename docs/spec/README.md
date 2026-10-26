@@ -69,6 +69,7 @@
 | [localization.md](localization.md) | 앱 화면 번역 — 같은 화면의 용어, 저장값과 표시 문구, 오류·언어 변경 |
 | [admin-console.md](admin-console.md) | 관리자 콘솔 — 사용 현황, 앱 빌드·접속 기록(동의 검사 앞, 90일), 알림 보내기(시험 발송 먼저, 걸음으로 나눠 보내기, 광고는 동의자·08~21시) |
 | [morning-briefing.md](morning-briefing.md) | 아침 소식 — 관심 기업(최대 3) 공시(OpenDART) + 정책브리핑 정책뉴스, 원문 링크·확인 시각, 15분 캐시, 실패는 '없음' 이 아니다(stale·unavailable·complete), 주가·투자 판단 없음, 이미지 재게시 없음 |
+| [tts-render-and-budget.md](tts-render-and-budget.md) | 합성 렌더 지문(원장에 설정 전부를 적는다 · 지금 설정이면 캐시 키 그대로) · 논리 결과와 물리 렌더를 가른다(서비스 사정의 재렌더는 세지 않는다) · 예산은 정하지 않으면 없다(대량 작업 dry-run, dev 월 예산, 공급자 잔여 경보) · 요청 종류별 사용량 장부 · 다시 구울 목록 |
 
 ## 여기 넣지 않는 것
 

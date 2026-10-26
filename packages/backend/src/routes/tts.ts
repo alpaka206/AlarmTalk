@@ -17,6 +17,9 @@ import {
   type ManualRequestClaim,
 } from '../lib/manual-tts-requests';
 import { computeTtsCacheKey, generatedTtsObjectKey, manualTtsCacheScope } from '../lib/audio-cache';
+import { logicalResultRenders, manualResultLogicalKey, renderStamp, serverRenderSettings } from '../lib/render-fingerprint';
+import { measureSynthesis, speechCharacters, type TtsUsageKind } from '../lib/tts-usage';
+import { holdDevBudget, releaseDevBudget } from '../lib/tts-budget';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 import {
   createSynthesisAttempts,
@@ -102,6 +105,14 @@ class ConsentWithdrawnDuringTtsError extends Error {
   constructor(readonly consent: string) {
     super(`Required consent was withdrawn during TTS generation: ${consent}`);
     this.name = 'ConsentWithdrawnDuringTtsError';
+  }
+}
+
+/** dev 월 합성 예산(`TTS_DEV_MONTHLY_CHAR_BUDGET`)을 넘는다 — 운영에서는 나지 않는다(`lib/tts-budget.ts`). */
+class TtsBudgetExhaustedError extends Error {
+  constructor() {
+    super('The development synthesis budget for this month is used up.');
+    this.name = 'TtsBudgetExhaustedError';
   }
 }
 
@@ -644,6 +655,8 @@ tts.post('/generate', async (c) => {
   let adRewardTransactionId: string | null = null;
   // 같은 요청의 재시도·중복 탭 표식(`request_id`) — 잡았으면 끝날 때 풀거나 끝냄으로 적는다.
   let requestClaim: ManualRequestClaim | null = null;
+  /** dev 월 예산에서 잡아 둔 몫 — 끝나면(성공·실패 모두) 놓는다(`holdDevBudget`). */
+  let devBudgetHoldId: string | null = null;
   /**
    * 직접 입력 한 번을 **센다** — 월 기본분(유료 30·무료 3) 먼저, 무료가 다 썼으면 광고 보상 한 번. 셀 수 없으면 보낼
    * 응답을 돌려준다.
@@ -1026,6 +1039,23 @@ tts.post('/generate', async (c) => {
     // 그 창에는 제자리 교체 자체가 이 컬럼을 참조해 롤백되므로 지킬 대상이 없다.
     // 전용 쿼리로 읽으면 그 창 동안 **모든 직접 입력 생성이 500** 이 된다.
     const requestVoiceGeneration = String(vp.custom_audio_invalidated_at ?? '');
+    // **직접 입력의 논리 결과** — 사용자가 고른 것(목소리와 그 세대·언어·번역 여부·친 글자)만 담는다. 렌더 설정(모델·음량·
+    // provider voice·합성 옵션)은 넣지 않는다 — 그게 바뀌어 다시 굽는 것은 서비스 사정이라 세지 않는다
+    // (`docs/spec/tts-render-and-budget.md` §2). 직접 입력이 아니면 null.
+    const logicalKey = isManualGeneration
+      ? await manualResultLogicalKey({
+          userPk,
+          voiceProfileId: body.voice_profile_id,
+          voiceGeneration: requestVoiceGeneration,
+          language: normalizeSynthesisLanguage(body.language),
+          translate: body.translate === true,
+          text: userTypedText,
+        })
+      : null;
+    // 이 요청이 '이미 낸 결과를 새 설정으로 다시 굽는' 것인가(아래 캐시 미스 뒤에 정한다). 참이면 세지 않는다.
+    let serviceRerender = false;
+    // 같은 `request_id` 를 다시 잡았는가(재시도) — 사용량 장부의 `retry_count`.
+    let retriedRequest = false;
     const isEvictedWithoutVoice = !providerVoiceId && Boolean(vp.evicted_at);
     const evictedProbeVoiceId = isEvictedWithoutVoice
       ? ((vp.evicted_provider_voice_id as string | null | undefined) ?? null)
@@ -1127,6 +1157,20 @@ tts.post('/generate', async (c) => {
             });
             const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
             manualQuotaResult = { used, limit: pool.limit, remaining: Math.max(0, pool.limit - used) };
+            // 지문 이전(#139 전)에 만든 행은 논리 결과 키가 비어 있다 — 다시 쓰이는 이 순간 채워, 나중에 설정이 바뀌어
+            // 이 키가 빗나가도 '이미 낸 결과' 로 알아보게 한다. 못 채워도 그 행은 예전 그대로라(틀린 값이 남지 않는다)
+            // 응답을 막지 않는다.
+            if (logicalKey) {
+              try {
+                await db.execute({
+                  sql: `UPDATE generated_audio_assets SET logical_key = ?
+                        WHERE request_hash = ? AND user_id = ? AND logical_key IS NULL`,
+                  args: [logicalKey, cacheKey, userPk],
+                });
+              } catch (backfillErr) {
+                console.error('[tts/generate] logical key backfill failed', String(backfillErr));
+              }
+            }
           }
           // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
           // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
@@ -1219,6 +1263,29 @@ tts.post('/generate', async (c) => {
       }
     }
 
+    // ⚠ **이미 낸 결과인가**(스펙 tts-render-and-budget §2). 캐시 키는 렌더 설정(모델·음량·높이·provider voice·합성 옵션)
+    //   을 담으므로 서비스가 설정을 바꾸거나 LRU 반납 뒤 재등록으로 provider voice 가 바뀌면 같은 요청도 빗나간다. 그 사람의
+    //   같은 논리 결과가 원장에 남아 있으면 새 설정으로 **다시 굽되 세지 않는다.** 문구·목소리(세대)·언어를 바꾼 요청은
+    //   논리 키가 달라 예전 규칙대로 센다. 30일 정리로 결과가 사라졌으면 행이 없어 센다(§8 표).
+    //   칸(#139)이 없는 배포 창에서는 던져 500 이다 — 세기 전이라 잃는 것이 없다(fail-closed).
+    //   ⚠ **지금 설정으로 만든 행이 이미 있으면 서비스 재렌더가 아니다.** 그런데도 빗나갔다면 원인은 설정이 아니라 합성
+    //   글자다(번역처럼 같은 입력에서 다른 글자가 나오는 갈래) — 그건 예전처럼 센다. 안 그러면 같은 요청을 되풀이해
+    //   세지 않는 합성을 끝없이 받을 수 있다.
+    if (logicalKey) {
+      const firstAttempt = preparedAttempts[0]?.attempt;
+      const currentFingerprint = firstAttempt
+        ? (await renderStamp(serverRenderSettings({ ...firstAttempt, language: synthesisLanguage }))).fingerprint
+        : null;
+      const owned = await logicalResultRenders(db, userPk, logicalKey, currentFingerprint);
+      serviceRerender = owned.any && !owned.current;
+    }
+
+    // dev 월 합성 예산 — 운영이거나 정하지 않았으면 DB 를 부르지 않는다. 세기·표식보다 앞이라 막혀도 잃는 것이 없다.
+    //   몫은 **먼저 잡는다**(코덱스 #954) — 읽기만 하면 겹치는 요청이 같은 남은 몫을 함께 써 상한을 넘겼다.
+    const devBudget = await holdDevBudget(db, c.env, speechCharacters(synthesisText));
+    if (!devBudget.ok) throw new TtsBudgetExhaustedError();
+    devBudgetHoldId = devBudget.holdId;
+
     // 캐시 미스 확정 후 합성 직전에 직접 입력 한 번을 센다(월 한도 원자적 +1 또는 광고 보상 하나).
     // 그 전에 같은 요청 표식을 잡는다 — 재시도·중복 탭이 동시에 와도 한 번만 합성·차감한다(`lib/manual-tts-requests.ts`).
     if (isManualGeneration) {
@@ -1240,6 +1307,7 @@ tts.post('/generate', async (c) => {
           return jsonError(c, 409, 'TTS_REQUEST_IN_PROGRESS', 'The same request is still being generated.');
         }
         requestClaim = outcome.claim;
+        retriedRequest = outcome.retried;
         if (outcome.reclaimedDone) {
           const again = await serveCachedResult();
           if (again) {
@@ -1249,18 +1317,40 @@ tts.post('/generate', async (c) => {
           }
         }
       }
-      const refused = await reserveManualGeneration();
+      // 서비스가 다시 굽는 것은 세지 않는다 — `charged_source` 는 'none' 그대로다.
+      const refused = serviceRerender ? null : await reserveManualGeneration();
       if (refused) {
         if (requestClaim) await releaseManualRequest(db, requestClaim);
         return refused;
       }
+      if (serviceRerender) {
+        // 응답의 남은 횟수는 지금 값 그대로다(캐시 히트와 같다 — 소비 없음).
+        const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+          promoOnly: callerPromoOnly,
+        });
+        const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+        manualQuotaResult = { used, limit: pool.limit, remaining: Math.max(0, pool.limit - used) };
+      }
     }
+
+    const usageKind: TtsUsageKind = draftPreviewRequested
+      ? 'draft_preview'
+      : isManualGeneration
+        ? serviceRerender
+          ? 'manual_rerender'
+          : 'manual'
+        : 'dynamic';
 
     let lastError: unknown = noVoiceProviderError();
     for (const { attempt, cacheKey } of preparedAttempts) {
       try {
-        const generated = await attempt.synthesize();
+        const generated = await measureSynthesis(
+          db,
+          { kind: usageKind, text: synthesisText, retry: retriedRequest },
+          () => attempt.synthesize(),
+        );
         const bytes = generated.bytes;
+        const stamp = await renderStamp(serverRenderSettings({ ...attempt, language: synthesisLanguage }));
 
         let audioObjectKey: string | null = null;
         let audioUrl: string | null = null;
@@ -1343,11 +1433,12 @@ tts.post('/generate', async (c) => {
 
             if (audioUrl) {
               await tx.execute({
+                // 렌더 지문·세대·논리 결과 키(#139)도 함께 — 칸이 없으면 트랜잭션째 롤백된다(배포 창 fail-closed).
                 sql: `INSERT OR IGNORE INTO generated_audio_assets
                   (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                    model_id, language, request_hash, text, audio_url,
-                   audio_object_key, audio_format)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                   audio_object_key, audio_format, render_fingerprint, render_revision, logical_key)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 args: [
                   crypto.randomUUID(),
                   userPk,
@@ -1362,6 +1453,9 @@ tts.post('/generate', async (c) => {
                   audioUrl,
                   audioObjectKey,
                   generated.outputFormat,
+                  stamp.fingerprint,
+                  stamp.revision,
+                  logicalKey,
                 ],
               });
             }
@@ -1492,6 +1586,9 @@ tts.post('/generate', async (c) => {
     if (err instanceof ConsentWithdrawnDuringTtsError) {
       return consentRequired(c, err.consent);
     }
+    if (err instanceof TtsBudgetExhaustedError) {
+      return jsonError(c, 503, 'TTS_BUDGET_EXHAUSTED', 'The development synthesis budget for this month is used up.');
+    }
     if (err instanceof VoiceAuthorizationChangedDuringTtsError) {
       return c.json(
         {
@@ -1520,6 +1617,8 @@ tts.post('/generate', async (c) => {
       },
       500,
     );
+  } finally {
+    await releaseDevBudget(db, devBudgetHoldId);
   }
 });
 
