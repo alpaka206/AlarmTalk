@@ -120,11 +120,11 @@ final class AlarmAppContext {
         if let record = recordBeforeStop,
            record.bucketId != nil,
            (record.bucketClipKeys?.count ?? 0) > 1,
-           record.repeatDaysMask != 0,
+           record.isRecurring,
            !record.isHolidayOffRecurring {
             await reconcileAfterStop(record.id)
         } else if let record = recordBeforeStop,
-                  record.repeatDaysMask != 0,
+                  record.isRecurring,
                   !record.isHolidayOffRecurring,
                   PaidVoiceGate.dependsOnPromoCutover(record: record, snapshot: accessSnapshot(), now: nowProvider()) {
             // ⚠ **기간 한정 개인 플랜만으로 열린 목소리의 주간 반복 알람도 정지마다 다시 맞춘다**(Codex #803).

@@ -41,6 +41,11 @@ enum RemoteAlarmMapper {
             messageId: messageId,
             voiceProfileId: voiceProfileId,
             bucketId: local.bucketId.nilIfBlank,
+            // 날짜 알람이면 서버 `timezone` 은 기기 현재 시간대가 아니라 **사용자가 확인한 시간대**다
+            // (스펙 alarm-lifecycle.md §4-1). 날짜가 없으면 예전처럼 기기 시간대.
+            timezone: local.isDated
+                ? (local.targetTimezone.nilIfBlank ?? TimeZone.current.identifier)
+                : TimeZone.current.identifier,
             clientAlarmId: local.id,
             // 기본 목소리로 바꿔 둔 알람(무료 잠금 · 잠금 확정 · 목소리를 잃어 미나로 바꾼 알람)은 비어
             // 있는 문구·테마를 서버에서도 지운다 — 안 지우면 클론의 message_id·bucket_id 가 기본 목소리
@@ -48,7 +53,8 @@ enum RemoteAlarmMapper {
             // 잠금 확정·미나 전환 뒤에는 보관본이 없어 `hasLockedPaidVoice` 만으로는 못 가린다.
             // 안드로이드 `RemoteAlarmMapper.toWriteRequest` 미러.
             clearsMissingVoiceReferences: local.hasLockedPaidVoice
-                || (local.voiceSourceEnum != .localAudio && isSystemVoiceId(local.voiceProfileId))
+                || (local.voiceSourceEnum != .localAudio && isSystemVoiceId(local.voiceProfileId)),
+            targetDate: local.targetDate.nilIfBlank
         )
     }
 

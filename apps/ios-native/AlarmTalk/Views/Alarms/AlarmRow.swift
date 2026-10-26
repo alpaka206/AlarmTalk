@@ -160,6 +160,14 @@ struct AlarmRow: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
+                        // 날짜 알람인데 기기 시간대가 다르면 **어떤 시각으로 예약됐는지** 말한다
+                        // (스펙 alarm-lifecycle.md §4-2). 같으면 아무것도 덧붙이지 않는다.
+                        if let note = alarm.datedTimezoneNote() {
+                            Text(note)
+                                .font(.pretendard(.regular, size: 13))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                        }
                     }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // 행 전체가 하나의 버튼으로 읽히게 한다(VoiceOver).

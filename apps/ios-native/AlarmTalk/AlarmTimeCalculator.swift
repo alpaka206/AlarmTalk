@@ -11,12 +11,14 @@ enum AlarmTimeCalculator {
         case invalidHour
         case invalidMinute
         case invalidMask
+        case invalidTargetDate
 
         var errorDescription: String? {
             switch self {
             case .invalidHour: return "Hour must be between 0 and 23."
             case .invalidMinute: return "Minute must be between 0 and 59."
             case .invalidMask: return "Repeat days mask must only use Sunday through Saturday bits."
+            case .invalidTargetDate: return "Target date must be a real YYYY-MM-DD date."
             }
         }
     }
