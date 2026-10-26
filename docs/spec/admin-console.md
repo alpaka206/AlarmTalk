@@ -24,6 +24,7 @@
 | --- | --- |
 | 개요(`/admin`) | 전체 가입자(누적 추이), 앱 접속 1·7·30일, 켜진 알람, 플러스, **재동의 필요**, 날짜별 가입·울림, 앱 빌드 분포(최신·권장·차단 표시), 알림 받을 수 있는 사람, 알람 문구 테마, 이번 달(목소리·직접 입력·광고 보상), 사용 기록, 날씨 데이터 상태, 최근 알림 |
 | 사용자(`/admin/users`) | 이메일·이름·계정 id 로 찾기(없으면 최근 가입 50명). 앱 빌드·마지막 접속·알림 기기·켜진 알람·플랜·상태(재동의 필요·탈퇴 대기), 그 사람에게 시험 발송 |
+| 사용자 상세(`/admin/users/:id`) | 지금 권한의 근거(스토어 구독·관리자 지급), 저장된 등급, 이번 달 직접 입력, 목소리 삭제 예정, **플러스 기간 지급**(7일·1개월·끝나는 날 지정 → 확인 화면 → 지급), 지급 기록과 회수 |
 | 알림 보내기(`/admin/push`) | 문구·받는 사람·미리보기·대상 수·시험 발송·전체 발송·발송 기록(이어 보내기) |
 
 - **스토어 다운로드 수는 아직 없다.** Play 콘솔 통계 보고서(GCS)와 App Store Connect 분석 보고서에만 있고, 두 곳의
@@ -97,6 +98,13 @@
 - iOS: APNs alert + `type = admin_notice`. 앱이 앞에 있으면 보이지 않는다(앱이 `willPresent` 로 띄우지 않는다).
 - 실패는 대개 앱을 지운 기기다 — 그런 토큰은 발송 중에 지운다(`pruneStaleTokens`·`pruneDeadApnsTokens`).
 
+## 사용자 상세와 기간 지급
+
+- 목록의 이메일을 누르면 상세로 간다. 지급 전에 **지금 권한이 어디서 오는지**(스토어 구독·기존 지급)를 보여 준다.
+- 지급은 두 걸음이다: 입력 → **확인 화면**(실제 끝 시각·겹침 안내·멱등 키) → 지급. 확인 화면을 두 번 보내도 한 번이다.
+- 회수는 행마다 '회수 확인' 체크를 해야 보낸다. 그 지급만 끝내고, 다른 권한이 없으면 지금부터 3일 뒤 목소리를 지운다.
+- 탈퇴 대기·시스템 계정에는 주지 않는다. 규칙 전문은 [`billing-lifecycle.md`](billing-lifecycle.md) 「관리자 기간 지급」.
+
 ## 오류 코드
 
 `ADMIN_UNCONFIGURED`(503) · `ADMIN_UNAUTHORIZED`(401) · `ADMIN_PUSH_COPY_INVALID`(400) ·
@@ -117,3 +125,4 @@
 | 시험 발송·전체 발송·걸음·광고 규칙 | `lib/admin/push-jobs.ts` | `admin-console.test.ts` 「문구」·「발송」 |
 | 화면·토큰·동작 | `lib/admin/ui.ts`·`lib/admin/pages.ts` | — |
 | 표 | 마이그레이션 #133(`user_app_presence`·`admin_push_jobs`) | `migrations.lock.json` |
+| 사용자 상세·기간 지급 | `routes/admin.ts`·`lib/admin/user-detail.ts`·`lib/admin/grant-pages.ts`·`lib/plan-grants.ts`(#134) | `plan-grants.test.ts` 「콘솔」 |

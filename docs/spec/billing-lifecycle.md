@@ -1488,6 +1488,57 @@ D9(기간 중 커플·가족을 여는 자리의 보류 규칙)는 2026-10-20 �
 | 회귀 테스트 — 기본 목소리 대체 | — | `RingSoundDecisionTest`(리허설 재현·강제 알람음·사용자 무음·옛 강등 행의 목소리 크기 0 은 무음) · `DefaultVoiceFallbackTest`(대체 목소리는 미나·편집 저장이 잠금을 잇는 표(`lockSurvivesSave`)·보관본 JSON 키 고정 포함·빈틈·세트 크기·묶지 못해도 테마 유지) · `DefaultVoiceLockRepositoryTest`(잠금·시각만 고친 저장은 잠금을 잇고 목소리를 바꾸면 비움·인사말 잠금에 편집기가 붙인 첫 테마는 편집 아님·잠금은 마지막 목소리를 안 보고 미나·목소리 삭제는 같은 테마의 미나 알람·오디오 없는 미나 알람·옛 모양 이전·복원·확정·확정이 보관본 클립을 전부 놓음·키 없는 보관본 파일도 놓음·교체 표식에 잠긴 행 제외·모자란 세트는 자리로 묶지도 울리지도 않음) · `RemoteAlarmMapperTest`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `VoiceReplacementCascadeTest`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈) · `AlarmOwnerScopedOperationsTest` | `DefaultVoiceSubstituteTests`(대체 목소리는 미나·예약 대체·내장 인사말·조건 클립·모자란 세트·테마 유지) · `RemoteAlarmMapperTests`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `FreePlanVoiceLockTests`(선별·두 번째 실행 0·보관본 참조 개수·같은 테마 클립 채우기는 잠금 유지·테마 없는 잠금에 편집기가 붙인 첫 테마도 잠금 유지·꺼진 알람은 다시 예약 안 함) · `VoiceReplacementCascadeTests`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈·잠긴 행 제외·확정이 보관본 클립을 전부 놓음) · `InaccessibleVoiceReconcileTests`(접근권을 잃으면 미나) · `PaidVoiceGateTests` · `AlarmEditDraftTests` |
 | 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·대조군·한도·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest` · `PersonalPromoNoticeTest`(`computed_at` 파싱·첫 결과 실패) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·잠금 갈래 `foregroundPlanLockAction`·미룬 잠금 `deferredPromoLapseLockDue`·plan 순번 `claimPlanAnswer`·이용권 화면 프로모 문구의 답) · `PlanScreenCurrentTest`(D4 — 개인 카드가 현재·결제 버튼 유지·예전 그대로인 네 갈래) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·종료 안내 판정·D12 `isFreeOnlyByPromoLapse`·`freePlanLockMayApply`·D4 `PlanScreenCurrent` — 안드로이드와 같은 표 + 카드가 없을 때의 폴백) · `AuthViewModelTests`(계정 요청 표·순번·진입 결과·`planAnsweredEntry`·토큰만 구른 답) · `BillingPreflightTests`(세션 밖 요청 실패의 표) · `PersonalPromoNoticeUITests`(이용권 화면 D4 — 뱃지·결제 버튼·문구가 개인 카드에 한 번 / 보류 행은 무료 카드·카드 위 한 줄 — 로컬 전용) |
 
+## 관리자 기간 지급 — **쓰지 않고, 읽을 때 계산한다** (2026-10-26)
+
+관리자 콘솔(사용자 상세)에서 한 사람에게 **기간을 정해 플러스를 준다.** 고객 지원·보정·운영 시험·전환 보호 용도다.
+CLAUDE.md 「유료 기능은 스토어 결제로만」의 두 번째 예외로 오너가 승인했다 — 앱에는 입력 칸이 없고 코드가 아니다.
+
+- **원시 `users.plan` 을 쓰지 않는다.** 표 `plan_grants`(#134)에 지급을 적고, 읽을 때 "원시 free + 유효 지급 → plus" 로
+  계산한다(`planWithGrantSql` — `lib/plan-grant-sql.ts`). 기간 한정 개인 플랜(`computedUserPlan`)은 이 값 위에 얹는다.
+  원시 plan 을 올리면 `repairOrphanedPaidPlan` 이 되돌리고, 결제 해지·만료가 지급 중인 사람을 무료로 내린다.
+  가짜 구독 행도 만들지 않는다 — 해지 버튼·`/billing/cancel` 이 엉뚱하게 움직인다.
+- **스토어 구독 행·영수증·청구일을 건드리지 않는다.** 결제자에게 줘도 환급·청구일 연기는 없다.
+- **시작은 언제나 지금**, 끝은 7일 / 한국 달력 1개월(같은 날짜가 없으면 말일의 같은 시각) / 끝나는 날 지정(그 한국 날짜
+  끝까지) 중 하나다. 한 번에 366일까지. 끝은 배타 경계다.
+- 겹친 지급은 **합집합**이다 — 기간을 더하지 않는다. 응답의 끝(`plan_grant.ends_at`)은 지금을 덮는 이어진 구간의 끝이다.
+- **월 직접 입력 한도를 새로 채우지 않는다.** 같은 달 사용량을 그대로 이어 쓴다(지급은 등급만 바꾼다).
+- 같은 확인 화면을 두 번 보내도 한 번이다(`request_key` UNIQUE). 회수는 그 지급만 끝낸다 — 다른 지급·구독은 그대로다.
+- 지급과 함께 걸려 있던 목소리 보관 예약을 푼다. 반납된 클론은 다음 사용 때 원본으로 다시 만든다.
+- 결제가 끝나도 지급이 남아 있으면 **클론을 반납하지 않는다**(`syncUserPlanAfterCancel`). 유료 판정
+  `hasActivePaidEntitlement` 은 지급도 유료로 친다 — 지급 중에는 보관이 걸리지 않고 스윕이 지우지 않는다.
+- **끝난 뒤**: 5분 크론의 `settleEndedPlanGrants` 가 지급마다 한 번(`settled_at`) 뒷정리한다. 다른 유료 권한(구독·다른
+  지급·기간 한정 개인 플랜)이 없으면 결제 만료와 같은 일을 한다 — 클론 반납, **그 처리 시각부터** 3일 보관. 처리가 늦었다고
+  지난 끝 시각으로 소급해 보관을 줄이지 않고, 이미 더 늦은 기한이 걸려 있으면 앞당기지 않는다. 회수는 곧바로 같은 정리를
+  한다. 실제 삭제 직전에 스윕이 권한을 한 번 더 본다.
+- **기간 한정 개인 플랜의 종료 전환 대상이 아니다**(`PROMO_END_TARGET` 이 유효 지급을 뺀다). 지급이 끝나면 위 뒷정리가
+  보관을 건다 — 행사의 약속 시각을 다시 쓰지 않는다.
+- API: 계정 응답의 `user.plan_grant` 와 `GET /billing/subscription` 최상위 `plan_grant` = `{ ends_at, computed_at }` 또는
+  `null`(shared `PlanGrantSchema`). **지급 때문에 플러스일 때(원시 plan 이 free)만** 싣는다 — 구독자에게는 싣지 않는다.
+  ⚠ 응답의 `plan` 과 `plan_grant` 는 **한 순간·한 문장**으로 계산한다(`loadPlanGrantAnswer`, 프로모와 같은 `promo.now`) — 따로
+  계산하면 그 사이 지급이 끝났을 때 `plan: plus` 가 기한 없이 나간다(Codex #941).
+- **행사와 지급이 둘 다 원시 free 를 덮으면 더 늦게 끝나는 기한 하나만 싣는다**(`composeLimitedPlanFields`, Codex #941) —
+  짧은 지급이 행사를 가리면 오프라인 앱이 아직 플러스인 사람을 일찍 자르고, 행사 조각이 더 긴 지급을 가리면 '행사 종료 뒤
+  목소리 삭제' 를 거짓으로 말한다. 행사 조각은 언제나 **원시** plan 으로 계산한다.
+- 회수하면 등급이 그대로여도(다른 지급이 남음) 앱에 알린다 — 겹친 지급의 끝이 당겨졌을 수 있다. 뒷정리는 탈퇴 대기
+  계정도 똑같이 한다(유예 중 다시 로그인해 철회해도 클론 반납·보관이 빠지지 않게).
+- **앱은 이 값을 기간 한정 개인 플랜과 같은 오프라인 기한으로 읽는다**(Codex #941 P2). 끝 전에 계산된 `plus` 캐시는 끝 뒤에
+  무료로 읽는다 — 서버의 뒷정리·푸시는 오프라인 기기를 고치지 못하므로, 그 기기(특히 울림 경로)가 지급이 끝난 뒤에도 등록
+  목소리를 쓰지 않게 하는 자리가 이것이다. 안드로이드는 `limitedPlanEndsAt`(`ui/billing/PersonalPromo.kt`)이 프로모 끝 또는
+  지급 끝을 `PlanPromoStamp` 로 묶고 세션·권한 스냅샷에 plan 과 한 벌로 적는다. iOS 는 `AuthUser.decodePlanGrant` 가 지급을
+  `personalPromo` 자리로 읽고(종료 안내 창 `notice_from` 은 없다), 구독 응답은 `limitedPlan` 이 같은 일을 한다. 이용권 화면은
+  "플러스 무료 이용 중 · …까지" 를 말한다(양 앱 같은 문구). 회귀 테스트: 안드로이드 `PlanGrantExpiryTest`, iOS
+  `PersonalPromoTests` 「관리자 기간 지급」.
+- 탈퇴 파기가 지급 기록을 지운다. 지급자는 콘솔이 비밀번호 하나라 `admin-console` 로 적힌다.
+
+| 규칙 | 백엔드 | 테스트 |
+| --- | --- | --- |
+| 표 | 마이그레이션 #134 `plan_grants` | `migrations.lock.json` |
+| 읽기 계산 | `lib/plan-grant-sql.ts` → `routes/auth.ts`·`tts.ts`·`voice-profile.ts`·`alarm-mutation.ts`·`ads.ts`·`billing-query.ts`·`lib/admin/metrics.ts` | `plan-grants.test.ts` 「지급과 읽기」 |
+| 유료 판정·결제 종료 | `lib/billing-cancel.ts` 의 `isPaidEntitlementRow`·`hasActivePlanGrant`·`syncUserPlanAfterCancel` | `plan-grants.test.ts` 「끝난 지급의 뒷정리」 |
+| 지급·회수·뒷정리 | `lib/plan-grants.ts` · 크론 `index.ts` | `plan-grants.test.ts` |
+| 행사 종료 제외 | `lib/personal-promo-end.ts` 의 `PROMO_END_TARGET` | `plan-grants.test.ts` |
+| 콘솔 | `routes/admin.ts`·`lib/admin/user-detail.ts`·`lib/admin/grant-pages.ts` | `plan-grants.test.ts` 「콘솔」 |
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |

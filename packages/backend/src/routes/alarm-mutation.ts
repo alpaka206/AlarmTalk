@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { planWithGrantSql } from '../lib/plan-grant-sql';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
@@ -256,7 +257,7 @@ alarmMutation.post('/', async (c) => {
   }
 
   const user = await db.execute({
-    sql: 'SELECT plan FROM users WHERE id = ?',
+    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ?`,
     args: [userId],
   });
   const creatorPlanValue = user.rows.length > 0 ? user.rows[0]!.plan : undefined;
@@ -431,7 +432,7 @@ alarmMutation.patch('/:id', async (c) => {
   const existing = await db.execute({
     sql: `SELECT a.id, a.time, a.repeat_days, a.is_active,
                  a.message_id, a.mode, a.wake_mode, a.voice_profile_id,
-                 a.bucket_id, u.plan AS user_plan
+                 a.bucket_id, ${planWithGrantSql('u')} AS user_plan
           FROM alarms a
           LEFT JOIN users u ON u.google_id = a.user_id OR u.id = a.user_id
           WHERE a.id = ? AND a.user_id IN (${inPlaceholders(patchOwnerIds)})`,

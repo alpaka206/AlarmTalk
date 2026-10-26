@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { planWithGrantSql } from '../lib/plan-grant-sql';
 import { jsonError } from '../lib/api-error';
 import { logStructured } from '../lib/logger';
 import { AdMobKeysBusyError, verifyAdMobCallback } from '../lib/admob-ssv';
@@ -51,7 +52,7 @@ ads.get('/admob-ssv', async (c) => {
 
   const db = getDB(c.env);
   const user = await db.execute({
-    sql: `SELECT plan FROM users WHERE id = ? AND deletion_status = 'active' LIMIT 1`,
+    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? AND deletion_status = 'active' LIMIT 1`,
     args: [callback.userId],
   });
   if (user.rows.length === 0) return skip('user');

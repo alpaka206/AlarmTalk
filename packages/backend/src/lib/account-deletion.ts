@@ -377,6 +377,11 @@ export async function purgeUserAccount(
       sql: `DELETE FROM user_app_presence WHERE user_id = ?`,
       args: [userPk],
     });
+    // 관리자 기간 지급 기록(#134) — 탈퇴하면 함께 지운다.
+    writes.push({
+      sql: `DELETE FROM plan_grants WHERE user_id = ?`,
+      args: [userPk],
+    });
 
     writes.push({
       sql: `DELETE FROM generated_audio_assets

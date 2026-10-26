@@ -375,6 +375,9 @@ internal fun AlarmListScreen(
                         onCancelSubscription = onCancelSubscription,
                         onRestorePurchases = onRestorePurchases,
                         personalPromo = planScreenPersonalPromo,
+                        // 관리자 기간 지급의 끝 — 구독 응답이 있으면 그 값, 없으면 계정 응답의 값.
+                        planGrantEndsAt = subscriptionResponse?.planGrant?.endsAt
+                            ?: authSession?.user?.planGrant?.endsAt,
                     )
                 }
             }

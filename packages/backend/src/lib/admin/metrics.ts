@@ -7,6 +7,7 @@
  * 시각 칸은 형식이 섞여 있다(`users.created_at` 은 `2026-10-22 01:10:26`, `usage_events.occurred_at` 은
  * `2026-10-23T06:25:01.652Z`). 문자열로 비교하지 말고 `julianday()` 로 비교하고, 날짜는 한국 시각으로 자른다.
  */
+import { planWithGrantSql } from '../plan-grant-sql';
 import type { Client } from '@libsql/client/web';
 import { GENERAL_REQUIRED_CONSENTS, latestConsentsFromRows, missingConsentTypesFrom } from '../consent';
 
@@ -291,7 +292,7 @@ export async function searchUsers(db: Client, query: string): Promise<UserRow[]>
   }
   args.push(50);
   const res = await db.execute({
-    sql: `SELECT u.id, u.email, u.name, u.plan, u.created_at, u.deletion_status,
+    sql: `SELECT u.id, u.email, u.name, ${planWithGrantSql('u')} AS plan, u.created_at, u.deletion_status,
                  (SELECT app_version FROM user_app_presence p WHERE p.user_id = u.id AND p.platform = 'android') AS android,
                  (SELECT app_version FROM user_app_presence p WHERE p.user_id = u.id AND p.platform = 'ios') AS ios,
                  (SELECT MAX(last_seen_at) FROM user_app_presence p WHERE p.user_id = u.id) AS last_seen,

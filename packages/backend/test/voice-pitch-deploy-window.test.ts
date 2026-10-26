@@ -46,6 +46,8 @@ async function succeededRegistrations(): Promise<number> {
 
 beforeAll(async () => {
   await runMigrationsRange(db, 1, 127);
+  // 등급 읽기가 관리자 기간 지급 표(#134)를 본다 — 이 테스트가 재는 창(#128 전)과 무관하니 그 표만 더한다.
+  await runMigrationsRange(db, 134, 134);
   const columns = await db.execute("SELECT name FROM pragma_table_info('voice_profiles')");
   expect(columns.rows.map((r) => String(r.name))).not.toContain('pitch_semitones');
 });

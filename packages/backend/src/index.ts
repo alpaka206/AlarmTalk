@@ -537,6 +537,15 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     captureCron('scheduled.subscription_expiry', err);
   }
 
+  // 관리자 기간 지급의 뒷정리 — 끝났거나 회수된 지급마다 한 번(다른 권한이 없으면 클론 반납 + 3일 보관).
+  // 지급 중인 계정은 위 만료 처리·보관 스윕이 유료로 본다(`hasActivePaidEntitlement`).
+  try {
+    const { settleEndedPlanGrants } = await import('./lib/plan-grants');
+    await settleEndedPlanGrants(db, env, now);
+  } catch (err) {
+    captureCron('scheduled.plan_grant_settle', err);
+  }
+
   // 기간 한정 개인 플랜 종료 전환 — **폴백**(틱당 3명). 본 처리는 위의 전용 크론이 하고, 이건
   // 전용 크론이 빠져 있어도 전환이 멈추지 않게 둔다. 끝 전이면 DB 를 부르지 않는다.
   try {

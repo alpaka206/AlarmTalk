@@ -3,6 +3,8 @@ import type { Client } from '@libsql/client/web';
 import type { Env, AppEnv } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { getDB } from '../lib/db';
+import { planWithGrantSql } from '../lib/plan-grant-sql';
+import { composeLimitedPlanFields, loadPlanGrantAnswer } from '../lib/plan-grants';
 import { logRouteError, logStructured } from '../lib/logger';
 import { errorBody } from '../lib/api-error';
 import type { ErrorCode } from '@alarmtalk/shared';
@@ -570,6 +572,7 @@ auth.post('/register', async (c) => {
           plan: computedUserPlan('free' as const, promo),
           // 방금 만든 계정이라 구독 행이 없다 — 끝나면 종료 전환 대상이다.
           personal_promo: personalPromoField('free', promo, { hasActiveSubscriptionRow: false }),
+          plan_grant: null,
           dynamic_prompt_settings: EMPTY_DYNAMIC_PROMPT_SETTINGS,
         },
       },
@@ -614,7 +617,7 @@ auth.post('/login', async (c) => {
 
   try {
     const result = await db.execute({
-      sql: `SELECT id, google_id, email, password_hash, name, plan, token_epoch,
+      sql: `SELECT id, google_id, email, password_hash, name, ${planWithGrantSql('users')} AS plan, token_epoch,
                    deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users WHERE email = ?`,
       args: [normalizedEmail],
@@ -671,7 +674,13 @@ auth.post('/login', async (c) => {
       row as unknown as Record<string, unknown>,
     );
     const promo = resolvePersonalPromo(c.env);
-    const personalPromo = await loadPersonalPromoField(db, String(row.id), row.plan, promo);
+    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
+    const grantAnswer = await loadPlanGrantAnswer(db, String(row.id), row.plan, promo.now);
+    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
+    const { personalPromo, planGrant } = composeLimitedPlanFields(
+      await loadPersonalPromoField(db, String(row.id), grantAnswer.rawPlan, promo),
+      grantAnswer.planGrant,
+    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
@@ -697,8 +706,9 @@ auth.post('/login', async (c) => {
         email: row.email,
         name: row.name ?? '',
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
-        plan: computedUserPlan(row.plan, promo) ?? 'free',
+        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
         personal_promo: personalPromo,
+        plan_grant: planGrant,
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -737,7 +747,7 @@ auth.post('/google', async (c) => {
     const name = clampDisplayName(google.name ?? '');
 
     const existing = await db.execute({
-      sql: `SELECT id, google_id, email, name, plan, token_epoch,
+      sql: `SELECT id, google_id, email, name, ${planWithGrantSql('users')} AS plan, token_epoch,
                    deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users
             WHERE google_id = ? OR email = ?
@@ -824,7 +834,13 @@ auth.post('/google', async (c) => {
         : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
     const promo = resolvePersonalPromo(c.env);
-    const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
+    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
+    const grantAnswer = await loadPlanGrantAnswer(db, userId, rawPlan, promo.now);
+    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
+    const { personalPromo, planGrant } = composeLimitedPlanFields(
+      await loadPersonalPromoField(db, userId, grantAnswer.rawPlan, promo),
+      grantAnswer.planGrant,
+    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
@@ -850,8 +866,9 @@ auth.post('/google', async (c) => {
         email,
         name: effectiveName,
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
-        plan: computedUserPlan(rawPlan, promo) ?? 'free',
+        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
         personal_promo: personalPromo,
+        plan_grant: planGrant,
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -925,7 +942,7 @@ auth.post('/apple', async (c) => {
     const name = clampDisplayName(parsed.data.full_name ?? '');
 
     const existing = await db.execute({
-      sql: `SELECT id, apple_id, email, name, plan, token_epoch,
+      sql: `SELECT id, apple_id, email, name, ${planWithGrantSql('users')} AS plan, token_epoch,
                    deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users
             WHERE apple_id = ? OR email = ?
@@ -1042,7 +1059,13 @@ auth.post('/apple', async (c) => {
         : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
     const promo = resolvePersonalPromo(c.env);
-    const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
+    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
+    const grantAnswer = await loadPlanGrantAnswer(db, userId, rawPlan, promo.now);
+    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
+    const { personalPromo, planGrant } = composeLimitedPlanFields(
+      await loadPersonalPromoField(db, userId, grantAnswer.rawPlan, promo),
+      grantAnswer.planGrant,
+    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
@@ -1068,8 +1091,9 @@ auth.post('/apple', async (c) => {
         email: effectiveEmail,
         name: effectiveName,
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
-        plan: computedUserPlan(rawPlan, promo) ?? 'free',
+        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
         personal_promo: personalPromo,
+        plan_grant: planGrant,
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -1118,7 +1142,7 @@ auth.get('/me', async (c) => {
   try {
     const db = getDB(c.env);
     const result = await db.execute({
-      sql: `SELECT id, email, name, plan, token_epoch, deletion_status, dynamic_prompt_settings_json
+      sql: `SELECT id, email, name, ${planWithGrantSql('users')} AS plan, token_epoch, deletion_status, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [payload.sub, payload.sub],
     });
@@ -1171,7 +1195,13 @@ auth.get('/me', async (c) => {
       c.env.JWT_SECRET,
     ).catch(() => null);
     const promo = resolvePersonalPromo(c.env);
-    const personalPromo = await loadPersonalPromoField(db, String(row.id), row.plan, promo);
+    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
+    const grantAnswer = await loadPlanGrantAnswer(db, String(row.id), row.plan, promo.now);
+    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
+    const { personalPromo, planGrant } = composeLimitedPlanFields(
+      await loadPersonalPromoField(db, String(row.id), grantAnswer.rawPlan, promo),
+      grantAnswer.planGrant,
+    );
     return c.json({
       ...(rolledToken ? { token: rolledToken } : {}),
       user: {
@@ -1180,8 +1210,9 @@ auth.get('/me', async (c) => {
         name: row.name ?? '',
         // ⚠ **계산값**(기간 한정 개인 플랜). 앱의 판정기·울림 캐시가 이 값을 `users.plan` 으로
         //   적는다 — 구버전 앱도 이것만으로 개인 기능이 열린다. 끝나면 곧바로 'free' 가 된다.
-        plan: computedUserPlan(row.plan, promo) ?? 'free',
+        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
         personal_promo: personalPromo,
+        plan_grant: planGrant,
         // 탈퇴 유예 상태 — 클라가 복구 전용 화면 게이팅에 쓴다(누락 시 active 로 오인해 진입).
         deletion_status: (row.deletion_status as string | null) ?? 'active',
         dynamic_prompt_settings: dynamicPromptSettings,
