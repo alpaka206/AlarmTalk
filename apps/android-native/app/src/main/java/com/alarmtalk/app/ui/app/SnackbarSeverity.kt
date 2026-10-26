@@ -125,6 +125,9 @@ internal object SnackbarSeverities {
         R.string.api_error_voice_pitch_locked,
         R.string.api_error_alarm_not_found,
         R.string.api_error_tts_generation_failed,
+        // 아침 소식(`docs/spec/morning-briefing.md` §8)
+        R.string.api_error_briefing_invalid_interests,
+        R.string.api_error_briefing_corp_not_found,
     )
 
     val info: Set<Int> = setOf(
@@ -142,6 +145,7 @@ internal object SnackbarSeverities {
         R.string.msg_voice_delete_login_required,
         R.string.msg_voice_tts_generate_login_required,
         R.string.msg_voice_tts_audio_load_login_required,
+        R.string.briefing_login_required,
         R.string.r3misc_session_expired,
         R.string.api_error_session_expired,
         R.string.r3misc_google_signin_unavailable,
@@ -155,6 +159,7 @@ internal object SnackbarSeverities {
         R.string.msg_register_verify_email_first,
         R.string.msg_nickname_length_invalid,
         R.string.msg_voice_name_required,
+        R.string.api_error_briefing_invalid_query,
         // 하기 전에 필요한 것 — 권한·이용권·동의
         R.string.msg_permission_notifications_required,
         R.string.msg_permission_exact_alarms_required,
@@ -174,6 +179,8 @@ internal object SnackbarSeverities {
         R.string.msg_voice_replacement_settling,
         R.string.msg_verification_code_debug,
         R.string.r3app_update_downloaded,
+        R.string.briefing_not_configured,
+        R.string.api_error_briefing_corp_codes_not_ready,
     )
 
     @Volatile

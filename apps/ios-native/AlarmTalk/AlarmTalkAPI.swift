@@ -477,6 +477,38 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.variantIndex
     }
 
+    // MARK: - 아침 소식 (`docs/spec/morning-briefing.md` §8 — 화면을 열 때·누를 때만 부른다)
+
+    func searchBriefingCompanies(query: String, token: String) async throws -> [BriefingCompany] {
+        var components = URLComponents()
+        components.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "limit", value: "20")]
+        let response: BriefingCompanySearchResponse = try await request(
+            "briefing/companies/search?\(components.percentEncodedQuery ?? "")",
+            token: token
+        )
+        return response.companies
+    }
+
+    func briefingInterests(token: String) async throws -> [BriefingInterest] {
+        let response: BriefingInterestsResponse = try await request("briefing/interests", token: token)
+        return response.interests
+    }
+
+    /// 관심 기업을 **통째 교체**한다. 응답의 목록이 곧 화면의 목록이다.
+    func saveBriefingInterests(corpCodes: [String], token: String) async throws -> [BriefingInterest] {
+        let response: BriefingInterestsResponse = try await request(
+            "briefing/interests",
+            method: "PUT",
+            token: token,
+            body: BriefingInterestsPutRequest(corpCodes: corpCodes)
+        )
+        return response.interests
+    }
+
+    func briefingToday(token: String) async throws -> BriefingTodayResponse {
+        try await request("briefing/today", token: token)
+    }
+
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse {
         try await request("user/me", method: "PATCH", token: token, body: requestBody)
     }

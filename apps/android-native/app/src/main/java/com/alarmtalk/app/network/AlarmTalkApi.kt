@@ -8,4 +8,5 @@ interface AlarmTalkApi :
     BillingApi,
     HolidayApi,
     PushApi,
-    UsageEventApi
+    UsageEventApi,
+    BriefingApi

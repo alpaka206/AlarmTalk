@@ -90,6 +90,7 @@ extension View {
         isPresented: Binding<Bool>,
         title: String,
         saveTitle: String = String(localized: "저장"),
+        cancelTitle: String = String(localized: "취소"),
         saveEnabled: Bool = true,
         onCancel: @escaping () -> Void,
         onSave: @escaping () -> Void,
@@ -100,6 +101,7 @@ extension View {
                 FormSheet(
                     title: title,
                     saveTitle: saveTitle,
+                    cancelTitle: cancelTitle,
                     saveEnabled: saveEnabled,
                     onCancel: onCancel,
                     onSave: onSave,

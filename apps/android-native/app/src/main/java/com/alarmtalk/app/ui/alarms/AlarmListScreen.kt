@@ -129,6 +129,8 @@ internal fun AlarmListScreen(
     /** 목소리 탭의 '이 목소리로 새 알람 만들기' — 그 목소리를 처음 고른 새 알람 편집기를 연다. */
     onCreateAlarmWithVoice: (String) -> Unit = {},
     onOpenSettings: () -> Unit,
+    /** 더보기의 '아침 소식'(`docs/spec/morning-briefing.md` §8). */
+    onOpenBriefing: () -> Unit,
     onDeleteAccount: () -> Unit,
     themeMode: ThemeMode,
     onChangeTheme: (ThemeMode) -> Unit,
@@ -422,6 +424,7 @@ internal fun AlarmListScreen(
                         onChangeTheme = onChangeTheme,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         onOpenSettings = onOpenSettings,
+                        onOpenBriefing = onOpenBriefing,
                         onDeleteAccount = onDeleteAccount,
                     )
                 }

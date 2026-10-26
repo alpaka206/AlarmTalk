@@ -91,6 +91,15 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     // ── 알람·문구 ─────────────────────────────────────────────────────────
     "ALARM_NOT_FOUND" to R.string.api_error_alarm_not_found,
     "TTS_GENERATION_FAILED" to R.string.api_error_tts_generation_failed,
+
+    // ── 아침 소식 ─────────────────────────────────────────────────────────
+    // HTTP 로 오는 다섯이다(`docs/spec/morning-briefing.md` §8 「문구 표」). 응답 본문의 `errors[].code`
+    // (`BRIEFING_SOURCE_*`)는 화면의 표(`BriefingPresentation.sourceErrorMessageRes`)가 받는다. iOS 짝과 같은 문장이다.
+    "BRIEFING_NOT_CONFIGURED" to R.string.briefing_not_configured,
+    "BRIEFING_CORP_CODES_NOT_READY" to R.string.api_error_briefing_corp_codes_not_ready,
+    "BRIEFING_INVALID_QUERY" to R.string.api_error_briefing_invalid_query,
+    "BRIEFING_INVALID_INTERESTS" to R.string.api_error_briefing_invalid_interests,
+    "BRIEFING_CORP_NOT_FOUND" to R.string.api_error_briefing_corp_not_found,
 )
 
 /** 이 코드에 정해 둔 문구가 있으면 돌려준다. 없으면 null — 부르는 쪽이 폴백을 쓴다. */
