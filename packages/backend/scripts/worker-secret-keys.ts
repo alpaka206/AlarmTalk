@@ -74,6 +74,10 @@ export const WORKER_SECRET_KEYS = [
   // 기간 한정 개인 플랜의 **시작 스위치**(ISO 8601, 시간대 포함). 없으면 프로모는 꺼져 있다.
   // `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
   'PERSONAL_PROMO_STARTS_AT',
+  // 합성 예산(`lib/tts-budget.ts`) — 운영자가 정하는 숫자. 비어 있으면 대량 작업은 dry-run, 공급자 잔여는 조회하지 않는다.
+  'TTS_RERENDER_BATCH_MAX_CHARS',
+  'TTS_RERENDER_CONCURRENCY',
+  'TTS_PROVIDER_REMAINING_ALERT_CHARS',
 ] as const;
 
 /**
@@ -83,8 +87,10 @@ export const WORKER_SECRET_KEYS = [
  *   `@alarmtalk/shared` 의 `PERSONAL_PROMO.endsAt` 하나다. 운영에 리허설 값이 올라가면
  *   프로모가 조용히 조기 종료·연장된다(워커도 production 에서는 이 값을 읽지 않는다 —
  *   `lib/personal-promo.ts` — 이중 잠금이다).
+ * - `TTS_DEV_MONTHLY_CHAR_BUDGET` — dev 의 월 합성 글자 상한. 운영 요청을 이 숫자로 막지 않는다(워커도 production 에서는
+ *   읽지 않는다 — `lib/tts-budget.ts`).
  */
-export const DEV_ONLY_SECRET_KEYS = ['PERSONAL_PROMO_ENDS_AT'] as const;
+export const DEV_ONLY_SECRET_KEYS = ['PERSONAL_PROMO_ENDS_AT', 'TTS_DEV_MONTHLY_CHAR_BUDGET'] as const;
 
 export const REQUIRED_SECRET_KEYS = [
   'TURSO_DATABASE_URL',

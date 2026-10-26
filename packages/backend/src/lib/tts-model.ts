@@ -19,8 +19,10 @@ export const TTS_MODEL_ID = 'eleven_v4_turbo';
  * 보내도 200 으로 받고 조용히 무시한다(2026-09-29 실측: speed 0.7 과 1.2 의 발화 길이가 4.68초·4.81초).
  * 말 속도는 문장부호(`…`·쉼표)로만 조절된다.
  *
- * ⚠ 이 값은 캐시 키에 들어가지 않는다(`computeTtsCacheKey`) — 바꾸면 이미 만든 오디오가 옛 설정 그대로
- *   서빙된다. 시청본 지문(`scripts/stock-preview-fingerprint.ts`)에는 들어간다.
+ * ⚠ 바꾸면 **캐시 키가 갈린다**(2026-10-26 — `lib/render-fingerprint.ts` 의 「렌더 부가 설정」). 예전에는 키에 들어가지
+ *   않아 바꿔도 옛 설정으로 만든 오디오가 그대로 서빙됐다. 지금 값은 기준값(`BASELINE_RENDER_EXTRAS`)이라 키에서
+ *   빠진다 — 쌓인 캐시를 한꺼번에 버리지 않는다. 바꾸면 직접 입력은 **세지 않고** 다시 굽고(`docs/spec/tts-render-and-budget.md`
+ *   §2), 스톡은 게시 스크립트의 교체 갈래로 간다. 시청본 지문(`scripts/stock-preview-fingerprint.ts`)에도 들어간다.
  */
 export const TTS_VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.8 } as const;
 
@@ -33,3 +35,22 @@ export const TTS_VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.8 } as c
  *   크기를 재서 이 값을 다시 정한다.
  */
 export const TTS_LOUDNESS_BOOST_DB = 4;
+
+/**
+ * **합성 글자를 만드는 규칙의 세대** — 공백 접기(`audio-cache.ts` 의 `normalizeTtsText`), 글자 웃음 → `[laughs]`
+ * (`lib/typed-laughter.ts`), 화면 문구 → 합성 문구 같은 **같은 입력에서 다른 글자를 제공자에게 보내게 되는** 규칙을
+ * 바꾸면 올린다. 렌더 지문과 캐시 키(기준값과 다를 때만)에 들어간다(`lib/render-fingerprint.ts`).
+ */
+export const TTS_TEXT_NORMALIZATION_VERSION = 1;
+
+/**
+ * **받은 소리를 굽는 셈의 세대** — 높이(`shiftVoicePitch`)·음량(`boostLoudness`)·MP3 인코더 설정처럼 같은 PCM 에서 다른
+ * 바이트를 내게 되는 변경이면 올린다(리미터를 더할 때 등). 렌더 지문과 캐시 키(기준값과 다를 때만)에 들어간다.
+ */
+export const TTS_POSTPROCESS_VERSION = 1;
+
+/**
+ * 서버가 만드는 소리의 **최종 형식**(코덱·샘플레이트·비트레이트). 굽는 갈래(`voice-pitch.ts` — PCM 44.1 kHz → MP3
+ * 128 kbps)와 굽지 않는 갈래(`elevenlabs.ts` 의 `ELEVENLABS_TTS_OUTPUT_FORMAT`)가 같은 값이다 — 테스트가 셋을 맞대 본다.
+ */
+export const TTS_FINAL_AUDIO_FORMAT = 'mp3_44100_128';

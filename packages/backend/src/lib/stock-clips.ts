@@ -17,6 +17,8 @@ import {
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
+import { renderStamp, serverRenderSettings } from './render-fingerprint';
+import { measureSynthesis } from './tts-usage';
 
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
@@ -1387,7 +1389,11 @@ export async function generateStockClip(
     loudnessBoostDb: attempt.loudnessBoostDb,
   });
 
-  const generated = await attempt.synthesize();
+  // 합성 한 번을 장부에 적는다(성공·실패·글자·지연 — `lib/tts-usage.ts`). 원장에는 이 렌더의 지문을 함께 적는다.
+  const generated = await measureSynthesis(db, { kind: 'stock_prerender', text: synthesisText }, () =>
+    attempt.synthesize(),
+  );
+  const stamp = await renderStamp(serverRenderSettings({ ...attempt, language }));
   const bytes = generated.bytes;
   await assertCloneAuthorization();
 
@@ -1589,13 +1595,15 @@ export async function generateStockClip(
         // ⚠ **같은 해시면 게시 시각만 올린다**(Codex #802). 말투 재렌더는 보이스가 같아, 모델이 우연히 같은
         // 문장을 내면 해시가 같다 — 무시하면 대장의 게시 시각이 요청 전 그대로라 이 클립이 영영 '빠진 것'
         // 으로 세어지고 매 회차 다시 합성된다(큐가 끝나지 않는다). 연결(`message_id`)은 건드리지 않는다.
+        // 렌더 지문(#139)도 함께 — 같은 해시면 지문도 이번 렌더 것으로 올린다(바이트가 이번 렌더다).
         await tx.execute({
           sql: `INSERT INTO generated_audio_assets
                 (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                  model_id, language, request_hash, text,
-                 audio_url, audio_object_key, audio_format, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))
-                ON CONFLICT(request_hash) DO UPDATE SET created_at = excluded.created_at`,
+                 audio_url, audio_object_key, audio_format, render_fingerprint, render_revision, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))
+                ON CONFLICT(request_hash) DO UPDATE SET created_at = excluded.created_at,
+                  render_fingerprint = excluded.render_fingerprint, render_revision = excluded.render_revision`,
           args: [
             crypto.randomUUID(),
             target.ownerUserId,
@@ -1610,6 +1618,8 @@ export async function generateStockClip(
             audioUrl,
             audioObjectKey,
             generated.outputFormat,
+            stamp.fingerprint,
+            stamp.revision,
           ],
         });
         await claimKeyFromDeletionQueue(tx);
@@ -1643,8 +1653,8 @@ export async function generateStockClip(
       sql: `INSERT OR IGNORE INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
-             audio_url, audio_object_key, audio_format, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
+             audio_url, audio_object_key, audio_format, render_fingerprint, render_revision, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
       args: [
         crypto.randomUUID(),
         target.ownerUserId,
@@ -1659,6 +1669,8 @@ export async function generateStockClip(
         audioUrl,
         audioObjectKey,
         generated.outputFormat,
+        stamp.fingerprint,
+        stamp.revision,
       ],
     });
     await claimKeyFromDeletionQueue(tx);

@@ -64,6 +64,7 @@ import {
   systemStockTexts,
 } from '../src/lib/stock-clips.ts';
 import { computeTtsCacheKey, generatedTtsObjectKey, STOCK_TTS_CACHE_SCOPE } from '../src/lib/audio-cache.ts';
+import { renderStamp, stockPublishRenderSettings, type RenderStamp } from '../src/lib/render-fingerprint.ts';
 import { ledgerAudioUrlFor, replaceStockClipInPlace } from '../src/lib/stock-clip-replace.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
 import { TTS_LOUDNESS_BOOST_DB, TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
@@ -245,6 +246,7 @@ async function repairLedgerIfMissing(
   cacheKey: string,
   objectKey: string,
   synthesisText: string,
+  stamp: RenderStamp,
 ): Promise<'present' | 'repaired' | 'hash-taken'> {
   const existing = await db.execute({
     sql: 'SELECT 1 FROM generated_audio_assets WHERE audio_url = ? LIMIT 1',
@@ -256,12 +258,13 @@ async function repairLedgerIfMissing(
     sql: `INSERT INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
-             audio_url, audio_object_key, audio_format)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             audio_url, audio_object_key, audio_format, render_fingerprint, render_revision)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
       PROVIDER, target.providerVoiceId, TTS_MODEL_ID, target.language,
       cacheKey, synthesisText, `r2://${objectKey}`, objectKey, OUTPUT_FORMAT,
+      stamp.fingerprint, stamp.revision,
     ],
   });
   return 'repaired';
@@ -417,6 +420,16 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  // 원장의 렌더 지문 칸(#139)이 없으면 원장 INSERT 가 던져 행마다 실패한다 — 올린 뒤에 알게 되지 않게 먼저 본다.
+  const ledgerColumns = await db.execute('PRAGMA table_info(generated_audio_assets)');
+  if (!ledgerColumns.rows.some((row) => String(row.name) === 'render_fingerprint')) {
+    console.error(
+      `⚠ ${envName} DB 에 generated_audio_assets.render_fingerprint 가 없다 — 마이그레이션 #139 가 아직 안 돌았다.\n` +
+        '  배포(=마이그레이션) 뒤에 다시 돌릴 것.',
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   console.log(`환경 ${envName} · 버킷 ${bucket} · 대상 ${targets.length}개`);
 
@@ -445,6 +458,10 @@ async function main(): Promise<void> {
       });
       const objectKey = generatedTtsObjectKey(SYSTEM_VOICE_LIBRARY_USER_ID, cacheKey, OUTPUT_FORMAT);
       const audioUrl = `r2://${objectKey}`;
+      // 이 게시본의 렌더 지문(#139) — 시청본 MP3 를 음량만 올린 사본이라 굽는 길이 서버 합성과 다르다.
+      const stamp = await renderStamp(
+        stockPublishRenderSettings({ provider: PROVIDER, providerVoiceId: target.providerVoiceId, language: target.language }),
+      );
       const size = statSync(target.stagedPath).size;
 
       const existing = await publishedMessage(db, target);
@@ -457,7 +474,7 @@ async function main(): Promise<void> {
           continue;
         }
         const ledger = await repairLedgerIfMissing(
-          db, target, existing.id, cacheKey, objectKey, synthesisText,
+          db, target, existing.id, cacheKey, objectKey, synthesisText, stamp,
         );
         if (ledger === 'hash-taken') {
           failed += 1;
@@ -504,6 +521,8 @@ async function main(): Promise<void> {
           displayText,
           synthesisText,
           deliveryTagsJson,
+          renderFingerprint: stamp.fingerprint,
+          renderRevision: stamp.revision,
         });
         if (outcome === 'replaced') {
           replaced += 1;
@@ -566,12 +585,13 @@ async function main(): Promise<void> {
             sql: `INSERT INTO generated_audio_assets
                     (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                      model_id, language, request_hash, text,
-                     audio_url, audio_object_key, audio_format)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                     audio_url, audio_object_key, audio_format, render_fingerprint, render_revision)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             args: [
               crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
               PROVIDER, target.providerVoiceId, TTS_MODEL_ID, target.language,
               cacheKey, synthesisText, audioUrl, objectKey, OUTPUT_FORMAT,
+              stamp.fingerprint, stamp.revision,
             ],
           });
         }

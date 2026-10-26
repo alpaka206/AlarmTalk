@@ -3439,6 +3439,39 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_store_report_instances_date ON store_report_instances (processing_date)`,
     ],
   },
+  {
+    // **렌더 지문과 합성 사용량 장부**(2026-10-26, `docs/spec/tts-render-and-budget.md`).
+    //  - `generated_audio_assets.render_fingerprint`·`render_revision`: 그 소리를 만든 설정 전부의 지문과 전역 세대
+    //    (`lib/render-fingerprint.ts`). 이 마이그레이션 전에 만든 행은 NULL(설정 미상)이다 — 채워 넣지 않는다(무엇으로
+    //    만들었는지 행만 보고는 알 수 없다). 다시 구울 목록은 NULL 을 '지문 이전' 으로 따로 센다.
+    //  - `generated_audio_assets.logical_key`: 직접 입력의 **논리 결과**(누구의·어느 목소리 세대·언어·문구). 같은 논리
+    //    결과를 서비스가 새 설정으로 다시 구우면 세지 않는다. 옛 행은 NULL 이고, 그 행이 캐시로 다시 쓰일 때 채운다.
+    //  - `tts_synthesis_usage`: 요청 종류 × 결과 × KST 날짜의 합성 횟수·글자·지연. 사람을 가리키는 값이 없다.
+    // 새 칸을 쓰는 쓰기(원장 INSERT)는 칸이 없으면 트랜잭션째 롤백된다(배포 창 fail-closed — CLAUDE.md).
+    id: 139,
+    name: 'render-fingerprint-and-tts-usage',
+    statements: [
+      `ALTER TABLE generated_audio_assets ADD COLUMN render_fingerprint TEXT`,
+      `ALTER TABLE generated_audio_assets ADD COLUMN render_revision TEXT`,
+      `ALTER TABLE generated_audio_assets ADD COLUMN logical_key TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_logical
+        ON generated_audio_assets (user_id, logical_key)`,
+      `CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_revision
+        ON generated_audio_assets (render_revision)`,
+      `CREATE TABLE IF NOT EXISTS tts_synthesis_usage (
+        usage_day TEXT NOT NULL,
+        request_kind TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure')),
+        request_count INTEGER NOT NULL DEFAULT 0,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        character_count INTEGER NOT NULL DEFAULT 0,
+        latency_ms_total INTEGER NOT NULL DEFAULT 0,
+        latency_ms_max INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (usage_day, request_kind, outcome)
+      )`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

@@ -26,6 +26,7 @@
 | 사용자(`/admin/users`) | 이메일·이름·계정 id 로 찾기(없으면 최근 가입 50명). 앱 빌드·마지막 접속·알림 기기·켜진 알람·플랜·상태(재동의 필요·탈퇴 대기), 그 사람에게 시험 발송 |
 | 사용자 상세(`/admin/users/:id`) | 지금 권한의 근거(스토어 구독·관리자 지급), 저장된 등급, 이번 달 직접 입력, 목소리 삭제 예정, **플러스 기간 지급**(7일·1개월·끝나는 날 지정 → 확인 화면 → 지급), 지급 기록과 회수 |
 | 알림 보내기(`/admin/push`) | 문구·받는 사람·미리보기·대상 수·시험 발송·전체 발송·발송 기록(이어 보내기) |
+| 합성 운영(JSON — `/admin/tts/render-backlog`·`/admin/tts/usage`) | 다시 구울 목록·예상 글자·한 회차 계획(합성하지 않는다), 요청 종류별 합성 사용량·예산 설정·클론 슬롯 — 규칙은 [tts-render-and-budget.md](tts-render-and-budget.md) §4·§5 |
 
 - 스토어 다운로드 수는 크론이 두 스토어의 보고서에서 받아 온다 — 아래 「스토어 다운로드」.
 - 사람 계정만 센다 — 마이그레이션이 심은 시스템 계정(기본 목소리 보관용, `google_id` 가 `system:` 으로 시작)은 가입자·
@@ -187,3 +188,4 @@
 | 스토어 패널(빈 상태 셋·기록 없음) | `lib/admin/pages.ts` 의 `storePanel`·`lib/admin/ui.ts` 의 `columnChart` | `admin-store-downloads.test.ts` 「화면」 |
 | 스토어 표 | 마이그레이션 #138(`store_download_daily`·`store_download_sync`·`store_report_instances`) | `migrations.lock.json`·`account-purge-residue.test.ts`(개인정보 없음) |
 | 사용자 상세·기간 지급 | `routes/admin.ts`·`lib/admin/user-detail.ts`·`lib/admin/grant-pages.ts`·`lib/plan-grants.ts`(#134) | `plan-grants.test.ts` 「콘솔」 |
+| 합성 운영 보기(JSON) | `routes/admin.ts`·`lib/admin/tts-ops.ts`·`lib/render-backlog.ts`(#139) | `tts-render-budget.test.ts` 「관리자 JSON」 |
