@@ -1719,12 +1719,13 @@ final class VoiceStudioViewModel: ObservableObject {
 
         if let audioCache, !releasedKeys.isEmpty {
             // 참조로 세는 것: 대표 클립, **목소리로 우는** 알람의 클립 세트(알람 모드 행은 틀지 않는다),
-            // 무료 잠금 보관본이 붙든 원래 오디오 — 지우면 재결제 때 복원할 소리가 없다.
+            // 무료 잠금 보관본이 붙든 원래 오디오 — 지우면 재결제 때 복원할 소리가 없다. 받은 추가 팩(어느 계정이든)이 쥔
+            // 클립도 남긴다 — 팩 파일은 팩 지우기·개정 정리·기한 대체가 놓는다(코덱스 #960).
             let stillReferenced = Set(
                 alarmStore.alarms.compactMap { $0.audioCacheKey }
                     + alarmStore.alarms.filter { $0.playModeEnum != .alarmOnly }.flatMap { $0.bucketClipKeys ?? [] }
                     + alarmStore.alarms.flatMap { $0.preLockVoice?.referencedCacheKeys ?? [] }
-            )
+            ).union(VoicePackStore.heldClipCacheKeysOnDevice())
             let toRemove = releasedKeys.subtracting(stillReferenced)
             for key in toRemove {
                 try? audioCache.deleteCachedAudio(cacheKey: key)

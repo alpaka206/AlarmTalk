@@ -250,4 +250,49 @@ class VoicePackTest {
         // 팩 목소리가 아닌 id 로는 이 길을 쓸 수 없다.
         assertEquals(0, repository.degradeAlarmsUsingVoicePack(TEST_CLONE_VOICE_ID, expectedOwnerUserId = "user-a"))
     }
+
+    @Test
+    fun deletingAPackAlarmKeepsTheClipsAHeldPackOwns() = runBlocking {
+        val audioStore = AlarmAudioStore(context)
+        val key = voicePackCacheKey("c-w0")
+        audioStore.cacheGeneratedAudio(bytes = "audio-c-w0".toByteArray(), format = "mp3", rawAudioUri = null, cacheKey = key)
+        try {
+            VoicePackStore(context).upsert("user-a", heldPack())
+            VoicePackStore(context).upsert("user-b", heldPack())
+            assertTrue(key in VoicePackStore(context).heldClipCacheKeysOnDevice())
+            dao.upsert(packAlarm())
+            // 일반 알람 삭제는 팩이 쥔 클립을 지우지 않는다 — 지우면 '받음' 인 팩으로 오프라인 저장이 실패한다(코덱스 #960).
+            repository.deleteAlarm("pack-alarm")
+            assertNull(dao.getById("pack-alarm"))
+            assertTrue("받은 팩의 클립은 남는다", audioStore.hasCachedAudio(key))
+            // 한 계정이 팩을 지워도 다른 계정이 받아 두었으면 남긴다.
+            VoicePackStore(context).remove("user-a", "first-pack")
+            repository.releaseUnusedAudio(setOf(key))
+            assertTrue("다른 계정이 쥔 팩의 클립은 남는다", audioStore.hasCachedAudio(key))
+            // 아무 계정도 쥐지 않으면 놓는 쪽이 지운다.
+            VoicePackStore(context).remove("user-b", "first-pack")
+            repository.releaseUnusedAudio(setOf(key))
+            assertFalse(audioStore.hasCachedAudio(key))
+        } finally {
+            audioStore.deleteCachedAudioKeys(setOf(key))
+        }
+    }
+
+    /**
+     * 기한은 백그라운드에서도 지난다 — **진입마다** 저장된 기한으로 대체한다(코덱스 #960). 뷰모델은 단위 테스트에서 세울 수 없어
+     * (`EntryRefreshKeepsTokenTest` 와 같은 사정) 진입 구독이 대체를 부르는지 소스로 고정한다.
+     */
+    @Test
+    fun everyAppEntryRetiresDuePacksWithoutTheNetwork() {
+        val viewModel = java.io.File("src/main/java/com/alarmtalk/app/ui/main/MainViewModel.kt").readText()
+        val collector = viewModel.indexOf("AppSignals.appEntries.collect { entry ->")
+        assertTrue("진입 구독을 못 찾았다 — 이름이 바뀌었으면 이 테스트도 고칠 것.", collector >= 0)
+        val retire = viewModel.indexOf("retireDueVoicePacksOnEntry()", collector)
+        val refresh = viewModel.indexOf("refreshAppSession(rollToken = firstEntryRefresh)", collector)
+        assertTrue("진입 구독이 기한 지난 팩 대체를 부르지 않는다", retire in (collector + 1) until refresh)
+        val actions = java.io.File("src/main/java/com/alarmtalk/app/ui/main/MainViewModelVoicePacks.kt").readText()
+        val body = actions.substringAfter("internal fun MainViewModel.retireDueVoicePacksOnEntry()").substringBefore("\n}\n")
+        assertTrue("진입 대체는 저장된 기한으로만 한다(`retireDuePacks`)", body.contains("VoicePackDownloader.retireDuePacks("))
+        assertFalse("진입 대체는 네트워크를 부르지 않는다", body.contains("api."))
+    }
 }

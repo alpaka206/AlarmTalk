@@ -550,7 +550,10 @@ class AlarmRepository(
         stopRingingIfThisAlarm(alarmId)
         val cacheKey = current.audioCacheKey
         alarmDao.delete(current)
-        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+        // 받은 추가 팩의 클립은 알람이 없어도 팩이 쥔다 — 팩 지우기·개정 정리·기한 대체가 놓는다(코덱스 #960).
+        if (cacheKey == null || cacheKey !in VoicePackStore(context).heldClipCacheKeysOnDevice()) {
+            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+        }
         Log.i(TAG, "Deleted alarm id=$alarmId")
         recordAlarmEvent(UsageEvents.ALARM_DELETED, current)
         // ⚠ **오디오가 실제로 사라졌을 때만** '비사용중' 으로 적는다. 같은 캐시 키를 쓰는
@@ -1171,6 +1174,10 @@ class AlarmRepository(
                 stillReferenced.addAll(snapshot.referencedCacheKeys())
                 alarmAudioFileName(snapshot.localAudioUri)?.let(stillReferencedFiles::add)
             }
+        }
+        // 받은 추가 팩(어느 계정이든)이 쥔 클립도 남긴다 — 팩을 놓는 쪽은 목록에서 먼저 빼고 부른다(코덱스 #960).
+        if (keys.any { it.startsWith(VOICE_PACK_CACHE_KEY_PREFIX) }) {
+            stillReferenced.addAll(VoicePackStore(context).heldClipCacheKeysOnDevice())
         }
         keys.filter { it.isNotBlank() && it !in stillReferenced }.forEach { key ->
             alarmAudioStore.deleteCachedAudio(key)

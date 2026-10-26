@@ -133,7 +133,8 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
    `billing-lifecycle.md` 「목소리를 못 쓰게 되면」 과 같은 모양·같은 대체 목소리), 팩 파일을 지우고, 받은 팩 목록에서 뺀다.
    미나 클립은 기본 4종 선다운로드로 이미 폰에 있다.
 4. 대체는 **앱이 돌 때** 한다(앱 시작·전경 복귀·선다운로드 회차). 기한은 받아 둔 값으로 기기에서 판정하므로
-   그때 네트워크가 없어도 된다. ⚠ **울림 경로는 날짜도 네트워크도 보지 않는다** — 그래서 기한 뒤 앱을 한 번도 열지
+   그때 네트워크가 없어도 된다. 전경 복귀는 **어느 탭으로 돌아오든** 본다 — 목소리 탭 진입이나 세션 변화를 기다리지
+   않는다(기한은 백그라운드에 있는 동안에도 지난다). ⚠ **울림 경로는 날짜도 네트워크도 보지 않는다** — 그래서 기한 뒤 앱을 한 번도 열지
    않은 기기는 다음 실행까지 팩 파일로 운다(알고 두는 창이다. iOS 는 AlarmKit 예약에 소리가 이미 박혀 울릴 때 바꿀
    수도 없다).
 5. 목록에 팩이 **아예 없으면**(최소 빌드를 올렸거나 다른 나라에서 접속) 아무것도 하지 않는다 — 대체는 `withdrawn` 에
@@ -183,6 +184,9 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
     받다가 실패해도 '받음' 으로 남지 않는다. 빠진 클립이 남은 회차의 끝도 같다.
   - 상세를 기다리는 사이 사용자가 팩을 지웠으면 **되살리지 않는다**(다시 받지도 않는다). 그 사이 다른 받기가 개정을
     바꿨으면 그쪽을 둔다.
+- **받은 팩의 클립 파일은 팩이 쥔다** — 그 팩 목소리로 만든 알람을 지워도, 목소리 강등이 그 알람의 클립을 놓아도 지우지 않는다
+  (지우면 팩은 '받음' 인데 파일이 없어 오프라인 저장이 실패한다). 팩 파일을 놓는 것은 팩 지우기·개정 정리·기한 대체뿐이고,
+  그때도 이 기기의 **다른 계정**이 같은 팩을 받아 두었으면 남긴다.
 - 개정이 바뀌어 클립 id 가 바뀌면 **이미 저장한 알람은 묶은 클립 그대로 운다**(다시 저장하면 새 클립을 묶는다). 놓은 옛 클립
   파일은 어떤 알람도 안 쓸 때만 지운다.
 - 카탈로그에 없는 팩(최소 빌드·허용 지역)은 받으려 하지 않는다 — 서버가 404 로 답한다. 받아 둔 파일·알람은 그대로 둔다.
@@ -240,6 +244,8 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
 | 목소리 탭 '추가 팩'·팩 상세 | — | `ui/voices/VoicePackSection.kt` | `Views/Voices/VoicePackSection.swift` |
 | 받는 중으로 되돌리기·지운 팩 되살리지 않기 | — | `data/VoicePacks.kt` 의 `HeldVoicePack.fromDetail`, `sync/StockClipPrefetchWorker.kt` 의 `refreshDetailIfNeeded`·`downloadPack` | `VoicePacks.held(from:previous:)`, `VoicePackStore.adoptRevisedDetail`·`finishDownload` |
 | 개정에서 빠진 옛 클립 파일 지우기(알람이 안 쓸 때만) | — | `sync/StockClipPrefetchWorker.kt` 의 `refreshDetailIfNeeded` → `releaseUnusedAudio` | `VoicePackStore.adoptRevisedDetail` → `releaseUnreferencedClips` |
+| 전경 복귀마다 기한 지난 팩 대체(네트워크 없이) | — | `ui/main/MainViewModel.kt` 의 진입 구독(`AppSignals.appEntries`) → `MainViewModelVoicePacks.kt` 의 `retireDueVoicePacksOnEntry` | `AlarmTalkApp.swift` 의 전경 복귀(`.active`) → `VoicePackStore.retireExpired` |
+| 받은 팩 클립은 일반 알람 정리가 지우지 않는다 | — | `data/VoicePackStore.kt` 의 `heldClipCacheKeysOnDevice`, `AlarmRepository.deleteAlarmLocked`·`deleteAudioNoAlarmUses` | `VoicePackStore.heldClipCacheKeysOnDevice`, `AlarmKitViewModel.deleteLocalAlarm`·`VoiceStudioViewModel.degrade`·`VoicePackStore.remove` |
 | 미리듣기는 한 번에 하나 | — | `ui/voices/VoiceProfileManagementPanel.kt` 의 `playVoicePackSample`(같은 미리듣기 플레이어) | `AudioPreviewPlayer.play`(다른 플레이어를 끊는다) |
 | 새로고침이 팩 선택을 지우지 않는다 | — | `data/VoicePacks.kt` 의 `editorVoicePacks` | `VoiceStudioViewModel.selectionSurvivesRefresh`, `VoicePacks.editorEntries` |
 | 편집기 목록·직접 입력 감추기 | — | `ui/app/AlarmTalkApp.kt` 의 편집기 라우트(`editorVoicePacks` 로 합치기)·`ui/editor/AlarmRandomPromptSettings.kt` 의 `manualAvailable`·`ui/editor/AlarmEditorScreen.kt` 의 `fixedVoiceClipLanguage`·저장 막기 | `Views/Editor/AlarmEditorSheet.swift` 의 `editorProfiles`·`editorStockClips`·`applyVoiceSelection`, `MessageSettingsPane.manualAvailable` |

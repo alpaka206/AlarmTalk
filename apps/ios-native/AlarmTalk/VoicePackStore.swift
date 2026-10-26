@@ -53,7 +53,26 @@ final class VoicePackStore: ObservableObject {
         }
     }
 
-    static func storageKey(userID: String) -> String { "voice_packs_held_v1_\(userID)" }
+    nonisolated static let storageKeyPrefix = "voice_packs_held_v1_"
+
+    static func storageKey(userID: String) -> String { "\(storageKeyPrefix)\(userID)" }
+
+    /// 이 기기에 적힌 **모든 계정**의 받은 팩이 쥔 클립 캐시 키(`pack_<clipId>`).
+    ///
+    /// 일반 알람 정리(알람 삭제·목소리 강등이 놓은 클립)는 이 키를 지우지 않는다 — 지우면 팩은 '받음' 으로 남는데 파일이 없어
+    /// 오프라인 저장이 실패한다(코덱스 #960). 팩 파일을 놓는 것은 팩 지우기·개정 정리·기한 대체뿐이고, 그때는 목록에서 먼저 뺀다.
+    /// 다른 계정이 같은 팩을 받아 두었으면 그 계정의 목록이 쥐고 있으니 남긴다. 안드로이드 `VoicePackStore.heldClipCacheKeysOnDevice` 짝.
+    nonisolated static func heldClipCacheKeysOnDevice(defaults: UserDefaults = .standard) -> Set<String> {
+        var keys = Set<String>()
+        for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix(storageKeyPrefix) {
+            guard let data = value as? Data,
+                  let packs = try? JSONDecoder().decode([HeldVoicePack].self, from: data) else { continue }
+            for pack in packs {
+                for clip in pack.clips { keys.insert(VoicePacks.cacheKey(clipID: clip.clipId)) }
+            }
+        }
+        return keys
+    }
 
     // MARK: 계정
 
@@ -293,11 +312,12 @@ final class VoicePackStore: ObservableObject {
             audioCache: .shared,
             ownerUserId: activeUserID
         )
-        releaseUnreferencedClips(pack.clips, alarmStore: alarmStore)
+        // 목록에서 먼저 뺀 뒤 놓는다 — 놓기는 기기에 적힌 받은 팩(다른 계정 포함)이 쥔 클립을 남긴다.
         held.removeAll { $0.packId == packID }
         progress[packID] = nil
         failedPackIDs.remove(packID)
         persist()
+        releaseUnreferencedClips(pack.clips, alarmStore: alarmStore)
     }
 
     /// 이 클립들의 파일을 지운다 — 어떤 알람이든(다른 계정 것 포함) 아직 물고 있는 것은 남긴다(그 계정이 자기 목록에서 대체할
@@ -306,7 +326,7 @@ final class VoicePackStore: ObservableObject {
         guard !clips.isEmpty, alarmStore.hasLoadedFromDisk else { return }
         let stillReferenced = Set(
             alarmStore.alarms.compactMap(\.audioCacheKey) + alarmStore.alarms.flatMap { $0.bucketClipKeys ?? [] }
-        )
+        ).union(Self.heldClipCacheKeysOnDevice(defaults: defaults))
         let referencedFiles = Set(alarmStore.alarms.compactMap(\.localAudioUri))
         let cache = AudioCacheStore.shared
         for clip in clips {

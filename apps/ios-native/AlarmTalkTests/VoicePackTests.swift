@@ -431,4 +431,64 @@ final class VoicePackTests: XCTestCase {
         XCTAssertFalse(packs.previewPlayer.isPlaying, "반대 방향도 멈춘다")
         XCTAssertTrue(voice.previewPlayer.isPlaying)
     }
+
+    // MARK: - 알람 정리가 받은 팩의 클립을 지우지 않는다 (코덱스 #960)
+
+    private func cachedPackClip() throws -> (clip: VoicePackClip, key: String) {
+        let data = Data("pack-audio-\(UUID().uuidString)".utf8)
+        let packClip = clip("pk-\(UUID().uuidString)", data: data)
+        _ = try AudioCacheStore.cacheVoicePackClip(
+            audio: VoicePackAudioResponse(
+                clipId: packClip.clipId, packId: "first-pack", audioBase64: data.base64EncodedString(),
+                audioFormat: "mp3", sha256: packClip.sha256, sizeBytes: packClip.sizeBytes
+            ),
+            expected: packClip,
+            packID: "first-pack"
+        )
+        return (packClip, VoicePacks.cacheKey(clipID: packClip.clipId))
+    }
+
+    func test_팩_알람을_지워도_받은_팩의_클립은_남는다() async throws {
+        let (packClip, key) = try cachedPackClip()
+        let userID = "pack-delete-\(UUID().uuidString)"
+        UserDefaults.standard.set(
+            try JSONEncoder().encode([held(clips: [packClip])]),
+            forKey: VoicePackStore.storageKey(userID: userID)
+        )
+        defer {
+            UserDefaults.standard.removeObject(forKey: VoicePackStore.storageKey(userID: userID))
+            try? AudioCacheStore.shared.deleteCachedAudio(cacheKey: key)
+        }
+        XCTAssertTrue(VoicePackStore.heldClipCacheKeysOnDevice().contains(key))
+        let store = makeStore()
+        var record = alarm(id: "p", voiceProfileId: packVoiceID, owner: userID)
+        record.audioCacheKey = key
+        record.bucketClipKeys = [key]
+        store.upsert(record)
+
+        let deleted = await AlarmKitViewModel().cancel(record: record, store: store)
+        XCTAssertTrue(deleted)
+        XCTAssertNil(store.record(id: "p"))
+        XCTAssertNotNil(AudioCacheStore.shared.cachedURL(for: key), "지우면 '받음' 인 팩으로 오프라인 저장이 실패한다")
+    }
+
+    func test_팩을_지워도_다른_계정이_받아_둔_클립은_남는다() throws {
+        let (packClip, key) = try cachedPackClip()
+        defer { try? AudioCacheStore.shared.deleteCachedAudio(cacheKey: key) }
+        let defaults = isolatedDefaults()
+        let pack = held(clips: [packClip])
+        for userID in ["owner-1", "owner-2"] {
+            defaults.set(try JSONEncoder().encode([pack]), forKey: VoicePackStore.storageKey(userID: userID))
+        }
+        let store = VoicePackStore(defaults: defaults)
+        let alarms = makeStore()
+        store.activate(userID: "owner-1")
+        store.remove(packID: "first-pack", alarmStore: alarms, voiceStudio: VoiceStudioViewModel())
+        XCTAssertTrue(store.held.isEmpty)
+        XCTAssertNotNil(AudioCacheStore.shared.cachedURL(for: key), "다른 계정의 목록이 아직 쥐고 있다")
+
+        store.activate(userID: "owner-2")
+        store.remove(packID: "first-pack", alarmStore: alarms, voiceStudio: VoiceStudioViewModel())
+        XCTAssertNil(AudioCacheStore.shared.cachedURL(for: key), "아무 계정도 쥐지 않으면 놓는 쪽이 지운다")
+    }
 }

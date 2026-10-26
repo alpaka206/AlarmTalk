@@ -67,6 +67,18 @@ internal fun MainViewModel.loadVoicePackCatalog() {
 }
 
 /**
+ * 앱에 들어올 때마다(콜드 스타트·백그라운드에서 복귀) 기한이 지난 받은 팩을 대체한다 — 저장된 기한만 보고 네트워크를 쓰지 않는다
+ * (스펙 §5-3). 받은 팩 목록은 저장소가 바뀌면 화면이 다시 읽는다(`VoicePackStore.changes`).
+ */
+internal fun MainViewModel.retireDueVoicePacksOnEntry() {
+    val owner = authSession?.user?.id ?: return
+    viewModelScope.launch(Dispatchers.IO) {
+        runCatching { VoicePackDownloader.retireDuePacks(getApplication(), owner, System.currentTimeMillis()) }
+            .onFailure { AlarmTalkLog.reportError("Voice pack retirement on entry failed", it) }
+    }
+}
+
+/**
  * '받기' — 상세를 받아 받은 팩 목록에 넣고 선다운로드를 깨운다. 실제 클립은 워커가 기본 목소리 다음에 받는다(스펙 §7).
  */
 internal fun MainViewModel.downloadVoicePack(packId: String) {
