@@ -241,6 +241,13 @@ internal fun AlarmEditorScreen(
     onRetryClipRenders: () -> Unit = {},
     /** 준비 화면을 열 때 준비도를 다시 세라고 알린다. */
     onPrepareClipsFor: () -> Unit = {},
+    /**
+     * 기본 목소리마다 (받은 수 to 전체) — 폰에 다 받았는가. 모르면 null(막지 않는다). 다 받지 못한 기본 목소리는 고르지 못하고
+     * 준비 화면으로 간다([systemVoiceStillDownloading]).
+     */
+    systemVoiceDownload: Map<String, Pair<Int, Int>>? = null,
+    /** 그 목소리를 먼저 받으라고 알린다(받기 순서 — `StockClipPrefetchPriority`). */
+    onPrioritizeVoice: (String) -> Unit = {},
     // 새 알람이 이어받을 '직전 선택' 세 축. 셋 다 계정별로 저장되고, 저장에 성공한 알람에서만
     // 기록된다(MainViewModel.rememberVoiceUsed / rememberMessageChoiceUsed).
     // 기존 알람을 **열 때는** 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
@@ -290,23 +297,11 @@ internal fun AlarmEditorScreen(
     // 2026-08-31: 손으로 쓴 폴백을 **유일 판정기**로 옮겼다(`resolvePaidVoiceAccess`).
     // 표시·저장 게이트라 **모르면 잠그지 않는다** — 잘못 잠그면 산 기능을 못 쓰고,
     // 잘못 열어 두면 다음 동기화에서 정리된다.
-    val freeVoiceTier = authSession != null &&
-        !resolvePaidVoiceAccess(
-            subscriptionResponse = subscriptionResponse,
-            userPlan = authSession.user.plan,
-            storeEntitled = storeEntitledNow,
-            nowMillis = System.currentTimeMillis(),
-            // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
-            userPlanPromo = authSession.planPromoStamp(),
-        ).isEntitledOptimistic()
+    val freeVoiceTier = editorFreeVoiceTier(authSession, subscriptionResponse, storeEntitledNow)
     // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
     // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능
     // 목록이 모두 이 걸러진 목록을 참조한다.
-    val visibleVoiceProfiles = if (freeVoiceTier) {
-        voiceProfiles.filter { it.isSystem == true }
-    } else {
-        voiceProfiles
-    }
+    val visibleVoiceProfiles = editorVisibleVoiceProfiles(voiceProfiles, freeVoiceTier)
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.VOICE_ONLY
     // 새 알람은 마지막에 고른 문구 종류를 기본값으로 이어받는다(한 번도 고른 적 없으면 목록에
     // 노출하지 않는 '기본 인사말'=preset 으로 시작).
@@ -577,6 +572,8 @@ internal fun AlarmEditorScreen(
      */
     fun openClipPreparation(profileId: String) {
         preparationVoiceId = profileId
+        // 고르려던 목소리를 먼저 받는다 — 고른 것은 다 받기 전까지 적용하지 않는다(지금 목소리가 그대로 남는다).
+        onPrioritizeVoice(profileId)
         onPrepareClipsFor()
     }
 
@@ -1726,6 +1723,8 @@ internal fun AlarmEditorScreen(
                             // 여기는 "**고른 목소리**를 지금 기준으로 본다" 는 자리다.
                             // 직접 녹음에서 오면 곧 직전 문구 종류를 이으므로 **바뀔 값**으로 판정한다.
                             onNeedsClipPreparation = { profileId ->
+                                // 기본 목소리는 **폰에 다 받았는가**를 먼저 본다 — 서버 판정(아래)은 기본 목소리를 통과시킨다.
+                                systemVoiceStillDownloading(profileId, systemVoiceDownload) ||
                                 needsClipPreparationForVoicePick(
                                     gate = clipGate,
                                     editor = editor,
@@ -2061,7 +2060,20 @@ internal fun AlarmEditorScreen(
     // 아직 못 받은 목소리를 골랐을 때 — 준비 화면을 띄운다.
     // ⚠ 알람 만들기를 막지 않는다. 닫으면 그대로 편집을 이어갈 수 있고, 고른 목소리는
     // 적용되지 않은 채였으므로 예전 목소리가 유지된다.
-    preparationVoiceId?.let {
+    preparationVoiceId?.let { voiceId ->
+        // 보여 줄 준비도 — 기본 목소리는 **지금 언어의** 받은 수(`systemVoiceDownload`)로 센다. `clipReadiness` 는 매니페스트의
+        // 모든 언어를 세어, 앱 언어를 바꾼 뒤에는 옛 언어 클립만으로 '다 받음' 이 됐다(코덱스 #952 — 고르면 다시 막히는데 화면은
+        // 끝났다고 했다). 그 값은 편집기가 2초마다 다시 센다. 내 목소리는 `clipReadiness` 그대로(서버 생성까지 본다).
+        val shownReadiness = shownPreparationReadiness(voiceId, clipReadiness, systemVoiceDownload)
+        val preparedNow = shownReadiness.firstOrNull { it.voiceProfileId == voiceId }?.isReady == true
+        // 내 목소리는 떠 있는 동안 3초마다 다시 센다 — 그 목소리가 다 준비되면 멈춘다(실패로는 멈추지 않는다 — 스펙
+        // voice-and-message 「준비 페이지의 3초 폴링」). 예전에는 열 때 한 번만 세어, 연 순간의 퍼센트에 멈춰 있었다.
+        LaunchedEffect(voiceId, preparedNow) {
+            while (!preparedNow && !isSystemVoiceId(voiceId)) {
+                kotlinx.coroutines.delay(3000)
+                onPrepareClipsFor()
+            }
+        }
         // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
         TrackOpenModal()
         androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null }) {
@@ -2070,7 +2082,9 @@ internal fun AlarmEditorScreen(
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 com.alarmtalk.app.ui.voices.ClipPreparationScreen(
-                    voices = clipReadiness,
+                    // 고르려던 목소리 하나만 보여 준다 — 위 폴링이 그 목소리가 준비되면 멈추므로, 전부를 보여 주면 다른 목소리
+                    // 때문에 100% 에 닿지 못한 채 멈춘다(코덱스 #952). 그 목소리가 목록에 아직 없으면 전부를 보여 준다.
+                    voices = shownReadiness,
                     onRetry = onRetryClipRenders,
                     onDismiss = { preparationVoiceId = null },
                     modifier = Modifier.padding(vertical = 32.dp),
@@ -2109,3 +2123,26 @@ private enum class VoiceGateReason {
      */
     SYSTEM_VOICE_LIMIT,
 }
+
+/**
+ * 편집기의 **무료 등급** 판정 — 알람 설정 관문(`AlarmTalkApp.initialVoiceForNewAlarm`)도 이걸 불러 편집기와 같은 목록을 본다
+ * (코덱스 #952 — 관문이 무료가 된 사용자의 클론을 보고 통과시키면, 편집기는 그 클론을 걸러 받는 중인 기본 목소리로 연다).
+ * 표시·저장 게이트라 **모르면 잠그지 않는다** — 판정기는 `resolvePaidVoiceAccess` 하나다.
+ */
+internal fun editorFreeVoiceTier(
+    authSession: AuthSession?,
+    subscriptionResponse: BillingSubscriptionResponse?,
+    storeEntitledNow: Boolean,
+): Boolean = authSession != null &&
+    !resolvePaidVoiceAccess(
+        subscriptionResponse = subscriptionResponse,
+        userPlan = authSession.user.plan,
+        storeEntitled = storeEntitledNow,
+        nowMillis = System.currentTimeMillis(),
+        // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
+        userPlanPromo = authSession.planPromoStamp(),
+    ).isEntitledOptimistic()
+
+/** 편집기가 보여 주고 고를 수 있는 목소리 — 무료면 기본 목소리만. */
+internal fun editorVisibleVoiceProfiles(voiceProfiles: List<VoiceProfile>, freeVoiceTier: Boolean): List<VoiceProfile> =
+    if (freeVoiceTier) voiceProfiles.filter { it.isSystem == true } else voiceProfiles

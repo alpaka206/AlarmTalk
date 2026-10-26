@@ -2141,7 +2141,7 @@ internal fun VoiceProfileManagementPanel(
         // 내 목소리가 하나도 없어도 이 섹션은 항상 나온다.
         if (systemVoices.isNotEmpty()) {
             // 기본 목소리 받기 진행은 **헤더 옆**에 둔다(2026-09-17 지시, iOS 와 같은 자리).
-            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenDefaultVoicesReady`) 그 이유가
+            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenAlarmVoiceReady`) 그 이유가
             // 섹션을 접어 둬도 보여야 한다 — 목록 아래에 두면 접었을 때 사라진다.
             val downloadProgress = voicePrefetchProgress
                 ?.takeIf { (done, total) -> total > 0 && done < total }

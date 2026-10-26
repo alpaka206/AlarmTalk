@@ -462,7 +462,7 @@ struct VoiceProfileManagementPanel: View {
     /// 기본 목소리를 **받는 중일 때만** 헤더 옆에 붙는 진행 표시(2026-09-17 지시).
     ///
     /// 받기 화면을 '백그라운드에서 계속' 으로 닫으면 진행을 볼 곳이 없는데, 그동안 알람 설정은
-    /// 막혀 있다(`MainTabsView.openEditorIfVoicesReady`). 막힌 이유가 여기서 보여야 한다.
+    /// 막혀 있다(`MainTabsView.openEditorIfVoiceReady`). 막힌 이유가 여기서 보여야 한다.
     /// 안드로이드 `VoiceProfileManagementPanel` 의 기본 목소리 헤더와 같은 자리다.
     private var defaultVoiceDownloadBadge: AnyView? {
         guard case let .running(done, total) = stockClipPrefetcher.state, total > 0, done < total else {

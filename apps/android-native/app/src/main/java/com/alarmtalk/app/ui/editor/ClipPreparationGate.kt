@@ -104,3 +104,41 @@ internal data class ClipGate(
         }
     }
 }
+
+/**
+ * **아직 다 받지 못한 기본 목소리인가** — 편집기에서 그 목소리를 고르려 할 때 본다(「알람마다 필요한 목소리만 본다」).
+ * [ClipGate.needsClipPreparation] 은 기본 목소리를 통과시킨다(서버가 만들었는가를 본다). 이건 **폰이 받았는가**다.
+ *
+ * [progress] 는 기본 목소리마다 (받은 수 to 전체)이고(`StockClipPrefetchWorker.defaultVoiceProgressByVoice`), 모르면
+ * null — 모르는 것으로 막지 않는다(저장이 캐시에 없으면 그 자리에서 받는다 — `bindStockBucketClips`).
+ * iOS 짝은 `StockClipPrefetcher.isStillDownloading`.
+ */
+internal fun systemVoiceStillDownloading(profileId: String, progress: Map<String, Pair<Int, Int>>?): Boolean {
+    if (!isSystemVoiceId(profileId)) return false
+    val (done, total) = progress?.get(profileId) ?: return false
+    return done < total
+}
+
+/**
+ * 편집기 준비 화면이 그릴 목록 — 고르려던 목소리 하나만. 기본 목소리는 **지금 언어의** 받은 수([progress])로 바꿔 그린다
+ * (`clipReadiness` 는 모든 언어를 세어 언어를 바꾼 뒤 옛 언어 클립만으로 '다 받음' 이 된다). 그 목소리가 목록에 없으면 전부.
+ */
+internal fun shownPreparationReadiness(
+    voiceId: String,
+    readiness: List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress>,
+    progress: Map<String, Pair<Int, Int>>?,
+): List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress> {
+    val counted = progress?.get(voiceId)
+    if (isSystemVoiceId(voiceId) && counted != null) {
+        return listOf(
+            com.alarmtalk.app.data.ClipReadiness.VoiceProgress(
+                voiceProfileId = voiceId,
+                isRendering = false,
+                renderFailed = false,
+                expected = counted.second,
+                cached = counted.first,
+            ),
+        )
+    }
+    return readiness.filter { it.voiceProfileId == voiceId }.ifEmpty { readiness }
+}

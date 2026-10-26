@@ -13,6 +13,7 @@ struct MainTabsView: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
+    @EnvironmentObject private var subscriptions: SubscriptionManager
 
     /// 기본 목소리를 다 받기 전에 알람 설정을 열려고 했다 — 그 이유를 말하는 알럿.
     @State private var voicesNotReadyProgress: (done: Int, total: Int)?
@@ -42,27 +43,54 @@ struct MainTabsView: View {
     /// 알람 탭이 다중 선택 모드인가(＋FAB 를 숨긴다).
     @State private var alarmSelectionActive = false
 
-    /// 알람 설정 화면(새로 만들기·고치기)을 연다 — **기본 목소리를 다 받았을 때만.**
+    /// 알람 설정 화면(새로 만들기·고치기)을 연다 — **그 알람이 쓸 기본 목소리를 다 받았을 때만.**
     ///
-    /// 2026-09-17 지시: 다 받기 전에는 설정 화면 자체를 막는다. 받다 만 상태로 들어가면
-    /// 문구 행이 「문구를 준비하고 있어요」 에 머물고, 저장해도 테마 회전이 비어 운다.
-    /// 규칙은 `docs/spec/voice-and-message.md` 「기본 목소리를 다 받아야 알람을 설정한다」.
+    /// 2026-09-17 에는 기본 목소리 넷 전부를 다 받아야 열었다. 2026-10-26(v1.3 W05)부터는 그 알람의 목소리 하나만 본다 —
+    /// 새 알람은 편집기가 처음 고를 목소리, 기존 알람은 그 알람의 목소리다. 나머지는 뒤에서 계속 받는다. 막히면 그 목소리를
+    /// 먼저 받게 적는다. 규칙은 `docs/spec/voice-and-message.md` 「알람마다 필요한 목소리만 본다」, 안드로이드 짝은
+    /// `AlarmTalkApp.whenAlarmVoiceReady`.
     ///
-    /// ⚠ **탭 하나에 한 번 센다**(`StockClipPrefetcher.defaultVoiceGate`). 세는 일은 메인 액터에서 캐시 디렉터리를
+    /// ⚠ **탭 하나에 한 번 센다**(`StockClipPrefetcher.voiceGate`). 세는 일은 메인 액터에서 캐시 디렉터리를
     /// 읽는다 — 예전에는 판정과 알럿 퍼센트를 따로 세어 막힐 때마다 두 번 읽었다. 막히면 센 값 그대로 알럿에 쓴다.
-    private func openEditorIfVoicesReady(_ target: AlarmEditorTarget) {
+    private func openEditorIfVoiceReady(_ target: AlarmEditorTarget) {
         #if DEBUG
         if UIPreviewSeed.isEnabled { editorTarget = target; return }
         #endif
-        let gate = StockClipPrefetcher.defaultVoiceGate()
+        let voiceID = gateVoiceID(for: target)
+        let gate = StockClipPrefetcher.voiceGate(voiceID: voiceID)
         guard gate.ready else {
             voicesNotReadyProgress = gate.progress
-            // 막았으면 받기부터 깨운다 — 멈춰 있던 다운로드를 사용자가 따로 찾게 하지 않는다.
+            if let voiceID { stockClipPrefetcher.request(voiceID: voiceID) }
+            // 막았으면 받기부터 깨운다 — 멈춰 있던 다운로드를 사용자가 따로 찾게 하지 않는다. 돌고 있으면 그 회차가 다음
+            // 배치부터 순서를 다시 읽는다.
             if !stockClipPrefetcher.isRunning { restartDefaultVoiceDownload() }
             voicesNotReadyAlert = true
             return
         }
         editorTarget = target
+    }
+
+    /// 관문이 볼 목소리 — 기존 알람은 그 알람의 목소리, 새 알람은 **편집기가 처음 고를 목소리**다. 판정은 편집기와 같은 한 벌
+    /// (`AlarmEditorSheet.resolveInitialVoiceID` — 고를 수 있는 목소리·정리 중 제외·무료면 기본 목소리만). 저장된 직전 선택을
+    /// 그대로 믿으면, 못 쓰게 된 클론을 보고 통과시킨 뒤 편집기는 아직 받는 중인 기본 목소리로 연다(코덱스 #952).
+    private func gateVoiceID(for target: AlarmEditorTarget) -> String? {
+        if let alarmID = target.editingAlarmID {
+            return store.alarms.first(where: { $0.id == alarmID })?.voiceProfileId.nilIfBlank
+        }
+        let readyOwn = AlarmEditorSheet.readySelectableVoices(in: voiceStudio)
+        let plan = PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            user: auth.session?.user
+        )
+        // 지금 선택은 넘기지 않는다 — 새 알람의 편집기는 첫 상태를 읽을 때 선택을 비운 뒤 고른다(`loadInitialState` →
+        // `loadVoicePromptState(from: nil)`). 다른 알람을 열었다 취소해 남은 선택을 넘기면 관문이 엉뚱한 목소리를 본다(코덱스 #952).
+        return AlarmEditorSheet.resolveInitialVoiceID(
+            selected: nil,
+            readyOwn: readyOwn,
+            lastUsedID: voiceStudio.lastUsedVoiceId,
+            freeTier: auth.session != nil && !plan.meetsOrExceeds(.personal)
+        )
     }
 
     private func restartDefaultVoiceDownload() {
@@ -76,9 +104,9 @@ struct MainTabsView: View {
     private var voicesNotReadyMessage: String {
         if let progress = voicesNotReadyProgress, progress.total > 0 {
             let percent: Int = min(progress.done * 100 / progress.total, 99)
-            return String(localized: "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (\(percent)%)\n목소리 탭에서 진행 상황을 볼 수 있어요.")
+            return String(localized: "이 알람에 쓸 목소리를 받고 있어요. 이 목소리부터 먼저 받아요. (\(percent)%)\n다른 기본 목소리도 이어서 받아요.")
         }
-        return String(localized: "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.")
+        return String(localized: "이 알람에 쓸 목소리를 받고 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.")
     }
 
     var body: some View {
@@ -90,7 +118,7 @@ struct MainTabsView: View {
                 // 들어갔을 때 **삭제·취소 바가 화면 위로 밀려나 닿을 수 없다.**
                 // 안드로이드도 헤더를 `LazyColumn` 밖 `Column` 에 둔다.
                 if selectedTab == .alarms {
-                    AlarmsListView(createRequest: alarmCreateRequest, openEditor: openEditorIfVoicesReady)
+                    AlarmsListView(createRequest: alarmCreateRequest, openEditor: openEditorIfVoiceReady)
                         .onPreferenceChange(AlarmSelectionActiveKey.self) { alarmSelectionActive = $0 }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(theme.homeGradient)

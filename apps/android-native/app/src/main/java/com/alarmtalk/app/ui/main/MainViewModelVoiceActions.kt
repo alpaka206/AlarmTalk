@@ -940,7 +940,7 @@ internal suspend fun MainViewModel.loadManualQuota(): ManualQuotaResponse? {
 // LocalConfiguration.locales[0] 로 클립을 필터하는데, 그 값은 앱 resources.configuration 에서 온다.
 // 여기서도 같은 소스(앱 리소스 설정의 첫 로케일)를 써 두 언어 소스가 어긋나지 않게 한다. 어긋나면
 // 서버가 렌더한 언어와 편집기 필터 언어가 달라 오프라인 버킷이 영영 안 붙는다.
-private fun MainViewModel.deviceAppVoiceLanguage(): String {
+internal fun MainViewModel.deviceAppVoiceLanguage(): String {
     val locales = getApplication<Application>().resources.configuration.locales
     val language = (if (!locales.isEmpty) locales[0] else null)?.language
         ?: Locale.getDefault().language
