@@ -175,15 +175,22 @@ export async function listPlanGrants(db: Pick<DbExecutor, 'execute'>, userPk: st
   return res.rows.map((r) => rowToGrant(r as Record<string, unknown>));
 }
 
-/** 응답의 `plan_grant` 조각 — 지금 지급으로 플러스면 이어진 구간의 끝. 아니면 `null`. */
+/**
+ * 응답의 `plan_grant` 조각 — **지급 때문에 플러스일 때**(원시 plan 이 free)만 이어진 구간의 끝과 계산 시각. 아니면 `null`.
+ *
+ * 원시 유료(구독자)에게는 싣지 않는다. 두 앱은 이 값을 기간 한정 개인 플랜과 같은 계약("이 값이 있다 = 원시 free, 끝 전에
+ * 받은 `plus` 는 끝 뒤에 무료로 읽는다")으로 읽는다 — 구독자에게 실으면 산 이용권이 무료로 보이고 결제 버튼이 다시 뜬다.
+ * `computed_at` 은 이 답을 계산한 서버 시각이다(앱의 오프라인 차단이 '끝 전에 받은 답인가' 를 서버 시계로 가른다).
+ */
 export async function loadPlanGrantField(
   db: Pick<DbExecutor, 'execute'>,
   userPk: string,
   now: Date = new Date(),
-): Promise<{ ends_at: string } | null> {
+): Promise<{ ends_at: string; computed_at: string } | null> {
   const res = await db.execute({
-    sql: `SELECT starts_at, ends_at, revoked_at FROM plan_grants
-          WHERE user_id = ? AND revoked_at IS NULL AND julianday(ends_at) > julianday(?)`,
+    sql: `SELECT g.starts_at, g.ends_at, g.revoked_at FROM plan_grants g
+          WHERE g.user_id = ? AND g.revoked_at IS NULL AND julianday(g.ends_at) > julianday(?)
+            AND EXISTS (SELECT 1 FROM users u WHERE u.id = g.user_id AND u.plan = 'free')`,
     args: [userPk, now.toISOString()],
   });
   const end = mergedGrantEnd(
@@ -194,7 +201,8 @@ export async function loadPlanGrantField(
     })),
     now,
   );
-  return end ? { ends_at: end.toISOString().replace(/\.\d{3}Z$/, 'Z') } : null;
+  const seconds = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  return end ? { ends_at: seconds(end), computed_at: seconds(now) } : null;
 }
 
 export interface CreatePlanGrantInput {

@@ -70,6 +70,11 @@ internal fun SubscriptionPanel(
      * 열려 있다(개인 카드의 결제 버튼이 남는다).
      */
     personalPromo: PersonalPromo? = null,
+    /**
+     * 관리자 기간 지급의 끝(`plan_grant.ends_at`, 배타). 지금 지급 중이면 프로모와 같은 자리에 "플러스 이용 중 · …까지" 를
+     * 말한다 — 구독처럼 그리지 않는다(해지 버튼은 산 이용권으로만 가른다). 프로모와 함께 오지 않는다.
+     */
+    planGrantEndsAt: String? = null,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -112,6 +117,11 @@ internal fun SubscriptionPanel(
         val promoLineText = promoLastDay?.let { lastDay ->
             val locale = LocalConfiguration.current.locales[0]
                 ?: java.util.Locale.getDefault()
+            stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
+        } ?: planGrantLastDay(planGrantEndsAt, java.time.ZoneId.systemDefault(), System.currentTimeMillis())?.let { lastDay ->
+            val locale = LocalConfiguration.current.locales[0]
+                ?: java.util.Locale.getDefault()
+            // 지급도 같은 문구다 — 결제 없이 쓰는 플러스라 iOS(같은 자리로 읽는다)와 같은 말을 한다.
             stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
         }
         // '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 [planScreenCurrentOf] 한 곳이다(스펙 D4).

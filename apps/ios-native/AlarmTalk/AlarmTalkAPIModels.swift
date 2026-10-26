@@ -273,8 +273,24 @@ struct AuthUser: Codable, Equatable, Identifiable {
             deletionStatus: try container.decodeIfPresent(String.self, forKey: .deletionStatus) ?? "active",
             // ⚠ **`try?` 로 받는다.** 표시·컷오프용 추가 필드라, 모양이 어긋났다고 로그인
             // 응답 전체를 버리면 안 된다(`PersonalPromo.init(from:)` 도 던지지 않는다).
-            personalPromo: try? container.decodeIfPresent(PersonalPromo.self, forKey: .personalPromo)
+            personalPromo: (try? container.decodeIfPresent(PersonalPromo.self, forKey: .personalPromo))
+                ?? Self.decodePlanGrant(from: decoder)
         )
+    }
+
+    /// **관리자 기간 지급**(`plan_grant { ends_at, computed_at }`, `docs/spec/billing-lifecycle.md` 「관리자 기간 지급」)을
+    /// 기간 한정 개인 플랜과 **같은 자리**(`personalPromo`)로 읽는다. 둘은 같은 계약이다 — 원시 plan 은 free 이고, 서버가
+    /// 기간 동안 `plus` 로 계산해 주며, 끝(배타) 전에 계산된 `plus` 캐시는 끝 뒤에 무료로 읽는다(`PersonalPromo.isStale`).
+    /// 서버는 둘을 함께 보내지 않는다. 종료 안내(`noticeFrom`)는 지급에 없으므로 뜨지 않고, 이용권 화면은 같은 "플러스 무료
+    /// 이용 중 · …까지" 를 말한다. 안드로이드는 같은 기한을 `limitedPlanEndsAt` 으로 묶는다(Codex #941 P2).
+    private static func decodePlanGrant(from decoder: Decoder) -> PersonalPromo? {
+        guard let container = try? decoder.container(keyedBy: GrantKey.self) else { return nil }
+        let grant: PersonalPromo?? = try? container.decodeIfPresent(PersonalPromo.self, forKey: .planGrant)
+        return PersonalPromo.normalized(grant ?? nil)
+    }
+
+    private enum GrantKey: String, CodingKey {
+        case planGrant
     }
 
     private static func normalizedPlan(_ value: String?) -> String {
@@ -664,6 +680,12 @@ struct BillingSubscriptionResponse: Codable, Equatable {
     /// 스냅샷에 적을 때도 둘을 함께 적는다(`SocialFeatureViewModel`).
     /// ⚠ 이게 있어도 `subscription` 은 null 이다 — 가짜 구독을 만들지 않는다(해지 버튼 없음).
     var personalPromo: PersonalPromo? = nil
+    /// 관리자 기간 지급(`plan_grant`) — 프로모와 같은 계약의 기한이다(`AuthUser.decodePlanGrant`). 스냅샷에 적을 때는
+    /// `limitedPlan` 하나로 읽는다.
+    var planGrant: PersonalPromo? = nil
+
+    /// `userPlan` 과 짝인 **기한**(기간 한정 개인 플랜 또는 관리자 기간 지급). 서버는 둘을 함께 보내지 않는다.
+    var limitedPlan: PersonalPromo? { PersonalPromo.normalized(personalPromo) ?? PersonalPromo.normalized(planGrant) }
 }
 
 struct BillingSubscription: Codable, Identifiable, Equatable {

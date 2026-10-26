@@ -115,7 +115,13 @@ describe('지급과 읽기', () => {
     const raw = await db.execute(`SELECT plan FROM users WHERE id = 'u1'`);
     expect(raw.rows[0]!.plan).toBe('free');
     expect(await hasActivePaidEntitlement(db, 'u1', false)).toBe(true);
-    expect(await loadPlanGrantField(db, 'u1')).not.toBeNull();
+    expect(await loadPlanGrantField(db, 'u1')).toMatchObject({ ends_at: expect.any(String), computed_at: expect.any(String) });
+  });
+
+  it('원시 유료(구독자)에게는 plan_grant 를 싣지 않는다 — 앱이 산 이용권을 무료로 읽지 않게', async () => {
+    await addUser('u1p', 'plus');
+    await grant('u1p', new Date(Date.now() + 7 * DAY), 'key-u1p-001');
+    expect(await loadPlanGrantField(db, 'u1p')).toBeNull();
   });
 
   it('같은 확인 화면을 두 번 보내도 한 번만 준다', async () => {

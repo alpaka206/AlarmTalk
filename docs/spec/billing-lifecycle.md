@@ -1512,8 +1512,15 @@ CLAUDE.md 「유료 기능은 스토어 결제로만」의 두 번째 예외로 
   한다. 실제 삭제 직전에 스윕이 권한을 한 번 더 본다.
 - **기간 한정 개인 플랜의 종료 전환 대상이 아니다**(`PROMO_END_TARGET` 이 유효 지급을 뺀다). 지급이 끝나면 위 뒷정리가
   보관을 건다 — 행사의 약속 시각을 다시 쓰지 않는다.
-- API: 계정 응답의 `user.plan_grant` 와 `GET /billing/subscription` 최상위 `plan_grant` = `{ ends_at }` 또는 `null`
-  (shared `PlanGrantSchema`). 앱은 "관리자가 준 플러스 · 끝나는 날" 을 표시하고, 등급 판정은 언제나 `plan` 이다.
+- API: 계정 응답의 `user.plan_grant` 와 `GET /billing/subscription` 최상위 `plan_grant` = `{ ends_at, computed_at }` 또는
+  `null`(shared `PlanGrantSchema`). **지급 때문에 플러스일 때(원시 plan 이 free)만** 싣는다 — 구독자에게는 싣지 않는다.
+- **앱은 이 값을 기간 한정 개인 플랜과 같은 오프라인 기한으로 읽는다**(Codex #941 P2). 끝 전에 계산된 `plus` 캐시는 끝 뒤에
+  무료로 읽는다 — 서버의 뒷정리·푸시는 오프라인 기기를 고치지 못하므로, 그 기기(특히 울림 경로)가 지급이 끝난 뒤에도 등록
+  목소리를 쓰지 않게 하는 자리가 이것이다. 안드로이드는 `limitedPlanEndsAt`(`ui/billing/PersonalPromo.kt`)이 프로모 끝 또는
+  지급 끝을 `PlanPromoStamp` 로 묶고 세션·권한 스냅샷에 plan 과 한 벌로 적는다. iOS 는 `AuthUser.decodePlanGrant` 가 지급을
+  `personalPromo` 자리로 읽고(종료 안내 창 `notice_from` 은 없다), 구독 응답은 `limitedPlan` 이 같은 일을 한다. 이용권 화면은
+  "플러스 무료 이용 중 · …까지" 를 말한다(양 앱 같은 문구). 회귀 테스트: 안드로이드 `PlanGrantExpiryTest`, iOS
+  `PersonalPromoTests` 「관리자 기간 지급」.
 - 탈퇴 파기가 지급 기록을 지운다. 지급자는 콘솔이 비밀번호 하나라 `admin-console` 로 적힌다.
 
 | 규칙 | 백엔드 | 테스트 |

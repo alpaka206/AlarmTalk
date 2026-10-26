@@ -152,8 +152,9 @@ export type PersonalPromo = z.infer<typeof PersonalPromoSchema>;
 export const PersonalPromoFieldSchema = PersonalPromoSchema.nullable().optional();
 
 /**
- * API 의 `plan_grant` 조각 — **관리자 기간 지급**으로 지금 플러스일 때, 이어진 지급 구간의 끝(배타, 초 단위 UTC
- * ISO). 지급이 없거나 끝났으면 `null`(구서버는 필드 자체가 없다). 계정 응답의 `user` 와 `GET /billing/subscription`
+ * API 의 `plan_grant` 조각 — **관리자 기간 지급 때문에** 지금 플러스일 때(원시 plan 이 free), 이어진 지급 구간의 끝
+ * (배타, 초 단위 UTC ISO)과 계산 시각. 지급이 없거나 끝났거나 원시 유료면 `null`(구서버는 필드 자체가 없다). 두 앱은
+ * 기간 한정 개인 플랜과 같은 오프라인 기한으로 읽는다(끝 전에 받은 `plus` 캐시는 끝 뒤에 무료). 계정 응답의 `user` 와 `GET /billing/subscription`
  * 최상위에 실린다. 규칙: `docs/spec/billing-lifecycle.md` 「관리자 기간 지급」.
  *
  * 앱은 이 값으로 "관리자가 준 플러스 · 끝나는 날" 을 보여 준다. 구독이 함께 있으면 구독이 끝나도 이 날까지 플러스다 —
@@ -161,6 +162,8 @@ export const PersonalPromoFieldSchema = PersonalPromoSchema.nullable().optional(
  */
 export const PlanGrantSchema = z.object({
   ends_at: z.iso.datetime(),
+  /** 서버가 이 답을 계산한 시각 — 앱의 오프라인 차단이 '끝 전에 받은 답인가' 를 서버 시계로 가른다. */
+  computed_at: z.iso.datetime().optional(),
 });
 export type PlanGrant = z.infer<typeof PlanGrantSchema>;
 export const PlanGrantFieldSchema = PlanGrantSchema.nullable().optional();

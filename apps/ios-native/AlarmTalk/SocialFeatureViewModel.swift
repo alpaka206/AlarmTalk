@@ -418,14 +418,14 @@ final class SocialFeatureViewModel: ObservableObject {
                 // 둘을 함께 적는다(`user_plan` 은 결제 전 조회에서만 온다).
                 if let plan = nextSubscription.userPlan, planCurrent {
                     $0.userPlan = plan
-                    $0.personalPromo = nextSubscription.personalPromo
+                    $0.personalPromo = nextSubscription.limitedPlan
                 }
             }
             guard silentWrite == .applied else { return nil }
             if refreshStoreState { billingPreflightRevision &+= 1 }
             subscription = nextSubscription
             if let plan = nextSubscription.userPlan {
-                onFreshPlan?(userID, token, plan, nextSubscription.personalPromo, accountRequest)
+                onFreshPlan?(userID, token, plan, nextSubscription.limitedPlan, accountRequest)
             }
             return nextSubscription
         } catch {

@@ -90,6 +90,21 @@ data class PersonalPromo(
     @SerializedName("computed_at") val computedAt: String? = null,
 )
 
+/**
+ * **관리자 기간 지급**(`docs/spec/billing-lifecycle.md` 「관리자 기간 지급」) — 지금 [AuthUser.plan] 이 지급으로 `plus` 일 때
+ * 이어진 지급 구간의 끝([endsAt], 배타, 서버 시계)과 서버가 그 답을 계산한 시각([computedAt]). 지급이 없으면 응답에 null.
+ *
+ * 기간 한정 개인 플랜과 같은 **오프라인 기한**이다 — 끝나기 전에 받은 `plus` 캐시를 끝난 뒤에 읽으면 무료로 읽는다
+ * (`limitedPlanEndsAt` → `PlanPromoStamp`). 둘은 함께 오지 않는다(서버는 지급 중인 계정에 프로모를 싣지 않는다).
+ * 관대하게 읽는다([PlanGrantJsonAdapter]) — 표시·기한용 필드 하나가 응답 전체의 파싱을 깨면 안 된다.
+ */
+@JsonAdapter(PlanGrantJsonAdapter::class)
+data class PlanGrant(
+    @SerializedName("ends_at") val endsAt: String? = null,
+    /** 받는 자리에서 받은 시각으로 바뀌고 저장되지 않는다(`normalizePlanGrant` 가 뺀다). */
+    @SerializedName("computed_at") val computedAt: String? = null,
+)
+
 data class AuthUser(
     val id: String,
     val email: String,
@@ -106,6 +121,8 @@ data class AuthUser(
      * 기간이 아니거나 결제자면 null.
      */
     @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
+    /** 관리자 기간 지급으로 [plan] 이 `plus` 이면 그 끝([PlanGrant]). 아니면 null. */
+    @SerializedName("plan_grant") val planGrant: PlanGrant? = null,
     @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings =
         DynamicPromptSettings(),
     @SerializedName("deletion_status") val deletionStatus: String = "active",

@@ -243,6 +243,8 @@ class AuthSessionStore internal constructor(
                 plan = prefs.getString(KEY_PLAN, "free") ?: "free",
                 dynamicPromptSettings = readDynamicPromptSettings(),
                 personalPromo = readPersonalPromo(),
+                planGrant = prefs.getString(KEY_PLAN_GRANT_ENDS_AT, null)?.takeIf { it.isNotBlank() }
+                    ?.let { PlanGrant(endsAt = it) },
             ),
             userFetchedAtMillis = prefs.getLong(KEY_USER_FETCHED_AT, 0L).takeIf { it > 0L },
             accountAnswerSeq = prefs.getLong(KEY_ACCOUNT_ANSWER_SEQ, 0L),
@@ -584,6 +586,7 @@ class AuthSessionStore internal constructor(
                 id = stored.user.id,
                 plan = stored.user.plan,
                 personalPromo = stored.user.personalPromo,
+                planGrant = stored.user.planGrant,
             ),
             userFetchedAtMillis = stored.userFetchedAtMillis,
         )
@@ -608,7 +611,11 @@ class AuthSessionStore internal constructor(
         // **정규화 전에** 읽는다 — 정규화가 그 키를 뺀다. 프로필만 고친 저장([updateUserIfAlive])은
         // 저장소에서 읽은 user 라 키가 없어, 저장소의 받은 시각이 그대로 남는다.
         val answeredAtMillis = userFetchedAtMillis?.let { received ->
-            planAnswerStampMillis(runCatching { user.personalPromo }.getOrNull(), received)
+            planAnswerStampMillis(
+                runCatching { user.personalPromo }.getOrNull(),
+                received,
+                runCatching { user.planGrant }.getOrNull(),
+            )
         }
         // 정규화한 뒤에 덮는다 — 정규화 전의 서버 응답은 Gson 이 빈 칸을 null 로 채워 `copy` 가 깨질 수 있다.
         val normalizedUser = normalizeUser(user).let { normalized ->
@@ -651,6 +658,9 @@ class AuthSessionStore internal constructor(
                         editor.putBoolean(KEY_PERSONAL_PROMO_DELETES_VOICES, deletes)
                     }
                 }
+                // 관리자 기간 지급의 끝도 plan 과 한 벌이다 — 없으면 지운다(남기면 지급이 끝난 뒤 받은 plan 에 옛 끝이 붙는다).
+                val grantEndsAt = normalizedUser.planGrant?.endsAt
+                if (grantEndsAt == null) editor.remove(KEY_PLAN_GRANT_ENDS_AT) else editor.putString(KEY_PLAN_GRANT_ENDS_AT, grantEndsAt)
                 // plan·프로모와 **한 벌로** 적는다 — 받은 시각이 다른 답에 붙으면 오프라인 차단이
                 //   엉뚱한 답을 자른다([AuthSession.userFetchedAtMillis]).
                 if (answeredAtMillis == null || answeredAtMillis <= 0L) {
@@ -742,6 +752,7 @@ class AuthSessionStore internal constructor(
             deletionStatus = runCatching { user.deletionStatus }.getOrNull()
                 ?.takeIf { it.isNotBlank() } ?: "active",
             personalPromo = normalizePersonalPromo(runCatching { user.personalPromo }.getOrNull()),
+            planGrant = normalizePlanGrant(runCatching { user.planGrant }.getOrNull()),
         )
     }
 
@@ -878,6 +889,7 @@ class AuthSessionStore internal constructor(
         )
         private const val KEY_DYNAMIC_PROMPT_SETTINGS = "dynamic_prompt_settings"
         private const val KEY_PERSONAL_PROMO_ENDS_AT = "personal_promo_ends_at"
+        private const val KEY_PLAN_GRANT_ENDS_AT = "plan_grant_ends_at"
         private const val KEY_PERSONAL_PROMO_NOTICE_FROM = "personal_promo_notice_from"
         private const val KEY_PERSONAL_PROMO_DELETES_VOICES = "personal_promo_deletes_voices_at_end"
         private const val KEY_USER_FETCHED_AT = "user_fetched_at_millis"
@@ -902,6 +914,12 @@ internal fun normalizePersonalPromo(promo: PersonalPromo?): PersonalPromo? {
     val noticeFrom = runCatching { promo?.noticeFrom }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
     val deletesVoicesAtEnd = runCatching { promo?.deletesVoicesAtEnd }.getOrNull()
     return PersonalPromo(endsAt = endsAt, noticeFrom = noticeFrom, deletesVoicesAtEnd = deletesVoicesAtEnd)
+}
+
+/** [PlanGrant] 정규화 — 끝을 못 읽으면 null, 응답마다 다른 `computed_at` 은 뺀다([normalizePersonalPromo] 와 같은 이유). */
+internal fun normalizePlanGrant(grant: PlanGrant?): PlanGrant? {
+    val endsAt = runCatching { grant?.endsAt }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return PlanGrant(endsAt = endsAt)
 }
 
 internal fun normalizeDynamicPromptSettings(settings: DynamicPromptSettings?): DynamicPromptSettings {
