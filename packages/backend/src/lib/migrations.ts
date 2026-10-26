@@ -3300,6 +3300,24 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_plan_grants_unsettled ON plan_grants (settled_at, ends_at)`,
     ],
   },
+  {
+    // **직접 입력의 같은 요청 표식**(2026-10-26, `lib/manual-tts-requests.ts`). 앱이 '음성 만들기' 한 번마다 만든
+    // `request_id` 로 재시도·중복 탭이 두 번 합성·차감되지 않게 한다. 문구 원문은 적지 않는다(입력 지문만). 이틀 지나면
+    // 크론이 지우고, 탈퇴 파기가 지운다.
+    id: 135,
+    name: 'manual-tts-requests',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS manual_tts_requests (
+        user_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        input_hash TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'done')),
+        claimed_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, request_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_manual_tts_requests_claimed ON manual_tts_requests (claimed_at)`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

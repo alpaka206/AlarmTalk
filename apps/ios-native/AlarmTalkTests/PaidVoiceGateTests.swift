@@ -181,6 +181,20 @@ final class PaidVoiceGateTests: XCTestCase {
         XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: freeSystemVoiceAlarm(), snapshot: snap))
     }
 
+    /// **기본 목소리 직접 입력 결과도 무료다**(2026-10-26, 무료 기본 목소리 직접 입력 월 3회 — `voice-and-message.md` §8).
+    /// 예전에는 스톡 클립·프리셋만 무료로 봐서, 무료가 만든 직접 입력 알람이 예약 시점에 강등됐다.
+    func test_systemVoiceManualAudio_isFree_andNeverDowngrades() {
+        var record = paidVoiceAlarm()
+        record.voiceProfileId = systemVoiceIDPrefix + "000000000101"
+        record.audioCacheKey = "a1b2c3d4e5f6"            // 문구 해시 — 스톡 클립이 아니다
+        record.localAudioUri = "file:///alarm-audio/manual.m4a"
+        record.voiceRandomPrompt = false
+        XCTAssertTrue(PaidVoiceGate.usesFreeSystemVoice(record))
+        XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot(nil)))
+        // 등록(클론) 목소리는 그대로 유료다.
+        XCTAssertFalse(PaidVoiceGate.usesFreeSystemVoice(paidVoiceAlarm()))
+    }
+
     /// 목소리를 아예 안 쓰는 알람은 판단할 것이 없다.
     func test_alarmOnly_neverDowngrades() {
         var record = paidVoiceAlarm()

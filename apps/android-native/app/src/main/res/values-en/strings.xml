@@ -154,6 +154,7 @@
     <string name="editor_error_voice_alarm_login_required">Voice alarms are available after you sign in.</string>
     <string name="editor_error_voice_generation_failed">Voice generation failed.</string>
     <string name="editor_error_manual_tts_quota">You\'ve used up this month\'s custom-message creations. They refill next month.</string>
+    <string name="editor_error_tts_request_in_progress">Still making this voice. Please save again in a moment.</string>
     <string name="editor_error_voice_message_login_required">Voice alarms are available after you sign in.</string>
     <string name="editor_error_weather_location_required">For phrases with weather, please choose a region.</string>
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>
@@ -215,6 +216,7 @@
     <string name="editorp_random_fortune_required">Not entered yet</string>
     <string name="editorp_random_detail_change">Change</string>
     <string name="editorp_random_manual_title">Your message</string>
+    <string name="editor_manual_charge_notice">A new message makes a voice when you save, using 1 of this month\'s creations. Reusing a message you already made doesn\'t count.</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>

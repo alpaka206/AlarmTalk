@@ -546,6 +546,14 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     captureCron('scheduled.plan_grant_settle', err);
   }
 
+  // 직접 입력의 같은 요청 표식 — 이틀 지난 것을 지운다(`lib/manual-tts-requests.ts`).
+  try {
+    const { pruneManualRequests } = await import('./lib/manual-tts-requests');
+    await pruneManualRequests(db, now);
+  } catch (err) {
+    captureCron('scheduled.manual_request_prune', err);
+  }
+
   // 기간 한정 개인 플랜 종료 전환 — **폴백**(틱당 3명). 본 처리는 위의 전용 크론이 하고, 이건
   // 전용 크론이 빠져 있어도 전환이 멈추지 않게 둔다. 끝 전이면 DB 를 부르지 않는다.
   try {

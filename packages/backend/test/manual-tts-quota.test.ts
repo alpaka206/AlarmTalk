@@ -7,6 +7,7 @@ import {
   readManualTtsUsage,
   refundManualTtsQuota,
   reserveManualTtsQuota,
+  nextManualQuotaResetAt,
   resolveManualTtsPool,
 } from '../src/lib/manual-tts-quota';
 
@@ -20,15 +21,15 @@ describe('manualTtsMonthlyLimit', () => {
     expect(manualTtsMonthlyLimit('family')).toBe(0);
   });
 
-  it('무료/미구독/알 수 없는 key 는 0', () => {
-    expect(manualTtsMonthlyLimit('free')).toBe(0);
+  it('무료는 기본 목소리 월 3회, 미구독·알 수 없는 key 는 0', () => {
+    expect(manualTtsMonthlyLimit('free')).toBe(3);
     expect(manualTtsMonthlyLimit(null)).toBe(0);
     expect(manualTtsMonthlyLimit(undefined)).toBe(0);
     expect(manualTtsMonthlyLimit('plus')).toBe(0);
   });
 
-  it('한도 맵은 개인 하나뿐이다', () => {
-    expect(Object.keys(MANUAL_TTS_MONTHLY_LIMITS)).toEqual(['personal']);
+  it('한도 맵은 플러스와 무료 둘뿐이다', () => {
+    expect(Object.keys(MANUAL_TTS_MONTHLY_LIMITS)).toEqual(['personal', 'free']);
   });
 });
 
@@ -37,7 +38,7 @@ describe('manualTtsLimitForUserPlan', () => {
     expect(manualTtsLimitForUserPlan('plus')).toBe(30); // personal
     // 옛 그룹 등급 'family' 는 유료가 아니다(CHECK 글자만 남았다 — #131 이 그 계정을 다시 매겼다).
     expect(manualTtsLimitForUserPlan('family')).toBe(0);
-    expect(manualTtsLimitForUserPlan('free')).toBe(0);
+    expect(manualTtsLimitForUserPlan('free')).toBe(3);
     expect(manualTtsLimitForUserPlan(null)).toBe(0);
     expect(manualTtsLimitForUserPlan(undefined)).toBe(0);
   });
@@ -63,11 +64,11 @@ describe('resolveManualTtsPool', () => {
     expect(pool).toEqual({ poolKey: 'pk-3', planKey: 'personal', limit: 30 });
   });
 
-  it('폴백도 무료면 한도 0', async () => {
+  it('구독이 없는 무료는 무료 풀 3회 — 같은 계정 풀이라 같은 달 플러스가 되면 이어 센다', async () => {
     const db = createMockDB();
     db.pushResult([]);
     const pool = await resolveManualTtsPool(db.client, ['pk-4', 'sub-4'], 'pk-4', 'free');
-    expect(pool).toEqual({ poolKey: 'pk-4', planKey: null, limit: 0 });
+    expect(pool).toEqual({ poolKey: 'pk-4', planKey: 'free', limit: 3 });
   });
 
   it('기간 한정 개인 플랜에서만 오는 접근은 구독을 보지 않고 개인 30회·본인 풀이다', async () => {
@@ -139,5 +140,16 @@ describe('refundManualTtsQuota', () => {
     // KST 재계산이 아니라 예약 월을 인자로 받는다.
     expect(call.sql).toMatch(/usage_month = \?/);
     expect(call.args).toEqual(['pk-9', '2026-07']);
+  });
+});
+
+describe('nextManualQuotaResetAt', () => {
+  it('다음 달 1일 0시 KST — 한국 날짜로 센다', () => {
+    expect(nextManualQuotaResetAt(new Date('2026-10-26T05:00:00Z'))).toBe('2026-10-31T15:00:00Z');
+    // 10/31 23:30 KST(= 14:30Z)도 11/1 0시 KST 가 다음이다.
+    expect(nextManualQuotaResetAt(new Date('2026-10-31T14:30:00Z'))).toBe('2026-10-31T15:00:00Z');
+    // 11/1 0시 KST 정각부터는 12/1.
+    expect(nextManualQuotaResetAt(new Date('2026-10-31T15:00:00Z'))).toBe('2026-11-30T15:00:00Z');
+    expect(nextManualQuotaResetAt(new Date('2026-12-15T00:00:00Z'))).toBe('2026-12-31T15:00:00Z');
   });
 });

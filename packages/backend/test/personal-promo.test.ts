@@ -373,16 +373,16 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         const held = await call({ pk: 'pp-hold-live' }, 'GET', '/tts/manual-quota');
         expect(held.status).toBe(200);
         expect(held.body).toMatchObject(
-          moment.open ? { plan_key: 'personal', limit: 30 } : { plan_key: null, limit: 0 },
+          moment.open ? { plan_key: 'personal', limit: 30 } : { plan_key: 'free', limit: 3 },
         );
       });
 
-      it('직접 입력 한도 — 원시 free 는 30 → 0, 원시 유료는 그대로 30', async () => {
+      it('직접 입력 한도 — 원시 free 는 30 → 무료 3, 원시 유료는 그대로 30', async () => {
         atMoment(moment.at);
         const free = await call(FREE, 'GET', '/tts/manual-quota');
         expect(free.status).toBe(200);
         expect(free.body).toMatchObject(
-          moment.open ? { plan_key: 'personal', limit: 30 } : { plan_key: null, limit: 0 },
+          moment.open ? { plan_key: 'personal', limit: 30 } : { plan_key: 'free', limit: 3 },
         );
         const paid = await call(PAID, 'GET', '/tts/manual-quota');
         expect(paid.body).toMatchObject({ plan_key: 'personal', limit: 30 });

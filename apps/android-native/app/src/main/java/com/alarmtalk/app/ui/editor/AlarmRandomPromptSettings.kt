@@ -273,7 +273,9 @@ internal fun RandomPromptSettingsPane(
                         val locked = context == ManualMessageContext && manualLocked
                         val label = if (
                             context == ManualMessageContext && !locked &&
-                            manualLimit != null && manualLimit > 0 && manualRemaining != null
+                            manualLimit != null && manualLimit > 0 && manualRemaining != null &&
+                            // 무료가 기본분(3)을 다 쓰고 광고 보상이 남았으면 '(0/3)' 대신 보상 수를 말한다.
+                            (manualRemaining > 0 || manualRewardCredits <= 0)
                         ) {
                             // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
                             "$baseLabel ($manualRemaining/$manualLimit)"
@@ -437,7 +439,9 @@ private fun ManualMessageDialog(
     // 필드 높이만 남긴다.
     IosAlertDialog(
         title = stringResource(R.string.editor_msg_mode_manual),
-        message = null,
+        // 새 음성을 만드는 순간 횟수를 쓴다는 것을 **치기 전에** 말한다(`docs/spec/voice-and-message.md` §8 — 무료 3·플러스 30,
+        // 이미 만든 문구는 세지 않는다). 남은 횟수는 문구 목록의 '직접 입력 (2/3)' 이 보여 준다.
+        message = stringResource(R.string.editor_manual_charge_notice),
         onDismiss = onDismiss,
         actions = listOf(
             IosAlertAction(

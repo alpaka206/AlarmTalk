@@ -98,6 +98,10 @@ export const ERROR_CODES = [
   'TEXT_TOO_LONG',
   'TRANSLATION_NOT_CONFIGURED',
   'TTS_GENERATION_FAILED',
+  /** 같은 `request_id` 에 다른 입력이 왔다 — 앱의 버그다(문구를 바꾸면 새 id). */
+  'TTS_REQUEST_ID_CONFLICT',
+  /** 같은 `request_id` 가 아직 만들어지는 중이다 — 잠시 뒤 다시 보내면 그 결과를 받는다. */
+  'TTS_REQUEST_IN_PROGRESS',
   'VOICE_AND_TEXT_REQUIRED',
   'VOICE_AUTHORIZATION_CHANGED',
   'VOICE_DRAFT_NOT_USABLE',

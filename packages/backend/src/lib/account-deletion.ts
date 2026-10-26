@@ -382,6 +382,11 @@ export async function purgeUserAccount(
       sql: `DELETE FROM plan_grants WHERE user_id = ?`,
       args: [userPk],
     });
+    // 직접 입력의 같은 요청 표식(#135).
+    writes.push({
+      sql: `DELETE FROM manual_tts_requests WHERE user_id = ?`,
+      args: [userPk],
+    });
 
     writes.push({
       sql: `DELETE FROM generated_audio_assets

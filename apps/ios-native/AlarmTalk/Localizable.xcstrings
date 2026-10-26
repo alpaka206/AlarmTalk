@@ -12502,6 +12502,52 @@
           }
         }
       }
+    },
+    "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still making this voice. Please save again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ音声を作成しています。少し待ってからもう一度保存してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요."
+          }
+        }
+      }
+    },
+    "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이미 만든 문구는 다시 써도 횟수를 쓰지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A new message makes a voice when you save, using 1 of this month's creations. Reusing a message you already made doesn't count."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。作成済みの文はもう一度使っても回数を使いません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이미 만든 문구는 다시 써도 횟수를 쓰지 않아요."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

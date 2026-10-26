@@ -117,6 +117,7 @@ internal object SnackbarSeverities {
         R.string.api_error_email_code_attempts,
         R.string.api_error_account_pending_deletion,
         R.string.editor_error_manual_tts_quota,
+        R.string.editor_error_tts_request_in_progress,
         R.string.api_error_voice_limit_reached,
         R.string.api_error_voice_not_ready,
         R.string.api_error_voice_cloning_failed,

@@ -23,6 +23,8 @@ data class TtsGenerateRequest(
     @SerializedName("fortune_birth_time") val fortuneBirthTime: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
     @SerializedName("draft_preview") val draftPreview: Boolean = false,
+    /** 직접 입력 '음성 만들기' 한 번의 id — 같은 입력의 재시도는 같은 값(`ManualRequestIds`). 옛 서버는 무시한다. */
+    @SerializedName("request_id") val requestId: String? = null,
 )
 
 data class TtsGenerateResponse(

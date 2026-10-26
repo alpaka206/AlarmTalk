@@ -91,18 +91,22 @@ class TtsGenerateGateTest {
         assertTrue(draft.usesFreeSystemVoiceAlarm())
     }
 
+    // ⚠ **2026-10-26 뒤집음** — 무료도 기본 목소리 직접 입력을 월 3회 만들고, 만든 결과는 무료로 울린다
+    //   (`docs/spec/voice-and-message.md` §8). 이 테스트는 예전에 반대("기본 목소리 직접 입력은 유료")를 지켰다.
     @Test
-    fun freeAlarmGateRejectsCachedSystemCustomTts() {
+    fun freeAlarmGateAllowsCachedSystemCustomTts() {
         val draft = alarmDraft(
             localAudioUri = "file:///cache/custom.mp3",
             rawAudioUri = "r2://tts/custom",
             audioCacheKey = "tts-cache",
             voiceRandomPrompt = false,
             voiceRandomContext = null,
-            voiceText = "Wake up with a custom paid line.",
+            voiceText = "Wake up with a custom line.",
         )
 
-        assertFalse(draft.usesFreeSystemVoiceAlarm())
+        assertTrue(draft.usesFreeSystemVoiceAlarm())
+        // 등록(클론) 목소리는 그대로 유료다.
+        assertFalse(draft.copy(voiceProfileId = "00000000-0000-4000-8000-00000000c10e").usesFreeSystemVoiceAlarm())
     }
 
     private fun alarmDraft(

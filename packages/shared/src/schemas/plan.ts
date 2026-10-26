@@ -167,3 +167,13 @@ export const PlanGrantSchema = z.object({
 });
 export type PlanGrant = z.infer<typeof PlanGrantSchema>;
 export const PlanGrantFieldSchema = PlanGrantSchema.nullable().optional();
+
+/**
+ * **직접 입력 월 한도**(KST 달력월, 계정 하나의 풀, 이월 없음). 무료는 **기본 목소리만**이고 다 쓰면 광고 보상 한 번씩
+ * 더 만든다. 플러스는 기본·등록 목소리 합산이다. 이미 만든 내 음성을 다시 받는 것은 세지 않는다. 규칙 전문:
+ * `docs/spec/voice-and-message.md` §8. 앱은 서버가 준 `limit`·`remaining` 만 표시한다(이 숫자를 베끼지 않는다).
+ */
+export const MANUAL_TTS_MONTHLY_LIMIT = {
+  free: 3,
+  plus: 30,
+} as const;

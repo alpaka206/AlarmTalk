@@ -256,30 +256,36 @@ final class MessageContextMemoryTests: XCTestCase {
         XCTAssertNil(adopted(text: "내가 친 문구", lastContext: "fortune"))
     }
 
-    /// **유료 직접 입력은 기본 목소리의 강제가 건드리지 않는다**(2026-09-29 리뷰). 직전 선택으로
-    /// 직접 입력 문구를 이은 뒤 옛 테마가 붙으면(`applyPendingFreeBucketIfNeeded`) 이은 문구가
-    /// 말없이 사라진다. 4-값 고정(`coerceFreeVoiceTierConstraints`)과 같은 판정 하나.
-    func testPaidTypedManualTextIsLeftAloneByStockClipCoercion() {
+    /// **직접 입력은 기본 목소리의 강제가 건드리지 않는다 — 무료도**(2026-09-29 리뷰, 2026-10-26 등급 조건 제거). 직전 선택으로
+    /// 직접 입력 문구를 이은 뒤 옛 테마가 붙으면(`applyPendingFreeBucketIfNeeded`) 이은 문구가 말없이 사라진다. 4-값
+    /// 고정(`coerceFreeVoiceTierConstraints`)과 같은 판정 하나. 무료도 기본 목소리 직접 입력을 월 3회 만든다.
+    func testTypedManualTextIsLeftAloneByStockClipCoercion() {
         func keeps(
-            free: Bool = false,
             random: Bool = false,
             bucket: FreeBucket? = nil,
             text: String = "회의 자료 챙겨"
         ) -> Bool {
-            AlarmEditDraft.keepsPaidTypedManualText(
-                freeVoiceTier: free,
+            AlarmEditDraft.keepsTypedManualText(
                 randomPrompt: random,
                 selectedBucket: bucket,
                 ttsText: text
             )
         }
         XCTAssertTrue(keeps())
-        // 잠긴 등급(무료)에서는 예전 그대로 테마·기본 인사말로 강제한다.
-        XCTAssertFalse(keeps(free: true))
         // 직접 입력이 아니면(생성형·테마·빈 문구) 강제가 돈다.
         XCTAssertFalse(keeps(random: true))
         XCTAssertFalse(keeps(bucket: .medication))
         XCTAssertFalse(keeps(text: "   "))
+    }
+
+    /// 직접 입력 '음성 만들기' 의 같은 요청 id(`voice-and-message.md` §8, Codex #942) — 같은 입력의 재시도는 같은 id, 입력이
+    /// 바뀌면 새 id. 안드로이드 `ManualRequestIdsTest` 짝.
+    @MainActor
+    func testManualRequestIDIsStableForTheSameInput() {
+        let studio = VoiceStudioViewModel()
+        let first = studio.manualRequestIDFor(profileID: "v1", language: "ko", text: "회의 자료 챙겨")
+        XCTAssertEqual(first, studio.manualRequestIDFor(profileID: "v1", language: "ko", text: "회의 자료 챙겨"))
+        XCTAssertNotEqual(first, studio.manualRequestIDFor(profileID: "v1", language: "ko", text: "약 먹어"))
     }
 
     /// `AlarmEditorSheet.loadVoicePromptState` 의 복원식과 같은 순서.
