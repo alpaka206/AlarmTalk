@@ -1492,6 +1492,10 @@ internal fun AlarmEditorScreen(
             settingsDetailPanel = null
             return
         }
+        // 응원 테마의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4) — 오디오와 무관한 값이라 아래 '안 바뀌었으면
+        // 그대로' 가드보다 먼저 받는다(모드만 바꾸고 나와도 남아야 한다). 응원이 아니면 저장 때 버려진다(`toDraft`).
+        editor.cheerMode = com.alarmtalk.app.data.CheerModes.normalize(result.cheerMode)
+        editor.cheerPinnedContentId = result.cheerPinnedContentId
         // 고른 것이 하나도 안 바뀌었으면 **아무것도 건드리지 않는다.** 직접 입력 갈래의
         // `unchanged` 가드와 같은 이유다 — 들여다보고 그냥 뒤로 나오는 흐름이 흔한데,
         // 그때마다 붙어 있던 클립과 오디오를 버리면 다시 붙을 때까지 요약 행이 '준비 중'
@@ -1995,8 +1999,21 @@ internal fun AlarmEditorScreen(
                     freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage, expectedVariants)
                         .mapNotNull { randomPromptContextForBucket(it) }
                 } else {
-                    EditorMessageContexts.map { it.first }
+                    // 기상 인사(`wake`)는 기본 목소리 전용 클립이다 — 클론의 같은 자리는 '기본 인사말'(preset)이다
+                    // (스펙 voice-and-message §5-4).
+                    EditorMessageContexts.map { it.first }.filterNot { it == WakeMessageContext }
                 },
+                // 응원의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 고정 목록은 이 목소리·언어로 매니페스트에
+                // 있는 새 응원뿐이다 — 하나도 없으면(공개 전·보충 전) 카드를 그리지 않는다.
+                cheerMode = editor.cheerMode,
+                cheerPinnedContentId = editor.cheerPinnedContentId,
+                cheerPhrases = editor.voiceProfileId?.takeIf { it.isNotBlank() }?.let { profileId ->
+                    com.alarmtalk.app.data.cheerPhrasesFrom(
+                        stockClips,
+                        profileId,
+                        clipGate.bucketClipLanguageFor(com.alarmtalk.app.data.CHEER_BUCKET_ID, profileId),
+                    ).map { it.second }
+                }.orEmpty(),
                 // ⚠ **직접 입력을 잠그지 않는다**(2026-10-26). 무료도 기본 목소리로 월 3회 만들고, 다 쓰면 광고 보상이다 —
                 // 입력·편집은 막지 않고, 새로 만들어야 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(스펙 voice-and-message
                 // §8, ad-rewards §1). 잠긴 행이 열던 광고 게이트는 그 429 자리로 옮겼다.

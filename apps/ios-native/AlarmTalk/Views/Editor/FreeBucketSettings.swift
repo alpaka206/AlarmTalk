@@ -20,6 +20,8 @@ enum FreeBucket: String {
     /// `preset`(기본 인사말)의 버킷 이름. 목소리 미리듣기와 같은 클립을 쓴다 —
     /// 클론도 `RandomPromptContext.preset.bucketCategory` 가 이것이다.
     case greeting
+    /// 기상 인사 — 기본 목소리 전용 스톡 클립(스펙 voice-and-message §5-4). `greeting`(자기소개)과 다른 클립이다.
+    case wake
     case medication
     case weather
     case fortune

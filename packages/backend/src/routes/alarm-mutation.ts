@@ -4,12 +4,13 @@ import { getDB } from '../lib/db';
 import { planWithGrantSql } from '../lib/plan-grant-sql';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
-import { logRouteError } from '../lib/logger';
+import { logRouteError, logStructured } from '../lib/logger';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import {
   validateAlarmFields,
   normalizeAlarmRow,
   normalizeTimezone,
+  cheerFieldsOf,
   type AlarmRow,
   type AlarmMode,
   type VibrationPattern,
@@ -19,7 +20,7 @@ import { hasPersonalVoiceAccess } from './billing-helpers';
 import { resolvePersonalPromo } from '../lib/personal-promo';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
-import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
+import { normalizeStockCategory, requestCloneContentSupplement, STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
 import { ownAlarmIdentity } from '../lib/alarm-identity';
 
 const alarmMutation = new Hono<AppEnv>();
@@ -201,6 +202,37 @@ async function greetingBucketUsesCloneVoice(
   return false;
 }
 
+/**
+ * **클론으로 응원 알람을 저장했으면 보충을 요청한다**(스펙 voice-and-message §5-4 「클론은 고른 것만 보충한다」).
+ *
+ * 저장이 끝난 **뒤**에 부르고, 실패해도 저장은 성공으로 둔다 — 잃는 것은 보충이 한 번 늦는 것뿐이고(다음 응원 저장이 다시
+ * 요청한다), 알람을 500 으로 돌려 보내면 사용자는 저장된 알람을 다시 저장한다. 기본 목소리·무료·공개 전이면 아무 일도
+ * 하지 않는다. 클론 소유는 큐의 `owner_user_id` 가 확인한다(큐 행은 그 사람의 클론에만 있다).
+ */
+async function requestCheerSupplementAfterSave(
+  db: ReturnType<typeof getDB>,
+  params: { ownerUserId: string; bucketId: string | null; voiceProfileId: string | null; hasPersonalVoice: boolean },
+): Promise<void> {
+  if (normalizeStockCategory(params.bucketId ?? '') !== 'cheer') return;
+  if (!params.voiceProfileId || !params.hasPersonalVoice) return;
+  try {
+    const result = await requestCloneContentSupplement(db, {
+      voiceProfileId: params.voiceProfileId,
+      ownerUserId: params.ownerUserId,
+      theme: 'cheer',
+    });
+    if (result === 'queued' || result === 'requested') {
+      logStructured('info', { at: 'voice.prerender.supplement_requested', voice_profile_id: params.voiceProfileId, result });
+    }
+  } catch (error) {
+    logStructured('warn', {
+      at: 'voice.prerender.supplement_request_failed',
+      voice_profile_id: params.voiceProfileId,
+      error: String(error).slice(0, 200),
+    });
+  }
+}
+
 alarmMutation.post('/', async (c) => {
   const userId = c.get('userId');
   const resolvedUserPk = c.get('userIdPK');
@@ -226,6 +258,9 @@ alarmMutation.post('/', async (c) => {
     // 무료 버킷 회전 알람이 가리키는 버킷(예: 'weather'·'medication'). message_id 는
     // 대표(변형0) 스톡 클립을 그대로 유지하므로 회전 미지원 경로에선 폴백 단일 재생.
     bucket_id?: string | null;
+    // 응원 테마의 '다양하게 / 이 문구로 고정'(스펙 voice-and-message §5-4). 응원이 아니면 앱이 보내지 않는다.
+    cheer_mode?: string | null;
+    cheer_pinned_content_id?: string | null;
   }>();
 
   if (!body.time) {
@@ -325,13 +360,16 @@ alarmMutation.post('/', async (c) => {
     (body.vibration_pattern as VibrationPattern | undefined) ?? 'default';
   const wakeMode: WakeMode = (body.wake_mode as WakeMode | undefined) ?? 'sound_then_voice';
   const isActive = body.is_active ?? true;
+  // ⚠ 응원 칼럼(#143)은 **값이 왔을 때만** 쓴다. 왔는데 칼럼이 없으면(배포 창) INSERT 가 통째로 실패한다 — fail-closed.
+  //   값이 없는 요청은 지금과 같은 행을 남기므로 칼럼을 건드리지 않는다(창에서도 그대로 저장된다).
+  const cheerFields = cheerFieldsOf(body);
   const insertAlarm = (executor: DbExecutor) =>
     executor.execute({
       sql: `INSERT INTO alarms
             (id, user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id,
-             timezone, bucket_id, is_active)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             timezone, bucket_id, is_active${cheerFields.map((f) => `, ${f.column}`).join('')})
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${cheerFields.map(() => ', ?').join('')})`,
       args: [
         alarmId,
         userId,
@@ -346,6 +384,7 @@ alarmMutation.post('/', async (c) => {
         timezone,
         body.bucket_id ?? null,
         isActive ? 1 : 0,
+        ...cheerFields.map((f) => f.value),
       ],
     });
   const inserted =
@@ -382,6 +421,12 @@ alarmMutation.post('/', async (c) => {
   if (inserted.status === 'message_not_found') {
     return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
   }
+  await requestCheerSupplementAfterSave(db, {
+    ownerUserId: userPk,
+    bucketId: body.bucket_id ?? null,
+    voiceProfileId: body.voice_profile_id ?? null,
+    hasPersonalVoice: creatorHasPaidVoice && !!resolvedUserPk,
+  });
 
   // 받은 본문을 되돌려 주되 `target_user_id` 는 싣지 않는다(위 가드 — 저장하지 않은 값이다).
   const { target_user_id: _ignoredTargetUserId, ...echoedBody } = body;
@@ -421,6 +466,8 @@ alarmMutation.patch('/:id', async (c) => {
     voice_profile_id?: string | null;
     timezone?: string | null;
     bucket_id?: string | null;
+    cheer_mode?: string | null;
+    cheer_pinned_content_id?: string | null;
   }>();
 
   const fieldError = validateAlarmFields(body);
@@ -602,6 +649,11 @@ alarmMutation.patch('/:id', async (c) => {
     updates.push('bucket_id = ?');
     args.push(body.bucket_id);
   }
+  // 응원 저장값(#143) — 온 것만 쓴다(POST 와 같은 이유, fail-closed). 화이트리스트 칼럼 조각이다.
+  for (const field of cheerFieldsOf(body)) {
+    updates.push(`${field.column} = ?`);
+    args.push(field.value);
+  }
 
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
@@ -642,11 +694,20 @@ alarmMutation.patch('/:id', async (c) => {
   }
 
   const updated = await db.execute({
+    // 응원 칼럼은 **이 요청이 그 값을 썼을 때만** 되읽는다 — 그때는 위 UPDATE 가 칼럼이 있음을 이미 보였다. 안 썼으면
+    // 응답에 싣지 않는다(배포 창에 칼럼 없음으로 응답만 500 이 되는 일을 막는다. 앱은 응원 알람이면 언제나 보낸다).
     sql: `SELECT id, user_id, message_id, time, repeat_days,
                  is_active, snooze_minutes, mode, vibration_pattern, wake_mode,
                  voice_profile_id, bucket_id, created_at, updated_at
+                 ${cheerFieldsOf(body).length > 0 ? ', cheer_mode, cheer_pinned_content_id' : ''}
           FROM alarms WHERE id = ?`,
     args: [id],
+  });
+  await requestCheerSupplementAfterSave(db, {
+    ownerUserId: (c.get('userIdPK') as string | undefined) || (c.get('userId') as string),
+    bucketId: effectiveBucketId,
+    voiceProfileId: effectiveVoiceFields.voice_profile_id,
+    hasPersonalVoice: creatorHasPaidVoice && !!resolvedUserPk,
   });
 
   return c.json({

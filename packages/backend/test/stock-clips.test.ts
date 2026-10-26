@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { Client } from '@libsql/client/web';
+import { STOCK_CONTENT_BASELINE_SET_IDS } from '@alarmtalk/shared';
 import {
   STOCK_CLIP_PRESETS,
   STOCK_CLIP_LANGUAGES,
   STOCK_GREETING_CATEGORY,
   findMissingStockTargets,
+  stockCategoryReleased,
   systemStockTexts,
   type PrerenderVoice,
 } from '../src/lib/stock-clips';
@@ -72,8 +74,34 @@ describe('findMissingStockTargets (시스템 리터럴)', () => {
   // ⚠ **개수를 손으로 적지 않는다.** 카테고리는 늘어난다(2026-09-02 에 운세·사랑을 더했다).
   //   숫자를 박아 두면 카테고리를 추가할 때마다 이 테스트가 "기능이 깨졌다" 처럼 빨개져,
   //   실제로 검증하려던 **(문구 × 언어) 매트릭스가 빠짐없이 나오는가**는 가려진다.
-  const KO_TEXT_COUNT = STOCK_CLIP_PRESETS.reduce((sum, p) => sum + p.texts.ko.length, 0);
+  // 공개 전 묶음(`cheer_v2`·`wake`, 스펙 §5-4)은 굽지 않는다 — 공개 표식이 없는 지금은 옛 카테고리만 센다.
+  const LIVE_PRESETS = STOCK_CLIP_PRESETS.filter((p) =>
+    stockCategoryReleased(p.category, STOCK_CONTENT_BASELINE_SET_IDS),
+  );
+  const KO_TEXT_COUNT = LIVE_PRESETS.reduce((sum, p) => sum + p.texts.ko.length, 0);
   const TARGETS_PER_VOICE = KO_TEXT_COUNT * 3; // ko·en·ja
+
+  it('공개 전 묶음은 굽지 않고, 공개 표식이 있으면 그 카테고리도 굽는다', async () => {
+    const voice = systemVoice('vp-1', 'eleven-a');
+    const before = await findMissingStockTargets(stubDb(), [voice]);
+    expect(before.some((t) => t.category === 'cheer_v2' || t.category === 'wake')).toBe(false);
+
+    const releasedDb = {
+      execute: async (stmt: { sql: string }) =>
+        /stock_content_releases/.test(stmt.sql)
+          ? { rows: [{ content_set: 'cheer_v2' }, { content_set: 'wake_v1' }] }
+          : { rows: [] },
+    } as unknown as Client;
+    const after = await findMissingStockTargets(releasedDb, [voice]);
+    const allKo = STOCK_CLIP_PRESETS.reduce((sum, p) => sum + p.texts.ko.length, 0);
+    expect(after).toHaveLength(allKo * 3);
+    expect(after.filter((t) => t.category === 'cheer_v2')).toHaveLength(14 * 3);
+    expect(after.filter((t) => t.category === 'wake')).toHaveLength(3 * 3);
+    // 옛 응원은 그대로 cheer 0..2 다 — 새 응원을 그 뒤에 이어 붙이지 않는다.
+    expect(after.filter((t) => t.category === 'cheer' && t.language === 'ko').map((t) => t.variantIndex)).toEqual([
+      0, 1, 2,
+    ]);
+  });
 
   it('보이스당 (문구 × 3언어) 타깃을 만들고, baseText 는 해당 언어 리터럴이다', async () => {
     const voice = systemVoice('vp-1', 'eleven-a');

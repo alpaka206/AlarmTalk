@@ -252,6 +252,11 @@
     <string name="editorp_fortune_save_button">저장</string>
     <string name="editorp_random_fortune_required">아직 입력하지 않았어요</string>
     <string name="editorp_random_detail_change">변경하기</string>
+    <string name="editorp_cheer_variety_title">응원 문구</string>
+    <string name="editorp_cheer_vary">다양하게</string>
+    <string name="editorp_cheer_pinned">이 문구로 고정</string>
+    <string name="editorp_cheer_vary_hint">최근에 준비한 문구는 잠시 쉬고, 다른 응원으로 준비해요.</string>
+    <string name="editorp_cheer_pinned_hint">고른 문구로만 울려요.</string>
     <string name="editorp_random_manual_title">직접 입력 문구</string>
     <string name="editor_manual_charge_notice">새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이미 만든 문구는 다시 써도 횟수를 쓰지 않아요.</string>
     <string name="editorp_random_more_contexts">더 보기 (운세·약)</string>
@@ -523,6 +528,7 @@
     <string name="editor2_ctx_wake_weather">날씨</string>
     <string name="editor2_ctx_wake_fortune">운세</string>
     <string name="editor2_ctx_love">응원</string>
+    <string name="editor2_ctx_wake">기상 인사</string>
     <string name="editor2_ctx_medication">약</string>
     <string name="editor2_repeat_every_day">매일</string>
     <string name="editor2_repeat_weekly">매주 %1$s</string>

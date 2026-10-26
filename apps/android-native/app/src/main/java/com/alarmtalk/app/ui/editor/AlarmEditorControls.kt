@@ -575,6 +575,8 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값(사전 렌더). 무료 플랜도 이것만.
     // 화면에 그려지는 라벨은 VoiceAudioCard 가 쓰는 editor_msg_mode_preset 하나로 통일한다.
     "preset" to R.string.editor_msg_mode_preset,
+    // 기상 인사(스펙 voice-and-message §5-4) — 기본 목소리 전용 스톡 클립(`wake`). 클론의 같은 자리는 위 preset 이다.
+    "wake" to R.string.editor2_ctx_wake,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
     "cheer" to R.string.editor2_ctx_love,
@@ -586,12 +588,17 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
 // '직접 입력'(랜덤 끄고 사용자가 문구를 직접 타이핑) 을 나타내는 특수 선택값.
 internal const val ManualMessageContext = "manual"
 
+// 기상 인사 — 기본 목소리 전용 스톡 클립 `wake`(스펙 voice-and-message §5-4). 클론 목록에서는 뺀다.
+internal const val WakeMessageContext = "wake"
+
 // 편집기 '문구' 선택기(유료) 노출 옵션 — 기본 인사말 + 날씨·운세·사랑(동적) + 약(고정 프리셋)
 // + 직접 입력. preset 을 목록에 노출하는 이유: 새 알람의 기본값이자 '마지막에 고른 문구 종류'로
 // 기억될 수 있는 값이라, 목록에 없으면 요약 행은 '기본 인사말'인데 선택기를 열면 아무것도(또는
 // 엉뚱한 항목이) 체크돼 보인다. 사용자에겐 선택이 리셋된 것으로 읽힌다. 되돌아올 길도 필요하다.
 internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
     "preset" to R.string.editor_msg_mode_preset,
+    // 기상 인사(스펙 voice-and-message §5-4) — 기본 목소리 전용 스톡 클립(`wake`). 클론의 같은 자리는 위 preset 이다.
+    "wake" to R.string.editor2_ctx_wake,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
     "cheer" to R.string.editor2_ctx_love,

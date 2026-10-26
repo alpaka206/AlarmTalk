@@ -69,6 +69,8 @@ internal class AlarmEditorState(
     bucketClipTextsJson: String? = null,
     contextVariantIndex: Int? = null,
     followsLastMessageChoice: Boolean = false,
+    cheerMode: String? = null,
+    cheerPinnedContentId: String? = null,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -127,6 +129,13 @@ internal class AlarmEditorState(
      * `alarm == null` 로 가르면 알람 전용 알람을 목소리로 바꿨을 때 직전 테마를 못 잇는다.
      */
     var followsLastMessageChoice by mutableStateOf(followsLastMessageChoice)
+
+    /**
+     * 응원 테마의 **다양하게 / 이 문구로 고정**(스펙 voice-and-message §5-4). 응원이 아니면 저장하지 않는다(`toDraft`).
+     * 고정 문구가 그 목소리·언어에 아직 없어도 지우지 않는다 — 받아지면 다음 준비부터 고정으로 돈다.
+     */
+    var cheerMode by mutableStateOf(com.alarmtalk.app.data.CheerModes.normalize(cheerMode))
+    var cheerPinnedContentId by mutableStateOf(cheerPinnedContentId)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -225,6 +234,12 @@ internal class AlarmEditorState(
             alarmSoundUri = alarmSoundUri,
             alarmSoundLabel = alarmSoundLabel,
             alarmSoundEnabled = alarmSoundEnabled,
+            // 응원 알람일 때만 — 다른 테마로 바꾼 알람에 옛 값이 남으면 서버 사본이 뜻 없는 값을 든다.
+            cheerMode = cheerMode.takeIf { isActiveBucketAlarm() && selectedBucket == com.alarmtalk.app.data.CHEER_BUCKET_ID },
+            cheerPinnedContentId = cheerPinnedContentId.takeIf {
+                isActiveBucketAlarm() && selectedBucket == com.alarmtalk.app.data.CHEER_BUCKET_ID &&
+                    cheerMode == com.alarmtalk.app.data.CheerModes.PINNED
+            },
         )
     }
 
@@ -724,6 +739,9 @@ internal class AlarmEditorState(
                 // 새 알람만 처음부터 이어받는다. 기존 알람은 문구가 없던 상태에서 목소리
                 // 문구로 들어올 때만 켜진다(adoptLastMessageChoiceIfUnset).
                 followsLastMessageChoice = alarm == null,
+                // 새 알람의 응원은 '다양하게' 로 연다(스펙 voice-and-message §5-4) — 직전 선택으로 잇지 않는다.
+                cheerMode = alarm?.cheerMode,
+                cheerPinnedContentId = alarm?.cheerPinnedContentId,
             )
         }
     }
@@ -781,6 +799,8 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
 internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
     when (normalizedRandomPromptContext(context ?: "")) {
         "preset" -> "greeting"
+        // 기상 인사 — 기본 목소리의 스톡 클립 `wake`(스펙 voice-and-message §5-4). 클론에는 이 클립이 없다.
+        "wake" -> "wake"
         "cheer" -> "cheer"
         "medication" -> "medication"
         // 운세: 발사 시점 기기에서 매일 신선 계산이라 반복 알람도 정확(fortuneThemeIndex).
@@ -806,6 +826,7 @@ internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
 internal fun randomPromptContextForBucket(bucket: String?): String? =
     when (bucket?.trim()) {
         "greeting" -> "preset"
+        "wake" -> "wake"
         "cheer" -> "cheer"
         // 옛 버킷 이름 — 이미 저장된 알람 행이 들고 있다(위 normalize 와 같은 이유).
         "love" -> "cheer"

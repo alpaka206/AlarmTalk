@@ -60,6 +60,7 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
   tts_synthesis_usage: 'no-personal-data', // 합성 사용량 장부 — 종류·날짜·숫자뿐, 사람을 가리키지 않는다(#139)
   tts_dev_budget_holds: 'no-personal-data', // dev 예산에서 합성 직전에 잡는 몫 — 월·글자 수뿐(#139)
+  stock_content_releases: 'no-personal-data', // 환경마다 공개한 문구 묶음(#143) — 사람과 묶이지 않는 운영 표
   subscriptions: 'per-user',
   store_transactions: 'per-user',
   promo_code_redemptions: 'per-user',
