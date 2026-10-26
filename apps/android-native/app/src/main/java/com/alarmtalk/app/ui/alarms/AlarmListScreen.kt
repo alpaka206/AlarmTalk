@@ -226,6 +226,21 @@ internal fun AlarmListScreen(
                 modifier = Modifier.padding(top = 24.dp),
             )
         }
+    // 상태 카드의 '기본 목소리 받는 중' — **기본 목소리만** 센다. 워커 진행(`voicePrefetchProgress`)에는 내 목소리 사전렌더도
+    // 섞여 있어, 그것만 받는 중인데 기본 목소리 알람에 '받는 중' 이 뜨고 진짜 날씨 경고까지 가렸다. 워커 진행이 바뀔 때마다
+    // 캐시를 다시 센다(디스크를 읽으니 IO 에서).
+    val statusContext = androidx.compose.ui.platform.LocalContext.current
+    // ⚠ **받기가 실제로 돌고 있을 때만**이다 — 재시도를 다 써서 멈췄는데 파일이 빠져 있다는 이유로 '받는 중' 을 띄우면 끝없이
+    //   받는 중이라 하고 날씨 경고까지 가린다. `voicePrefetchProgress` 는 워커가 RUNNING 이고 덜 받았을 때만 값이 있다.
+    var defaultVoicesDownloading by remember { mutableStateOf(false) }
+    LaunchedEffect(voicePrefetchProgress, authSession?.user?.id) {
+        defaultVoicesDownloading = voicePrefetchProgress != null &&
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(statusContext, authSession?.user?.id)
+                }.getOrNull()
+            }?.let { (done, total) -> total > 0 && done < total } == true
+    }
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -302,24 +317,67 @@ internal fun AlarmListScreen(
                 // 미리 조르지 않는다 — 알람 만들기 시점에 요청한다.
                 // 헤드라인이 이미 '안 울린다'를 말했으므로, 배너는 같은 말을 반복하지 않고
                 // 각각 **왜 그런지 / 무엇을 하면 되는지**를 말한다.
-                permissions.firstMissingAlarmTarget()?.takeIf { hasAnyAlarm }?.let { missing ->
+                // **다음 알람 상태 카드**(2026-10-26 v1.3 W06) — 켜진 알람이 있으면 다음 알람에 대해 지금 할 일 하나를 말한다.
+                // 권한 부족도 이 카드가 말한다(예전 권한 배너와 같은 문구·같은 동작). 켜진 알람이 없는데 권한이 모자라면
+                // 예전처럼 배너만 둔다.
+                val nowMillis = System.currentTimeMillis()
+                // 저장된 예약 시각(`fireAtMillis`)으로 고른다 — 헤드라인과 같다. 시·분·반복으로 다시 계산하면 다시 울림(스누즈)으로
+                // 5분 뒤에 울 알람을 내일 알람으로 읽는다(`AlarmRepository.snooze` 는 `fireAtMillis` 만 옮긴다).
+                val nextAlarm = alarms.filter { it.enabled }
+                    .map { it to it.fireAtMillis }
+                    .minByOrNull { it.second }
+                val missingPermission = permissions.firstMissingAlarmTarget()
+                if (nextAlarm != null) {
+                    val (alarm, fireAt) = nextAlarm
+                    val limitedEndsAt = parseServerInstantMillis(authSession?.planPromoStamp()?.endsAt)
+                    val status = nextAlarmStatus(
+                        alarm = alarm,
+                        nextFireAtMillis = fireAt,
+                        missingPermission = missingPermission,
+                        defaultVoiceDownloadInProgress = defaultVoicesDownloading,
+                        limitedPlanEndsAtMillis = limitedEndsAt,
+                        nowMillis = nowMillis,
+                    )
                     item {
-                        AlarmPermissionWarningBanner(
-                            // 헤드라인(남은 시간/경고)과 붙어 있으면 한 덩어리로 읽힌다.
-                            // 목록 기본 간격(16)에 더해 한 칸 더 띄운다.
-                            modifier = Modifier.padding(top = 8.dp),
-                            // **어떤 권한인지** 말한다. '권한' 이라고만 하면 어디를 켜야 하는지
-                            // 모른 채 설정 화면에서 헤맨다. 결과도 권한마다 다르다.
-                            //
-                            textResId = when (missing) {
-                                PermissionTarget.Notifications -> R.string.hs_perm_banner_notifications
-                                PermissionTarget.ExactAlarms -> R.string.hs_perm_banner_exact_alarm
-                                else -> R.string.hs_perm_banner_full_screen
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        val voiceName = alarm.voiceProfileId
+                            ?.takeIf {
+                                alarm.voiceSource != VoiceSources.LOCAL_AUDIO &&
+                                    com.alarmtalk.app.data.AlarmPlayModes.normalize(alarm.playMode) ==
+                                    com.alarmtalk.app.data.AlarmPlayModes.VOICE_ONLY
+                            }
+                            ?.let { id ->
+                                voiceProfiles.firstOrNull { it.id == id }
+                                    ?.let { com.alarmtalk.app.data.systemVoiceDisplayName(context, it.id, it.name) }
+                            }
+                        NextAlarmStatusCard(
+                            status = status,
+                            voiceName = voiceName,
+                            endsAtLabel = (status as? NextAlarmStatus.VoiceEnding)?.endsAtMillis?.let { ends ->
+                                android.text.format.DateUtils.formatDateTime(
+                                    context,
+                                    ends - 1_000L,
+                                    android.text.format.DateUtils.FORMAT_SHOW_DATE or android.text.format.DateUtils.FORMAT_NO_YEAR,
+                                )
                             },
-                            // 탭하면 우리 모달을 한 번 더 거치지 않고 바로 그 권한 요청/설정으로
-                            // 보낸다 — 배너가 이미 무엇을 왜 켜야 하는지 말했다.
-                            onClick = { onRequestAlarmPermission(missing) },
+                            onRequestPermission = onRequestAlarmPermission,
+                            modifier = Modifier.padding(top = 8.dp),
                         )
+                    }
+                } else {
+                    missingPermission?.takeIf { hasAnyAlarm }?.let { missing ->
+                        item {
+                            AlarmPermissionWarningBanner(
+                                modifier = Modifier.padding(top = 8.dp),
+                                // **어떤 권한인지** 말한다. '권한' 이라고만 하면 어디를 켜야 하는지 모른 채 설정 화면에서 헤맨다.
+                                textResId = when (missing) {
+                                    PermissionTarget.Notifications -> R.string.hs_perm_banner_notifications
+                                    PermissionTarget.ExactAlarms -> R.string.hs_perm_banner_exact_alarm
+                                    else -> R.string.hs_perm_banner_full_screen
+                                },
+                                onClick = { onRequestAlarmPermission(missing) },
+                            )
+                        }
                     }
                 }
                 items(sortedAlarms, key = { it.id }) { alarm ->

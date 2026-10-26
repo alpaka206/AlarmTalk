@@ -758,4 +758,10 @@
     <string name="voice_registration_consent_title">목소리를 등록하기 전에</string>
     <string name="voice_registration_consent_body">본인 목소리이거나, 목소리 주인이 음성 복제와 알람 사용에 명시적으로 동의한 목소리만 등록해 주세요. 목소리 주인의 동의를 확인했으며, 무단 등록·권리 침해·사칭으로 생기는 책임은 등록한 사람에게 있음을 확인합니다.</string>
     <string name="voice_registration_consent_agree">동의하기</string>
+    <string name="next_alarm_status_title">다음 알람</string>
+    <string name="next_alarm_status_title_voice">다음 알람 · %1$s</string>
+    <string name="next_alarm_status_ready">다음 알람과 목소리가 준비됐어요.</string>
+    <string name="next_alarm_status_preparing">기본 목소리를 받고 있어요. 받는 동안에도 알람은 울려요.</string>
+    <string name="next_alarm_status_weather">날씨를 아직 갱신하지 못했어요. 연결되면 다시 받아요.</string>
+    <string name="next_alarm_status_voice_ending">등록한 목소리는 %1$s에 이용이 끝나요. 그 뒤에는 기본 목소리로 울려요.</string>
 </resources>

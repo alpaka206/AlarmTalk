@@ -733,4 +733,10 @@
     <string name="voice_registration_consent_title">Before registering a voice</string>
     <string name="voice_registration_consent_body">Only register your own voice or a voice whose owner has explicitly consented to voice cloning and use in alarms. I confirm that I have the voice owner’s consent and accept responsibility for unauthorized registration, infringement of rights, or impersonation.</string>
     <string name="voice_registration_consent_agree">Agree</string>
+    <string name="next_alarm_status_title">Next alarm</string>
+    <string name="next_alarm_status_title_voice">Next alarm · %1$s</string>
+    <string name="next_alarm_status_ready">Your next alarm and its voice are ready.</string>
+    <string name="next_alarm_status_preparing">Downloading the default voices. Your alarm still rings meanwhile.</string>
+    <string name="next_alarm_status_weather">Couldn\'t update the weather yet. It will retry when you\'re online.</string>
+    <string name="next_alarm_status_voice_ending">Your registered voice is available until %1$s. After that, the alarm uses a default voice.</string>
 </resources>
