@@ -11,9 +11,10 @@ import { RevealGroup, RevealItem } from "./motion/reveal-group";
  * 묶음(알람·기본 목소리·고르는 문구·언어)은 두 열 모두 ✓ 라 "무료가 넓다" 가 표에서도
  * 읽히게 한다. '인기' 배지나 강조 열은 두지 않는다 — 붙이는 순간 나머지가 모자란 것이 된다.
  *
- * 값은 셋뿐이다: 포함(✓) · 미포함(–) · 짧은 값(무제한, 한 달에 한 번).
+ * 값은 셋뿐이다: 포함(✓) · 미포함(–) · 짧은 값(무제한, 한 달에 한 번, 직접 입력 횟수).
  * 사실은 요금 원장(packages/backend 의 plans 시드)과 FAQ 가 말하는 그대로다 — 여기서 새
- * 숫자를 짓지 않는다.
+ * 숫자를 짓지 않는다. 직접 입력 횟수(무료 3 · 플러스 30)의 원본은 shared `MANUAL_TTS_MONTHLY_LIMIT`
+ * 이고 규칙은 `docs/spec/voice-and-message.md` §8 이다 — 그 값이 바뀌면 `values.manual*` 세 언어를 같이 고친다.
  *
  * md 미만에서는 같은 데이터를 요금제별 카드로 세로로 편다. 둘은 display 로 갈라
  * 스크린리더에는 하나만 읽힌다.
@@ -22,7 +23,7 @@ import { RevealGroup, RevealItem } from "./motion/reveal-group";
 const PLANS = ["free", "personal"] as const;
 type PlanKey = (typeof PLANS)[number];
 
-type Cell = boolean | "unlimited" | "monthly";
+type Cell = boolean | "unlimited" | "monthly" | "manualFree" | "manualPlus";
 
 type Row = { key: string; cells: Record<PlanKey, Cell> };
 type Group = { key: "basics" | "voice"; rows: Row[] };
@@ -40,7 +41,7 @@ const GROUPS: readonly Group[] = [
   {
     key: "voice",
     rows: [
-      { key: "customText", cells: { free: false, personal: true } },
+      { key: "customText", cells: { free: "manualFree", personal: "manualPlus" } },
       { key: "myVoice", cells: { free: false, personal: "monthly" } },
     ],
   },
