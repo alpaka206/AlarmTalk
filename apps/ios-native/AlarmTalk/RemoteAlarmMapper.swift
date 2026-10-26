@@ -26,9 +26,13 @@ enum RemoteAlarmMapper {
     /// 그 값으로 `mode` 를 정하면 **서버가 모르는 음원을 근거로 tts 모드가 된다.**
     /// 내 알람 녹음은 폰에만 둔다.
     static func toRemoteRequest(_ local: LocalAlarmRecord) -> RemoteAlarmWriteRequest {
-        let hasRemoteVoice = local.ttsMessageId != nil
-        let messageId = local.ttsMessageId.nilIfBlank
-        let voiceProfileId = local.voiceSourceEnum == .localAudio ? nil : local.voiceProfileId.nilIfBlank
+        // ⚠ **추가 음성팩 목소리·클립 id 는 서버에 싣지 않는다**(`docs/spec/voice-packs.md` §1). 팩 목소리는 목소리
+        // 프로필이 아니라 서버가 404 로 거절하고, 서버 행은 사본이라(pull·복구 없음) 잃는 것이 없다. 테마(`bucket_id`)는
+        // 보낸다. 안드로이드 `RemoteAlarmMapper.toWriteRequest` 와 같다.
+        let usesVoicePack = local.voiceSourceEnum != .localAudio && isVoicePackVoiceID(local.voiceProfileId)
+        let hasRemoteVoice = local.ttsMessageId != nil && !usesVoicePack
+        let messageId = usesVoicePack ? nil : local.ttsMessageId.nilIfBlank
+        let voiceProfileId = local.voiceSourceEnum == .localAudio || usesVoicePack ? nil : local.voiceProfileId.nilIfBlank
 
         return RemoteAlarmWriteRequest(
             time: local.timeString,
@@ -49,6 +53,7 @@ enum RemoteAlarmMapper {
             // 안드로이드 `RemoteAlarmMapper.toWriteRequest` 미러.
             clearsMissingVoiceReferences: local.hasLockedPaidVoice
                 || (local.voiceSourceEnum != .localAudio && isSystemVoiceId(local.voiceProfileId))
+                || usesVoicePack
         )
     }
 

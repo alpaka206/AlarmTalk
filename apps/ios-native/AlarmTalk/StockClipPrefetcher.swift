@@ -160,6 +160,14 @@ final class StockClipPrefetcher: ObservableObject {
                     try? await Task.sleep(nanoseconds: Self.retryDelaySeconds * 1_000_000_000)
                 }
             }
+            // **받은 추가 음성팩**은 기본 목소리·내 클론 **다음**에 받는다(지시서 7.3 의 4번 '선택한 추가 팩',
+            // `docs/spec/voice-packs.md` §7). 이 회차의 상태(`state`)를 건드리지 않는다 — 받기 화면·알람 설정 관문은
+            // 기본 목소리만 센다. 새 프리페처를 따로 만들지 않고 이 회차를 늘린다(안드로이드 `VoicePackDownloader` 짝).
+            if !Task.isCancelled, self?.generation == gen {
+                await VoicePackStore.shared.runDownloadStage(session: session) { [weak self] in
+                    !Task.isCancelled && self?.generation == gen
+                }
+            }
             if self?.generation == gen {
                 self?.task = nil
                 self?.runningOwnedVoiceProfileIDs = []

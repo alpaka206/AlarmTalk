@@ -322,6 +322,11 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 있고 서버 /tts/stock-clips 는 language ASC 정렬이라, 무필터 first 는 항상 영어(en)를 잡는다.
     /// 앱 언어 → ko → 아무 greeting → 그 보이스의 아무 클립 순. Android `greetingStockClipFor` 미러.
     func greetingClip(voiceId: String) -> StockClip? {
+        // 받은 추가 음성팩의 미리듣기 샘플(인사말 0번) — 편집기 목소리 시트의 '듣기'(`docs/spec/voice-packs.md` §7).
+        if isVoicePackVoiceID(voiceId) {
+            return VoicePackStore.shared.held.first { $0.voiceId == voiceId }?
+                .stockClips.first { $0.category == "greeting" }
+        }
         let greetings = stockClips.filter { $0.voiceProfileId == voiceId && $0.category == "greeting" }
         let appLanguage = Self.appVoiceLanguage()
         return greetings.first { ($0.language ?? "ko") == appLanguage }
@@ -504,8 +509,11 @@ final class VoiceStudioViewModel: ObservableObject {
             (fortuneBirthTime).nilIfBlank != nil
     }
 
+    /// 편집기가 **기본 목소리처럼**(무료·테마 클립·기본 개수표) 다루는 목소리인가 — 기본 목소리 4종과 추가 음성팩
+    /// (`docs/spec/voice-packs.md` §2 — 팩은 기본 목소리와 같은 구조로만 게시된다).
     func isSystemVoiceProfile(id: String?) -> Bool {
         guard let id else { return false }
+        if isVoicePackVoiceID(id) { return true }
         return profiles.first { $0.id == id }.map(isSystemVoice) ?? isSystemVoiceId(id)
     }
 
@@ -885,7 +893,8 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = String(localized: "로그인이 필요해요.")
             return nil
         }
-        let stockKey = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
+        // 추가 음성팩 클립은 `pack_<clipId>` 자리다(`StockClip.cacheKey`).
+        let stockKey = clip.cacheKey
         do {
             // ⚠ **선다운로드해 둔 캐시를 먼저 본다.** 예전에는 이 확인이 없어서
             // `StockClipPrefetcher` 가 받아 둔 바로 그 키(`stock_<id>`)를 두고도 **매번
@@ -902,6 +911,17 @@ final class VoiceStudioViewModel: ObservableObject {
                     cacheKey: stockKey
                 )
                 let prepared = makeStockPrepared(clip: clip, cached: cached, rawAudioURL: nil)
+                preparedAlarm = prepared
+                return prepared
+            }
+            // 추가 음성팩 — 받아 둔 팩이 정상 경로다. 캐시가 비었을 때만 팩 오디오 경로로 받는다(해시·크기 대조).
+            if isVoicePackVoiceID(clip.voiceProfileId) {
+                guard let packID = VoicePacks.packID(fromIdentity: clip.audioUrl),
+                      let expected = VoicePackStore.shared.heldPack(packID: packID)?.clips.first(where: { $0.clipId == clip.messageId })
+                else { throw LocalAlarmAudioError.missingSource }
+                let audio = try await api.getVoicePackClipAudio(packID: packID, clipID: clip.messageId, token: token)
+                let cached = try await AudioCacheStore.cacheVoicePackClipOffMain(audio: audio, expected: expected, packID: packID)
+                let prepared = makeStockPrepared(clip: clip, cached: cached, rawAudioURL: clip.audioUrl)
                 preparedAlarm = prepared
                 return prepared
             }
@@ -1453,7 +1473,9 @@ final class VoiceStudioViewModel: ObservableObject {
             guard record.ownerUserId == nil || record.ownerUserId == owner else { return false }
             guard let voiceID = record.voiceProfileId?.nilIfBlank else { return false }
             // 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다.
-            return !isSystemVoiceId(voiceID) && !accessible.contains(voiceID)
+            // 추가 음성팩 목소리는 `GET /voice` 에 **원래 없다**(목소리 프로필이 아니다 — `docs/spec/voice-packs.md` §1).
+            // 여기서 잃은 것으로 읽으면 받아 둔 팩 알람이 새로고침마다 미나로 바뀐다. 팩의 게시 끝은 `VoicePackStore` 가 본다.
+            return !isSystemVoiceId(voiceID) && !isVoicePackVoiceID(voiceID) && !accessible.contains(voiceID)
         }
         // 무료 잠금으로 기본 목소리가 된 행은 **보관본의 원래 목소리**로 본다 — 그 목소리가 지워졌으면
         // 잠금을 확정한다(보관본을 버리고 기본 목소리로 남긴다. 알람음으로 내리지 않는다).
@@ -1548,6 +1570,24 @@ final class VoiceStudioViewModel: ObservableObject {
         guard !targets.isEmpty else { return [] }
         degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
         return targets.map(\.id)
+    }
+
+    /// **추가 음성팩**을 지우거나 게시 기한이 지나 대체할 때 — 그 팩 목소리 알람을 기본 목소리(미나)로 바꾼다
+    /// (`docs/spec/voice-packs.md` §5-3, 목소리를 잃은 알람과 같은 모양 — `degrade`). 지금 계정의 행만 본다(소유자 미기록 옛 행 포함)
+    /// — 받은 팩 목록이 계정별이라, 다른 계정의 알람은 그 계정이 자기 목록에서 대체한다.
+    /// 안드로이드 짝은 `AlarmRepository.degradeAlarmsUsingVoicePack`.
+    @discardableResult
+    func degradeVoicePackAlarms(
+        voiceID: String,
+        alarmStore: LocalAlarmStore,
+        audioCache: AudioCacheStore?,
+        ownerUserId: String?
+    ) -> Int {
+        guard isVoicePackVoiceID(voiceID) else { return 0 }
+        let targets = VoicePackStore.alarmsUsing(voiceID: voiceID, in: alarmStore.alarms, ownerUserId: ownerUserId)
+        guard !targets.isEmpty else { return 0 }
+        degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
+        return targets.count
     }
 
     func degradeAlarms(usingVoiceProfileIDs ids: [String], alarmStore: LocalAlarmStore, audioCache: AudioCacheStore?) {

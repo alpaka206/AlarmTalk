@@ -177,6 +177,9 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
   `stock_` 네임스페이스와 따로 둔다(기본 목소리 매니페스트 기준 정리가 팩 파일을 지우지 않게, 오래된 캐시 정리도 `pack_`
   을 건너뛴다).
 - 다 받았을 때만 '받음' 이고, 그때부터 편집기에 나온다. 일부 실패는 같은 회차·다음 회차가 이어 받는다.
+- 개정이 바뀌어 클립 id 가 바뀌면 **이미 저장한 알람은 묶은 클립 그대로 운다**(다시 저장하면 새 클립을 묶는다). 놓은 옛 클립
+  파일은 어떤 알람도 안 쓸 때만 지운다.
+- 카탈로그에 없는 팩(최소 빌드·허용 지역)은 받으려 하지 않는다 — 서버가 404 로 답한다. 받아 둔 파일·알람은 그대로 둔다.
 - 로그아웃·계정 전환: 받은 팩 목록은 계정별이다. 파일은 기기 캐시라 남지만(기본 목소리 클립과 같다) 다른 계정의
   목록에는 안 보인다.
 
@@ -216,17 +219,18 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
 | 기존 재생 기한 | `lib/voice-packs.ts` 의 `withdrawnPlaybackUntil` | — | — |
 | 권리 메타데이터 비노출 | `lib/voice-packs.ts` 의 `toPublicPack` | — | — |
 | 게시 조건 | `lib/voice-packs.ts` 의 `publishBlockers` | — | — |
-| 앱 API | `routes/voice-packs.ts` | `network/VoicePackApi.kt` | `Network/VoicePackAPI.swift` |
+| 앱 API | `routes/voice-packs.ts` | `network/VoicePackApi.kt` | `AlarmTalkAPI.swift` 의 `getVoicePacks`·`getVoicePack`·`getVoicePackClipAudio`(모델은 `VoicePacks.swift`) |
 | 관리자 화면·전이·가져오기 | `routes/admin.ts`·`lib/admin/voice-pack-pages.ts`·`lib/voice-packs.ts` 의 `transitionVoicePack`·`importVoicePackClip`, `scripts/import-voice-pack.ts` | — | — |
 | 팩 목소리 id 대역 | `lib/voice-packs.ts` 의 `VOICE_PACK_VOICE_ID_PREFIX` | `data/VoicePacks.kt` 의 `isVoicePackVoiceId` | `VoicePacks.swift` 의 `isVoicePackVoiceID` |
-| 받은 팩 목록(계정별) | — | `data/VoicePackStore.kt` | `VoicePackStore.swift` |
-| 받기(선다운로드 확장, 해시·크기 대조) | — | `sync/StockClipPrefetchWorker.kt` 의 `VoicePackDownloader` | `StockClipPrefetcher.swift` 의 `prefetchVoicePacks` |
-| 캐시 키 `pack_` | — | `data/VoicePacks.kt` 의 `voicePackCacheKey`, `AlarmAudioStore.sweepStaleCache` | `VoicePacks.swift` 의 `voicePackCacheKey` |
-| 기한 뒤 미나로 대체·지우기 | — | `data/AlarmRepository.kt` 의 `degradeAlarmsUsingVoicePack` | `VoicePackStore.swift` 의 `retireExpiredPacks` |
-| 접근권 대조에서 팩 제외 | — | `AlarmRepository.degradeAlarmsWithInaccessibleVoice` | `VoicePacks.swift` 의 `isVoicePackVoiceID` 를 보는 자리 |
-| 무료로 쓴다 | — | `data/SystemVoices.kt` 의 `usesFreeSystemVoiceAlarm` | `isFreeFixedVoice` |
+| 받은 팩 목록(계정별) | — | `data/VoicePackStore.kt` | `VoicePackStore.swift` 의 `activate(userID:)`(`AlarmTalkApp` 의 계정 키 태스크) |
+| 받기(선다운로드 확장, 해시·크기 대조) | — | `sync/StockClipPrefetchWorker.kt` 의 `VoicePackDownloader` | `StockClipPrefetcher.start` 의 회차 끝 → `VoicePackStore.runDownloadStage`, `AudioCacheStore.cacheVoicePackClip` |
+| 캐시 키 `pack_` | — | `data/VoicePacks.kt` 의 `voicePackCacheKey`, `AlarmAudioStore.sweepStaleCache` | `VoicePacks.cacheKey(clipID:)`·`StockClip.cacheKey`, `AudioCacheStore.sweepStaleCache` |
+| 기한 뒤 미나로 대체·지우기 | — | `data/AlarmRepository.kt` 의 `degradeAlarmsUsingVoicePack` | `VoicePackStore.retireExpired`·`remove` → `VoiceStudioViewModel.degradeVoicePackAlarms` |
+| 접근권 대조에서 팩 제외 | — | `AlarmRepository.degradeAlarmsWithInaccessibleVoice` | `VoiceStudioViewModel.reconcileInaccessibleVoiceAlarms` |
+| 무료로 쓴다 | — | `data/SystemVoices.kt` 의 `usesFreeSystemVoiceAlarm` | `VoicePacks.swift` 의 `isFreeFixedVoiceID`(`PaidVoiceGate.usesFreeSystemVoice`·`LocalAlarmRecord.isPaidVoiceForDowngrade`·`isStockVoiceClip`) |
 | 서버 사본에 팩 id 를 싣지 않는다 | — | `network/RemoteAlarmMapper.kt` | `RemoteAlarmMapper.swift` |
 | 목소리 탭 '추가 팩'·팩 상세 | — | `ui/voices/VoicePackSection.kt` | `Views/Voices/VoicePackSection.swift` |
-| 편집기 목록·직접 입력 감추기 | — | `ui/app/AlarmTalkApp.kt`(목록 합치기)·`ui/editor/VoiceAudioCard.kt` | `AlarmEditorSheet.swift` |
-| 언어 재바인딩에서 팩 제외 | — | `sync/StockClipLanguageRebinder.kt` 의 `needsRebind` | `StockClipLanguageRebinder.swift` |
-| 테스트 | `test/voice-packs.test.ts` | `VoicePackTest.kt` | `VoicePackTests.swift` |
+| 편집기 목록·직접 입력 감추기 | — | `ui/app/AlarmTalkApp.kt` 의 편집기 라우트(`editorVoicePacks` 로 합치기)·`ui/editor/AlarmRandomPromptSettings.kt` 의 `manualAvailable`·`ui/editor/AlarmEditorScreen.kt` 의 `fixedVoiceClipLanguage`·저장 막기 | `Views/Editor/AlarmEditorSheet.swift` 의 `editorProfiles`·`editorStockClips`·`applyVoiceSelection`, `MessageSettingsPane.manualAvailable` |
+| 언어 재바인딩에서 팩 제외 | — | `sync/StockClipLanguageRebinder.kt` 의 `needsRebind` | `StockClipLanguageRebinder.needsRebind` |
+| 카탈로그 조회·받기 시작·지우기·샘플 | — | `ui/main/MainViewModelVoicePacks.kt` | `VoicePackStore.swift` |
+| 테스트 | `test/voice-packs.test.ts` | `data/VoicePackTest.kt`·`sync/VoicePackDownloaderTest.kt` | `AlarmTalkTests/VoicePackTests.swift` |
