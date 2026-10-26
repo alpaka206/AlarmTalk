@@ -19,7 +19,6 @@ import type { DbExecutor } from './transactions';
 export const AD_REWARD_MONTHLY_LIMIT = 10;
 
 // 월 경계는 KST(UTC+9) — 직접 입력 월 한도(`manual-tts-quota.ts`)와 같다.
-const KST_MONTH_SQL = "strftime('%Y-%m', 'now', '+9 hours')";
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 /** 서명된 보상 시각을 믿는 범위. 그 밖이면(시계가 틀린 값) 처리 시각으로 센다. */
 const REWARD_TIME_PAST_LIMIT_MS = 40 * 24 * 60 * 60 * 1000;
@@ -54,65 +53,9 @@ export function isConfiguredRewardedAdUnit(
     .some((unit) => unit === adUnit || unit.endsWith(`/${adUnit}`));
 }
 
-/**
- * 적립한다. 이미 받은 거래이거나 이번 달 상한에 닿았으면 아무것도 하지 않고 false.
- * 상한 검사와 삽입이 한 문장이라 동시에 온 콜백이 상한을 넘기지 못한다.
- */
-export async function grantAdRewardCredit(
-  db: DbExecutor,
-  input: { transactionId: string; userPk: string; adUnit: string; rewardedAtMs?: number | null },
-  monthlyLimit: number = AD_REWARD_MONTHLY_LIMIT,
-): Promise<boolean> {
-  const grantMonth = grantMonthFor(input.rewardedAtMs ?? null);
-  const res = await db.execute({
-    sql: `INSERT OR IGNORE INTO ad_reward_credits (transaction_id, user_id, ad_unit, grant_month)
-          SELECT ?, ?, ?, ?
-          WHERE (SELECT COUNT(*) FROM ad_reward_credits
-                 WHERE user_id = ? AND grant_month = ?) < ?`,
-    args: [
-      input.transactionId,
-      input.userPk,
-      input.adUnit,
-      grantMonth,
-      input.userPk,
-      grantMonth,
-      monthlyLimit,
-    ],
-  });
-  return (res.rowsAffected ?? 0) > 0;
-}
+// 적립(SSV 정산)과 현황 읽기는 `lib/ad-reward-sessions.ts` 에 있다 — 승인 세션의 예약과 함께 세야 해서다(마이그레이션 141).
 
-export interface AdRewardStatus {
-  /** 지금 쓸 수 있는(받고 아직 안 쓴) 보상 횟수. */
-  credits: number;
-  /** 이번 달 광고로 더 받을 수 있는 횟수. */
-  remaining_grants: number;
-  monthly_limit: number;
-}
-
-export async function readAdRewardStatus(
-  db: DbExecutor,
-  userPk: string,
-  monthlyLimit: number = AD_REWARD_MONTHLY_LIMIT,
-): Promise<AdRewardStatus> {
-  const res = await db.execute({
-    sql: `SELECT
-            COALESCE(SUM(CASE WHEN consumed_at IS NULL THEN 1 ELSE 0 END), 0) AS credits,
-            COALESCE(SUM(CASE WHEN grant_month = ${KST_MONTH_SQL} THEN 1 ELSE 0 END), 0) AS granted
-          FROM ad_reward_credits WHERE user_id = ?`,
-    args: [userPk],
-  });
-  const row = res.rows[0];
-  const credits = Number(row?.credits ?? 0);
-  const granted = Number(row?.granted ?? 0);
-  return {
-    credits,
-    remaining_grants: Math.max(0, monthlyLimit - granted),
-    monthly_limit: monthlyLimit,
-  };
-}
-
-/** 가장 오래된 보상 한 번를 쓴다. 쓴 거래 id(환불용) 또는 없으면 null. */
+/** 가장 오래된 보상 한 번을 쓴다. 쓴 거래 id(환불용) 또는 없으면 null. */
 export async function consumeAdRewardCredit(
   db: DbExecutor,
   userPk: string,

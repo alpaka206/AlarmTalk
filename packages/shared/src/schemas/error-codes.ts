@@ -84,6 +84,15 @@ export const ERROR_CODES = [
   /** 키 목록을 방금 다시 받았다 — AdMob 이 1초 뒤 재시도하면 받힌다(`lib/admob-ssv.ts`). */
   'AD_REWARD_RETRY_LATER',
   'AD_REWARD_SIGNATURE_INVALID',
+  // 광고 시청 승인 세션 (ad-reward-sessions.ts) — 앱에 닿는다(`docs/spec/ad-rewards.md` §3).
+  /** 이번 달 광고로 받을 수 있는 횟수를 다 채웠다(예약 포함) — 다음 달 1일에 다시 생긴다. */
+  'AD_REWARD_MONTHLY_LIMIT',
+  /** 같은 계정의 다른 광고가 준비·시청 중이다 — 한 계정에 열린 세션은 하나다. */
+  'AD_REWARD_SESSION_OPEN',
+  /** 없는 세션·남의 세션·만료됐거나 이미 끝난 세션이다. 새 세션부터 다시 시작한다. */
+  'AD_REWARD_SESSION_INVALID',
+  /** 지금은 새 광고를 볼 수 없다 — 운영 스위치 꺼짐·이 광고 단위 미설정·유료 계정. 적립된 보상은 그대로다. */
+  'AD_REWARD_UNAVAILABLE',
   // 음성 생성(TTS) (tts.ts)
   'BASIC_VOICE_PRESET_ONLY',
   'FREE_PLAN_PRESET_ONLY',

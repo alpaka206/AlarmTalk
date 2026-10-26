@@ -1950,32 +1950,47 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
 });
 
 describe('GET /tts/manual-quota — 광고 보상 현황', () => {
-  it('무료면 보상 현황과 콜백에 실을 계정 PK 를 싣는다', async () => {
+  it('무료면 보상 현황과 지금 광고를 볼 수 있는지를 싣는다 — 계정 PK 는 싣지 않는다', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([]); // 개인 구독 없음 → 무료 풀
     mockDB.pushResult([{ used_count: 1 }]); // 이번 달 1회 사용
-    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 2, granted: 4 }]);
+    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 2, granted: 4, reserved: 1, pending: 1, open: 0 }]);
 
     const res = await buildApp().request(new Request('http://x/tts/manual-quota'), undefined, {
       ...ENV,
       ADMOB_REWARDED_AD_UNITS: 'ca-app-pub-1/123',
+      ADMOB_REWARDED_ADS_ENABLED: 'true',
     });
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({ plan_key: 'free', limit: 3, used: 1, remaining: 2 });
-    expect(body.ad_reward).toEqual({ credits: 2, remaining_grants: 6, monthly_limit: 10, user_id: 'user-1' });
+    expect(body.ad_reward).toEqual({
+      credits: 2,
+      remaining_grants: 5,
+      monthly_limit: 10,
+      pending: 1,
+      can_watch: true,
+      unavailable_reason: null,
+      next_grant_at: null,
+    });
+    // ⚠ 옛 앱이 승인 없이 광고를 띄우던 근거(`user_id`)는 더는 나가지 않는다(스펙 ad-rewards §3 「옛 앱」).
+    expect(body.ad_reward.user_id).toBeUndefined();
   });
 
-  it('서버의 광고 단위 설정이 비면 싣지 않는다 — 광고를 봐도 적립되지 않으니 권하지 않는다', async () => {
+  it('광고 스위치가 꺼져도 받아 둔 보상은 싣는다 — 새 광고만 못 본다', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([]); // 개인 구독 없음
+    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 1, granted: 1 }]);
 
     const res = await reqWithEnv(buildApp(), new Request('http://x/tts/manual-quota'));
 
     expect(res.status).toBe(200);
-    expect((await res.json()).ad_reward).toBeUndefined();
-    expect(mockDB.calls.some((c) => c.sql.includes('ad_reward_credits'))).toBe(false);
+    expect((await res.json()).ad_reward).toMatchObject({
+      credits: 1,
+      can_watch: false,
+      unavailable_reason: 'disabled',
+    });
   });
 
   it('유료에게는 싣지 않는다', async () => {

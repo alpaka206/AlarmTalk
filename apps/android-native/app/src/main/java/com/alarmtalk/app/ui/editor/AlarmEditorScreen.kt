@@ -66,8 +66,9 @@ import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.ManualQuotaResponse
-import com.alarmtalk.app.ads.RewardedAdOutcome
 import com.alarmtalk.app.ads.RewardedAds
+import com.alarmtalk.app.ads.RewardedAdFlow
+import com.alarmtalk.app.ads.RewardedWatchResult
 import com.alarmtalk.app.ads.findHostActivity
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -97,6 +98,14 @@ private const val RingingStreamPercent = 100
  */
 private const val AD_REWARD_POLL_ATTEMPTS = 8
 private const val AD_REWARD_POLL_INTERVAL_MS = 1_000L
+
+/** 다음 광고 보상이 생기는 날(서버의 `next_grant_at`, ISO-8601)을 기기 언어의 날짜로. 못 읽으면 null. */
+internal fun formatAdRewardNextDate(nextGrantAt: String?, locale: java.util.Locale = java.util.Locale.getDefault()): String? {
+    val instant = nextGrantAt?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() } ?: return null
+    // 다음 달 1일 0시 KST — 기기 시간대가 아니라 그 날짜(KST)로 말한다(서버의 월 경계가 KST 다).
+    val date = instant.atZone(java.time.ZoneId.of("Asia/Seoul")).toLocalDate()
+    return java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.LONG).withLocale(locale).format(date)
+}
 
 private enum class AudioPreviewTarget {
     CachedAudio,
@@ -265,6 +274,8 @@ internal fun AlarmEditorScreen(
     onCreateVoiceProfile: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     onLoadManualQuota: (suspend () -> ManualQuotaResponse?)? = null,
+    // 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3). 없으면(미리보기·로그아웃) 광고를 권하지 않는다.
+    adRewardSessions: com.alarmtalk.app.ads.AdRewardSessionClient? = null,
     onDownloadStockAudio: suspend (String) -> TtsMessageAudioResponse,
     // 제한(날씨+약) 보이스를 편집기에서 고른 순간 그 보이스의 버킷 클립 전체를 백그라운드
     // 프리페치한다 — 기본 목소리 변경 시 프리페치(setDefaultVoice)와 같은 경로. 이미 캐시된
@@ -371,7 +382,8 @@ internal fun AlarmEditorScreen(
     // 함께 본다. `saveEditor` 보다 **먼저** 선언해야 그 함수가 읽을 수 있다(코틀린 지역 선언 순서).
     val isOnline by rememberIsOnline()
     // 직접 입력 문구 선택기에 '(남은/총)' 을 보여주기 위한 이번 달 사용 현황. 무료도 읽는다 — 서버가 무료에게
-    // 광고 보상 현황(`ad_reward`)을 싣고, '직접 입력' 의 잠금이 그걸로 갈린다(`AdRewardGate`, 스펙 ad-rewards §4).
+    // 광고 보상 현황(`ad_reward`)을 싣고, 새로 만들 때의 갈래가 그걸로 갈린다(`AdRewardGate.route`, 스펙 ad-rewards §1-1).
+    // 편집기에 들어올 때마다 다시 읽는다 — 앱을 껐다 켜도 정산 대기(`pending`)를 다시 본다.
     // 로그인 전이면 뷰모델이 부르지 않고 null 을 준다.
     var manualQuota by remember { mutableStateOf<ManualQuotaResponse?>(null) }
     LaunchedEffect(freeVoiceTier, onLoadManualQuota) {
@@ -703,18 +715,30 @@ internal fun AlarmEditorScreen(
     }
 
     /**
-     * 보상형 광고를 띄우고, 끝까지 봤으면 **서버에 보상이 들어온 것을 확인한 뒤** '직접 입력' 을 고른다
-     * (`docs/spec/ad-rewards.md` §3·§4). 앱은 적립하지 않는다 — AdMob 서버의 확인 콜백이 몇 초 뒤에 온다.
+     * 보상형 광고 한 번(`docs/spec/ad-rewards.md` §3 「흐름」) — 서버 승인 세션 → 불러오기 → 표시 직전 시작 승인 → 표시 →
+     * 끝 알림. 끝까지 봤으면 **서버에 보상이 들어온 것을 확인한 뒤** 말한다. 앱은 적립하지 않는다 — AdMob 서버의 확인
+     * 콜백이 보통 몇 초 뒤에 온다.
+     *
+     * ⚠ **몇 초 기다렸다고 실패·재시청을 요구하지 않는다.** 확인이 늦으면 '보상을 확인하고 있어요' 를 말하고 닫게 둔다 —
+     * 서버는 그 세션을 정산 대기로 두고 늦은 콜백도 받는다. 다시 들어오면 현황(`ad_reward.pending`)이 같은 말을 한다.
+     * ⚠ 광고를 봤다고 문장을 자동으로 만들지 않는다 — 보상은 사용자가 다시 저장할 때 한 번 쓴다.
      */
     fun watchRewardedAd() {
-        val reward = manualQuota?.adReward ?: return
+        val sessions = adRewardSessions ?: return
         val activity = context.findHostActivity() ?: return
-        val creditsBefore = reward.credits
+        val creditsBefore = manualQuota?.adReward?.credits ?: 0
         adRewardBusy = true
         scope.launch {
             try {
-                when (RewardedAds.loadAndShow(activity, reward.userId)) {
-                    RewardedAdOutcome.EARNED -> {
+                val flow = RewardedAdFlow(
+                    client = sessions,
+                    adUnit = RewardedAds.adUnitId,
+                    load = { userId, customData -> RewardedAds.load(activity, userId, customData) },
+                    show = { ad -> RewardedAds.show(activity, ad) },
+                    errorCode = ::apiErrorCode,
+                )
+                when (val result = flow.watch()) {
+                    RewardedWatchResult.Earned -> {
                         var credited = false
                         for (attempt in 0 until AD_REWARD_POLL_ATTEMPTS) {
                             delay(AD_REWARD_POLL_INTERVAL_MS)
@@ -727,18 +751,33 @@ internal fun AlarmEditorScreen(
                         }
                         if (credited) {
                             selectManualRequest += 1
+                            blockAlert = context.getString(R.string.editor_ad_reward_granted_title) to
+                                context.getString(R.string.editor_ad_reward_granted_message)
                         } else {
-                            // 보상은 서버에 늦게라도 들어온다 — 다시 누르면 광고 없이 열린다.
+                            // 보상은 서버에 늦게라도 들어온다 — 다시 저장하면 광고 없이 쓴다. 닫아도 된다.
                             blockAlert = context.getString(R.string.editor_ad_reward_pending_title) to
                                 context.getString(R.string.editor_ad_reward_pending_message)
                         }
                     }
-                    RewardedAdOutcome.DISMISSED -> Unit
-                    RewardedAdOutcome.LOAD_FAILED, RewardedAdOutcome.SHOW_FAILED -> {
+                    RewardedWatchResult.Dismissed -> Unit
+                    RewardedWatchResult.NoFill -> {
+                        blockAlert = context.getString(R.string.editor_ad_reward_unavailable_title) to
+                            context.getString(R.string.editor_ad_reward_no_fill_message)
+                    }
+                    is RewardedWatchResult.Refused -> {
+                        blockAlert = context.getString(R.string.editor_ad_reward_unavailable_title) to
+                            (
+                                com.alarmtalk.app.network.apiErrorMessage(context, result.code)
+                                    ?: context.getString(R.string.editor_ad_reward_unavailable_message)
+                                )
+                    }
+                    RewardedWatchResult.Unavailable -> {
                         blockAlert = context.getString(R.string.editor_ad_reward_unavailable_title) to
                             context.getString(R.string.editor_ad_reward_unavailable_message)
                     }
                 }
+                // 무엇으로 끝났든 현황을 다시 읽는다 — 예약이 풀렸거나 대기가 생겼다.
+                onLoadManualQuota?.let { load -> runCatching { load() }.getOrNull()?.let { manualQuota = it } }
             } finally {
                 adRewardBusy = false
             }
@@ -1066,16 +1105,38 @@ internal fun AlarmEditorScreen(
                     // 무료가 기본분(3)도 보상도 다 쓴 자리 — 광고를 볼 수 있으면 광고 게이트를 연다(`docs/spec/ad-rewards.md` §1·§4).
                     // 예전에는 잠긴 '직접 입력' 행이 이 게이트를 열었다. 입력을 잠그지 않게 되면서 새로 만들어야 하는 이 순간으로
                     // 옮겼다. 광고를 못 보면(광고 단위가 없는 빌드·이번 달 상한) 아래 문구로 말한다.
+                    var quotaAlertShown = false
                     if (ttsErrorCode == "MANUAL_TTS_QUOTA_EXCEEDED" && freeVoiceTier) {
                         onLoadManualQuota?.let { load -> runCatching { load() }.getOrNull()?.let { manualQuota = it } }
-                        if (AdRewardGate.canOfferAd(freeVoiceTier, manualQuota?.adReward, RewardedAds.configured)) {
-                            manualGateFromLockedRow = true
-                            voicePlanGateOpen = true
+                        // §1-1 표 — 본인 결과 재사용은 이미 지났다(폰 캐시 → 서버 `cache_hit`). 남은 갈래를 고른다.
+                        val adsAvailable = RewardedAds.configured && adRewardSessions != null
+                        when (AdRewardGate.route(freeVoiceTier, manualQuota?.remaining, manualQuota?.adReward, adsAvailable)) {
+                            ManualCreationRoute.OFFER_AD -> {
+                                manualGateFromLockedRow = true
+                                voicePlanGateOpen = true
+                            }
+                            ManualCreationRoute.REWARD_PENDING -> {
+                                quotaAlertShown = true
+                                blockAlert = context.getString(R.string.editor_ad_reward_pending_title) to
+                                    context.getString(R.string.editor_ad_reward_pending_message)
+                            }
+                            ManualCreationRoute.NEXT_DATE -> {
+                                val next = formatAdRewardNextDate(manualQuota?.adReward?.nextGrantAt)
+                                if (next != null) {
+                                    quotaAlertShown = true
+                                    blockAlert = context.getString(R.string.editor_ad_reward_next_date_title) to
+                                        context.getString(R.string.editor_ad_reward_next_date_message, next)
+                                }
+                            }
+                            // 그 사이 다른 기기가 바꿨다(기본분·보상이 생겼다) — 다시 저장하면 된다. 아래 문구로 말한다.
+                            ManualCreationRoute.USE_BASE,
+                            ManualCreationRoute.USE_REWARD,
+                            ManualCreationRoute.PLAN_RULES -> Unit
                         }
                     }
                     audioMessage = when (ttsErrorCode) {
                         "MANUAL_TTS_QUOTA_EXCEEDED" ->
-                            context.getString(R.string.editor_error_manual_tts_quota)
+                            if (quotaAlertShown) null else context.getString(R.string.editor_error_manual_tts_quota)
                         // 나머지는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성
                         // 실패처럼 "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다.
                         else -> com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
@@ -2020,19 +2081,23 @@ internal fun AlarmEditorScreen(
             // 로그인 + 유료인데 막혔다 = 목소리 종류의 문제다(플랜 문제가 아니다).
             else -> VoiceGateReason.SYSTEM_VOICE_LIMIT
         }
+        // 새로 만들 자리가 없는 저장(429)이 연 무료 게이트는 **보상과 쓰는 범위를 먼저 말한다**(`ad-rewards.md` §3 「흐름」 1).
+        val adOfferGate = gateReason == VoiceGateReason.PLAN_REQUIRED && manualGateFromLockedRow
         PlanGateDialog(
             title = stringResource(
-                when (gateReason) {
-                    VoiceGateReason.LOGIN_REQUIRED -> R.string.editor_plan_gate_login_title
-                    VoiceGateReason.PLAN_REQUIRED -> R.string.r3dlg_plan_gate_title
-                    VoiceGateReason.SYSTEM_VOICE_LIMIT -> R.string.editor_plan_gate_system_voice_title
+                when {
+                    adOfferGate -> R.string.editor_ad_reward_offer_title
+                    gateReason == VoiceGateReason.LOGIN_REQUIRED -> R.string.editor_plan_gate_login_title
+                    gateReason == VoiceGateReason.PLAN_REQUIRED -> R.string.r3dlg_plan_gate_title
+                    else -> R.string.editor_plan_gate_system_voice_title
                 },
             ),
             message = stringResource(
-                when (gateReason) {
-                    VoiceGateReason.LOGIN_REQUIRED -> R.string.editor_plan_gate_login_required
-                    VoiceGateReason.PLAN_REQUIRED -> R.string.plan_gate_paid_message
-                    VoiceGateReason.SYSTEM_VOICE_LIMIT -> R.string.editor_plan_gate_system_voice_message
+                when {
+                    adOfferGate -> R.string.editor_ad_reward_offer_message
+                    gateReason == VoiceGateReason.LOGIN_REQUIRED -> R.string.editor_plan_gate_login_required
+                    gateReason == VoiceGateReason.PLAN_REQUIRED -> R.string.plan_gate_paid_message
+                    else -> R.string.editor_plan_gate_system_voice_message
                 },
             ),
             confirmLabel = stringResource(
@@ -2055,10 +2120,13 @@ internal fun AlarmEditorScreen(
                 voicePlanGateOpen = false
                 manualGateFromLockedRow = false
             },
-            // 잠긴 '직접 입력' 이 연 무료 게이트에만 — 광고를 볼 수 있을 때(`AdRewardGate.canOfferAd`).
+            // 새로 만들어야 하는데 기본분·보상이 없는 저장(429)이 연 무료 게이트에만 — 광고를 볼 수 있을 때
+            // (`AdRewardGate.route` 가 `OFFER_AD`).
             rewardedAdAction = if (
                 gateReason == VoiceGateReason.PLAN_REQUIRED &&
                 manualGateFromLockedRow &&
+                !adRewardBusy &&
+                adRewardSessions != null &&
                 AdRewardGate.canOfferAd(freeVoiceTier, manualQuota?.adReward, RewardedAds.configured)
             ) {
                 IosAlertAction(

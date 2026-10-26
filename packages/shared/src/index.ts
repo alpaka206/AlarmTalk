@@ -5,6 +5,7 @@ export * from './schemas/auth.js';
 export * from './schemas/fortune.js';
 export * from './schemas/plan.js';
 export * from './schemas/usage-event.js';
+export * from './schemas/ad-reward.js';
 export * from './schemas/error-codes.js';
 export * from './schemas/event-voices.js';
 export * from './schemas/briefing.js';
