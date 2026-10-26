@@ -103,6 +103,9 @@ internal fun BriefingScreen(
 
     var interests by remember { mutableStateOf<List<BriefingInterest>>(emptyList()) }
     var interestsBusy by remember { mutableStateOf(false) }
+    // 서버의 관심 기업 목록을 한 번이라도 받았는가. 못 받았으면 고치지 않는다 — 빈 목록 위에 더하고 통째로 바꾸면 서버의 기존
+    // 목록이 지워진다(코덱스 #957). 다시 받을 때까지 추가·빼기를 막는다.
+    var interestsLoaded by remember { mutableStateOf(false) }
     var interestsMessage by remember { mutableStateOf<String?>(null) }
 
     var view by remember { mutableStateOf<BriefingView?>(null) }
@@ -150,8 +153,26 @@ internal fun BriefingScreen(
         }
     }
 
+    suspend fun loadInterests() {
+        try {
+            interests = onLoadInterests()
+            interestsLoaded = true
+            interestsMessage = null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            AlarmTalkLog.reportError("Failed to load briefing interests", error)
+            interestsMessage = apiErrorMessage(context, apiErrorCode(error))
+                ?: userFacingError(error, context.getString(R.string.briefing_load_failed))
+        }
+    }
+
     fun saveInterests(codes: List<String>) {
         if (interestsBusy) return
+        if (!interestsLoaded) {
+            scope.launch { loadInterests() }
+            return
+        }
         interestsBusy = true
         scope.launch {
             try {
@@ -173,15 +194,7 @@ internal fun BriefingScreen(
     }
 
     LaunchedEffect(Unit) {
-        try {
-            interests = onLoadInterests()
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            AlarmTalkLog.reportError("Failed to load briefing interests", error)
-            interestsMessage = apiErrorMessage(context, apiErrorCode(error))
-                ?: userFacingError(error, context.getString(R.string.briefing_load_failed))
-        }
+        loadInterests()
         loadToday()
     }
 
@@ -220,16 +233,24 @@ internal fun BriefingScreen(
                         loading = loading,
                         loadMessage = loadMessage,
                         retryNoteVisible = retryNoteVisible,
-                        onRefresh = ::loadToday,
+                        onRefresh = {
+                            if (!interestsLoaded) scope.launch { loadInterests() }
+                            loadToday()
+                        },
                     )
                 }
                 item {
                     BriefingInterestsCard(
                         interests = interests,
-                        busy = interestsBusy,
+                        busy = interestsBusy || !interestsLoaded,
                         message = interestsMessage,
                         onAdd = {
-                            if (BriefingInterestRules.canAdd(interestCodes)) searchOpen = true else limitAlertOpen = true
+                            when {
+                                // 목록을 못 받은 채로는 더하지 않는다 — 먼저 다시 받는다.
+                                !interestsLoaded -> scope.launch { loadInterests() }
+                                BriefingInterestRules.canAdd(interestCodes) -> searchOpen = true
+                                else -> limitAlertOpen = true
+                            }
                         },
                         onRemove = { code -> saveInterests(BriefingInterestRules.removing(interestCodes, code)) },
                     )
@@ -790,9 +811,12 @@ private fun BriefingSpeechDialog(
     }
 
     val ready = audioFile
+    // 본문은 높이를 묶고 스크롤한다 — 긴 문장 + 목소리 넷 + 안내가 작은 화면·큰 글씨에서 창보다 길어져 아래 버튼이 잘렸다
+    // (코덱스 #957). 버튼 줄은 스크롤 밖에 남는다. 문장도 스크롤 안에 넣는다(제목 아래 고정 글자로 두면 같은 높이를 다툰다).
+    val maxBodyHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.55f).dp
     IosAlertDialog(
         title = stringResource(R.string.briefing_speech_title),
-        message = target.text,
+        message = null,
         onDismiss = { if (!generating) onDismiss() },
         actions = listOf(
             IosAlertAction(label = stringResource(R.string.briefing_close), enabled = !generating, onClick = onDismiss),
@@ -812,6 +836,18 @@ private fun BriefingSpeechDialog(
             },
         ),
     ) {
+      Column(
+          modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(max = maxBodyHeight)
+              .verticalScroll(androidx.compose.foundation.rememberScrollState()),
+      ) {
+        Text(
+            text = target.text,
+            style = IosAlertType.Message,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+        )
         Text(
             text = stringResource(R.string.briefing_speech_length, target.text.length, BriefingSpeech.MAX_LENGTH),
             style = IosAlertType.Message,
@@ -876,6 +912,7 @@ private fun BriefingSpeechDialog(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
         }
+      }
     }
 }
 

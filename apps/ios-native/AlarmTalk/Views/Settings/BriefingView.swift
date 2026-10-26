@@ -21,6 +21,9 @@ struct BriefingView: View {
 
     @State private var interests: [BriefingInterest] = []
     @State private var interestsBusy = false
+    /// 서버의 관심 기업 목록을 한 번이라도 받았는가. 못 받았으면 고치지 않는다 — 빈 목록 위에 더하고 통째로 바꾸면 서버의
+    /// 기존 목록이 지워진다(코덱스 #957). 다시 받을 때까지 추가·빼기를 막는다.
+    @State private var interestsLoaded = false
     @State private var interestsMessage: String?
 
     @State private var model: BriefingScreenModel?
@@ -151,7 +154,12 @@ struct BriefingView: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
             HStack(spacing: 8) {
-                Button(String(localized: "다시 확인")) { Task { await loadToday() } }
+                Button(String(localized: "다시 확인")) {
+                    Task {
+                        if !interestsLoaded { await loadInterests() }
+                        await loadToday()
+                    }
+                }
                     .disabled(loading)
                 if loading { ProgressView() }
             }
@@ -192,14 +200,17 @@ struct BriefingView: View {
                     Button(String(localized: "빼기")) {
                         save(BriefingInterestRules.removing(interests.map(\.corpCode), interest.corpCode))
                     }
-                    .disabled(interestsBusy)
+                    .disabled(interestsBusy || !interestsLoaded)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 Divider()
             }
             SettingsValueButton(label: "기업 추가", action: {
-                if BriefingInterestRules.canAdd(interests.map(\.corpCode)) {
+                if !interestsLoaded {
+                    // 목록을 못 받은 채로는 더하지 않는다 — 먼저 다시 받는다.
+                    Task { await loadInterests() }
+                } else if BriefingInterestRules.canAdd(interests.map(\.corpCode)) {
                     searchOpen = true
                 } else {
                     limitAlertOpen = true
@@ -249,6 +260,8 @@ struct BriefingView: View {
         }
         do {
             interests = try await api.briefingInterests(token: token)
+            interestsLoaded = true
+            interestsMessage = nil
         } catch {
             interestsMessage = APIErrorMessages.message(
                 for: error,
@@ -297,6 +310,10 @@ struct BriefingView: View {
 
     private func save(_ codes: [String]) {
         guard !interestsBusy, let token = auth.session?.token else { return }
+        guard interestsLoaded else {
+            Task { await loadInterests() }
+            return
+        }
         interestsBusy = true
         Task {
             defer { interestsBusy = false }
@@ -623,6 +640,8 @@ private struct BriefingSpeechSheet: View {
     @State private var message: String?
     @State private var audioURL: URL?
     @State private var requestIDs = BriefingRequestIDs()
+    /// 만드는 중인 요청 — 창을 닫으면 끊는다. 안 끊으면 닫은 뒤에 응답이 와서 아무 조작 없이 소리가 난다(코덱스 #957).
+    @State private var generateTask: Task<Void, Never>?
     @StateObject private var player = AudioPreviewPlayer()
 
     var body: some View {
@@ -632,6 +651,7 @@ private struct BriefingSpeechSheet: View {
             cancelTitle: String(localized: "닫기"),
             saveEnabled: !generating && voiceID != nil,
             onCancel: {
+                generateTask?.cancel()
                 player.stop()
                 onClose()
             },
@@ -639,7 +659,7 @@ private struct BriefingSpeechSheet: View {
                 if let audioURL {
                     play(audioURL)
                 } else {
-                    Task { await generate() }
+                    generateTask = Task { await generate() }
                 }
             }
         ) {
@@ -696,7 +716,10 @@ private struct BriefingSpeechSheet: View {
                 quota = try? await AlarmTalkAPI.shared.manualQuota(token: token)
             }
         }
-        .onDisappear { player.stop() }
+        .onDisappear {
+            generateTask?.cancel()
+            player.stop()
+        }
     }
 
     private func generate() async {
@@ -722,6 +745,8 @@ private struct BriefingSpeechSheet: View {
                 token: token
             )
             requestIDs.completed()
+            // 창을 닫았으면 들려주지 않는다 — 같은 요청 id 라 다시 열어 만들면 횟수를 쓰지 않고 받는다.
+            guard !Task.isCancelled else { return }
             let url = try Self.writeSpeechFile(response)
             audioURL = url
             message = String(localized: "음성을 만들었어요.")
