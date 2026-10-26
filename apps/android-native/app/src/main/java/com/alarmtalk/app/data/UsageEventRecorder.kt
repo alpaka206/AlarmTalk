@@ -105,6 +105,11 @@ class UsageEventRecorder(
         featureVersion: String? = null,
         /** 2판의 정해진 칸. 모양이 틀린 칸은 [UsageEventProps.sanitized] 가 비운다(배치 전체가 400 이 되지 않게). */
         props: UsageEventProps? = null,
+        /**
+         * 이 사건의 주인 — 비동기 흐름(서버 응답을 기다리는 생성·구매 등)은 **시작할 때의 계정**을 넘긴다. 그 사이 다른 계정으로
+         * 바뀌어도 앞 계정의 기록으로 남고, 그 계정이 다시 로그인했을 때 올라간다(전송은 계정별이다). 없으면 지금 계정.
+         */
+        ownerUserId: String? = null,
     ) {
         // 계정은 **적는 순간**에 정한다 — 코루틴이 실제로 도는 시점이 아니라. 안에서 읽으면
         // 그 틈에 로그아웃·로그인이 끼어들 때 A 의 사건이 B 의 이름으로 저장된다(서버는
@@ -124,7 +129,7 @@ class UsageEventRecorder(
         // 죽은 회차의 해제가 통째로 사라진다(`docs/spec/usage-events.md` 구현 지도 「해제」).
         // 못 읽으면 **그 기록을 버린다.** 계정을 비워 두면 다음에 로그인한 사람의 기록으로
         // 올라가므로(`UsageEventDao.oldest` 는 null 을 아무에게나 준다) 그게 더 나쁘다.
-        val userId = runCatching { currentUserId() }.getOrElse { error ->
+        val userId = ownerUserId?.takeIf { it.isNotBlank() } ?: runCatching { currentUserId() }.getOrElse { error ->
             Log.w(AlarmTalkLog.TAG, "Failed to resolve account for usage event type=$type", error)
             null
         }?.takeIf { it.isNotBlank() } ?: run {

@@ -26,6 +26,8 @@ internal object UsageSignals {
         attemptId: String? = null,
         featureVersion: String? = null,
         props: UsageEventProps? = null,
+        /** 비동기 흐름을 시작한 계정 — [UsageEventRecorder.record] 의 `ownerUserId`. */
+        ownerUserId: String? = null,
     ) {
         runCatching {
             AlarmAppContainer.usageEventRecorder(context.applicationContext).record(
@@ -36,6 +38,7 @@ internal object UsageSignals {
                 attemptId = attemptId,
                 featureVersion = featureVersion,
                 props = props,
+                ownerUserId = ownerUserId,
             )
         }.onFailure { error -> Log.w(AlarmTalkLog.TAG, "Failed to record usage signal type=$type", error) }
     }
@@ -230,6 +233,7 @@ internal fun recordManualGenerationResult(
     requestId: String?,
     attemptId: String,
     charCount: Int,
+    ownerUserId: String? = null,
 ) {
     if (response.cacheHit == true) {
         UsageSignals.record(
@@ -238,6 +242,7 @@ internal fun recordManualGenerationResult(
             voiceProfileId = response.voiceProfileId,
             messageId = response.messageId,
             attemptId = attemptId,
+            ownerUserId = ownerUserId,
             props = UsageEventProps(
                 reuseLocation = UsageEventProps.REUSE_SERVER,
                 requestId = requestId,
@@ -253,6 +258,7 @@ internal fun recordManualGenerationResult(
         voiceProfileId = response.voiceProfileId,
         messageId = response.messageId,
         attemptId = attemptId,
+        ownerUserId = ownerUserId,
         props = UsageEventProps(
             outcome = UsageEventProps.OUTCOME_SUCCESS,
             chargedSource = response.chargedSource,

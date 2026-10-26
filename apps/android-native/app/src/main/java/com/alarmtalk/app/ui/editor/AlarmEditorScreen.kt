@@ -1000,6 +1000,8 @@ internal fun AlarmEditorScreen(
                 // 이 자리에 안내를 넣으면 실패했을 때 그 자리에 들어올 에러 문구를 밀어낸다.
                 val manualRequestId = manualRequestIds.idFor(profileId, editor.activeVoiceLanguage(), text)
                 val generationAttemptId = com.alarmtalk.app.data.UsageEventProps.newAttemptId()
+                // 이 생성을 시작한 계정 — 응답을 기다리는 사이 계정이 바뀌어도 그 계정의 기록으로 남긴다(코덱스 #958).
+                val generationOwner = authSession?.user?.id
                 // 서버가 결과를 냈다고 적었는가 — 그 뒤(받은 소리를 폰에 두다가) 실패하면 생성 실패로 다시 적지 않는다(코덱스 #958).
                 var generationRecorded = false
                 runCatching {
@@ -1031,6 +1033,7 @@ internal fun AlarmEditorScreen(
                         response = response,
                         requestId = manualRequestId,
                         attemptId = generationAttemptId,
+                        ownerUserId = generationOwner,
                         charCount = text.length,
                     )
                     generationRecorded = true
@@ -1095,6 +1098,7 @@ internal fun AlarmEditorScreen(
                             com.alarmtalk.app.data.UsageEvents.GENERATION_OUTCOME,
                             voiceProfileId = profileId,
                             attemptId = generationAttemptId,
+                            ownerUserId = generationOwner,
                             props = com.alarmtalk.app.data.UsageEventProps(
                                 outcome = com.alarmtalk.app.data.UsageEventProps.OUTCOME_FAILURE,
                                 // 서버가 거절했을 때만 '세지 않음' 이다 — 연결이 끊겼으면 셌는지 모른다(비운다, 스펙 §7.2).

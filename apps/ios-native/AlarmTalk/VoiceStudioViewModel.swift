@@ -1196,7 +1196,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 manualGenerationTrack = ManualGenerationTrack(
                     requestID: manualRequestIDFor(profileID: profileID, language: activeLanguage, text: trimmedText),
                     voiceProfileID: profileID,
-                    charCount: trimmedText.count
+                    charCount: trimmedText.count,
+                    ownerUserID: session?.user.id ?? KeychainStore.readSession()?.user.id
                 )
             }
             let response = try await api.generateTTS(
@@ -1268,6 +1269,8 @@ final class VoiceStudioViewModel: ObservableObject {
         let requestID: String
         let voiceProfileID: String
         let charCount: Int
+        /// 이 생성을 시작한 계정 — 응답을 기다리는 사이 계정이 바뀌어도 그 계정의 기록으로 남긴다(전송은 계정별이다, 코덱스 #958).
+        let ownerUserID: String?
     }
 
     private var manualGenerationTrack: ManualGenerationTrack?
@@ -1291,7 +1294,8 @@ final class VoiceStudioViewModel: ObservableObject {
                     resultID: response.messageId,
                     requestID: track.requestID,
                     charCount: track.charCount
-                )
+                ),
+                userID: track.ownerUserID
             )
             return
         }
@@ -1309,7 +1313,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 resultID: response.messageId,
                 requestID: track.requestID,
                 charCount: track.charCount
-            )
+            ),
+            userID: track.ownerUserID
         )
     }
 
@@ -1331,7 +1336,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 chargedSource: error is APIError ? UsageEventProps.ChargedSource.none : nil,
                 requestID: track.requestID,
                 charCount: track.charCount
-            )
+            ),
+            userID: track.ownerUserID
         )
     }
 
