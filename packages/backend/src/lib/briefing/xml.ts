@@ -98,19 +98,49 @@ export function tagBlocks(xml: string, tag: string): string[] {
  * 엔티티를 풀고 `cleanText` 로 정리한다. 결과는 **글자**다 — HTML 로 다시 해석하지 말 것.
  */
 export function htmlToText(html: string): string {
-  // ⚠ **한 번 걷고 끝내지 않는다**(CodeQL js/incomplete-multi-character-sanitization). `<scr<script></script>ipt>` 처럼
-  //   걷어 낸 자리에서 새 태그가 생길 수 있어, 더 걷을 것이 없을 때까지 되풀이한다.
-  let withoutCode = html;
-  for (let previous = ''; previous !== withoutCode; ) {
-    previous = withoutCode;
-    withoutCode = withoutCode
-      .replace(/<!--[\s\S]*?-->/g, ' ')
-      .replace(/<(script|style|iframe|object|noscript)\b[\s\S]*?<\/\1\s*>/gi, ' ');
+  return cleanText(decodeEntities(stripMarkup(html)).replace(/[<>]/g, ' '));
+}
+
+const DROPPED_BLOCKS = ['script', 'style', 'iframe', 'object', 'noscript'];
+const SPACING_TAG_RE = /^<\/?(p|div|br|li|tr|td|h[1-6]|table|ul|ol)\b/i;
+
+/**
+ * 태그를 **앞에서부터 한 번 훑어** 걷는다. `<` 를 만나면 그 태그(주석·`script` 류는 닫는 태그까지 내용째) 끝까지 버리고, 닫히지
+ * 않은 태그는 끝까지 버린다 — 그래서 결과에 `<` 가 남지 않고, 걷어 낸 자리에서 새 태그가 생기지도 않는다(`<scr<script></script>ipt>`
+ * 의 앞 조각은 태그 하나로 버려진다). 정규식 치환을 되풀이하던 방식은 CodeQL(js/incomplete-multi-character-sanitization)이
+ * 걸렀다. 블록 태그 자리는 공백으로 둔다.
+ */
+function stripMarkup(html: string): string {
+  const lower = html.toLowerCase();
+  let out = '';
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) {
+      out += html.slice(i);
+      break;
+    }
+    out += html.slice(i, lt);
+    if (html.startsWith('<!--', lt)) {
+      const close = html.indexOf('-->', lt + 4);
+      i = close < 0 ? html.length : close + 3;
+      out += ' ';
+      continue;
+    }
+    const block = DROPPED_BLOCKS.find((name) => new RegExp(`^<${name}\\b`, 'i').test(html.slice(lt, lt + name.length + 2)));
+    if (block) {
+      const close = lower.indexOf(`</${block}`, lt);
+      const gt = close < 0 ? -1 : html.indexOf('>', close);
+      i = gt < 0 ? html.length : gt + 1;
+      out += ' ';
+      continue;
+    }
+    const gt = html.indexOf('>', lt);
+    if (gt < 0) break; // 닫히지 않은 태그 — 끝까지 버린다
+    if (SPACING_TAG_RE.test(html.slice(lt, gt + 1))) out += ' ';
+    i = gt + 1;
   }
-  const tagless = withoutCode.replace(/<\/?(p|div|br|li|tr|td|h[1-6]|table|ul|ol)\b[^>]*>/gi, ' ').replace(/<[^>]*>/g, '');
-  // 엔티티를 푼 뒤 남은 꺾쇠는 지운다 — `&lt;script&gt;` 가 풀려 태그처럼 보이는 글자가 되지 않게. 결과는 낭독·요약 글자라
-  // 꺾쇠가 필요 없다.
-  return cleanText(decodeEntities(tagless).replace(/[<>]/g, ' '));
+  return out;
 }
 
 /**
