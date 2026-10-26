@@ -95,11 +95,13 @@
       npm run publish:stock -- --env dev --release cheer_v2 --dry-run   # 다 올라갔는지 본다
       npm run publish:stock -- --env dev --release cheer_v2
       npm run publish:stock -- --env dev --release wake_v1
-      # dev 앱으로 확인한 뒤 같은 넷을 --env prod 로
       ```
-      공개 전에는 새 응원·기상 인사가 앱에 나오지 않는다.
+      공개 전에는 새 응원·기상 인사가 앱에 나오지 않는다. **여기서는 dev 만** 한다 — 운영 DB 에는 렌더 지문(#139)·공개 표식 표(#143)가
+      main 릴리스 뒤에야 생겨, 스크립트가 그 전에는 멈춘다. 운영 게시는 아래 'main 릴리스' 뒤 항목이다.
 - [ ] **dev 합성 예산 값 넷** 정하기(§1 W12) — 안 정하면 제한 없음.
 - [ ] **main 릴리스** — §2 순서. 10/31 15:00Z ~ 11/04 창을 피한다.
+- [ ] **운영 스톡 게시·공개** — main 배포와 마이그레이션 성공을 확인한 **뒤**, dev 에서 들은 그 문장 그대로 위 네 명령을 `--env prod`
+      로(`--release … --dry-run` 먼저). 1.3 앱 게재 전에 끝내 둔다 — 새 앱이 받을 클립이 먼저 있어야 한다.
 - [ ] **1.3 앱 빌드·심사·게재** → 게재 확인 뒤에만 `minSupported` 상향.
 
 ### 4-2. 외부 입력이 들어오면 켠다 (출시와 따로)
