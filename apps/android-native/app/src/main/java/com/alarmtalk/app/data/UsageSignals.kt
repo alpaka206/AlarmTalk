@@ -99,6 +99,21 @@ internal fun recordContentSelected(context: Context, saved: AlarmEntity, ownerUs
     )
 }
 
+/**
+ * 날짜 지정 알람(한 번)을 저장했다(`dated_alarm_saved`, `docs/spec/usage-events.md` §7.1). 날짜가 있는 알람의 저장 **성공**에만
+ * 적는다 — 날짜·시간대·문구는 싣지 않는다(식별자만). [ownerUserId] 는 저장을 **시작한** 계정이다.
+ */
+internal fun recordDatedAlarmSaved(context: Context, saved: AlarmEntity, ownerUserId: String?) {
+    if (saved.targetDate.isNullOrBlank()) return
+    UsageSignals.record(
+        context,
+        UsageEvents.DATED_ALARM_SAVED,
+        alarmId = saved.id,
+        voiceProfileId = saved.voiceProfileId,
+        ownerUserId = ownerUserId,
+    )
+}
+
 /** 아침 소식의 원천 — 공시(OpenDART) / 정책뉴스(정책브리핑). 기록의 `surface` 칸 값이다(그 링크·음성이 어느 줄에서 열렸나). */
 internal enum class BriefingSource(val code: String) {
     DISCLOSURE("disclosure"),

@@ -2943,6 +2943,15 @@ struct AlarmEditorSheet: View {
                 userID: ownerID
             )
         }
+        // 날짜 지정 알람 저장(`dated_alarm_saved`) — 날짜·시간대는 싣지 않는다. 안드로이드 `recordDatedAlarmSaved` 짝.
+        if merged.isDated {
+            UsageEventQueue.shared.record(
+                .datedAlarmSaved,
+                alarmID: merged.id,
+                voiceProfileID: merged.voiceProfileId,
+                userID: ownerID
+            )
+        }
         recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSchedulingDidFinish()
