@@ -12502,6 +12502,29 @@
           }
         }
       }
+    },
+    "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still making this voice. Please save again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ音声を作成しています。少し待ってからもう一度保存してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

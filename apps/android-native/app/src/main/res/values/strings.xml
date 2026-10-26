@@ -160,6 +160,7 @@
     <string name="editor_error_voice_alarm_login_required">음성 알람은 로그인 후 사용할 수 있어요.</string>
     <string name="editor_error_voice_generation_failed">음성 생성에 실패했어요.</string>
     <string name="editor_error_manual_tts_quota">이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요.</string>
+    <string name="editor_error_tts_request_in_progress">아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요.</string>
     <string name="editor_error_voice_message_login_required">음성 알람은 로그인 후 사용할 수 있어요.</string>
     <string name="editor_error_weather_location_required">날씨가 들어간 문구는 지역을 골라 주세요.</string>
     <string name="editor_existing_voice_cache_used">기존 음성 캐시를 사용했어요.</string>

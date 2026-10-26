@@ -154,6 +154,7 @@
     <string name="editor_error_voice_alarm_login_required">音声アラームはログイン後にご利用いただけます。</string>
     <string name="editor_error_voice_generation_failed">音声の生成に失敗しました。</string>
     <string name="editor_error_manual_tts_quota">今月の直接入力の文の作成回数を使い切りました。来月にまた補充されます。</string>
+    <string name="editor_error_tts_request_in_progress">まだ音声を作成しています。少し待ってからもう一度保存してください。</string>
     <string name="editor_error_voice_message_login_required">音声アラームはログイン後にご利用いただけます。</string>
     <string name="editor_error_weather_location_required">天気を含む文には、地域を選んでください。</string>
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>

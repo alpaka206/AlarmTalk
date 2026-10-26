@@ -55,6 +55,8 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "FREE_PLAN_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "BASIC_VOICE_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "MANUAL_TTS_QUOTA_EXCEEDED" to R.string.editor_error_manual_tts_quota,
+    // 같은 '음성 만들기' 가 아직 합성 중이다(`ManualRequestIds` — 같은 입력은 같은 id) — 잠시 뒤 다시 누르면 그 결과를 받는다.
+    "TTS_REQUEST_IN_PROGRESS" to R.string.editor_error_tts_request_in_progress,
     // ⚠ **막는 쪽은 언제나 '다른 스토어' 다**(코덱스 #733 8차). 서버의 배타성 판정은
     //   `applyStoreEntitlement` 하나이고 `provider <> ?` 로 자기 스토어를 뺀다 — 그래서
     //   안드로이드가 이 코드를 받았다면 걸린 것은 **애플**이다. 문구도 그렇게 말해야 한다.

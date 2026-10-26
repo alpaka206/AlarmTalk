@@ -187,6 +187,20 @@ final class VoiceStudioViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var activeUserID: String?
     private var greetingPreviewRequestId = 0
+    /// 직접 입력 '음성 만들기' 한 번의 id 와 그 입력(목소리·언어·문구) — 같은 입력으로 다시 누르면 같은 id 를 보낸다. 응답이
+    /// 끊겨 다시 눌러도 서버가 두 번 합성·차감하지 않는다. 성공하면 잊는다(다음 만들기는 새 요청). 안드로이드
+    /// `ManualRequestIds` 짝. 랜덤(생성형)·미리듣기 요청은 직접 입력이 아니라 싣지 않는다.
+    private var manualRequestKey: String?
+    private var manualRequestID: String?
+
+    func manualRequestIDFor(profileID: String, language: String, text: String) -> String {
+        let key = "\(profileID)\u{0}\(language)\u{0}\(text)"
+        if let id = manualRequestID, manualRequestKey == key { return id }
+        let id = UUID().uuidString.lowercased()
+        manualRequestKey = key
+        manualRequestID = id
+        return id
+    }
     /// 화면 진입 갱신(`refreshOnEntry`)의 신선도 창 — 규칙은 `EntryRefreshFreshness`.
     private var entryFreshness = EntryRefreshFreshness()
     /// 신선도 창의 세대 — **마지막에 받아들인 갱신만** 창을 연다(코덱스 #823 2차).
@@ -1170,10 +1184,17 @@ final class VoiceStudioViewModel: ObservableObject {
                     fortuneGender: randomPrompt && promptContext.usesFortune ? (fortuneGender).nilIfBlank : nil,
                     fortuneBirthDate: randomPrompt && promptContext.usesFortune ? (fortuneBirthDate).nilIfBlank : nil,
                     fortuneBirthTime: randomPrompt && promptContext.usesFortune ? (fortuneBirthTime).nilIfBlank : nil,
-                    listenerTitle: requestListenerTitle
+                    listenerTitle: requestListenerTitle,
+                    requestId: randomPrompt
+                        ? nil
+                        : manualRequestIDFor(profileID: profileID, language: activeLanguage, text: trimmedText)
                 ),
                 token: token
             )
+            if !randomPrompt {
+                manualRequestKey = nil
+                manualRequestID = nil
+            }
             let cacheKey = AudioCacheStore.ttsCacheKey(
                 profileId: profileID,
                 text: response.text,

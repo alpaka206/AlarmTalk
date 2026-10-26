@@ -154,6 +154,7 @@
     <string name="editor_error_voice_alarm_login_required">Voice alarms are available after you sign in.</string>
     <string name="editor_error_voice_generation_failed">Voice generation failed.</string>
     <string name="editor_error_manual_tts_quota">You\'ve used up this month\'s custom-message creations. They refill next month.</string>
+    <string name="editor_error_tts_request_in_progress">Still making this voice. Please save again in a moment.</string>
     <string name="editor_error_voice_message_login_required">Voice alarms are available after you sign in.</string>
     <string name="editor_error_weather_location_required">For phrases with weather, please choose a region.</string>
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>

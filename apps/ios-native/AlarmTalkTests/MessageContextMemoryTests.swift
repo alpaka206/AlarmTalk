@@ -278,6 +278,16 @@ final class MessageContextMemoryTests: XCTestCase {
         XCTAssertFalse(keeps(text: "   "))
     }
 
+    /// 직접 입력 '음성 만들기' 의 같은 요청 id(`voice-and-message.md` §8, Codex #942) — 같은 입력의 재시도는 같은 id, 입력이
+    /// 바뀌면 새 id. 안드로이드 `ManualRequestIdsTest` 짝.
+    @MainActor
+    func testManualRequestIDIsStableForTheSameInput() {
+        let studio = VoiceStudioViewModel()
+        let first = studio.manualRequestIDFor(profileID: "v1", language: "ko", text: "회의 자료 챙겨")
+        XCTAssertEqual(first, studio.manualRequestIDFor(profileID: "v1", language: "ko", text: "회의 자료 챙겨"))
+        XCTAssertNotEqual(first, studio.manualRequestIDFor(profileID: "v1", language: "ko", text: "약 먹어"))
+    }
+
     /// `AlarmEditorSheet.loadVoicePromptState` 의 복원식과 같은 순서.
     private func restoreContext(storedContext: String?, bucketId: String?) -> RandomPromptContext {
         storedContext.nilIfBlank.map(RandomPromptContext.normalized)

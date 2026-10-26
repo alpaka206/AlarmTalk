@@ -351,6 +351,8 @@ internal fun AlarmEditorScreen(
     val editorListState = rememberLazyListState()
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
+    // 직접 입력 '음성 만들기' 의 같은 요청 id — 같은 입력의 재시도는 같은 값이다(`ManualRequestIds`).
+    val manualRequestIds = remember { ManualRequestIds() }
     var audioMessage by remember { mutableStateOf<String?>(null) }
     // ⚠ **저장이 막힌 이유는 알럿으로 말한다**(2026-08-24) — 저장 차단·월 한도·광고 보상이 이 하나를 쓴다.
     // 예전에는 `audioMessage` 에 넣었는데, 그 문구를 그리는 곳이 `VoiceAudioCard` 안이라
@@ -999,8 +1001,10 @@ internal fun AlarmEditorScreen(
                             random = false,
                             randomContext = null,
                             listenerTitle = listenerTitleForSave,
+                            requestId = manualRequestIds.idFor(profileId, editor.activeVoiceLanguage(), text),
                         ),
                     )
+                    manualRequestIds.completed()
                     val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
                     val cacheKey = AlarmAudioStore.ttsCacheKey(
                         profileId = profileId,

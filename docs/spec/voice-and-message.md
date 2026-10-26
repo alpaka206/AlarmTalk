@@ -2124,7 +2124,11 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 앱은 '음성 만들기' 한 번마다 UUID 를 만들고 재시도에도 같은 값을 싣는다. 서버는 캐시 미스가 확정된 뒤, 세기 전에 그 id
 를 잡는다(`lib/manual-tts-requests.ts`, 표 #135). 잡혀 있는 동안 같은 id 는 409 `TTS_REQUEST_IN_PROGRESS`(잠시 뒤 다시
 보내면 캐시 히트로 받는다), 같은 id 에 다른 입력은 409 `TTS_REQUEST_ID_CONFLICT`. 실패하면 표식을 풀고, 2분 넘게 잡힌
-표식은 버려진 것으로 본다. 옛 앱은 id 를 보내지 않아 예전처럼 간다. 응답의 `charged_source` 는 `none`·`base`·`ad` 다.
+표식은 버려진 것으로 본다. 끝난 표식을 다시 잡으면(두 회차가 함께 캐시 미스를 봤다) 세기 전에 캐시를 한 번 더 본다. 옛 앱은
+id 를 보내지 않아 예전처럼 간다. 응답의 `charged_source` 는 `none`·`base`·`ad` 다.
+- 두 앱: 같은 입력(목소리·언어·문구)으로 다시 누르면 **같은 id**, 입력이 바뀌면 새 id, 성공하면 잊는다 — 안드로이드
+  `ManualRequestIds`(편집기), iOS `VoiceStudioViewModel.manualRequestIDFor`. 409 `TTS_REQUEST_IN_PROGRESS` 는 "아직 음성을
+  만들고 있어요. 잠시 뒤 다시 저장해 주세요." 로 말한다(두 앱의 공용 표).
 
 ### 저장할 때의 순서
 

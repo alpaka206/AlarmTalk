@@ -517,6 +517,9 @@ struct TtsGenerateRequest: Encodable {
     /// 등록 확인 스텝의 미리듣기 합성인가. 서버가 이때만 `preview_playback_token` 을
     /// 함께 내려주고, 그 토큰을 `preview-played` 로 돌려줘야 초안 승격이 허용된다.
     var draftPreview: Bool?
+    /// 직접 입력 '음성 만들기' 한 번의 id(`request_id`) — 같은 입력의 재시도는 같은 값(`VoiceStudioViewModel.manualRequestID`).
+    /// 서버가 같은 요청을 두 번 합성·차감하지 않는다(`docs/spec/voice-and-message.md` §8). 옛 서버는 무시한다.
+    var requestId: String?
     // 멤버와이즈 init 은 합성된다 — 선언 순서가 곧 인자 순서다(옵셔널은 기본값 nil).
 }
 
