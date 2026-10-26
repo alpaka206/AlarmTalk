@@ -69,6 +69,8 @@ internal class AlarmEditorState(
     bucketClipTextsJson: String? = null,
     contextVariantIndex: Int? = null,
     followsLastMessageChoice: Boolean = false,
+    targetDate: String? = null,
+    targetTimezone: String? = null,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -127,6 +129,64 @@ internal class AlarmEditorState(
      * `alarm == null` 로 가르면 알람 전용 알람을 목소리로 바꿨을 때 직전 테마를 못 잇는다.
      */
     var followsLastMessageChoice by mutableStateOf(followsLastMessageChoice)
+
+    /**
+     * **날짜 지정 알람(한 번)**의 날짜·시간대(`docs/spec/alarm-editor.md` §2-1, `alarm-lifecycle.md` §4). 날짜가
+     * 있으면 요일이 없다. 시간대는 날짜 지정을 켠 순간의 기기 시간대이거나 저장된 값이고, 날짜를 다시 골라도 바뀌지
+     * 않는다 — 사용자가 확인한 값이다.
+     */
+    var targetDate by mutableStateOf(targetDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() })
+        private set
+    var targetTimezone by mutableStateOf(targetTimezone?.takeIf { targetDate != null })
+        private set
+
+    val isDated: Boolean get() = targetDate != null && !targetTimezone.isNullOrBlank()
+
+    /**
+     * 날짜 지정을 켠다 — 요일을 모두 풀고(공휴일 끄기도), 날짜는 지금 고른 시각이 아직 안 왔으면 오늘·지났으면 내일,
+     * 시간대는 지금 기기 시간대다.
+     */
+    fun enterDatedMode(
+        nowMillis: Long = System.currentTimeMillis(),
+        zoneId: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    ) {
+        repeatDaysMask = 0
+        holidayOff = false
+        targetDate = com.alarmtalk.app.data.AlarmTimeCalculator.initialTargetDate(hour, minute, nowMillis, zoneId)
+        targetTimezone = zoneId.id
+    }
+
+    fun exitDatedMode() {
+        targetDate = null
+        targetTimezone = null
+    }
+
+    /** 날짜 줄에서 고른 날짜. 시간대는 그대로 둔다(위 KDoc). 날짜 지정 중일 때만 뜻이 있다. */
+    fun selectTargetDate(date: java.time.LocalDate) {
+        if (targetTimezone.isNullOrBlank()) return
+        targetDate = date
+    }
+
+    /** 요일 칩 — 하나라도 누르면 날짜 지정이 꺼진다(둘은 배타적이다). */
+    fun toggleRepeatDay(dayIndex: Int) {
+        exitDatedMode()
+        val nextMask = repeatDaysMask xor (1 shl dayIndex)
+        repeatDaysMask = nextMask
+        if (nextMask == 0) holidayOff = false
+    }
+
+    /** 날짜 알람의 발사 시각(지났어도 그대로). 날짜 알람이 아니면 null. */
+    fun datedFireAtMillis(): Long? =
+        if (!isDated) {
+            null
+        } else {
+            com.alarmtalk.app.data.AlarmTimeCalculator.datedFireAtMillis(
+                targetDate?.toString(),
+                targetTimezone,
+                hour,
+                minute,
+            )
+        }
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -145,8 +205,10 @@ internal class AlarmEditorState(
             label = label,
             hour = hour,
             minute = minute,
-            repeatDaysMask = repeatDaysMask,
-            holidayOff = holidayOff,
+            repeatDaysMask = if (isDated) 0 else repeatDaysMask,
+            holidayOff = holidayOff && !isDated,
+            targetDate = targetDate?.toString()?.takeIf { isDated },
+            targetTimezone = targetTimezone?.takeIf { isDated },
             snoozeEnabled = snoozeEnabled,
             snoozeMinutes = snoozeMinutes,
             snoozeRepeatLimit = snoozeRepeatLimit,
@@ -724,6 +786,9 @@ internal class AlarmEditorState(
                 // 새 알람만 처음부터 이어받는다. 기존 알람은 문구가 없던 상태에서 목소리
                 // 문구로 들어올 때만 켜진다(adoptLastMessageChoiceIfUnset).
                 followsLastMessageChoice = alarm == null,
+                // 날짜 지정은 직전 선택으로 잇지 않는다 — 새 알람은 언제나 날짜 없이 연다(alarm-editor.md §2-1).
+                targetDate = alarm?.targetDate,
+                targetTimezone = alarm?.targetTimezone,
             )
         }
     }

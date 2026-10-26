@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class, UsageEventEntity::class],
-    version = 28,
+    version = 29,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -63,6 +63,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                 MIGRATION_25_26,
                 MIGRATION_26_27,
                 MIGRATION_27_28(context),
+                MIGRATION_28_29,
             )
                 // ⚠ **`fallbackToDestructiveMigration()` 을 다시 넣지 말 것**(2026-08-18 제거).
                 //
@@ -337,6 +338,17 @@ abstract class AlarmDatabase : RoomDatabase() {
         private val MIGRATION_26_27 = object : Migration(26, 27) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN preLockVoiceJson TEXT")
+            }
+        }
+
+        /**
+         * **날짜 지정 알람(한 번)**(2026-10-26, `docs/spec/alarm-lifecycle.md` §4) — 날짜(`YYYY-MM-DD`)와 사용자가
+         * 확인한 시간대(IANA). 옛 행은 둘 다 NULL = 날짜 없는 알람(지금까지의 모든 알람).
+         */
+        private val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN targetDate TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN targetTimezone TEXT")
             }
         }
 

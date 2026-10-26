@@ -60,6 +60,10 @@ internal fun ScheduleDetailsCard(
     holidayOff: Boolean,
     onToggleDay: (Int) -> Unit,
     onHolidayOffChange: (Boolean) -> Unit,
+    targetDate: LocalDate? = null,
+    targetTimezone: String? = null,
+    onDatedChange: (Boolean) -> Unit = {},
+    onPickTargetDate: () -> Unit = {},
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -78,6 +82,10 @@ internal fun ScheduleDetailsCard(
                 holidayOff = holidayOff,
                 onToggleDay = onToggleDay,
                 onHolidayOffChange = onHolidayOffChange,
+                targetDate = targetDate,
+                targetTimezone = targetTimezone,
+                onDatedChange = onDatedChange,
+                onPickTargetDate = onPickTargetDate,
             )
         }
     }
@@ -91,12 +99,17 @@ internal fun RepeatSelector(
     holidayOff: Boolean,
     onToggleDay: (Int) -> Unit,
     onHolidayOffChange: (Boolean) -> Unit,
+    targetDate: LocalDate? = null,
+    targetTimezone: String? = null,
+    onDatedChange: (Boolean) -> Unit = {},
+    onPickTargetDate: () -> Unit = {},
 ) {
-    val holidayEnabled = repeatDaysMask != 0
+    val dated = targetDate != null
+    val holidayEnabled = repeatDaysMask != 0 && !dated
     val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = repeatSummaryLabel(context, hour, minute, repeatDaysMask),
+            text = repeatSummaryLabel(context, hour, minute, repeatDaysMask, targetDate = targetDate),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -109,7 +122,7 @@ internal fun RepeatSelector(
                 DayTextChip(
                     label = stringResource(labelRes),
                     dayIndex = index,
-                    selected = repeatDaysMask and (1 shl index) != 0,
+                    selected = !dated && repeatDaysMask and (1 shl index) != 0,
                     onClick = { onToggleDay(index) },
                     modifier = Modifier.weight(1f),
                 )
@@ -146,7 +159,121 @@ internal fun RepeatSelector(
             // 이미 정했고, 다가오는 공휴일 목록은 이 자리에서 결정에 쓰이지 않는다.
             // 카드만 길어져 아래 여백이 사라진다.
         }
+        // **날짜 지정(한 번)** — 반복 요일과 배타적이다(`docs/spec/alarm-editor.md` §2-1). 켜면 요일이 모두 풀리고,
+        // 요일 칩을 누르면 꺼진다(`AlarmEditorState.toggleRepeatDay`).
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(stringResource(R.string.editor_dated_title), fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = stringResource(R.string.editor_dated_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AlarmTalkSwitch(
+                checked = dated,
+                onCheckedChange = { onDatedChange(it) },
+            )
+        }
+        if (targetDate != null) {
+            DatedAlarmRow(
+                hour = hour,
+                minute = minute,
+                targetDate = targetDate,
+                targetTimezone = targetTimezone,
+                onClick = { onPickTargetDate() },
+            )
+        }
     }
+}
+
+/**
+ * 날짜 지정 중의 **날짜 줄** — 누르면 날짜 고르기 시트가 뜬다. 기기 시간대가 저장된 시간대와 다르면 그 아래에
+ * 어떤 시각으로 예약되는지 말한다([datedTimezoneNote]).
+ */
+@Composable
+internal fun DatedAlarmRow(
+    hour: Int,
+    minute: Int,
+    targetDate: LocalDate,
+    targetTimezone: String?,
+    onClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    val interactionSource = remember { MutableInteractionSource() }
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .wakerPressScale(interactionSource),
+        interactionSource = interactionSource,
+        shape = WakerChipShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.editor_dated_date_label),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = koreanDateLabel(context, targetDate),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            val note = AlarmTimeCalculator.datedFireAtMillis(targetDate.toString(), targetTimezone, hour, minute)
+                ?.let { fireAt -> datedTimezoneNote(context, targetTimezone, fireAt) }
+            if (note != null) {
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 날짜 알람의 시간대가 이 기기 시간대와 다를 때 쓰는 한 줄 — "<시간대> 기준 · 이 기기 시각 <날짜 시각>"
+ * (`docs/spec/alarm-lifecycle.md` §4-2). 같거나 시간대를 모르면 null(덧붙이지 않는다). 알람 행과 편집기가 함께 쓴다.
+ */
+internal fun datedTimezoneNote(
+    context: android.content.Context,
+    targetTimezone: String?,
+    fireAtMillis: Long,
+    deviceZone: ZoneId = ZoneId.systemDefault(),
+): String? {
+    val zone = targetTimezone?.takeIf { it.isNotBlank() }
+        ?.let { runCatching { ZoneId.of(it) }.getOrNull() }
+        ?: return null
+    if (zone.normalized() == deviceZone.normalized() || zone.id == deviceZone.id) return null
+    val local = Instant.ofEpochMilli(fireAtMillis).atZone(deviceZone)
+    val dateLabel = koreanDateLabel(context, local.toLocalDate())
+    val timeLabel = android.text.format.DateFormat.getTimeFormat(context).apply {
+        timeZone = java.util.TimeZone.getTimeZone(deviceZone)
+    }.format(java.util.Date(fireAtMillis))
+    return context.getString(R.string.editor_dated_tz_note, zone.id, "$dateLabel $timeLabel")
 }
 
 @Composable
@@ -237,7 +364,18 @@ internal fun repeatSummaryLabel(
     repeatDaysMask: Int,
     nowMillis: Long = System.currentTimeMillis(),
     zoneId: ZoneId = ZoneId.systemDefault(),
+    // 날짜 지정 알람이면 그 날짜를 말한다(오늘·내일이면 그 말을 붙인다 — 일회성 요약과 같다).
+    targetDate: LocalDate? = null,
 ): String {
+    if (targetDate != null) {
+        val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+        val dateLabel = koreanDateLabel(context, targetDate)
+        return when (targetDate) {
+            today -> context.getString(R.string.editor2_repeat_today, dateLabel)
+            today.plusDays(1) -> context.getString(R.string.editor2_repeat_tomorrow, dateLabel)
+            else -> dateLabel
+        }
+    }
     if (repeatDaysMask != 0) {
         if (repeatDaysMask == 0b1111111) return context.getString(R.string.editor2_repeat_every_day)
         val selectedDays = WeekdayLabels
@@ -263,7 +401,7 @@ internal fun repeatSummaryLabel(
     }
 }
 
-private fun koreanDateLabel(context: android.content.Context, date: LocalDate): String {
+internal fun koreanDateLabel(context: android.content.Context, date: LocalDate): String {
     val dayLabel = context.getString(WeekdayLabels[date.dayOfWeek.value % 7])
     return context.getString(R.string.editor2_date_label, date.monthValue, date.dayOfMonth, dayLabel)
 }
@@ -632,3 +770,56 @@ internal val FreeBucketOrder: List<String> = EditorMessageContexts
     //   (미리듣기 클립을 재사용하는 것이 아니라). 그건 콘텐츠 작업이라 별도로 다룬다.
     .filterNot { (context, _) -> context == ManualMessageContext || context == DefaultRandomPromptContext }
     .mapNotNull { (context, _) -> clonePrerenderBucketCategoryFor(context) }
+
+/**
+ * 날짜 지정 알람의 **날짜 고르기** — 폼 시트(좌 취소 · 가운데 제목 · 우 확정, `docs/spec/alarm-editor.md` §4)
+ * 안의 M3 달력. 오늘(이 기기 기준)보다 앞의 날은 고를 수 없다. 확정해야만 [onConfirm] 이 불린다 — 달력을 넘겨 보기만
+ * 하고 취소하면 날짜는 그대로다.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun DatedAlarmDatePickerSheet(
+    initialDate: LocalDate,
+    onCancel: () -> Unit,
+    onConfirm: (LocalDate) -> Unit,
+    today: LocalDate = LocalDate.now(),
+) {
+    val pickerState = androidx.compose.material3.rememberDatePickerState(
+        initialSelectedDateMillis = initialDate.toEpochDay() * MillisPerDay,
+        selectableDates = remember(today) {
+            object : androidx.compose.material3.SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    LocalDate.ofEpochDay(Math.floorDiv(utcTimeMillis, MillisPerDay)) >= today
+
+                override fun isSelectableYear(year: Int): Boolean = year >= today.year
+            }
+        },
+    )
+    WakerFormSheet(
+        title = stringResource(R.string.editor_dated_picker_title),
+        onCancel = onCancel,
+        onSave = {
+            val millis = pickerState.selectedDateMillis
+            if (millis == null) {
+                onCancel()
+            } else {
+                onConfirm(LocalDate.ofEpochDay(Math.floorDiv(millis, MillisPerDay)))
+            }
+        },
+        saveLabel = stringResource(R.string.editor_dated_picker_done),
+        cancelLabel = stringResource(R.string.editor_cancel),
+        saveEnabled = pickerState.selectedDateMillis != null,
+    ) {
+        androidx.compose.material3.DatePicker(
+            state = pickerState,
+            title = null,
+            headline = null,
+            showModeToggle = false,
+            colors = androidx.compose.material3.DatePickerDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+        )
+    }
+}
+
+private const val MillisPerDay = 86_400_000L

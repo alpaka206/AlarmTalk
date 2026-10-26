@@ -88,6 +88,17 @@ data class AlarmEntity(
     // 잠금/복원은 현재 세션이 이 알람의 소유자일 때만 수행한다 — 다른 계정으로 로그인해 무료/유료가 돼도
     // 남의 목소리 알람을 잠그거나(→소유자가 복원 못하는 영구 잠금) 복원하지(→남의 목소리 재생) 못하게 한다.
     val ownerUserId: String? = null,
+    /**
+     * **날짜 지정 알람(한 번)**의 날짜(`YYYY-MM-DD`). 있으면 반복 요일이 없고(`repeatDaysMask = 0`) 그날 한 번만
+     * 운다. 규칙: `docs/spec/alarm-lifecycle.md` §4. 옛 행은 NULL = 날짜 없는 알람. iOS 짝은
+     * `LocalAlarmRecord.targetDate`.
+     */
+    val targetDate: String? = null,
+    /**
+     * 날짜 알람의 시간대(IANA). **저장하는 순간 사용자가 확인한 값**으로 고정한다 — 발사 시각은 이 시간대의
+     * `targetDate` 시:분이고 기기 시간대가 바뀌어도 따라가지 않는다(§4-2).
+     */
+    val targetTimezone: String? = null,
 )
 
 data class AlarmDraft(
@@ -133,7 +144,22 @@ data class AlarmDraft(
     val alarmSoundUri: String? = null,
     val alarmSoundLabel: String? = null,
     val alarmSoundEnabled: Boolean = true,
+    /** 날짜 지정 알람의 날짜·시간대 — [AlarmEntity.targetDate] 참고. 둘 다 있어야 날짜 알람이다. */
+    val targetDate: String? = null,
+    val targetTimezone: String? = null,
 )
+
+/** 날짜 지정 알람(한 번)인가 — `docs/spec/alarm-lifecycle.md` §4. */
+fun AlarmEntity.isDated(): Boolean = !targetDate.isNullOrBlank()
+
+/**
+ * 날짜 알람의 발사 시각 — [targetDate] 의 시:분을 [targetTimezone] 으로 읽은 절대 시각. 날짜 알람이 아니거나
+ * 값이 깨졌으면 null.
+ */
+fun AlarmEntity.datedFireAtMillis(): Long? =
+    if (!isDated()) null else AlarmTimeCalculator.datedFireAtMillis(targetDate, targetTimezone, hour, minute)
+
+fun AlarmDraft.isDated(): Boolean = !targetDate.isNullOrBlank()
 
 /** bucketClipKeysJson(JSON 문자열 배열) ↔ List<String> 변환 유틸. */
 fun encodeBucketClipKeys(keys: List<String>): String? =

@@ -4,6 +4,7 @@ import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.hasLockedPaidVoice
+import com.alarmtalk.app.data.isDated
 import com.alarmtalk.app.data.isSystemVoiceId
 import java.util.TimeZone
 
@@ -25,7 +26,9 @@ object RemoteAlarmMapper {
             voiceProfileId = alarm.voiceProfileId
                 .takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO }
                 .trimmedOrNull(),
-            timezone = TimeZone.getDefault().id,
+            // 날짜 알람은 사용자가 확인한 시간대, 아니면 지금 기기 시간대(`docs/spec/alarm-lifecycle.md` §4-1).
+            timezone = alarm.targetTimezone.trimmedOrNull().takeIf { alarm.isDated() } ?: TimeZone.getDefault().id,
+            targetDate = alarm.targetDate.trimmedOrNull().takeIf { alarm.isDated() },
             bucketId = alarm.bucketId.trimmedOrNull(),
             clientAlarmId = alarm.id,
             // 기본 목소리로 바꿔 둔 알람(무료 잠금 · 잠금 확정 · 목소리를 잃어 미나로 바꾼 알람)은 비어

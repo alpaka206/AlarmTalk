@@ -76,8 +76,11 @@ class RemoteAlarmMapperTest {
         assertTrue(body.has("message_id") && body.get("message_id").isJsonNull)
         assertTrue(body.has("bucket_id") && body.get("bucket_id").isJsonNull)
         assertEquals("system-voice", body.get("voice_profile_id").asString)
-        // 나머지 빈 값은 예전처럼 빠진다 — null 로 싣는 것은 이 두 키뿐이다.
-        assertEquals(setOf("message_id", "bucket_id"), body.entrySet().filter { it.value.isJsonNull }.map { it.key }.toSet())
+        // 나머지 빈 값은 예전처럼 빠진다 — null 로 싣는 것은 이 두 키와 언제나 싣는 `target_date` 뿐이다.
+        assertEquals(
+            setOf("message_id", "bucket_id", "target_date"),
+            body.entrySet().filter { it.value.isJsonNull }.map { it.key }.toSet(),
+        )
         assertFalse("본문에 실리지 않는 표시", body.has("clearsMissingVoiceReferences"))
     }
 
@@ -114,6 +117,30 @@ class RemoteAlarmMapperTest {
         assertTrue(body.has("message_id") && body.get("message_id").isJsonNull)
         assertTrue(body.has("bucket_id") && body.get("bucket_id").isJsonNull)
         assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, body.get("voice_profile_id").asString)
+    }
+
+    /**
+     * 날짜 없는 알람도 `target_date` 를 **null 로 싣는다** — 날짜 알람을 반복 알람으로 바꿨을 때 서버 사본의 날짜를
+     * 지워야 한다(`docs/spec/alarm-lifecycle.md` §4-7). 시간대는 지금 기기 시간대다.
+     */
+    @Test
+    fun anUndatedAlarmSendsAnExplicitNullTargetDate() {
+        val body = sentBody(alarm())
+
+        assertTrue(body.has("target_date") && body.get("target_date").isJsonNull)
+        assertEquals(java.util.TimeZone.getDefault().id, body.get("timezone").asString)
+    }
+
+    /** 날짜 알람은 날짜와 **사용자가 확인한 시간대**를 싣는다 — 기기 시간대가 달라도 그 값이다. */
+    @Test
+    fun aDatedAlarmSendsItsDateAndConfirmedTimezone() {
+        val dated = alarm().copy(repeatDaysMask = 0, targetDate = "2026-10-27", targetTimezone = "Pacific/Auckland")
+
+        val body = sentBody(dated)
+
+        assertEquals("2026-10-27", body.get("target_date").asString)
+        assertEquals("Pacific/Auckland", body.get("timezone").asString)
+        assertEquals(0, body.getAsJsonArray("repeat_days").size())
     }
 
     @Test

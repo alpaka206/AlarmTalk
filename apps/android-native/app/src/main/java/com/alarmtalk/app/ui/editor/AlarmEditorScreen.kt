@@ -141,6 +141,31 @@ internal enum class SaveBlockReason {
      * 실패를 기다렸다 에러를 보여 주는 것보다, 누른 즉시 이유를 말하는 편이 낫다.
      */
     OFFLINE_NEW_MESSAGE,
+
+    /** 날짜 알람의 시각이 이미 지났다 — 누르는 순간 다시 잰다(`docs/spec/alarm-lifecycle.md` §4-3). */
+    DATED_TIME_PASSED,
+
+    /** 날짜 알람이 같은 시:분의 다른 알람과 겹친다 — 교체를 묻지 않고 다른 시각을 고르게 한다(§4-3). */
+    DATED_TIME_CONFLICT,
+}
+
+/**
+ * 날짜 알람만의 저장 사유 — 재생 방식과 무관하게 **누르는 순간** 본다(편집하는 사이 시각이 지날 수 있다).
+ * [otherAlarmTimes] 는 이 계정에 보이는 **다른** 알람들의 (시, 분)이다 — 저장소의 '한 시각에 알람 하나' 판정과
+ * 같은 대상. 날짜 알람이 아니면 null. 테스트에서 부를 수 있게 컴포저블 밖에 둔다(`AlarmEditorStateTest`).
+ */
+internal fun datedSaveBlockReason(
+    editor: AlarmEditorState,
+    otherAlarmTimes: Set<Pair<Int, Int>>,
+    nowMillis: Long = System.currentTimeMillis(),
+): SaveBlockReason? {
+    if (!editor.isDated) return null
+    val fireAt = editor.datedFireAtMillis()
+    return when {
+        fireAt == null || fireAt <= nowMillis -> SaveBlockReason.DATED_TIME_PASSED
+        (editor.hour to editor.minute) in otherAlarmTimes -> SaveBlockReason.DATED_TIME_CONFLICT
+        else -> null
+    }
 }
 
 /**
@@ -176,6 +201,8 @@ internal fun saveBlockAlertStrings(reason: SaveBlockReason): Pair<Int, Int> {
         SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_title
         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
         SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_title
+        SaveBlockReason.DATED_TIME_PASSED -> R.string.editor_block_dated_past_title
+        SaveBlockReason.DATED_TIME_CONFLICT -> R.string.editor_block_dated_conflict_title
     }
     val messageRes = when (reason) {
         SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_message
@@ -187,6 +214,8 @@ internal fun saveBlockAlertStrings(reason: SaveBlockReason): Pair<Int, Int> {
         SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_message
         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_message
         SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_message
+        SaveBlockReason.DATED_TIME_PASSED -> R.string.editor_block_dated_past_message
+        SaveBlockReason.DATED_TIME_CONFLICT -> R.string.editor_block_dated_conflict_message
     }
     return titleRes to messageRes
 }
@@ -276,6 +305,11 @@ internal fun AlarmEditorScreen(
      * 저장 버튼이 살아 있어 두 번 저장되고, 완료 콜백이 백스택을 두 번 팝해 검은 화면이 된다.
      */
     saving: Boolean = false,
+    /**
+     * 이 계정에 보이는 **다른** 알람들의 (시, 분). 날짜 알람은 같은 시각의 알람을 교체하지 않으므로 저장을 누르는
+     * 순간 이걸로 막는다([datedSaveBlockReason]).
+     */
+    otherAlarmTimes: Set<Pair<Int, Int>> = emptySet(),
     onSave: (AlarmDraft) -> Unit,
 ) {
     // 시스템 스톡 보이스 도입으로 무료 플랜도 음성 모드를 쓸 수 있다 (스톡 보이스 + 프리셋 문구).
@@ -362,6 +396,8 @@ internal fun AlarmEditorScreen(
     // 이건 안내가 아니라 **차단**이라 사라지는 스낵바도 맞지 않는다.
     // iOS 는 처음부터 `validationAlert` 알럿이었다 — 양쪽을 같은 동작으로 맞춘다.
     var blockAlert by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // 날짜 지정 알람의 날짜 고르기 시트(`docs/spec/alarm-editor.md` §2-1).
+    var datePickerOpen by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
     // 음성 생성 구간(편집기 안에서 도는 부분). 저장 전체는 아래 [busy] 로 본다.
     var generating by remember { mutableStateOf(false) }
@@ -1661,14 +1697,16 @@ internal fun AlarmEditorScreen(
                             minute = editor.minute,
                             repeatDaysMask = editor.repeatDaysMask,
                             holidayOff = editor.holidayOff,
-                            onToggleDay = { dayIndex ->
-                                val nextMask = editor.repeatDaysMask xor (1 shl dayIndex)
-                                editor.repeatDaysMask = nextMask
-                                if (nextMask == 0) editor.holidayOff = false
-                            },
+                            onToggleDay = { dayIndex -> editor.toggleRepeatDay(dayIndex) },
                             onHolidayOffChange = { enabled ->
                                 if (editor.repeatDaysMask != 0) editor.holidayOff = enabled
                             },
+                            targetDate = editor.targetDate,
+                            targetTimezone = editor.targetTimezone,
+                            onDatedChange = { on ->
+                                if (on) editor.enterDatedMode() else editor.exitDatedMode()
+                            },
+                            onPickTargetDate = { datePickerOpen = true },
                         )
                     }
                 }
@@ -1824,7 +1862,9 @@ internal fun AlarmEditorScreen(
                             // 그 함수는 `editorSaveBlockReason` 보다 **먼저** 선언돼 있어
                             // 지역 val 을 볼 수 없다(코틀린 지역 선언 순서).
                             onSave = {
-                                val reason = editorSaveBlockReason
+                                // 날짜 알람의 지난 시각·같은 시각은 재생 방식과 무관하게 먼저 본다(§4-3).
+                                val reason = datedSaveBlockReason(editor, otherAlarmTimes)
+                                    ?: editorSaveBlockReason
                                 if (reason == null) {
                                     saveEditor()
                                 } else {
@@ -1971,6 +2011,18 @@ internal fun AlarmEditorScreen(
                 ),
             ),
             onDismiss = { blockAlert = null },
+        )
+    }
+
+    val pickingDate = editor.targetDate
+    if (datePickerOpen && pickingDate != null) {
+        DatedAlarmDatePickerSheet(
+            initialDate = pickingDate,
+            onCancel = { datePickerOpen = false },
+            onConfirm = { date ->
+                editor.selectTargetDate(date)
+                datePickerOpen = false
+            },
         )
     }
 
