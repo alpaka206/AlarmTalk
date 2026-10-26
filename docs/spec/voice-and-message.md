@@ -66,6 +66,11 @@
 동의를 받은 사람의 목소리**도 받으므로(이용약관 제7조), '내 목소리' 는 가족·연인 목소리를
 등록하려는 사람에게 안 되는 것처럼 읽힌다.
 
+카드는 **직접 입력 횟수**도 말한다(2026-10-26, §8 — 직접 입력은 유료 전용이 아니다): 무료 "기본 목소리로 직접 입력 월 3회",
+플러스 "직접 입력 월 30회(등록한 목소리 포함)". 무료 카드에서 빼면 무료 사용자는 없는 기능으로 안다. 숫자는 shared
+`MANUAL_TTS_MONTHLY_LIMIT` 이고, 카드는 등급 비교라 서버 현황(`/tts/manual-quota`)이 아니라 기본분을 적는다 — 그 값이
+바뀌면 두 앱 세 언어를 같이 고친다(구현 지도 「이용권 카드 문구」).
+
 ### 2026-09-02 이전: 무료는 2종, 유료는 5종이었다
 
 그전에는 무료·기본 목소리에 **아예 다른 화면**(`FreeBucketSettingsPane`)을 띄우고 목록을
@@ -126,6 +131,9 @@
 
 시스템 목소리로 바꾸는데 직접 입력 문구가 있으면 확인 모달을 띄운다
 ("기본 목소리로 바꿀까요?"). 조용히 지우면 '문구가 사라졌다' 가 된다.
+본문은 "기본 목소리로 바꾸면 지금 입력한 문구가 지워져요." 다(2026-10-26). 예전 본문 "기본 목소리는 준비된 문구로만 말할
+수 있어서…" 는 무료 3회·플러스 30회가 기본 목소리로도 직접 입력을 만드는 지금(§8) 사실이 아니라 바꿨다. ⚠ 지우는 동작
+자체(안드로이드 `AlarmEditorState.selectVoiceProfile`, iOS 같은 흐름)는 §8 이전의 규칙이 남은 것이라 따로 정해야 한다.
 
 판정식은 **`시스템목소리로바꿈 && 직접입력문구있음 && !랜덤 && !버킷`** 이다.
 ⚠ `!랜덤` 하나만 보면 안 된다 — 버킷이 붙으면 랜덤이 꺼지므로 버킷 알람까지 걸린다.
@@ -1230,6 +1238,9 @@ v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력�
 #### 날씨 지역은 **목록에서만** 고른다 — 나라 → 지역 (2026-09-30)
 
 **직접 입력은 없다.** 나라(대한민국 · 일본 · 미국)를 고르고, 그 나라의 지역을 목록에서 고른다.
+**현재 위치를 쓰지 않는다** — 두 앱 모두 위치 권한을 요청하지 않고(매니페스트·Info.plist 에 위치 권한이 없다), 지역 시트의
+제목 아래 안내 줄이 그 사실을 말한다: "목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요."(2026-10-26, v1.3 8.1 —
+ko·en·ja 같은 뜻). 되짚지 못한 옛 값이면 그 자리에 옛 값 안내("‘속초’은(는) 목록에 없어요…")가 대신 선다.
 목록은 `packages/shared/src/weather-regions.json` **하나**가 원본이다 — 백엔드는 그대로 읽고, 두 앱은
 `scripts/gen-weather-regions.py` 가 만든 파일(안드로이드 `data/WeatherRegions.kt` + `res/values*/weather_regions.xml`,
 iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손으로 고치지 말 것(CI lint 의
@@ -2739,7 +2750,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
 | 목록 자르기(클립 유무) | `freeBucketsFor` + `availableContexts` | `availableFreeBuckets` + `availableContexts` | `GET /tts/stock-clips` |
 | 직접 입력 잠금(등급) | `manualLocked = freeVoiceTier` | `manualLocked: freeVoiceTier` | `tts.ts` manual-tts-quota |
-| 이용권 카드 문구 — 문구 종류를 유료 혜택으로 적지 않는다(§2) | `billing_plan_*feature*` (`ui/billing/BillingPanels.kt`), 회귀 `PlanCardCopyTest` | `PlanCard.features(for:)` (`Views/Settings/BillingPanelComponents.swift`) + `Localizable.xcstrings`, 회귀 `PlanCardCopyTests` | — |
+| 이용권 카드 문구 — 문구 종류를 유료 혜택으로 적지 않는다(§2) · 직접 입력 횟수 줄(무료 3 · 플러스 30) | `billing_plan_*feature*`·`billing_plan_{free,personal}_feature_manual` (`ui/billing/BillingPanels.kt`), 회귀 `PlanCardCopyTest` | `PlanCard.features(for:)` (`Views/Settings/BillingPanelComponents.swift`) + `Localizable.xcstrings`, 회귀 `PlanCardCopyTests` | — |
 | 라이브 랜덤 생성 없음 — 서버가 거절(목소리 등록 미리듣기만 예외) | `AlarmEditorScreen` 의 `/tts/generate` 요청 `random = false` 고정 · 등록 미리듣기(`VoiceProfileManagementPanel`)는 random 을 싣지 않는다 | `AlarmEditorSheet.saveFlow` 의 `randomPrompt` 가드(클립에 묶거나 준비 화면) · 예외 `VoiceStudioViewModel.fetchDraftPreview`(random:true + draftPreview:true) | `routes/tts.ts` `randomRequested`(= `!draftPreviewRequested && body.random === true`) → 400 `RANDOM_TTS_RETIRED` |
 | 스톡 클립 사용(OR) | `usesStockClips` (`ui/editor/AlarmEditorScreen.kt`) | `usesStockClips` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
 | 상태 강제 | `LaunchedEffect(usesStockClips, …)` | `coerceFreeVoiceTierConstraints` | — |
@@ -2813,7 +2824,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | 읽기 경로의 원천 호출 전체 마감 `WEATHER_READ_DEADLINE_MS`(5초 — KMA 물러서기·다음 페이지 포함, `lib/weather-region-daily.ts`) → `deadlineAt` → `fetchWeatherSource`(fetch 하나 min(`WEATHER_FETCH_TIMEOUT_MS` 5초, 남은 시간), `lib/weather-fetch.ts`), 회귀 `weather-kma.test.ts`·`weather-region-daily.test.ts` |
 | 날씨 지역 목록(유일 출처 = JSON · 좌표 박제 · 직접 입력 없음) | 생성 `data/WeatherRegions.kt`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) + `res/values{,-en,-ja}/weather_regions.xml` | 생성 `Generated/WeatherRegions.generated.swift`(`WeatherRegions`·`WeatherRegion`·`WeatherCountry`) | `packages/shared/src/weather-regions.json` + `weather-regions.ts`(`WeatherRegions`). 생성·검사 `scripts/gen-weather-regions.py`(`--check` 는 CI lint), 회귀 `packages/shared/test/weather-regions.test.ts` |
 | 옛 글자 되짚기(네 구현이 같은 규칙) | `WeatherRegions.resolveAlias`(생성) ← `weatherRegionFor`(`data/WeatherRegionSettings.kt`) — 회귀 `WeatherRegionsAliasTest`(shared 의 표를 그대로 옮김) | `WeatherRegions.resolveAlias`(생성) ← `WeatherRegions.region(key:country:city:)`(`WeatherRegionSupport.swift`) — 회귀 `WeatherRegionCatalogTests` | `WeatherRegions.resolveAlias`(shared) = 스크립트의 `resolve` ← `weatherRegionFor`(`lib/weather-signal.ts`) |
-| 지역 고르기(나라 → 지역) · 행 이름 '날씨 지역' → '지역' · 되짚지 못한 옛 값은 글자 + 다시 고르라는 안내 | `WeatherLocationDialog`·`weatherRegionDisplay`·`initialWeatherPickerCountry`(`ui/editor/AlarmRandomPromptSettings.kt`), 설정 `SettingsRow` 의 `supportingText` — 회귀 `WeatherRegionPickerTest` | `WeatherRegionPickerSheet`(`legacyLabel` 부제)·`WeatherRegions.displayName`·`unresolvedLegacyLabel`·`initialPickerCountry`(`WeatherRegionSupport.swift`), `SettingsView`·`MessageSettingsPane`·`PromptDetailCard` 의 `note` — 회귀 `WeatherRegionCatalogTests` | — |
+| 지역 고르기(나라 → 지역) · 행 이름 '날씨 지역' → '지역' · 되짚지 못한 옛 값은 글자 + 다시 고르라는 안내 · 아니면 '현재 위치 권한은 쓰지 않아요' 안내 | `WeatherLocationDialog`(부제 `region_picker_legacy_value_hint` / `region_picker_hint`)·`weatherRegionDisplay`·`initialWeatherPickerCountry`(`ui/editor/AlarmRandomPromptSettings.kt`), 설정 `SettingsRow` 의 `supportingText` — 회귀 `WeatherRegionPickerTest` | `WeatherRegionPickerSheet`(`noteText` — `legacyLabel` 이면 옛 값 안내)·`WeatherRegions.displayName`·`unresolvedLegacyLabel`·`initialPickerCountry`(`WeatherRegionSupport.swift`), `SettingsView`·`MessageSettingsPane`·`PromptDetailCard` 의 `note` — 회귀 `WeatherRegionCatalogTests` | — |
 | 계정 설정 `weather.region`(알맞으면 옛 글자로 덮고, 모르면 그 칸만 버리고, 없으면 옛 글자를 되짚는다 — 읽을 때도 같다) | 보낼 때 `toDynamicPromptSettings`(키를 글자에서 되짚어 싣는다), 받을 때 `toPromptPreferences`·`resolvedRegion`(키가 글자를 이긴다) | 보낼 때 `DynamicPromptPreferences.toSettings`, 받을 때 `DynamicPromptPreferences.from(settings:)` | `normalizeWeatherSetting`(`lib/dynamic-prompt-settings.ts`) → `WeatherRegions.normalizeSetting`, 회귀 `weather-region-settings.test.ts` |
 | 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만), 프로필 저장은 바꾼 칸만 지금 세션 위에(`AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit`, 끝나면 확인 조회), 밀린 응답도 받아 적기 — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest`·`ProfileSaveKeepsAccountAnswerTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation` ← `SettingsView.observation(of:)`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만 — 바꾼 칸만 응답 뒤의 세션 위에, 끝나면 `refreshUser`), 떠날 때 `beginLeavingAccount` + 세션을 비운 뒤 다시 지우기 — 회귀 `AccountPromptSettingsAdoptionTests`(`editBase` 판정 — ⚠ 화면의 두 호출부 `onSelect`·`saveFortuneDraft` 는 SwiftUI 라 유닛 테스트가 닿지 않는다)·`AuthViewModelTests`(관찰 축·재로그인·로그아웃 창) | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
 | 편집기 문구 화면 → 내 계정 설정(직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |

@@ -273,9 +273,19 @@ struct PlanCard: View {
     nonisolated static func features(for tier: PlanTier) -> [String] {
         switch tier {
         case .free:
-            return [String(localized: "일반 알람 무제한"), String(localized: "기본 목소리 알람")]
+            // 직접 입력 횟수(무료 3 · 플러스 30)는 shared `MANUAL_TTS_MONTHLY_LIMIT` 의 값이다(voice-and-message.md §8).
+            // 카드는 등급 비교라 서버 현황이 아니라 정해진 기본분을 적는다 — 값이 바뀌면 같이 고친다.
+            return [
+                String(localized: "일반 알람 무제한"),
+                String(localized: "기본 목소리 알람"),
+                String(localized: "기본 목소리로 직접 입력 월 3회"),
+            ]
         case .personal:
-            return [String(localized: "원하는 목소리 1개 등록"), String(localized: "등록한 목소리로 듣는 날씨·운세 문구")]
+            return [
+                String(localized: "원하는 목소리 1개 등록"),
+                String(localized: "등록한 목소리로 듣는 날씨·운세 문구"),
+                String(localized: "직접 입력 월 30회(등록한 목소리 포함)"),
+            ]
         }
     }
 }

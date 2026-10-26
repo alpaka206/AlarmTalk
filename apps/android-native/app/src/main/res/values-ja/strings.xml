@@ -76,11 +76,13 @@
     <string name="billing_monthly_subscription">決済する</string>
     <string name="billing_plan_free_feature_basic_alarm">通常アラーム無制限</string>
     <string name="billing_plan_free_feature_stock_voice">基本の声のアラーム</string>
+    <string name="billing_plan_free_feature_manual">自分で入力 月3回(基本の声)</string>
     <string name="billing_plan_free_name">無料</string>
     <string name="billing_plan_free_price">無料</string>
     <string name="billing_plan_monthly_price_fallback">月額%1$,dウォン</string>
     <string name="billing_plan_personal_feature_messages_in_voice">登録した声で聞く天気・運勢メッセージ</string>
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
+    <string name="billing_plan_personal_feature_manual">自分で入力 月30回(登録した声も)</string>
     <string name="billing_plan_personal_name">プラス</string>
     <string name="billing_play_manage_description">アプリで解約を完了できませんでした。Google Playの定期購入管理から直接解約できます。契約状態は変わっていません。</string>
     <string name="billing_play_manage_open">Google Playを開く</string>
@@ -280,6 +282,7 @@
     <string name="hs_settings_weather_region">地域</string>
     <string name="region_picker_legacy_hint">リストから選び直してください</string>
     <string name="region_picker_legacy_value_hint">「%1$s」はリストにありません。選び直してください。</string>
+    <string name="region_picker_hint">リストから地域を選んでください。位置情報の権限は使いません。</string>
     <string name="region_picker_seat_description">%1$sの天気</string>
     <string name="region_picker_weather_attribution">天気情報：韓国気象庁・気象庁・米国国立気象局（NWS）の予報をもとにAlarmTalkが加工</string>
     <string name="settings_logout_confirm_title">ログアウトしますか？</string>
@@ -441,7 +444,7 @@
     <string name="voices_record_done">録音を保存しました</string>
     <string name="common_voice_record_preview">録音を再生</string>
     <string name="common_voice_record_again">録り直す</string>
-    <string name="voices_record_video_tip">使いたい声の音源がなければ、動画を流して録音しても大丈夫です。</string>
+    <string name="voices_record_video_tip">許可を得た声で音源がなければ、動画を流して録音しても大丈夫です。</string>
     <string name="voices_record_script_title">例文</string>
     <string name="voices_record_too_short">12秒以上録音してください</string>
     <string name="voices_record_status_hint">短すぎると声が違って聞こえることがあります。</string>
@@ -622,7 +625,7 @@
     <string name="r3misc_billing_already_owned">すでに購読中の商品です。しばらくしてから購読状態を更新してください。</string>
     <string name="r3misc_billing_purchase_failed">Google Playでのお支払いに失敗しました。しばらくしてからもう一度お試しください。</string>
     <string name="editor_voice_switch_drops_text_title">基本の声に変えますか?</string>
-    <string name="editor_voice_switch_drops_text_message">基本の声は用意された文だけを話すので、直接入力した文はなくなります。</string>
+    <string name="editor_voice_switch_drops_text_message">基本の声に変えると、いま入力した文は消えます。</string>
     <string name="editor_voice_switch_drops_text_confirm">変える</string>
     <string name="onb_voice_download_progress">%1$d%%</string>
     <string name="onb_voice_download_failed">少し経ってからもう一度お試しください。</string>
@@ -672,7 +675,7 @@
     <string name="downgrade_notice_message">設定済みのアラーム%1$d件の声が基本の声に変わりました。</string>
     <string name="downgrade_notice_free_deadline">3日以内に利用券を購読し直すと自分の声が戻り、過ぎると完全に削除されます。</string>
     <string name="plan_gate_paid_message">この機能は有料利用券でご利用いただけます。</string>
-    <string name="msg_voice_preset_only">基本の声は用意された文だけを話せます。自由入力の文で起こすには、自分の声を選んでください。</string>
+    <string name="msg_voice_preset_only">基本の声ではこの文を作成できません。用意された文を選ぶか、自分で入力してください。</string>
     <string name="msg_voice_locked_free_plan">無料利用券に変わり、この声は使えません。利用券を購読し直すと戻ります。</string>
     <string name="clip_prefetch_notification_title">音声をダウンロードしています</string>
     <string name="voices_clip_prep_done">完了</string>

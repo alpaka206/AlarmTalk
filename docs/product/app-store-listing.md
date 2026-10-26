@@ -32,6 +32,7 @@ App Store Connect(앱 6799711245)에 올리는 값의 원본이다. 스토어를
 - **반영 필요(오너): 1.2.16 레코드에는 (C) 를 넣는다.** 커플·가족 이용권을 없애면서(`docs/qa/dev-test-handoff.md`
   「다음 할 일」 2) 부제·검색어(ko·ja)·설명을 (C) 로 고쳤다. 이름은 그대로다. App Store 는 설명이 버전과 함께만 바뀌므로
   1.2.16 이 게재될 때까지 게재본(INTERIM 또는 (B))은 커플·가족 이용권을 계속 설명한다.
+- **(D) 는 v1.3 레코드용 원문**이다(2026-10-26 작성 — 아직 ASC 에 넣지 않았다). 게시 조건은 (D) 절의 F·T.
 - (B)(1.2.15 레코드)의 설명·부제·검색어 원문은 이 파일에서 뺐다 — `git show 9e4fda54:docs/product/app-store-listing.md`.
 
 ## 언제 무엇을 올리나
@@ -41,7 +42,7 @@ App Store Connect(앱 6799711245)에 올리는 값의 원본이다. 스토어를
 | 프로모션 문구 | 게시하지 않음(2026-10-16 오너 결정) | — |
 | 이름·부제 | 다음 버전 레코드(앱 정보) — 1.2.16 에서 부제를 (C) 로 | 이름이 이미 쓰이고 있으면 막힌다(「게시 전 확인」) |
 | 검색어 | 다음 버전 레코드 — 1.2.16 에서 (C) 로 | K |
-| 설명 | 다음 버전 레코드 — 1.2.16 에서 (C) 로 | W 를 지키면 (C), 못 지키면 INTERIM |
+| 설명 | 다음 버전 레코드 — 1.2.16 에서 (C) 로, v1.3 에서 (D) 로 | W 를 지키면 (C), 못 지키면 INTERIM · v1.3 은 F·T 를 지키면 (D) |
 | 저작권 | 다음 버전 레코드 — 새 레코드에 `2026 Vailen` 이 따라왔는지만 본다 | — |
 | en-GB 로컬라이제이션(선택) | 다음 버전 레코드 | K |
 
@@ -185,7 +186,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 (B) 에서 커플·가족 이용권 소개 줄과 「커플·가족 이용권」 절을 빼고, 공유를 말하던 줄(개인정보·인터넷·결제)을 고쳤다.
 나머지는 (B) 와 한 글자도 다르지 않다.
 
-### ko (2215/4000)
+### ko (2206/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -240,7 +241,7 @@ Start the day with a familiar voice. Default-voice and recorded alarms are free;
 Apple 표준 사용권 계약(EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### en-US (3101/4000)
+### en-US (3070/4000)
 
 ```text
 Wake up to a voice you love.
@@ -286,7 +287,7 @@ Privacy Policy: https://alarm-talk.com/en/privacy/
 Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### ja (2106/4000)
+### ja (2091/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -341,13 +342,206 @@ Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/st
 Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
+## 설명 — (D) v1.3 레코드(무료 직접 입력 · 스토어 무료 체험)
+
+**다음 버전 제출 때 쓸 원문이다 — 아직 어디에도 올리지 않았다**(2026-10-26 작성). (C) 에서 아래 다섯 군데만 다르고
+나머지는 한 글자도 같다:
+
+- 「무료」 절: 직접 입력 한 줄(기본 목소리로 새로 만들기 월 3회).
+- 「플러스」 절: 직접 입력 줄을 '기본 목소리와 합쳐 월 30회' 로(옛 줄의 '이 폰에 남아 있으면' 조건은 v1.3 에서 서버에 남은
+  내 결과도 세지 않게 바뀌어 빼고, 재사용 규칙은 「이용 안내」 한 줄로 옮겼다).
+- 「목소리와 개인정보」: 이용권이 끝나면 등록한 목소리를 쓰던 알람이 기본 목소리(미나)로 울리고, 3일 안에 다시 시작하면
+  원래 목소리로 돌아온다(`docs/spec/billing-lifecycle.md` — 대체 목소리는 미나 하나).
+- 「이용 안내」: 직접 입력 횟수의 초기화(한국 시간 매월 1일)와 재사용 무차감.
+- 「이용권과 결제」: 첫 구독 1개월 무료 체험과 체험 뒤 자동 결제. 자동 갱신 고지 문장은 그대로 두고 '체험이 있으면 체험이
+  끝날 때 청구'·'현재 기간(무료 체험 포함)' 을 끼워 넣어 두 문장이 어긋나지 않게 했다.
+
+게시 조건(셋 다 지켜야 (D), 아니면 (C)):
+
+- **F — 무료 직접 입력.** 무료 3회는 서버(#942)와 앱(잠금을 푼 v1.3 빌드)이 **함께** 있어야 참이다 — 옛 앱은 무료의 직접
+  입력을 잠근 채 보인다. App Store 설명은 버전과 함께 바뀌므로 **그 v1.3 빌드의 레코드**에 넣고, 서버 변경이 prod 에 나간
+  것을 먼저 확인한다(무료 테스트 계정의 `GET /tts/manual-quota` 가 `limit: 3`).
+- **T — 무료 체험.** ASC `personal_monthly` 첫 구독 오퍼(무료 1개월)가 그 레코드를 제출하는 날 살아 있는지 본다
+  (`docs/spec/plan-gates.md` 「신규 1개월 무료」 — 확인 `probe-trials.mjs`). 오퍼를 내렸으면 체험 문장 둘을 뺀 (C) 결제 문단을 쓴다.
+- **광고 보상은 넣지 않는다.** 운영에 나가지 않았다(`docs/spec/ad-rewards.md` §6 「공개 문구」 — iOS 광고 단위를 켜는 회차에 거기
+  적힌 문장을 더하고, 개인정보 라벨·심사 메모도 함께 바꾼다).
+
+심사 지침 메모(2026-10-26 기준 — 원문을 다시 읽고 제출한다):
+- 3.1.2 — 자동 갱신 구독은 사용자가 무엇을 얼마 동안 받는지, 체험 뒤 얼마가 청구되는지 결제 전에 분명해야 한다. 앱의 결제
+  카드가 그 말을 하고(`plan-gates.md` — "1개월 무료 체험, 이후 월 3,900원" + 자동 결제 안내), 설명은 그와 어긋나지 않게만 쓴다.
+  금액은 설명에 적지 않는다(나라마다 다르다 — 구매 화면을 가리킨다).
+- 2.3 · 2.3.1 — 메타데이터는 그 버전의 실제 기능이어야 한다 → F.
+- 3.1.1 — 코드로 유료 기능을 연다는 말을 쓰지 않는다(`scripts/check-paid-unlock-codes.py`).
+
+### ko (2413/4000)
+
+```text
+좋아하는 목소리로 깨는 아침.
+
+알람톡(AlarmTalk · アラームトーク)은 목소리로 깨워 주는 알람이에요.
+• 무료: 기본 목소리 4종이 날씨·운세 같은 문구를 읽어 주고, 알람마다 30초까지 녹음해 두면 그 녹음 그대로 울려요.
+• 플러스: 내 목소리나 허락받은 목소리를 등록하면, AI 음성 합성으로 그 목소리가 녹음에 없던 새 문장도 읽어 줘요.
+수학 문제나 흔들기 같은 해제 미션 없이, 듣고 싶은 목소리로 일어나요.
+
+■ 무료: 기본 목소리와 녹음 알람
+• 알람은 요일마다 반복하거나 한 번만 울리게 만들 수 있어요.
+• 기본 목소리 4종(시우·미나·도현·애니)이 앱 언어(한국어·영어·일본어)로 알람을 읽어 줘요. 목소리 대신 알람음으로 울리게 할 수도 있어요.
+• 문구는 날씨·운세·응원·약 중에서 골라요.
+  ◦ 날씨: 그날 날씨(맑음·비·눈·미세먼지·더위·추위 등)에 맞는 문구. 지역은 대한민국·일본·미국의 지역 목록에서 골라요.
+  ◦ 운세: 성별·생년월일·태어난 시간으로 고르는, 재미로 보는 오늘의 운세
+  ◦ 응원·약: 울릴 때마다 미리 준비된 다음 문구로 바뀌어요.
+• 녹음 알람: 알람마다 최대 30초까지 녹음하면 울릴 때 녹음한 그대로 재생돼요. 그 알람에만 쓰는 소리라서 다른 문장을 읽게 할 수는 없어요.
+• 직접 입력: 내가 쓴 문장을 AI가 기본 목소리로 읽어 줘요. 새로 만들기는 월 3회예요.
+• 공휴일에는 끄기(대체·임시 공휴일 포함, 한국·일본·미국 달력), 다시 울림, 목소리 크기 조절도 있어요.
+
+■ 플러스: 등록한 목소리로 새 문장까지
+• 앱에서 녹음하거나 음성 파일(12초~2분)을 올려 목소리 1개를 등록해요. 본인 목소리이거나, 권리를 가진 사람에게 허락받은 목소리만 등록할 수 있어요.
+• 등록한 목소리는 AI 음성 합성으로 녹음에 없던 문장을 읽어요. 기상 인사·날씨·운세·응원·약 문구는 서버에서 미리 만들어 폰에 받아 두고, 나와의 관계(예: 딸)와 나를 부를 이름(예: 엄마)을 적으면(둘 다 선택) 거기에 맞춰 만들어요.
+• 직접 입력: 내가 쓴 문장을 등록한 목소리로도 AI가 읽어 줘요. 새로 만들기는 기본 목소리와 합쳐 월 30회예요.
+• 알람을 읽어 줄 언어는 한국어·영어·일본어 중에서 골라요.
+• 목소리는 한 계정에 1개, 등록·교체는 한 달에 한 번 할 수 있어요.
+
+■ 믿고 맡기는 알람
+• 울리는 순간에는 인터넷이 필요 없어요. 소리를 미리 폰에 받아 두어 비행기 모드에서도 제시간에 울려요.
+• 잠금 화면에서도 울리고, 알람이 울리는 동안 목소리를 반복해서 들려줘요.
+
+■ 목소리와 개인정보
+• 등록한 목소리는 내 알람에만 쓰이고, 원본 음성을 앱 밖으로 내려받는 기능은 없어요.
+• 이용권이 끝나 무료로 돌아가도 알람은 남고, 등록한 목소리를 쓰던 알람은 기본 목소리(미나)로 울려요. 등록한 목소리는 3일 보관한 뒤 삭제돼요(3일 안에 이용권을 다시 시작하면 원래 목소리로 돌아와요).
+• 탈퇴를 신청하면 30일 뒤 계정과 서버에 저장된 데이터(알람·목소리 등)가 삭제되고, 그 전에 다시 로그인해 탈퇴를 취소할 수 있어요. 단, 법령이나 처리방침에 따라 따로 보관하는 기록(결제·거래 기록은 최대 5년 등)과 백업·로그는 각 보관 기간이 끝나면 삭제돼요. 폰에 저장된 알람과 소리 파일은 알람이나 앱을 지울 때까지 남을 수 있어요.
+• 음성 생체정보 처리 동의를 철회하면 등록한 목소리와 녹음 원본이 삭제돼요.
+
+■ 이용 안내
+• 로그인이 필요해요(이메일 또는 간편 로그인).
+• 목소리 등록, 문구 준비, 동기화에는 인터넷이 필요해요.
+• 알람 권한을 허용해야 제시간에 울려요.
+• 직접 입력 횟수는 한국 시간 매월 1일에 다시 채워지고, 이미 만든 같은 음성을 다시 쓰면 줄지 않아요.
+• 앱 화면은 한국어·영어·일본어를 지원해요.
+
+■ iPhone에서
+• Apple로 로그인 또는 이메일로 시작해요.
+• 울리는 알람은 잠금 화면과 다이내믹 아일랜드(지원 기기)에서도 바로 끄거나 다시 울림으로 넘길 수 있어요.
+
+■ 이용권과 결제
+플러스는 매월 자동 갱신되는 구독이에요. 처음 구독하면 1개월 무료 체험이 적용될 수 있고(대상은 Apple이 정해요), 체험이 끝나면 자동으로 결제돼요. 결제 금액과 갱신 조건은 구매 화면에서 확인할 수 있어요. 결제는 구매를 확정할 때(무료 체험이 있으면 체험이 끝날 때) Apple 계정으로 청구되고, 현재 기간(무료 체험 포함)이 끝나기 24시간 전까지 자동 갱신을 끄지 않으면 다음 기간이 자동으로 결제돼요. 구독 관리와 취소는 Apple 계정 설정에서 할 수 있어요.
+
+이용약관: https://alarm-talk.com/terms/
+개인정보 처리방침: https://alarm-talk.com/privacy/
+Apple 표준 사용권 계약(EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+```
+
+### en-US (3472/4000)
+
+```text
+Wake up to a voice you love.
+
+AlarmTalk (알람톡 · アラームトーク) wakes you with a voice.
+• Free: default voices read messages like weather and fortune, and a recording plays exactly as recorded.
+• Plus: AI speech synthesis lets a voice you register read new messages it never recorded.
+No math, no shaking.
+
+■ Free
+• Repeating or one-time alarms
+• Four default voices speak the app language (English, Korean or Japanese), or use an alarm sound
+• Messages: Weather (the day's weather, from rain to poor air; regions in Korea, Japan and the US), Fortune (for fun, from gender, birth date and time), Encouragement and Meds (each ring plays the next prepared one)
+• Recorded alarm: up to 30 seconds per alarm, played exactly as recorded; it can't read other text
+• Type it yourself: AI reads your text in a default voice (3 new a month)
+• Turn off on holidays (incl. substitute and temporary holidays; Korea, Japan or US), snooze, voice volume
+
+■ Plus
+• Register one voice per account, once a month, by recording or uploading audio (12 sec to 2 min): yours, or one you have permission to use
+• Wake-up, weather, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
+• Type it yourself in that voice too (30 new a month, shared with default voices)
+• Messages in Korean, English or Japanese
+
+■ Reliable and private
+• Rings on time offline (sounds are saved in advance, even in airplane mode), on the lock screen, repeating the voice while it rings
+• Your registered voice is used only for your own alarms, and original recordings can't be downloaded from the app
+• If your plan ends, alarms stay, and those that used your registered voice ring in a default voice (Mina); your voice is deleted after 3 days unless you restart a plan
+• Deleting your account removes it and its server data (alarms, voices, etc.) after 30 days unless you sign in and cancel first. Records kept by law or our Privacy Policy (e.g., payment records, up to 5 years), backups and logs are deleted when retention ends; files on your phone may stay until you delete them or the app
+• Withdrawing voice biometric consent deletes your voice and original recordings
+
+■ Good to know
+• Sign-in required; registering a voice, preparing messages and sync need internet
+• Allow alarm permission so alarms ring on time
+• Typed-message counts refill on the 1st of each month (Korea time); reusing audio you already made doesn't count
+
+■ On iPhone
+• Sign in with Apple or with email.
+• A ringing alarm also appears on the Lock Screen and in the Dynamic Island (on supported models), where you can stop or snooze it.
+
+■ Plans and billing
+Plus is a monthly auto-renewing subscription. First-time subscribers may get a 1-month free trial (Apple decides who qualifies), and it is charged automatically when the trial ends. The price and renewal terms are shown on the purchase screen. Payment is charged to your Apple Account when you confirm the purchase (or when a free trial ends), and the subscription renews automatically unless auto-renew is turned off at least 24 hours before the end of the current period, including a free trial. You can manage or cancel it in your Apple Account settings.
+
+Terms of Service: https://alarm-talk.com/en/terms/
+Privacy Policy: https://alarm-talk.com/en/privacy/
+Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+```
+
+### ja (2291/4000)
+
+```text
+好きな声で目覚める朝を。
+
+アラームトーク(AlarmTalk・알람톡)は、声で起こしてくれるアラームです。
+• 無料：基本の声4種類が天気・運勢などのメッセージを読み上げます。アラームごとに30秒まで録音すれば、録音したそのままの音で鳴ります。
+• プラス：自分の声や許可を得た声を登録すると、AI音声合成で、録音にない新しいメッセージもその声が読み上げます。
+計算問題やシェイクのようなミッションはなく、聞きたい声で目を覚ませます。
+
+■ 無料：基本の声と録音アラーム
+• 曜日ごとの繰り返しも、1回だけのアラームも設定できます。
+• 基本の声4種類が、アプリの言語(日本語・韓国語・英語)でアラームを読み上げます。声の代わりにアラーム音で鳴らすこともできます。
+• メッセージは天気・運勢・応援・薬から選べます。
+  ◦ 天気：その日の天気(晴れ・雨・雪・PM2.5・暑さ・寒さなど)に合わせたメッセージ。地域は韓国・日本・アメリカの地域一覧から選びます。
+  ◦ 運勢：性別・生年月日・生まれた時間から選ぶ、お楽しみの今日の運勢
+  ◦ 応援・薬：鳴るたびに、あらかじめ用意された次のメッセージに切り替わります。
+• 録音アラーム：アラームごとに最大30秒まで録音すると、鳴るときに録音したそのままの音が流れます。そのアラーム専用の音なので、別の文を読み上げさせることはできません。
+• 自分で入力：書いた文をAIが基本の声で読み上げます。新しく作れるのは月3回までです。
+• 祝日はオフにする(振替休日・臨時祝日を含む。日本・韓国・米国のカレンダー)、スヌーズ、声の音量調整も使えます。
+
+■ プラス：登録した声で新しいメッセージも
+• アプリで録音するか、音声ファイル(12秒〜2分)をアップロードして、声を1つ登録します。登録できるのは、本人の声か、権利を持つ人から許可を得た声だけです。
+• 登録した声は、AI音声合成で録音にない文を読み上げます。起床のあいさつ・天気・運勢・応援・薬のメッセージはサーバーであらかじめ作ってスマホにダウンロードし、あなたとの関係(例：娘)と、あなたを呼ぶ名前(例：ママ)を入れると(どちらも任意)、それに合わせて作ります。
+• 自分で入力：書いた文を、登録した声でもAIが読み上げます。新しく作れるのは基本の声と合わせて月30回までです。
+• 読み上げる言語は、日本語・韓国語・英語から選べます。
+• 声は1アカウントに1つ。登録・変更は月1回までです。
+
+■ 安心して任せられるアラーム
+• 鳴る瞬間にインターネットは不要です。音をあらかじめスマホに保存するので、機内モードでも時間どおりに鳴ります。
+• ロック画面でも鳴り、アラームが鳴っている間は声を繰り返し流します。
+
+■ 声とプライバシー
+• 登録した声は自分のアラームにだけ使われます。元の音声をアプリの外にダウンロードする機能はありません。
+• プランが終わって無料に戻ってもアラームは残り、登録した声を使っていたアラームは基本の声(ミナ)で鳴ります。登録した声は3日間保管したあと削除されます(3日以内にプランを再開すれば元の声に戻ります)。
+• 退会を申請すると、30日後にアカウントとサーバーに保存されたデータ(アラーム・声など)が削除されます。それまでに再ログインすれば退会を取り消せます。ただし、法令やプライバシーポリシーに基づき別途保管する記録(決済・取引記録は最長5年など)とバックアップ・ログは、それぞれの保管期間が終わると削除されます。スマホに保存したアラームや音声ファイルは、アラームやアプリを削除するまで残ることがあります。
+• 音声の生体情報の処理への同意を撤回すると、登録した声と元の録音が削除されます。
+
+■ ご利用にあたって
+• ログインが必要です(メールまたは簡単ログイン)。
+• 声の登録、メッセージの準備、同期にはインターネット接続が必要です。
+• 時間どおりに鳴らすには、アラームの権限を許可してください。
+• 自分で入力の回数は韓国時間の毎月1日にまた使えるようになり、すでに作った同じ音声をもう一度使っても減りません。
+• アプリは日本語・韓国語・英語に対応しています。
+
+■ iPhoneでは
+• Appleでサインイン、またはメールで始められます。
+• 鳴っているアラームは、ロック画面とダイナミックアイランド(対応機種)からもすぐに止めたりスヌーズしたりできます。
+
+■ プランとお支払い
+プラスは毎月自動更新されるサブスクリプションです。はじめて購読する方には1か月の無料体験が適用されることがあり(対象はAppleが決めます)、体験が終わると自動で請求されます。料金と更新条件は購入画面でご確認いただけます。お支払いは購入の確定時(無料体験がある場合は体験の終了時)にAppleアカウントに請求され、現在の期間(無料体験を含む)が終わる24時間前までに自動更新をオフにしない限り、次の期間が自動的に更新されます。管理や解約はAppleアカウントの設定から行えます。
+
+利用規約: https://alarm-talk.com/ja/terms/
+プライバシーポリシー: https://alarm-talk.com/ja/privacy/
+Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+```
+
 ## 설명 — INTERIM (W 전에 다음 버전을 낼 때)
 
 (C) 에서 날씨를 말하는 줄만 바꾼다(`-` 줄을 `+` 줄로, `+` 가 없으면 그 줄을 지운다). 나머지는 (C) 와 한 글자도
 다르지 않다. 날씨 줄은 Play 의 INTERIM 과 같다 — Play INTERIM 은 번역이 들어간 Android 버전보다 먼저 올리므로 앱
 화면 언어 문장도 빼지만, 여기 설명은 다음 버전과 함께 게재되므로 그 문장을 둔다.
 
-**ko** (결과 2137/4000)
+**ko** (결과 2128/4000)
 
 ```diff
 -• 무료: 기본 목소리 4종이 날씨·운세 같은 문구를 읽어 주고, 알람마다 30초까지 녹음해 두면 그 녹음 그대로 울려요.
@@ -359,7 +553,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 +• 등록한 목소리는 AI 음성 합성으로 녹음에 없던 문장을 읽어요. 기상 인사·운세·응원·약 문구는 서버에서 미리 만들어 폰에 받아 두고, 나와의 관계(예: 딸)와 나를 부를 이름(예: 엄마)을 적으면(둘 다 선택) 거기에 맞춰 만들어요.
 ```
 
-**en-US** (결과 3017/4000)
+**en-US** (결과 2986/4000)
 
 ```diff
 -• Free: default voices read messages like weather and fortune, and a recording plays exactly as recorded.
@@ -370,7 +564,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 +• Wake-up, fortune, encouragement and meds messages in that voice are made in advance on our servers and downloaded to your phone, tailored to who the voice is to you and what it calls you (both optional)
 ```
 
-**ja** (결과 2030/4000)
+**ja** (결과 2015/4000)
 
 ```diff
 -• 無料：基本の声4種類が天気・運勢などのメッセージを読み上げます。アラームごとに30秒まで録音すれば、録音したそのままの音で鳴ります。
@@ -410,7 +604,9 @@ alarmtalk,alarm-talk,alarm,voice,talking,custom,record,message,morning,ai,ringto
 | 검색어 대체안 — 글자 / 바이트 | 100바이트 | 48 / 92 | 92 / 98 | 44 / 100 |
 | 프로모션 — 기간판 | 170자 | 141 | 166 | 131 |
 | 프로모션 — 상시판 | 170자 | 82 | 133 | 65 |
-| 설명 — (C) | 4000자 | 2215 | 3101 | 2106 |
-| 설명 — INTERIM | 4000자 | 2137 | 3017 | 2030 |
+| 설명 — (C) | 4000자 | 2206 | 3070 | 2091 |
+| 설명 — INTERIM | 4000자 | 2128 | 2986 | 2015 |
+| 설명 — (D) | 4000자 | 2413 | 3472 | 2291 |
 
 글자 수는 유니코드 코드 포인트 수, 바이트는 UTF-8 이다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.
+(2026-10-26: (C)·INTERIM 의 설명 글자 수가 이용권 이름을 '플러스' 로 바꾸기 전 값으로 남아 있어 다시 셌다. 줄바꿈은 1자로 센다.)
