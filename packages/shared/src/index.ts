@@ -10,3 +10,4 @@ export * from './schemas/event-voices.js';
 export * from './schemas/briefing.js';
 export * from './weather-regions.js';
 export * from './voice-enrollment-script.js';
+export * from './stock-content.js';

@@ -20,6 +20,8 @@
  *   npm run preview:stock                  # 빠진 것 전부 굽는다
  *   npm run preview:stock -- --lang ja --voice 미나
  *   npm run preview:stock -- --category greeting   # 인사말만(앱·랜딩 번들 인사말을 새로 만들 때)
+ *   npm run preview:stock -- --category cheer_v2   # 새 응원만(스펙 §5-4 — 먼저 `npm run cost:stock` 으로 양을 본다)
+ *   ⚠ 새 묶음(`cheer_v2`·`wake`)도 `STOCK_CLIP_PRESETS` 에 들어 있어 `--category` 없이 돌리면 같이 굽는다(합성 비용).
  *   옵션: --force  이미 있어도 다시 굽는다 / --dry-run  무엇을 구울지만 출력
  *
  * ⚠ **예산을 정하지 않으면 굽지 않는다 — 기본이 dry-run 이다**(2026-10-26, `docs/spec/tts-render-and-budget.md` §3).

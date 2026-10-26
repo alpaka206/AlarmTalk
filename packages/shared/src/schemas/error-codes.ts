@@ -130,6 +130,8 @@ export const ERROR_CODES = [
   // 알람 공통 검증 (alarm-helpers.ts)
   'INVALID_ALARM_MODE',
   'INVALID_BUCKET_ID',
+  // 응원 테마의 다양하게/고정 값(`cheer_mode`·`cheer_pinned_content_id`)이 어긋났다 — 스펙 voice-and-message §5-4.
+  'INVALID_CHEER_SETTING',
   'INVALID_IS_ACTIVE',
   'INVALID_MESSAGE_ID',
   'INVALID_REPEAT_DAYS',

@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import type { ErrorCode } from '@alarmtalk/shared';
+import { stockContentInfo, stockThemeForCategory, type ErrorCode } from '@alarmtalk/shared';
 import { jsonError } from '../lib/api-error';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
@@ -45,6 +45,8 @@ import {
   CLONE_CLIP_SEEDS,
   FREE_BUCKET_CATEGORIES,
   findLegacyBucketHints,
+  releasedStockContentSets,
+  stockCategoryReleased,
   normalizeStockCategory,
   prerenderRefreshColumnReady,
   retiredIsNullClause,
@@ -1899,22 +1901,38 @@ tts.get('/stock-clips', async (c) => {
   });
   // 버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트 — 규칙과 이유는 그 함수 주석에 있다.
   const legacyHints = await findLegacyBucketHints(db, userPk);
+  // ⚠ **공개 표식은 이 요청에서 한 번만 읽는다**(스펙 §5-4 「공개 순서」). 클립 목록·`expected_variants`·표지가
+  //   같은 값을 봐야 '목록에는 있는데 개수표에는 없는' 회차가 생기지 않는다.
+  const released = await releasedStockContentSets(db);
 
   return c.json({
-    clips: result.rows.map((row) => ({
-      message_id: row.message_id,
-      voice_profile_id: row.voice_profile_id,
-      voice_name: row.voice_name,
-      category: row.category,
-      language: row.language,
-      variant: Number(row.variant ?? 0),
-      text: row.text,
-      audio_url: row.audio_url,
-      tags: parseDeliveryTags(row.delivery_tags_json),
-      // false 면 **서버가 아직 이 클립을 새 목소리로 굽지 않았다.** 앱은 이때 교체 세대를
-      // 확정하지 않고 다음 회차에 다시 본다(위 SELECT 주석).
-      rendered_for_current_voice: Number(row.rendered_for_current_voice ?? 1) === 1,
-    })),
+    clips: result.rows
+      // 공개 전 묶음(`cheer_v2`·`wake`)의 행은 기본·클론 모두 뺀다 — 게시 중간 상태를 앱이 '쓸 수 있음' 으로 보지 않는다.
+      .filter((row) => stockCategoryReleased(String(row.category ?? ''), released))
+      .map((row) => {
+        const category = String(row.category ?? '');
+        const variant = Number(row.variant ?? 0);
+        const content = stockContentInfo(category, variant);
+        return {
+          message_id: row.message_id,
+          voice_profile_id: row.voice_profile_id,
+          voice_name: row.voice_name,
+          category: row.category,
+          language: row.language,
+          variant,
+          text: row.text,
+          audio_url: row.audio_url,
+          tags: parseDeliveryTags(row.delivery_tags_json),
+          // false 면 **서버가 아직 이 클립을 새 목소리로 굽지 않았다.** 앱은 이때 교체 세대를
+          // 확정하지 않고 다음 회차에 다시 본다(위 SELECT 주석).
+          rendered_for_current_voice: Number(row.rendered_for_current_voice ?? 1) === 1,
+          // 스펙 §5-4 「매니페스트 표지」 — 앱은 테마별로 모을 때 카테고리가 아니라 `theme` 을 본다
+          // (`cheer_v2` 클립은 테마 `cheer`). 옛 앱은 모르는 필드라 지나친다.
+          theme: stockThemeForCategory(category),
+          content_id: content?.contentId ?? null,
+          selectable: content?.selectable ?? true,
+        };
+      }),
     // 카테고리별로 **몇 개가 있어야 완전한가**. 앱은 이 값과 자기 캐시를 비교해 부족분만 받고,
     // 클론 버킷이 '완전한지'(variant 0..N-1 이 다 있는지) 판정한다.
     //
@@ -1923,7 +1941,7 @@ tts.get('/stock-clips', async (c) => {
     // 영영 안 받고, 그 클립을 고른 알람이 무음이 된다.
     // 날씨처럼 **절대 인덱스로 조건을 고르는** 버킷은 부분 세트면 엉뚱한 문구가 나가므로
     // 이 판정이 특히 중요하다.
-    expected_variants: expectedVariantCounts(),
+    expected_variants: expectedVariantCounts(released),
     // 버킷 없는 옛 알람이 어떤 테마였는지. 앱은 이 값을 `bucketId` 에 적고 나서
     // 평소의 재바인딩을 태운다 — 없으면 그 알람은 갈아탈 방법이 없다.
     legacy_bucket_hints: legacyHints.map((hint) => ({
@@ -1944,10 +1962,16 @@ tts.get('/stock-clips', async (c) => {
  *
  * 출처: 시스템은 `STOCK_CLIP_PRESETS`, 클론은 `CLONE_CLIP_SEEDS`. 앱은 고른 목소리가
  * 시스템인지에 따라 둘 중 하나를 본다.
+ *
+ * ⚠ **공개된 묶음만 센다**(스펙 §5-4). 공개 전 카테고리를 세면 매니페스트에 없는 몫 때문에 앱이 그 테마를 '불완전'
+ *   으로 본다. **클론은 기본 세트만**이다 — 보충(`cheer_v2`)은 클론마다 다르므로 완전성에 넣지 않는다.
  */
-function expectedVariantCounts(): { system: Record<string, number>; clone: Record<string, number> } {
+export function expectedVariantCounts(
+  released: ReadonlySet<string>,
+): { system: Record<string, number>; clone: Record<string, number> } {
   const system: Record<string, number> = {};
   for (const preset of STOCK_CLIP_PRESETS) {
+    if (!stockCategoryReleased(preset.category, released)) continue;
     // 언어별 문구 수는 같아야 하지만, 어긋나도 ko 를 기준으로 삼는다(시드 원본이 ko 다).
     system[preset.category] = preset.texts.ko?.length ?? 0;
   }

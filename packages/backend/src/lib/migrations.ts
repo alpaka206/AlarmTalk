@@ -3480,6 +3480,28 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_tts_dev_budget_holds_month ON tts_dev_budget_holds (usage_month, created_at)`,
     ],
   },
+  {
+    // **응원 변주·짧은 기상 인사**(2026-10-26, v1.3 W09 — `docs/spec/voice-and-message.md` §5-4).
+    //  - `stock_content_releases`: 환경마다 공개한 문구 묶음(`cheer_v2`·`wake_v1`). 게시 스크립트가 4목소리 × 3언어가 다
+    //    올라간 것을 확인한 뒤 적고(`publish:stock -- --release`), 매니페스트·`expected_variants`·클론 보충이 한 요청에서
+    //    같이 읽는다. 사람과 묶이지 않는 운영 표라 탈퇴 파기 대상이 아니다. 되돌리지 않는다.
+    //  - `alarms.cheer_mode`·`cheer_pinned_content_id`: 응원 테마의 '다양하게 / 이 문구로 고정' 저장값(서버 사본).
+    //    값이 왔을 때만 쓴다 — 없는 요청은 지금과 같은 행을 남긴다.
+    //  - `voice_prerender_queue.content_sets`: 그 클론에 요청된 보충 묶음(JSON 배열, 남긴다 — 교체 회차가 같이 굽는다).
+    //    `supplement`: 이번 pending 회차가 보충인가 — 우선순위 맨 뒤, `prerender-status` 는 done 으로 답한다.
+    id: 143,
+    name: 'cheer-variants-and-stock-content-releases',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS stock_content_releases (
+        content_set TEXT PRIMARY KEY,
+        released_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `ALTER TABLE alarms ADD COLUMN cheer_mode TEXT`,
+      `ALTER TABLE alarms ADD COLUMN cheer_pinned_content_id TEXT`,
+      `ALTER TABLE voice_prerender_queue ADD COLUMN content_sets TEXT`,
+      `ALTER TABLE voice_prerender_queue ADD COLUMN supplement INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
