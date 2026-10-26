@@ -3481,6 +3481,14 @@ export const migrations: Migration[] = [
     ],
   },
   {
+    // **날짜 지정 알람(한 번)**(2026-10-26, `docs/spec/alarm-lifecycle.md` §4). 기기가 올린 알람 사본에 그 날짜
+    // (`YYYY-MM-DD`)를 적는다. 시간대는 이미 있는 `timezone` 칸에 사용자가 확인한 값이 실린다. NULL = 날짜 없는 알람
+    // (지금까지의 모든 행). 136~139 는 다른 작업이 쓰고 있어 건너뛴다 — 러너는 id 순서가 아니라 기록으로 판정한다.
+    id: 140,
+    name: 'alarm-target-date',
+    statements: [`ALTER TABLE alarms ADD COLUMN target_date TEXT`],
+  },
+  {
     // **광고 시청 승인 세션**(2026-10-26, `docs/spec/ad-rewards.md` §3). 광고를 띄우기 전에 서버가 승인 id 를 만들고 그 달의
     // 획득 자리 하나를 잡아 둔다 — 한 계정에 열린 세션(준비·시작)은 하나뿐이라 두 기기가 마지막 자리를 함께 쓰지 못한다
     // (부분 고유 인덱스). 앱은 그 id 를 SSV 의 `custom_data` 로 싣고, 콜백은 계정·광고 단위·승인 id 를 대조해 승인 하나에

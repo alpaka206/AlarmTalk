@@ -13,6 +13,8 @@ struct AlarmsListView: View {
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
     @State private var actionMessage: String?
+    /// 날짜가 지난 날짜 알람을 켜려 했다 — 켜지 않고 알럿으로 말한다(스펙 alarm-lifecycle.md §4-4).
+    @State private var datedPastAlertShown = false
 
     /// 다중 선택 삭제 — 길게 눌러 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
     /// 안드로이드 `AlarmListScreen.kt:135-148`.
@@ -76,6 +78,14 @@ struct AlarmsListView: View {
                     .padding(.bottom, 24)
                 }
             }
+        }
+        .alert(
+            String(localized: "날짜가 지난 알람이에요"),
+            isPresented: $datedPastAlertShown
+        ) {
+            Button(String(localized: "확인"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "편집에서 날짜를 다시 골라 주세요."))
         }
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
         .task(id: stockClipPrefetcher.state) {
@@ -333,6 +343,12 @@ struct AlarmsListView: View {
 
     @MainActor
     private func setAlarm(_ alarm: LocalAlarmRecord, enabled: Bool) async {
+        // 날짜가 지난 날짜 알람은 켜지 않는다 — 다음 회차가 없다. 다시 켜려면 날짜를 다시 고른다(§4-4).
+        // 권한보다 먼저 본다 — 권한을 받아도 켤 수 없는 알람이다.
+        if enabled, alarm.datedTimeHasPassed(nowMillis: Int64(Date().timeIntervalSince1970 * 1000)) {
+            datedPastAlertShown = true
+            return
+        }
         if enabled {
             // 권한이 먼저다. 켠 다음에 확인하면 schedule 실패 뒤에도 `enabled=true` 가
             // 남아 **켜진 척하는 행**이 된다 — `markFailed` 는 state 만 바꾸고 enabled 는
@@ -348,7 +364,11 @@ struct AlarmsListView: View {
                     return
                 }
             }
-            store.setEnabled(id: alarm.id, enabled: true)
+            guard store.setEnabled(id: alarm.id, enabled: true) else {
+                // 그 사이 시각이 지났다(위 판정과 이 줄 사이) — 같은 알럿으로 말한다.
+                datedPastAlertShown = alarm.isDated
+                return
+            }
             guard let updated = store.record(id: alarm.id) else { return }
             let scheduled = await alarmKit.schedule(record: updated, store: store)
             if !scheduled {

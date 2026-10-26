@@ -117,7 +117,15 @@ class SnackbarSeverityTest {
         val RESOURCE_REFERENCE = Regex("""R\.(?:string|plurals)\.(\w+)""")
         val FORMAT_SPECIFIER = Regex("""%(?:(\d+)\$)?[-#+ 0,(]*\d*(?:\.\d+)?([a-zA-Z%])""")
 
-        /** 뷰모델 소스에 있지만 스낵바에 실리지 않는 문구 — 다른 문구의 인자이거나 화면 안 글이다. 지금은 없다. */
-        val NOT_SNACKBAR = emptySet<String>()
+        /** 뷰모델 소스에 있지만 스낵바에 실리지 않는 문구 — 다른 문구의 인자이거나 화면 안 글·알럿이다. */
+        // 날짜 지정 알람의 막기·켜기 거절은 스낵바가 아니라 알럿이다(`MainViewModel.datedAlarmNotice`).
+        val NOT_SNACKBAR = setOf(
+            "editor_block_dated_past_title",
+            "editor_block_dated_past_message",
+            "editor_block_dated_conflict_title",
+            "editor_block_dated_conflict_message",
+            "dated_alarm_past_enable_title",
+            "dated_alarm_past_enable_message",
+        )
     }
 }

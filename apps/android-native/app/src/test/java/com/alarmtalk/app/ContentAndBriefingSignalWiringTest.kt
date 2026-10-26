@@ -20,6 +20,9 @@ class ContentAndBriefingSignalWiringTest {
             assertTrue("$signature 의 성공 갈래가 적어야 한다", success.contains("recordContentSelected(getApplication(), saved, ownerUserId)"))
             val failure = braceBlock(body, ".onFailure { error ->")
             assertFalse("$signature 의 실패 갈래는 적지 않는다", failure.contains("recordContentSelected"))
+            // 날짜 지정 알람 저장(`dated_alarm_saved`)도 같은 자리·같은 계정이다.
+            assertTrue(success.contains("recordDatedAlarmSaved(getApplication(), saved, ownerUserId)"))
+            assertFalse(failure.contains("recordDatedAlarmSaved"))
             // 계정은 비동기 저장을 **시작하기 전에** 잡는다.
             assertTrue(body.indexOf("val ownerUserId = authSession?.user?.id") in 0 until body.indexOf("viewModelScope.launch"))
         }

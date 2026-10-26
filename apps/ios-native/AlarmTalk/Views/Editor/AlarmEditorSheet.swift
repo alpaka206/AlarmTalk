@@ -71,6 +71,9 @@ struct AlarmEditorSheet: View {
     @State var didLoadInitial = false
     @State var validationAlert: ValidationAlertContent?
     @State var duplicateAlarmConfirm: DuplicateAlarmConfirmContent?
+    /// '날짜 지정' 의 날짜 고르기 시트(`AlarmEditorSheet+DatedAlarm`).
+    @State var datedPickerOpen = false
+    @State var datedPickerDate = Date()
     @State var isWorking = false
     /// 지금 저장 시도의 id — `alarm_save_attempt`·`alarm_save_blocked`·`alarm_ready` 가 같은 값을 쓴다
     /// (`docs/spec/usage-events.md` §7.1). 같은 시각 교체 확인을 거쳐 `finishScheduling` 으로 다시 들어와도 잇는다.
@@ -317,6 +320,9 @@ struct AlarmEditorSheet: View {
                     // 이미 정했고, 다가오는 공휴일 목록은 이 자리에서 결정에 쓰이지 않는다.
                     // 카드만 길어져 아래 여백이 사라진다.
                 }
+                // '날짜 지정(한 번)' — 요일과 배타적이다. 켜면 요일이 풀려 위 공휴일 행이 사라진다
+                // (스펙 alarm-editor.md §2-1).
+                datedAlarmSection
 
                 // ⚠ **알람 이름(라벨) 입력창을 되살리지 말 것.** 안드로이드
                 // `ScheduleDetailsCard`(`AlarmEditorControls.kt`)에는 라벨 입력이
@@ -510,6 +516,15 @@ struct AlarmEditorSheet: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
         }
+        .formSheet(
+            isPresented: $datedPickerOpen,
+            title: String(localized: "날짜 고르기"),
+            saveTitle: String(localized: "완료"),
+            onCancel: { datedPickerOpen = false },
+            onSave: { confirmDatedPicker() }
+        ) {
+            datedPickerContent
+        }
         .alert(item: $duplicateAlarmConfirm) { content in
             Alert(
                 title: Text(String(localized: "같은 시각 알람이 있어요")),
@@ -674,6 +689,10 @@ struct AlarmEditorSheet: View {
         .onChange(of: draft.repeatDaysMask) { _, newMask in
             if newMask == 0, draft.holidayOff {
                 draft.holidayOff = false
+            }
+            // 요일을 하나라도 고르면 날짜 지정이 꺼진다 — 둘은 배타적이다(스펙 alarm-editor.md §2-1).
+            if newMask != 0, draft.isDated {
+                draft.leaveDatedMode()
             }
         }
         .onChange(of: localRecorder.elapsedSeconds) { _, seconds in
@@ -898,7 +917,9 @@ struct AlarmEditorSheet: View {
     /// 지금 draft 로 계산한 다음 울림 시각. 계산이 실패하면(울릴 날이 없음) 오늘/내일
     /// 그 시각으로 둔다.
     private func draftFireAtMillis(now: Int64) -> Int64 {
-        (try? AlarmTimeCalculator.nextFireAtMillis(
+        // 날짜 알람은 고른 날짜·시간대의 고정 시각이다 — 지났어도 내일로 넘기지 않는다(저장이 막는다).
+        if let dated = draft.datedFireAtMillis { return dated }
+        return (try? AlarmTimeCalculator.nextFireAtMillis(
             hour: draft.hour,
             minute: draft.minute,
             repeatDaysMask: draft.repeatDaysMask,
@@ -920,6 +941,17 @@ struct AlarmEditorSheet: View {
         if mask != 0 {
             let days: String = mask.repeatDays.map(\.shortLabel).joined(separator: " ")
             return String(localized: "매주: \(days)")
+        }
+        // 날짜 알람: 그 날짜를 그 알람의 시간대로 말한다(오늘·내일이면 그 말을 붙인다 — 아래와 같다).
+        if let targetDate = draft.targetDate {
+            let zone = datedTimeZone
+            guard let date = DatedAlarmTime.pickerDate(for: targetDate, in: zone) else { return datedDateLabel }
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = zone
+            let label = datedDateLabel
+            if calendar.isDateInToday(date) { return String(localized: "오늘 · \(String(label))") }
+            if calendar.isDateInTomorrow(date) { return String(localized: "내일 · \(String(label))") }
+            return label
         }
         // mask == 0 : 한 번만 — 다음 발화 날짜를 보여준다(공휴일 OFF 는 의미 없지만 계산은 동일).
         let fireAt = draftFireAtMillis(now: Int64(Date().timeIntervalSince1970 * 1000))
@@ -2520,6 +2552,12 @@ struct AlarmEditorSheet: View {
             recordSaveBlocked("invalid_draft")
             return
         }
+        // 날짜 알람: 지난 시각·같은 시각 알람은 **누르는 순간** 다시 재 막는다 — 음성을 만들기 전이다
+        // (스펙 alarm-lifecycle.md §4-3). 교체 흐름을 타지 않는다.
+        if let datedBlock = datedSaveBlockAlert(nowMillis: Int64(Date().timeIntervalSince1970 * 1000)) {
+            validationAlert = datedBlock
+            return
+        }
 
         // 권한 확인은 **TTS 생성보다 먼저**여야 한다.
         // `alarmKit.schedule()` 안에도 확인이 있지만 그건 서버 호출이 끝난 뒤라,
@@ -2862,6 +2900,16 @@ struct AlarmEditorSheet: View {
             excludingID: existing?.id,
             ownerUserId: auth.session?.user.id
         )
+        // 날짜 알람은 교체를 묻지 않는다 — 음성을 만드는 사이에 같은 시각 알람이 생긴 경합의 그물이다
+        // (첫 판정은 `datedSaveBlockAlert`, 스펙 alarm-lifecycle.md §4-3).
+        if !conflicts.isEmpty, merged.isDated {
+            validationAlert = datedSaveBlockAlert(nowMillis: Int64(Date().timeIntervalSince1970 * 1000))
+                ?? ValidationAlertContent(
+                    title: String(localized: "같은 시각에 다른 알람이 있어요"),
+                    message: String(localized: "날짜 알람은 다른 알람을 바꾸지 않아요. 다른 시각을 골라 주세요.")
+                )
+            return
+        }
         if !conflicts.isEmpty {
             duplicateAlarmConfirm = DuplicateAlarmConfirmContent(
                 timeLabel: String(format: "%02d:%02d", merged.hour, merged.minute),
@@ -2952,6 +3000,15 @@ struct AlarmEditorSheet: View {
                 alarmID: merged.id,
                 voiceProfileID: merged.voiceProfileId,
                 props: props,
+                userID: ownerID
+            )
+        }
+        // 날짜 지정 알람 저장(`dated_alarm_saved`) — 날짜·시간대는 싣지 않는다. 안드로이드 `recordDatedAlarmSaved` 짝.
+        if merged.isDated {
+            UsageEventQueue.shared.record(
+                .datedAlarmSaved,
+                alarmID: merged.id,
+                voiceProfileID: merged.voiceProfileId,
                 userID: ownerID
             )
         }

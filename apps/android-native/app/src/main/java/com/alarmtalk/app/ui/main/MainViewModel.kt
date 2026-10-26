@@ -1230,6 +1230,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var duplicateAlarmPrompt by mutableStateOf<DuplicateAlarmPrompt?>(null)
         internal set
 
+    // 날짜 알람이 저장·켜기에서 막힌 이유(지난 시각·같은 시각). null 이면 닫힘(`docs/spec/alarm-lifecycle.md` §4).
+    var datedAlarmNotice by mutableStateOf<DatedAlarmNotice?>(null)
+        internal set
+
+    fun dismissDatedAlarmNotice() {
+        datedAlarmNotice = null
+    }
+
     fun requestPermissionGate(target: PermissionTarget) {
         permissionGateRequest = target
     }

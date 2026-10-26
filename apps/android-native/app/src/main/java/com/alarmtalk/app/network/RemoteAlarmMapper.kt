@@ -6,6 +6,7 @@ import com.alarmtalk.app.data.CHEER_BUCKET_ID
 import com.alarmtalk.app.data.CheerModes
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.hasLockedPaidVoice
+import com.alarmtalk.app.data.isDated
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.isVoicePackVoiceId
 import java.util.TimeZone
@@ -32,7 +33,9 @@ object RemoteAlarmMapper {
             voiceProfileId = alarm.voiceProfileId
                 .takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO && !packAlarm }
                 .trimmedOrNull(),
-            timezone = TimeZone.getDefault().id,
+            // 날짜 알람은 사용자가 확인한 시간대, 아니면 지금 기기 시간대(`docs/spec/alarm-lifecycle.md` §4-1).
+            timezone = alarm.targetTimezone.trimmedOrNull().takeIf { alarm.isDated() } ?: TimeZone.getDefault().id,
+            targetDate = alarm.targetDate.trimmedOrNull().takeIf { alarm.isDated() },
             bucketId = alarm.bucketId.trimmedOrNull(),
             clientAlarmId = alarm.id,
             // 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4) — 응원 알람만 싣는다. 이력·선택은 기기 로컬이다.

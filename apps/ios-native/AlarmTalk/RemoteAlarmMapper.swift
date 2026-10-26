@@ -45,6 +45,11 @@ enum RemoteAlarmMapper {
             messageId: messageId,
             voiceProfileId: voiceProfileId,
             bucketId: local.bucketId.nilIfBlank,
+            // 날짜 알람이면 서버 `timezone` 은 기기 현재 시간대가 아니라 **사용자가 확인한 시간대**다
+            // (스펙 alarm-lifecycle.md §4-1). 날짜가 없으면 예전처럼 기기 시간대.
+            timezone: local.isDated
+                ? (local.targetTimezone.nilIfBlank ?? TimeZone.current.identifier)
+                : TimeZone.current.identifier,
             clientAlarmId: local.id,
             // 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4) — 응원 알람만 싣는다. 이력·선택은 기기 로컬이다.
             // 안드로이드 `RemoteAlarmMapper.toWriteRequest` 미러.
@@ -60,7 +65,8 @@ enum RemoteAlarmMapper {
             // 안드로이드 `RemoteAlarmMapper.toWriteRequest` 미러.
             clearsMissingVoiceReferences: local.hasLockedPaidVoice
                 || (local.voiceSourceEnum != .localAudio && isSystemVoiceId(local.voiceProfileId))
-                || usesVoicePack
+                || usesVoicePack,
+            targetDate: local.targetDate.nilIfBlank
         )
     }
 

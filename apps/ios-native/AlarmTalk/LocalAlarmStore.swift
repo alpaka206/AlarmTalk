@@ -264,6 +264,15 @@ final class LocalAlarmStore: ObservableObject {
         guard VoiceSource(rawValue: record.voiceSource) != nil else {
             throw LocalAlarmValidationError.unknownVoiceSource
         }
+        // 날짜 알람은 실제 있는 날짜여야 하고 요일 반복·공휴일 끄기와 함께 있을 수 없다
+        // (스펙 alarm-lifecycle.md §4-1). 지난 시각은 여기서 보지 않는다 — 편집기가 누르는 순간 막는다.
+        if let targetDate = record.targetDate.nilIfBlank {
+            guard DatedAlarmTime.isValidTargetDate(targetDate),
+                  record.repeatDaysMask == 0,
+                  !record.holidayOff else {
+                throw LocalAlarmValidationError.invalidTargetDate
+            }
+        }
         if record.playModeEnum != .alarmOnly {
             if record.localAudioUri?.isEmpty ?? true {
                 throw LocalAlarmValidationError.voiceAudioRequired
@@ -490,7 +499,9 @@ final class LocalAlarmStore: ObservableObject {
         // 사라짐) 이 함수로 모이므로, 다음 회차가 다음 문구로 울린다.
         // 안드로이드 `advancedBucketRotationIndex` 와 같은 규칙이다.
         alarms[index].bucketRotationIndex = Self.advancedBucketRotationIndex(alarms[index])
-        if alarms[index].repeatDaysMask != 0,
+        // ⚠ **날짜 알람은 반복이 아니다**(`isRecurring`) — 정지하면 일회성처럼 꺼진 채 남는다. 다음 날·
+        // 다음 주로 넘기지 않는다(스펙 alarm-lifecycle.md §4-4).
+        if alarms[index].isRecurring,
            let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: now, isHoliday: isHoliday) {
             // 다음 날로 넘어가면 오늘 받아 둔 날씨 조건은 버린다 — 옛 `fireAtMillis` 로 판정하므로
             // **덮기 전에** 부른다(`invalidateWeatherVariantIfFireDateChanges` 주석).
@@ -554,8 +565,14 @@ final class LocalAlarmStore: ObservableObject {
     ) -> LocalAlarmRecord? {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return nil }
 
+        // 날짜 알람은 **그 날짜·시간대로 다시 계산한다** — 벽시계로 다시 계산하지 않는다(스펙 alarm-lifecycle.md
+        // §4-4). 스누즈 중이면 `fireAtMillis` 가 스누즈 마감이라 건드리지 않는다. 계산이 안 되는 날짜는 지난 것으로
+        // 보고 아래 '만료된 1회성' 갈래로 보낸다.
+        if alarms[index].isDated, alarms[index].runtimeStateEnum != .snoozed {
+            alarms[index].fireAtMillis = alarms[index].datedFireAtMillis ?? 0
+        }
         if alarms[index].fireAtMillis <= nowMillis {
-            if alarms[index].repeatDaysMask != 0,
+            if alarms[index].isRecurring,
                let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday) {
                 // 정지 기록 없이 지나간 회차를 넘길 때도 같다 — 날짜가 바뀌면 조건을 버린다.
                 Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
@@ -620,14 +637,18 @@ final class LocalAlarmStore: ObservableObject {
     ///   ⚠ **취소가 실패했을 때만 `true`** 다(Codex #699 P1). 그 값은 OS 예약을 취소할
     ///   **유일한 손잡이**라, 취소에 실패했는데 지우면 예약은 남고 취소할 방법만 사라진다
     ///   (고아 예약). 평소에는 `false` — 남겨 두면 다음에 켤 때 옛 핸들과 어긋난다.
+    /// - Returns: 바꿨는가. ⚠ **날짜가 지난 날짜 알람은 켜지 않고 false**(스펙 alarm-lifecycle.md §4-4) — 켜면
+    ///   다음 날로 넘길 회차가 없다. 부르는 쪽(`AlarmsListView`)이 그 전에 알럿으로 막고, 여기는 그물이다.
+    @discardableResult
     func setEnabled(
         id: String,
         enabled: Bool,
         keepScheduleHandle: Bool = false,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
-    ) {
-        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
+    ) -> Bool {
+        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return false }
+        if enabled, alarms[index].datedTimeHasPassed(nowMillis: nowMillis) { return false }
         if enabled {
             let nextFireAt = (try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday))
                 ?? LocalAlarmRecord.fallbackFireAtMillis(
@@ -652,6 +673,7 @@ final class LocalAlarmStore: ObservableObject {
         alarms[index].syncState = nextLocalSyncState(for: alarms[index]).rawValue
         alarms[index].updatedAtMillis = nowMillis
         persist()
+        return true
     }
 
     // MARK: Sync transitions (Phase 2-B3 가 사용)

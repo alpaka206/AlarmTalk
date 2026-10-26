@@ -61,6 +61,12 @@ data class RemoteAlarmWriteRequest(
     @SerializedName("cheer_mode") val cheerMode: String? = null,
     @SerializedName("cheer_pinned_content_id") val cheerPinnedContentId: String? = null,
     /**
+     * 날짜 지정 알람의 날짜(`YYYY-MM-DD`). **비어 있어도 언제나 `null` 로 싣는다** — 날짜 알람을 반복 알람으로 바꿨을
+     * 때 서버 사본의 날짜를 지워야 한다(`docs/spec/alarm-lifecycle.md` §4-7). 날짜 알람이면 [timezone] 은 사용자가
+     * 확인한 시간대다.
+     */
+    @SerializedName("target_date") val targetDate: String? = null,
+    /**
      * [messageId]·[bucketId] 가 비어 있으면 **빼지 않고 `null` 로 실어** 서버 값을 지운다.
      * 본문에는 실리지 않는다(`@Transient`) — [RemoteAlarmWriteRequestAdapterFactory] 가 읽는다.
      *
@@ -95,7 +101,7 @@ internal class RemoteAlarmWriteRequestAdapterFactory : TypeAdapterFactory {
                     return
                 }
                 val tree = delegate.toJsonTree(value).asJsonObject
-                val keepNull = if (value.clearsMissingVoiceReferences) CLEARABLE_KEYS else emptySet()
+                val keepNull = ALWAYS_SENT_KEYS + if (value.clearsMissingVoiceReferences) CLEARABLE_KEYS else emptySet()
                 // 트리 작성기는 null 을 JsonNull 로 남긴다 — 지울 두 키만 남기고 나머지는 뺀다.
                 tree.entrySet()
                     .filter { (key, element) -> element.isJsonNull && key !in keepNull }
@@ -119,6 +125,9 @@ internal class RemoteAlarmWriteRequestAdapterFactory : TypeAdapterFactory {
 
     private companion object {
         val CLEARABLE_KEYS = setOf("message_id", "bucket_id")
+
+        /** 비어 있어도 `null` 로 싣는 키 — 서버가 '그대로 둔다' 가 아니라 '지운다' 로 읽어야 하는 값. */
+        val ALWAYS_SENT_KEYS = setOf("target_date")
     }
 }
 

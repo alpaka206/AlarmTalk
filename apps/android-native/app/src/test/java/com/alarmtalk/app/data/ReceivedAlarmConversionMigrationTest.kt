@@ -203,8 +203,8 @@ class ReceivedAlarmConversionMigrationTest {
     private fun AlarmEntity.toV27Values(): ContentValues = ContentValues().apply {
         for (field in AlarmEntity::class.java.declaredFields) {
             if (Modifier.isStatic(field.modifiers) || field.isSynthetic) continue
-            // v28 뒤에 더한 칸은 v27 표에 없다(28→29 가 더한다 — `AlarmDatabase.MIGRATION_28_29`).
-            if (field.name in COLUMNS_ADDED_AFTER_V28) continue
+            // v27 표에 없는 칸 — 28→29 의 응원 칸과 30→31 의 날짜 지정 알람 두 칸.
+            if (field.name in COLUMNS_ADDED_AFTER_V28 || field.name in FieldsAddedAfterV27) continue
             field.isAccessible = true
             when (val value = field.get(this@toV27Values)) {
                 null -> putNull(field.name)
@@ -218,6 +218,8 @@ class ReceivedAlarmConversionMigrationTest {
         put("remoteDeliveryVersion", "delivery-1")
         put("observedDeliveryVersion", "delivery-1")
     }
+
+    private val FieldsAddedAfterV27 = setOf("targetDate", "targetTimezone")
 
     /** [D2 설계] 1단계의 모양 — 남기는 값은 [this] 그대로, 지우는 값은 비우고 목소리는 미나다. */
     private fun AlarmEntity.convertedShape(defaultLabel: String, playMode: String): AlarmEntity = copy(

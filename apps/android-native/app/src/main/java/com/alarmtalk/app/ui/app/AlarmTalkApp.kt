@@ -1104,6 +1104,21 @@ internal fun AlarmTalkApp(
         )
     }
 
+    viewModel.datedAlarmNotice?.let { notice ->
+        IosAlertDialog(
+            title = stringResource(notice.titleRes),
+            message = stringResource(notice.messageRes),
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.dated_alarm_notice_ok),
+                    emphasized = true,
+                    onClick = { viewModel.dismissDatedAlarmNotice() },
+                ),
+            ),
+            onDismiss = { viewModel.dismissDatedAlarmNotice() },
+        )
+    }
+
     // 하단바·FAB 등 앱 크롬 노출 조건(로그인·동의 완료, 업데이트 강제/삭제 대기 아님).
     // 온보딩 목소리 고르기 중에는 하단 탭·알람 추가 FAB 를 감춘다 — 선택을 끝내기 전에
     // 다른 화면으로 샐 수 있는 출구를 두지 않는다.
@@ -1446,6 +1461,8 @@ internal fun AlarmTalkApp(
               lastMessageContext = lastMessageContext,
               lastFreeBucket = lastFreeBucket,
               lastManualText = lastManualText,
+              // 날짜 알람의 같은 시각 판정 — 이 계정에 보이는 다른 알람(`observeAlarms` 가 이미 소유자로 거른다).
+              otherAlarmTimes = alarms.filter { it.id != alarm?.id }.map { it.hour to it.minute }.toSet(),
               onCancel = ::goBackInApp,
               onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
               onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },

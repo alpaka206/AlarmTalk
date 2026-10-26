@@ -992,6 +992,13 @@ final class AlarmKitViewModel: ObservableObject {
         // 종료 sweep 가 도는 동안 만들어진 예약은 그 sweep 가 못 보고 지나가, 로그아웃이
         // 끝난 뒤 **켜진 채 로그인 화면 뒤에 숨은 알람**으로 남는다.
         guard !isLeavingAccount else { return false }
+        // ⚠ **지난 날짜 알람은 걸지 않는다**(스펙 alarm-lifecycle.md §4-4). `.fixed` 에 지난 시각을 넘기면 다음
+        // 회차가 없는데 걸린다. 이미 울렸는데 정지가 아직 행에 안 닿은 알람을 리컨사일러 등이 다시 거는 창도
+        // 여기서 닫는다. 실패 낙인은 찍지 않는다 — 만료 처리는 `prepareForScheduleRecovery` 가 맡는다.
+        if record.isDated, record.fireAtMillis <= Int64(Date().timeIntervalSince1970 * 1000) {
+            statusMessage = String(localized: "이미 지난 시각이에요")
+            return false
+        }
         // ⚠ **바뀐 뒤에 시작한 예약은 세대로 못 잡는다** — 소유자를 여기서 본다(위 주석).
         guard mayScheduleRecord(record) else {
             Self.paidGateLogger.info(
@@ -1393,16 +1400,36 @@ final class AlarmKitViewModel: ObservableObject {
         }
     }
 
+    /// 이 행을 AlarmKit 에 **어떤 모양으로** 거는가 — `makeSchedule` 의 갈래를 값으로 꺼낸 것(테스트가 고정한다).
+    enum ScheduleKind: Equatable {
+        /// `.fixed(record.nextFireDate)` — 날짜 알람, 공휴일off 반복.
+        case fixed
+        /// `.relative(.never)` — 날짜 없는 일회성(다음 그 벽시계 시각).
+        case relativeOnce
+        /// `.relative(.weekly)` — 요일 반복.
+        case weekly
+    }
+
+    /// ⚠ **날짜 알람을 `repeatDaysMask == 0` 만 보고 일회성으로 보내지 말 것**(스펙 alarm-lifecycle.md §4-4).
+    /// `.relative(.never)` 는 '다음 그 시:분' 이라, 날짜가 내일이 아니면 엉뚱한 날 울고 시간대가 바뀌면 벽시계를
+    /// 따라간다. 날짜 알람은 그 자체로 `.fixed` 예약 하나다 — weekly 예약의 한 회차만 바꾸는 방식을 쓰지 않는다.
+    nonisolated static func scheduleKind(for record: LocalAlarmRecord) -> ScheduleKind {
+        if record.isDated || record.isHolidayOffRecurring { return .fixed }
+        return record.repeatDaysMask.repeatDays.isEmpty ? .relativeOnce : .weekly
+    }
+
     private func makeSchedule(_ record: LocalAlarmRecord) -> Alarm.Schedule {
+        // 날짜 알람: `fireAtMillis` 는 `targetDate`·`targetTimezone` 으로 고정한 절대 시각이다(편집기 저장·
+        // `prepareForScheduleRecovery` 가 채운다. 스누즈 중이면 스누즈 마감). OS 는 한 번 울고 재무장하지 않는다.
+        if Self.scheduleKind(for: record) == .fixed {
+            return .fixed(record.nextFireDate)
+        }
         // PR3 하이브리드: 반복+공휴일off 알람만 `.fixed` one-shot 으로 무장한다.
         // record.fireAtMillis 는 모든 writer(upsert 호출자/setEnabled/markStopped/
         // prepareForScheduleRecovery)가 nextFireAtMillis(holidayOff:isHoliday:)
         // 로 이미 공휴일 skip 된 다음 발화 시각을 채워두므로 `.fixed(record.nextFireDate)`
         // 가 정의상 정확하다. AlarmKit 은 단일 절대 one-shot 만 들고, 다음 회차는
         // 앱이 dismiss/recovery/timezone 경로에서 직접 재무장한다.
-        if record.isHolidayOffRecurring {
-            return .fixed(record.nextFireDate)
-        }
         // 그 외는 기존 동작 그대로: 단발 -> .relative(.never), 반복 -> .relative(.weekly).
         // AlarmKit 이 timezone 적응 + 자동 재무장을 소유한다 (blast radius 최소화).
         let time = Alarm.Schedule.Relative.Time(hour: record.hour, minute: record.minute)

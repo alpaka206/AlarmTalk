@@ -356,10 +356,14 @@ struct RemoteAlarmWriteRequest: Encodable {
     /// 기본 목소리 id 만 올라가고 클론의 `message_id`·`bucket_id` 는 서버에 남는다 — 기본 인사말
     /// 알람은 토글마다 `INVALID_BUCKET_ID` 로 거절되고, 나머지는 반쯤 바뀐 서버 행이 된다(Codex #820).
     var clearsMissingVoiceReferences: Bool = false
+    /// 날짜 지정 알람의 날짜(`YYYY-MM-DD`) — 서버 `alarms.target_date`. ⚠ **nil 도 `null` 로 싣는다**
+    /// (`encode(to:)`). 서버 `PATCH` 는 빠진 필드를 그대로 두므로, 빼면 날짜 알람을 반복 알람으로 고쳐도
+    /// 서버 사본에 날짜가 남는다. 스펙 `docs/spec/alarm-lifecycle.md` §4-7.
+    var targetDate: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case time, repeatDays, snoozeMinutes, mode, vibrationPattern, wakeMode, isActive, messageId
-        case voiceProfileId, bucketId, timezone, clientAlarmId
+        case voiceProfileId, bucketId, timezone, clientAlarmId, targetDate
         case cheerMode, cheerPinnedContentId
     }
 
@@ -379,6 +383,11 @@ struct RemoteAlarmWriteRequest: Encodable {
         try encodeClearable(bucketId, forKey: .bucketId, in: &container)
         try container.encodeIfPresent(timezone, forKey: .timezone)
         try container.encodeIfPresent(clientAlarmId, forKey: .clientAlarmId)
+        if let targetDate {
+            try container.encode(targetDate, forKey: .targetDate)
+        } else {
+            try container.encodeNil(forKey: .targetDate)
+        }
         try container.encodeIfPresent(cheerMode, forKey: .cheerMode)
         try container.encodeIfPresent(cheerPinnedContentId, forKey: .cheerPinnedContentId)
     }

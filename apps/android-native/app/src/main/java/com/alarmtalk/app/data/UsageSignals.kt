@@ -100,6 +100,21 @@ internal fun recordContentSelected(context: Context, saved: AlarmEntity, ownerUs
 }
 
 /**
+ * 날짜 지정 알람(한 번)을 저장했다(`dated_alarm_saved`, `docs/spec/usage-events.md` §7.1). 날짜가 있는 알람의 저장 **성공**에만
+ * 적는다 — 날짜·시간대·문구는 싣지 않는다(식별자만). [ownerUserId] 는 저장을 **시작한** 계정이다.
+ */
+internal fun recordDatedAlarmSaved(context: Context, saved: AlarmEntity, ownerUserId: String?) {
+    if (saved.targetDate.isNullOrBlank()) return
+    UsageSignals.record(
+        context,
+        UsageEvents.DATED_ALARM_SAVED,
+        alarmId = saved.id,
+        voiceProfileId = saved.voiceProfileId,
+        ownerUserId = ownerUserId,
+    )
+}
+
+/**
  * 팩 목소리로 운 알람을 저장했다(`pack_selected`, `docs/spec/usage-events.md` §7.1 · `voice-packs.md`) — 칸은 `pack_id`(팩 id)
  * 하나다. 원문·문구·클립 id 는 싣지 않는다. [contentSelectionProps] 와 같은 시점(저장 성공 한 곳)에 적고, 편집기에서 눌러만 보고
  * 취소한 것은 적지 않는다. 팩 목소리가 아니거나, 그 목소리로 울지 않거나(알람 모드·직접 녹음), 받은 팩 목록에서 그 목소리의 팩을

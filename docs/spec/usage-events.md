@@ -234,7 +234,7 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | | `generation_outcome` | 새 제작의 결과 — `outcome`·`charged_source`(base/ad/none)·`usage_month`(실제 원래 사용월)·`result_id`·`request_id`·`char_count` | 같음 |
 | 광고 | `reward_offer` / `reward_view_started` / `reward_pending` / `reward_granted` / `reward_spent` | 제안을 보였다 / 시청 시작 / 시청이 끝나 서버 확인(SSV) 대기 / 적립 확인(`duration_ms` = 대기) / 보상을 썼다 | 광고 보상 흐름 |
 | 콘텐츠 | `content_selected` | 응원의 고정/다양하게(`content_mode` = `fixed`/`varied`, voice-and-message §5-4). **저장에 성공한** 응원 알람의 선택이다 — 편집기에서 눌러만 보고 취소한 것은 적지 않는다. 고정한 문구 ID 는 싣지 않는다(담을 정해진 칸이 없다) | 알람 저장 성공 한 곳(「직전 선택 유지」와 같은 시점), 저장을 **시작한** 계정으로 |
-| | `dated_alarm_saved` | 날짜 알람 저장 | **스키마만** — 그 기능 PR 이 심는다 |
+| | `dated_alarm_saved` | 날짜 지정 알람(한 번)을 저장했다 — 날짜·시간대·문구는 싣지 않는다 | 편집기 저장 성공(Android `recordDatedAlarmSaved` · iOS `AlarmEditorSheet.finishScheduling`) |
 | | `pack_selected` | 추가 음성팩 목소리로 우는 알람을 **저장에 성공했다**(`voice-packs.md`). 칸은 `pack_id`(팩 id) 하나 — 원문·문구·클립 id 를 싣지 않는다. 편집기에서 눌러만 보고 취소한 것, 알람 모드·직접 녹음으로 저장한 것은 적지 않는다 | `content_selected` 와 같은 자리(알람 저장 성공 한 곳), 저장을 **시작한** 계정으로 — 안드로이드 `recordPackSelected`, iOS `VoicePacks.packSelectionProps` |
 | 소식 | `briefing_opened` / `source_opened` / `briefing_audio_requested` | 아침 소식 화면이 열렸다(`surface` = `menu`) / 원문 링크를 열었다 / '음성 만들기' 로 음성 문장을 요청했다(보내기 **전에** 적는다 — 결과는 직접 입력과 같은 길이 말한다). 원천 구분은 `surface` = `disclosure`(공시)·`policy_news`(정책뉴스)뿐이다. **관심기업·기업 고유번호·접수번호·기사 제목·원문·URL 을 싣지 않는다** | 아침 소식 화면(열림은 화면 하나에 한 번) |
 | 결제 | `paywall_viewed` / `store_purchase_verified` / `entitlement_changed` | 결제 화면(`surface`) / 스토어 구매를 서버가 확인했다(`product_id`·`store_offer`·`outcome`) / 앱이 본 플랜이 바뀌었다(`from_plan`→`to_plan`) | 결제 화면·구매 흐름·플랜 갱신 |
