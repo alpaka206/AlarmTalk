@@ -34,7 +34,7 @@ class AlarmVoiceRecorderInstrumentedTest {
         val recorder = AlarmVoiceRecorder(context, AlarmAudioStore(context))
         recorder.start(maxDurationMillis = 2_000)
         Thread.sleep(3_500)
-        val audio = recorder.stop()
+        val audio = recorder.stop().audio
         val duration = audio.durationMillis
         assertNotNull(duration)
         assertTrue("duration=$duration", duration!! in 1_500..2_600)
@@ -45,7 +45,7 @@ class AlarmVoiceRecorderInstrumentedTest {
         val recorder = AlarmVoiceRecorder(context, AlarmAudioStore(context))
         recorder.start(maxDurationMillis = 10_000)
         Thread.sleep(2_000)
-        val audio = recorder.stop()
+        val audio = recorder.stop().audio
         assertTrue("duration=${audio.durationMillis}", (audio.durationMillis ?: 0) >= 1_500)
     }
 

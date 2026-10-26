@@ -72,6 +72,11 @@ struct VoiceCloneUploadFlow: View {
     /// 고르거나, 방식을 바꾸면 걷힌다 — 그 이유는 앞 소리의 이야기다.
     /// 안드로이드 `VoiceProfileManagementPanel` 의 `rerecordReason` 과 같은 규칙이다.
     @State private var rerecordReason: String?
+    /// 방금 멈춘 녹음의 품질 판정이 도는 중인가(디코딩 — 길어도 1초 남짓). 그동안 `다음` 을 잠근다.
+    @State private var recordingAnalyzing = false
+    /// 권장 안내·끼어듦·복구한 녹음 — '그래도 쓰기' / '다시 녹음' 을 묻는 알럿(스펙 voice-and-message §4-1
+    /// 「녹음 품질 판정」). 확정 사유는 묻지 않고 거절 줄(`rerecordReason`)에 쓴다. 안드로이드 `recordingReview` 짝.
+    @State private var recordingReview: RecordingReview?
     @State private var scriptExpanded = false
     /// 선제 동의 시트를 띄우느라 멈춘 등록이 있는가 — 동의가 기록되면 **그 자리에서 이어서**
     /// 등록한다. 안드로이드의 `SensitiveConsentRequest.resumeVoiceDrafts` 대응이다.
@@ -159,6 +164,7 @@ struct VoiceCloneUploadFlow: View {
 
     private var canAdvanceFromSource: Bool {
         !voice.isBusy && !voice.recorder.isRecording && hasPreparedSource && isInValidRange
+            && !(sourceMode == .record && recordingAnalyzing)
     }
 
     private var topBarBackAction: (() -> Void)? {
@@ -240,6 +246,29 @@ struct VoiceCloneUploadFlow: View {
             if request == nil, !unaskedSensitiveConsents.isEmpty {
                 resumeSubmitAfterConsent = false
             }
+        }
+        // 녹음이 끝났다(사용자가 멈췄든, 전화·블루투스·백그라운드로 끝났든) — 기기에서 판정한다.
+        .onChange(of: voice.recorder.isRecording) { _, recording in
+            guard !recording, voice.recorder.latestRecordingURL != nil else { return }
+            Task { await reviewFinishedRecording() }
+        }
+        .alert(
+            String(localized: "녹음을 확인해 주세요"),
+            isPresented: Binding(
+                get: { recordingReview != nil },
+                set: { if !$0 { recordingReview = nil } }
+            ),
+            presenting: recordingReview
+        ) { _ in
+            Button(String(localized: "다시 녹음")) {
+                discardRecording()
+            }
+            // 취소 자리 — 바깥 탭과 같다. 녹음을 지우는 쪽은 버튼으로만(실수로 잃지 않게).
+            Button(String(localized: "그래도 쓰기"), role: .cancel) {
+                recordingReview = nil
+            }
+        } message: { review in
+            Text(review.alertMessage ?? "")
         }
         .onChange(of: sourceMode) { _, newValue in
             // 거절당한 것은 앞 방식의 소리다 — 다른 방식으로 옮기면 그 이유(`rerecordReason`)는 맞지 않는다.
@@ -346,11 +375,57 @@ struct VoiceCloneUploadFlow: View {
                 }
             },
             onPreview: { voice.playRecording() },
-            onRedo: {
-                voice.previewPlayer.stop()
-                voice.recorder.clearLatest()
-            }
+            onRedo: { discardRecording() }
         )
+    }
+
+    /// 녹음한 클립을 버린다 — '다시 녹음'(카드·품질 알럿)과 확정 거절이 같은 길을 쓴다.
+    private func discardRecording() {
+        voice.previewPlayer.stop()
+        voice.recorder.clearLatest()
+        recordingReview = nil
+    }
+
+    /// 멈춘 녹음을 기기에서 판정한다 — 디코딩 → 정규화(16 kHz 모노) → 기본 신호 검사. 진단에는 수치만 남긴다.
+    /// ⚠ VAD 는 꽂혀 있지 않다(기본 신호 검사) — 화면 어디에서도 'VAD 통과' 라고 말하지 않는다.
+    /// 안드로이드 `VoiceProfileManagementPanel` 의 `reviewRecordedAudio` 와 같은 규칙이다.
+    private func reviewFinishedRecording() async {
+        guard let url = voice.recorder.latestRecordingURL else { return }
+        let stopReason = voice.recorder.lastStopReason ?? .finished
+        let durationMs = voice.recorder.latestDurationMs ?? 0
+        guard durationMs >= VoiceProfileLimits.minDurationMs else {
+            // 짧은 녹음은 카드가 '12초 이상' 을 말한다. 끼어들어 멈춘 것이면 왜 멈췄는지 말한다 — 사용자가 멈춘 것이 아니다.
+            if stopReason != .finished {
+                rerecordReason = String(localized: "전화나 다른 앱 때문에 녹음이 멈췄어요. 12초 이상 다시 녹음해 주세요.")
+            }
+            return
+        }
+        recordingAnalyzing = true
+        let minDurationMs = VoiceProfileLimits.minDurationMs
+        let maxSeconds = Double(VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs) / 1000 + 5
+        let verdict = await Task.detached(priority: .userInitiated) {
+            RecordingQualityAnalyzer.verdict(forRecordingAt: url, minDurationMillis: minDurationMs, maxSeconds: maxSeconds)
+        }.value
+        recordingAnalyzing = false
+        // 그사이 버렸거나 다시 녹음했다 — 지난 녹음의 판정을 새 상태에 덮지 않는다.
+        guard voice.recorder.latestRecordingURL == url, !voice.recorder.isRecording else { return }
+        var diagnostics = verdict.diagnostics
+        diagnostics["stop_reason"] = stopReason.rawValue
+        AlarmTalkLog.breadcrumb(
+            category: "recording_quality",
+            event: "Voice registration recording reviewed",
+            data: diagnostics
+        )
+        let review = RecordingReview.decide(verdict: verdict, stopReason: stopReason)
+        switch review {
+        case .accept:
+            break
+        case .reject(let reason):
+            discardRecording()
+            rerecordReason = reason.message
+        case .ask:
+            recordingReview = review
+        }
     }
 
     /// ⚠ **거절 이유 줄(`rerecordReasonLine`)은 녹음 카드·파일 고르기 바로 아래다 — 단계 맨 아래로 내리지 말 것.**

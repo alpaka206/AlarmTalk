@@ -665,10 +665,17 @@ internal fun AlarmEditorScreen(
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { recorder.stop() }
-            }.onSuccess { audio ->
+            }.onSuccess { result ->
                 isRecording = false
+                val audio = result.audio
                 recordingElapsedMillis = audio.durationMillis ?: recordingElapsedMillis
                 applyCachedAudio(audio)
+                // 끼어들어 멈췄거나 멈춤 실패 뒤 살린 녹음이면 그 사실을 말한다 — 들어 보고 다시 녹음할 수 있다.
+                audioMessage = when {
+                    result.recoveredAfterStopFailure -> context.getString(R.string.recording_quality_recovered)
+                    result.interruption != null -> context.getString(R.string.recording_interrupted_kept)
+                    else -> audioMessage
+                }
             }.onFailure { error ->
                 isRecording = false
                 recordingElapsedMillis = 0L
@@ -1141,7 +1148,8 @@ internal fun AlarmEditorScreen(
                 recordingElapsedMillis = (System.currentTimeMillis() - startedAt)
                     .coerceAtMost(AlarmAudioLimits.MAX_DURATION_MILLIS)
                 recordingLevel = (recorder.maxAmplitude().toFloat() / 32767f).coerceIn(0f, 1f)
-                if (recordingElapsedMillis >= AlarmAudioLimits.MAX_DURATION_MILLIS) {
+                // 전화·다른 앱이 오디오를 가져갔다 — 그때까지의 녹음을 남기고 멈춘다.
+                if (recordingElapsedMillis >= AlarmAudioLimits.MAX_DURATION_MILLIS || recorder.interruption != null) {
                     stopRecording()
                     break
                 }
