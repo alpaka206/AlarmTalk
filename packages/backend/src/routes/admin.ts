@@ -5,6 +5,7 @@ import { authRateLimitMiddleware } from '../middleware/rateLimit';
 import { jsonError } from '../lib/api-error';
 import { countAudience, parseAudience } from '../lib/admin/audience';
 import { listPushJobs, loadOverview, parseRange, searchUsers } from '../lib/admin/metrics';
+import { loadStoreDownloads } from '../lib/admin/store-downloads';
 import { renderLogin, renderOverview, renderPush, renderUsers } from '../lib/admin/pages';
 import {
   AdminPushError,
@@ -228,8 +229,16 @@ function unavailable(nonce: string, err: unknown, active: 'overview' | 'users' |
 admin.get('/', async (c) => {
   const nowMs = Date.now();
   try {
-    const overview = await loadOverview(getDB(c.env), parseRange(c.req.query('range')), nowMs);
-    return html(c, (nonce) => renderOverview(nonce, overview, nowMs));
+    const db = getDB(c.env);
+    // 스토어 숫자는 따로 읽는다 — 그 표가 아직 없는 창(마이그레이션 #138 전)이어도 개요의 나머지는 그린다.
+    const [overview, store] = await Promise.all([
+      loadOverview(db, parseRange(c.req.query('range')), nowMs),
+      loadStoreDownloads(db, c.env).catch((err: unknown) => {
+        console.error('[admin] store downloads failed', err);
+        return null;
+      }),
+    ]);
+    return html(c, (nonce) => renderOverview(nonce, overview, nowMs, store));
   } catch (err) {
     console.error('[admin] overview failed', err);
     return html(c, (nonce) => unavailable(nonce, err, 'overview'), 500);

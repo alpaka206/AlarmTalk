@@ -41,6 +41,15 @@ export interface Env {
   /** App Store Server API 개인키(.p8 PEM 전체). 결제 검증 **전용** — 로그인과 무관하다. */
   APPLE_PRIVATE_KEY?: string;
   /**
+   * **App Store Connect API**(분석 보고서 — 관리자 콘솔의 스토어 다운로드) 키의 Issuer ID. 결제·로그인·푸시 키와 **다른 넷째 키**다
+   * (App Store Connect → 사용자 및 액세스 → 통합 → App Store Connect API → 팀 키). 셋 다 있어야 돈다. 앱은 `APPLE_BUNDLE_ID` 로 찾는다.
+   */
+  ASC_API_ISSUER_ID?: string;
+  /** App Store Connect API 키의 Key ID. 키 역할은 **Admin** — 분석 보고서 요청을 처음 만들 때 필요하다. */
+  ASC_API_KEY_ID?: string;
+  /** App Store Connect API 키의 `.p8` **내용**(PEM 전문, 한 줄이면 `\n` 이스케이프). 파일 경로가 아니다. */
+  ASC_API_PRIVATE_KEY?: string;
+  /**
    * **APNs**(iOS 푸시) 키의 Key ID.
    *
    * ⚠ 애플 키가 이제 셋이고 **전부 다르다.** 한쪽에 다른 쪽 값을 넣으면 그 기능만
@@ -67,6 +76,12 @@ export interface Env {
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;
   /** Android 앱 패키지명 (Play 구독 검증 대상). */
   ANDROID_PACKAGE_NAME?: string;
+  /**
+   * Play 콘솔 **통계 보고서 버킷**(관리자 콘솔의 스토어 다운로드). Play 콘솔 → 앱 다운로드·보고서 → '클라우드 저장소 URI 복사' 의
+   * `gs://pubsite_prod_rev_<숫자>/` 값(앞뒤 `gs://`·`/` 는 있어도 된다). 읽기는 `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` 서비스 계정이
+   * 한다 — 그 계정에 Play 콘솔의 '대량 보고서 다운로드' 권한이 있어야 한다. 없으면 화면이 '연결 대기' 다.
+   */
+  PLAY_REPORTS_BUCKET?: string;
   /**
    * RTDN(실시간 개발자 알림) Pub/Sub push 엔드포인트 검증용 비밀 토큰.
    * Play Console→Pub/Sub→`POST /api/billing/google/rtdn?token=<이 값>` 으로 들어오며,

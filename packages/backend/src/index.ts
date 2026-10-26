@@ -710,6 +710,20 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 슬롯의 마지막 틱이면 이미 맨 앞에서 돌았다(위 `weatherFirst`).
   if (!weatherFirst) await weatherRegionDailyTick(db, env, now, captureCron);
 
+  // 관리자 콘솔의 스토어 다운로드 수(`lib/admin/store-downloads.ts`, `docs/spec/admin-console.md` 「스토어 다운로드」).
+  // 하루 여섯 틱에서만 돈다(한국 시각 0·3·9·12·15·18시 35~39분) — 숫자가 하루 한 번 바뀌어 매 틱 부를 까닭이 없다.
+  // 하위 요청은 스스로 24 개 안에서 멈추고 다음 회차가 잇는다. 클론 드레인(아래)은 남은 예산으로 돈다.
+  try {
+    const { isStoreSyncTick, runStoreDownloadSync } = await import('./lib/admin/store-downloads');
+    if (isStoreSyncTick(now)) {
+      await runStoreDownloadSync(db, env, now, {
+        onError: (platform, err) => captureCron('scheduled.store_downloads', err, { platform }),
+      });
+    }
+  } catch (err) {
+    captureCron('scheduled.store_downloads', err);
+  }
+
   // ⚠⚠ **기본(시스템) 목소리 스톡 클립 드레인은 껐다**(2026-09-03 리뷰 15차).
   //
   // 7차에 이걸 붙인 이유는 "교체가 배포되는 순간 기본 목소리에 클립이 0개가 된다" 였다.
