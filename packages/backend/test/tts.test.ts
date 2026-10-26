@@ -2022,7 +2022,8 @@ describe('POST /tts/generate — 렌더 지문과 서비스 재렌더', () => {
     const r2 = createMockR2Bucket();
     mockTextToSpeech.mockResolvedValue(providerPcm());
     paidVoiceRequest();
-    mockDB.pushResultFor('AND logical_key = ?', [{ render_fingerprint: 'rf1-old-settings' }]);
+    // 옛 설정의 렌더만 있다 — 논리 결과는 있고, 지금 지문의 행은 없다.
+    mockDB.pushResultFor('AND logical_key = ?', [{ any_owned: 1, current_owned: 0 }]);
     mockDB.pushResultFor('FROM subscriptions s', []);
     mockDB.pushResultFor('SELECT used_count FROM manual_tts_usage', [{ used_count: 4 }]);
     pushPublicationVoice();
@@ -2066,7 +2067,7 @@ describe('POST /tts/generate — 렌더 지문과 서비스 재렌더', () => {
     const r2 = createMockR2Bucket();
     mockTextToSpeech.mockResolvedValue(providerPcm());
     paidVoiceRequest();
-    mockDB.pushResultFor('AND logical_key = ?', [{ render_fingerprint: await currentFingerprint() }]);
+    mockDB.pushResultFor('AND logical_key = ?', [{ any_owned: 1, current_owned: 1 }]);
     mockDB.pushResultFor('FROM subscriptions s', []);
     mockDB.pushResultFor('INSERT INTO manual_tts_usage', [{ used_count: 5, usage_month: '2026-10' }], 1);
     pushPublicationVoice();
@@ -2101,8 +2102,11 @@ describe('POST /tts/generate — 렌더 지문과 서비스 재렌더', () => {
 
     expect(res.status).toBe(201);
     expect((await res.json()).charged_source).toBe('base');
-    // 논리 결과 조회는 한 번 했다(부수 쿼리).
-    expect(mockDB.sideCalls.some((c) => c.sql.includes('AND logical_key = ?'))).toBe(true);
+    // 논리 결과 조회는 한 번 했다(부수 쿼리). 표본(LIMIT)이 아니라 존재로 묻고, 지금 지문을 함께 넘긴다(코덱스 #954).
+    const lookup = mockDB.sideCalls.find((c) => c.sql.includes('AND logical_key = ?'));
+    expect(lookup?.sql).toContain('EXISTS');
+    expect(lookup?.sql).not.toContain('LIMIT');
+    expect(lookup?.args.at(-1)).toBe(await currentFingerprint());
   });
 
   it('캐시 히트한 옛 행에 논리 결과 키를 채운다 — 나중에 설정이 바뀌어도 알아보게', async () => {

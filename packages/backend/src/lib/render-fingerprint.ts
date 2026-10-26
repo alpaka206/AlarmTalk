@@ -1,3 +1,4 @@
+import type { Client } from '@libsql/client';
 import {
   TTS_FINAL_AUDIO_FORMAT,
   TTS_LOUDNESS_BOOST_DB,
@@ -214,4 +215,30 @@ export async function manualResultLogicalKey(parts: {
   text: string;
 }): Promise<string> {
   return `lk1-${(await sha256Hex(canonicalJson(parts))).slice(0, 32)}`;
+}
+
+/**
+ * 이 사람의 이 논리 결과가 원장에 있는가(`any`), 그중 **지금 지문**으로 만든 행이 있는가(`current`).
+ *
+ * ⚠ **표본이 아니라 존재로 묻는다**(코덱스 #954). 예전에는 순서 없는 `LIMIT 20` 을 읽고 그 안에서 지금 지문을 찾았다 — 번역
+ *   출력 여럿이 같은 논리 키를 나눠 쓰면 옛 렌더가 20개를 넘기 쉽고, 지금 지문의 행이 그 밖에 있으면 매번 '서비스 재렌더' 로
+ *   읽혀 세지 않는 합성이 끝없이 열렸다. 지문을 모르면(null) `current` 는 거짓이다.
+ */
+export async function logicalResultRenders(
+  db: Pick<Client, 'execute'>,
+  userPk: string,
+  logicalKey: string,
+  currentFingerprint: string | null,
+): Promise<{ any: boolean; current: boolean }> {
+  const res = await db.execute({
+    sql: `SELECT
+            EXISTS (SELECT 1 FROM generated_audio_assets WHERE user_id = ? AND logical_key = ?) AS any_owned,
+            EXISTS (
+              SELECT 1 FROM generated_audio_assets
+              WHERE user_id = ? AND logical_key = ? AND render_fingerprint = ?
+            ) AS current_owned`,
+    args: [userPk, logicalKey, userPk, logicalKey, currentFingerprint],
+  });
+  const row = res.rows[0];
+  return { any: Number(row?.any_owned ?? 0) === 1, current: Number(row?.current_owned ?? 0) === 1 };
 }

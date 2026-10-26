@@ -17,7 +17,7 @@ import {
   type ManualRequestClaim,
 } from '../lib/manual-tts-requests';
 import { computeTtsCacheKey, generatedTtsObjectKey, manualTtsCacheScope } from '../lib/audio-cache';
-import { manualResultLogicalKey, renderStamp, serverRenderSettings } from '../lib/render-fingerprint';
+import { logicalResultRenders, manualResultLogicalKey, renderStamp, serverRenderSettings } from '../lib/render-fingerprint';
 import { measureSynthesis, speechCharacters, type TtsUsageKind } from '../lib/tts-usage';
 import { checkDevBudget } from '../lib/tts-budget';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
@@ -1274,14 +1274,8 @@ tts.post('/generate', async (c) => {
       const currentFingerprint = firstAttempt
         ? (await renderStamp(serverRenderSettings({ ...firstAttempt, language: synthesisLanguage }))).fingerprint
         : null;
-      const owned = await db.execute({
-        sql: `SELECT render_fingerprint FROM generated_audio_assets
-              WHERE user_id = ? AND logical_key = ? LIMIT 20`,
-        args: [userPk, logicalKey],
-      });
-      serviceRerender =
-        owned.rows.length > 0 &&
-        !owned.rows.some((row) => row.render_fingerprint != null && String(row.render_fingerprint) === currentFingerprint);
+      const owned = await logicalResultRenders(db, userPk, logicalKey, currentFingerprint);
+      serviceRerender = owned.any && !owned.current;
     }
 
     // dev 월 합성 예산 — 운영이거나 정하지 않았으면 DB 를 부르지 않는다. 세기·표식보다 앞이라 막혀도 잃는 것이 없다.

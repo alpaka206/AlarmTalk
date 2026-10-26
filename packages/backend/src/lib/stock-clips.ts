@@ -18,7 +18,8 @@ import { withWriteTransaction, type DbExecutor } from './transactions';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
 import { renderStamp, serverRenderSettings } from './render-fingerprint';
-import { measureSynthesis } from './tts-usage';
+import { measureSynthesis, speechCharacters } from './tts-usage';
+import { checkDevBudget } from './tts-budget';
 
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
@@ -954,11 +955,13 @@ export async function runPrerenderBatch(
   /** 이번 틱에 쓴 몫 — 클립 수와 같되, 높이를 굽는 클립은 둘로 센다(아래 `clipCost`). */
   let budgetUsed = 0;
   let subrequestExhausted = false;
+  /** dev 월 예산이 모자라 이 틱을 멈췄다(`PrerenderBudgetDeferredError`) — 남은 목소리의 임대는 만료가 회수한다. */
+  let budgetDeferred = false;
   // ⚠ **잡은 순서로** 돈다(`claimPendingPrerenderVoices` — 새 등록 먼저). `cloneVoices` 는 조회 순서(id 순)라 그대로
   //   돌면 다시 굽는 회차가 새 등록보다 먼저 몫을 쓴다.
   const voiceById = new Map(cloneVoices.map((voice) => [voice.id, voice]));
   for (const claim of claimed) {
-    if (subrequestExhausted) break;
+    if (subrequestExhausted || budgetDeferred) break;
     const voice = voiceById.get(claim.voiceProfileId);
     if (!voice) continue;
     if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
@@ -1000,6 +1003,13 @@ export async function runPrerenderBatch(
           // 더 새 교체가 이미 이겼다 — 이 목소리의 남은 대상도 전부 옛 목소리로 만들 것이라
           // 통째로 버린다. **실패가 아니므로** attempts 를 올리지 않고 관측자에게도 안 보낸다.
           superseded = true;
+          break;
+        }
+        if (genErr instanceof PrerenderBudgetDeferredError) {
+          // dev 월 예산이 모자라다 — 실패가 아니라 미룬 것이다. 임대만 반납하고(아래 superseded 갈래와 같이) 이 틱을 끝낸다.
+          // 다음 목소리도 같은 장부를 보므로 더 돌지 않는다.
+          superseded = true;
+          budgetDeferred = true;
           break;
         }
         options.onClipError?.(genErr, {
@@ -1147,6 +1157,20 @@ export function systemStockTexts(baseText: string): {
  * 내려앉지만, 이건 "그 사이 더 새 교체가 큐를 가져갔다" 는 뜻이라 이 회차만 버리면 된다.
  * 큐는 새 주인의 것이므로 done/failed 로 끝내지 말고 **아무것도 하지 않고 물러난다.**
  */
+/**
+ * **dev 월 합성 예산이 이 클립의 글자를 못 받는다 — 굽지 않고 남겼다**(`docs/spec/tts-render-and-budget.md` §3).
+ *
+ * 실패가 아니다 — attempts 를 올리지 않고 큐에 그대로 둔다(예산을 올리거나 다음 달에 이어 굽는다). 같은 회차의 남은 클립도
+ * 같은 장부를 보므로 거기서 멈춘다. 예산은 **실제로 보낼 글자**로 본다 — 회차 앞에서 '한 글자라도 남았나' 만 보면 열 클립이
+ * 통째로 들어가 상한을 크게 넘겼다(코덱스 #954). 운영이거나 예산을 정하지 않았으면 DB 를 부르지 않고 통과한다.
+ */
+export class PrerenderBudgetDeferredError extends Error {
+  constructor(message = 'Voice prerender deferred: the dev synthesis budget cannot cover this clip.') {
+    super(message);
+    this.name = 'PrerenderBudgetDeferredError';
+  }
+}
+
 export class PrerenderSupersededError extends Error {
   constructor(message = 'Voice prerender render was superseded by a newer replacement.') {
     super(message);
@@ -1388,6 +1412,11 @@ export async function generateStockClip(
     // 올린 음량도 키에 든다(스펙 §10). ⚠ 게시 스크립트도 같은 셈으로 올린 바이트에 같은 값을 넣는다 — 다르면 키가 갈린다.
     loudnessBoostDb: attempt.loudnessBoostDb,
   });
+
+  // dev 월 예산은 **이 클립이 보낼 글자**로 본다 — 모자라면 굽지 않고 남긴다(`PrerenderBudgetDeferredError`). 회차 앞의
+  // 확인만으로는 한 회차가 통째로 들어가고, 요청이 부르는 사전렌더(`routes/voice-profile.ts`)는 그 확인을 거치지 않았다.
+  const budget = await checkDevBudget(db, env, speechCharacters(synthesisText));
+  if (!budget.ok) throw new PrerenderBudgetDeferredError();
 
   // 합성 한 번을 장부에 적는다(성공·실패·글자·지연 — `lib/tts-usage.ts`). 원장에는 이 렌더의 지문을 함께 적는다.
   const generated = await measureSynthesis(db, { kind: 'stock_prerender', text: synthesisText }, () =>

@@ -20,7 +20,7 @@ import {
   runWithConcurrency,
 } from '../src/lib/tts-budget';
 import { listRerenderTargets, readRerenderBacklog } from '../src/lib/render-backlog';
-import { currentRenderRevision } from '../src/lib/render-fingerprint';
+import { currentRenderRevision, logicalResultRenders } from '../src/lib/render-fingerprint';
 import {
   checkProviderRemaining,
   fetchProviderCharacterQuota,
@@ -194,6 +194,26 @@ async function seedLedger() {
   });
   return current;
 }
+
+describe('같은 논리 결과의 렌더 — 표본이 아니라 존재로 묻는다(코덱스 #954)', () => {
+  it('옛 렌더가 20개를 넘어도 지금 지문의 행을 찾는다', async () => {
+    const insert = (id: string, fingerprint: string) =>
+      db.execute({
+        sql: `INSERT INTO generated_audio_assets
+                (id, user_id, voice_profile_id, message_id, provider, provider_voice_id, model_id, language,
+                 request_hash, text, audio_url, audio_object_key, audio_format, render_fingerprint, logical_key)
+              VALUES (?, 'u1', 'v1', ?, 'elevenlabs', 'el', 'eleven_v4_turbo', 'ko', ?, '문구', ?, ?, 'mp3', ?, 'lk-1')`,
+        args: [`ga-${id}`, `m-${id}`, `h-${id}`, `r2://k/${id}`, `k/${id}`, fingerprint],
+      });
+    for (let i = 0; i < 25; i++) await insert(`old-${i}`, `rf1-old-${i}`);
+    expect(await logicalResultRenders(db, 'u1', 'lk-1', 'rf1-current')).toEqual({ any: true, current: false });
+    await insert('current', 'rf1-current');
+    expect(await logicalResultRenders(db, 'u1', 'lk-1', 'rf1-current')).toEqual({ any: true, current: true });
+    // 지문을 모르면 지금 것은 없다고 본다. 남의 논리 결과는 보지 않는다.
+    expect(await logicalResultRenders(db, 'u1', 'lk-1', null)).toEqual({ any: true, current: false });
+    expect(await logicalResultRenders(db, 'u2', 'lk-1', 'rf1-current')).toEqual({ any: false, current: false });
+  });
+});
 
 describe('다시 구울 목록', () => {
   it('지금 게시 중인 렌더 중 세대가 다른 것만, 종류·상태별 개수와 글자로 센다', async () => {
