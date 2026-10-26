@@ -83,8 +83,10 @@ struct MainTabsView: View {
             storeTier: subscriptions.currentTier,
             user: auth.session?.user
         )
+        // 지금 선택은 넘기지 않는다 — 새 알람의 편집기는 첫 상태를 읽을 때 선택을 비운 뒤 고른다(`loadInitialState` →
+        // `loadVoicePromptState(from: nil)`). 다른 알람을 열었다 취소해 남은 선택을 넘기면 관문이 엉뚱한 목소리를 본다(코덱스 #952).
         return AlarmEditorSheet.resolveInitialVoiceID(
-            selected: voiceStudio.selectedProfileID,
+            selected: nil,
             readyOwn: readyOwn,
             lastUsedID: voiceStudio.lastUsedVoiceId,
             freeTier: auth.session != nil && !plan.meetsOrExceeds(.personal)

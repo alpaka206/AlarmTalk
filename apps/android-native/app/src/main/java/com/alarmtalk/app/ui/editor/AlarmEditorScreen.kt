@@ -2060,7 +2060,17 @@ internal fun AlarmEditorScreen(
     // 아직 못 받은 목소리를 골랐을 때 — 준비 화면을 띄운다.
     // ⚠ 알람 만들기를 막지 않는다. 닫으면 그대로 편집을 이어갈 수 있고, 고른 목소리는
     // 적용되지 않은 채였으므로 예전 목소리가 유지된다.
-    preparationVoiceId?.let {
+    preparationVoiceId?.let { voiceId ->
+        // 준비 화면이 떠 있는 동안 3초마다 다시 센다 — 그 목소리가 다 준비되면 멈춘다(실패로는 멈추지 않는다 — 스펙
+        // voice-and-message 「준비 페이지의 3초 폴링」). 예전에는 열 때 한 번만 세어, 기본 목소리를 다 받은 뒤에도 연 순간의
+        // 퍼센트에 멈춰 있었다(코덱스 #952).
+        val preparedNow = clipReadiness.firstOrNull { it.voiceProfileId == voiceId }?.isReady == true
+        LaunchedEffect(voiceId, preparedNow) {
+            while (!preparedNow) {
+                kotlinx.coroutines.delay(3000)
+                onPrepareClipsFor()
+            }
+        }
         // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
         TrackOpenModal()
         androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null }) {
