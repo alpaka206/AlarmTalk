@@ -18,6 +18,8 @@ import {
   planBulkRerender,
   readTtsBudgetConfig,
   runWithConcurrency,
+  holdDevBudget,
+  releaseDevBudget,
 } from '../src/lib/tts-budget';
 import { listRerenderTargets, readRerenderBacklog } from '../src/lib/render-backlog';
 import { currentRenderRevision, logicalResultRenders } from '../src/lib/render-fingerprint';
@@ -138,6 +140,24 @@ describe('예산 — 정하지 않은 예산은 없는 예산이다', () => {
     expect(
       await checkDevBudget(untouched, env({ ENVIRONMENT: 'production', TTS_DEV_MONTHLY_CHAR_BUDGET: '1' }), 10_000, NOW),
     ).toEqual({ ok: true, enforced: false });
+  });
+
+  it('몫을 먼저 잡는다 — 겹치는 요청 둘이 같은 남은 몫을 함께 쓰지 않는다(코덱스 #954)', async () => {
+    await db.execute('DELETE FROM tts_dev_budget_holds');
+    await recordTtsUsage(db, { kind: 'manual', outcome: 'success', characters: 90, latencyMs: 1 }, NOW);
+    const budgetEnv = env({ TTS_DEV_MONTHLY_CHAR_BUDGET: '200' });
+    const [a, b] = await Promise.all([holdDevBudget(db, budgetEnv, 60, NOW), holdDevBudget(db, budgetEnv, 60, NOW)]);
+    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+    // 놓으면 다시 잡을 수 있다.
+    const held = a.ok ? a : b;
+    await releaseDevBudget(db, held.ok ? held.holdId : null, NOW);
+    expect((await holdDevBudget(db, budgetEnv, 60, NOW)).ok).toBe(true);
+    // 놓지 못한 몫은 시간이 지나면 빠진다.
+    const later = new Date(NOW.getTime() + 6 * 60_000);
+    expect((await holdDevBudget(db, budgetEnv, 100, later)).ok).toBe(true);
+    // 정하지 않았거나 운영이면 DB 를 보지 않는다.
+    const untouched = { execute: async () => { throw new Error('must not query'); } };
+    expect(await holdDevBudget(untouched, env(), 10_000, NOW)).toEqual({ ok: true, holdId: null });
   });
 
   it('동시 수만큼만 함께 돌리고, 하나가 실패해도 나머지를 마친다', async () => {
@@ -310,6 +330,33 @@ describe('관리자 JSON — 읽기만 한다', () => {
     expect(listed.targets.map((t: { message_id: string }) => t.message_id)).toEqual(['m-clone-stale']);
     expect(JSON.stringify(listed)).not.toContain('좋은 아침이야'); // 문구 원문은 싣지 않는다
     expect((await request('/admin/tts/render-backlog?kind=bogus')).status).toBe(400);
+  });
+
+  it('기본 계획은 클립 하나하나로 세운다 — 합이 회차 상한보다 커도 들어가는 만큼은 고른다(코덱스 #954)', async () => {
+    await db.execute(`INSERT INTO voice_profiles (id, user_id, name, status, is_system, elevenlabs_voice_id)
+                      VALUES ('sys', 'system', '미나', 'ready', 1, 'el-sys')`);
+    const text = '가'.repeat(100);
+    for (let i = 0; i < 30; i++) {
+      const id = `m-many-${i}`;
+      await db.execute({
+        sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category, is_preset, audio_url)
+              VALUES (?, 'u1', 'sys', ?, 'medication', 1, ?)`,
+        args: [id, text, `r2://k/${id}`],
+      });
+      await db.execute({
+        sql: `INSERT INTO generated_audio_assets
+                (id, user_id, voice_profile_id, message_id, provider, provider_voice_id, model_id, language,
+                 request_hash, text, audio_url, audio_object_key, audio_format, render_revision)
+              VALUES (?, 'u1', 'sys', ?, 'elevenlabs', 'el', 'eleven_v4_turbo', 'ko', ?, ?, ?, ?, 'mp3', 'rv1-old')`,
+        args: [`ga-${id}`, id, `h-${id}`, text, `r2://k/${id}`, `k/${id}`],
+      });
+    }
+    const body = await (
+      await request('/admin/tts/render-backlog', { TTS_RERENDER_BATCH_MAX_CHARS: '1000', TTS_RERENDER_CONCURRENCY: '2' })
+    ).json();
+    expect(body.needed.characters).toBe(3000);
+    expect(body.plan.selected_characters).toBe(1000);
+    expect(body.plan.deferred_characters).toBe(2000);
   });
 
   it('사용량·예산·클론 슬롯을 싣고, 키는 어디에도 없다', async () => {

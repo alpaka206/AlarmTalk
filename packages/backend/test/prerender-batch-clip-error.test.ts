@@ -119,6 +119,9 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       latency_ms_max INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (usage_day, request_kind, outcome)
     );
+    CREATE TABLE tts_dev_budget_holds (
+      id TEXT PRIMARY KEY, usage_month TEXT NOT NULL, characters INTEGER NOT NULL, created_at TEXT NOT NULL
+    );
     INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id)
       VALUES ('vp1', 'u1', '엄마 목소리', 'eleven-1');
     INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, status)

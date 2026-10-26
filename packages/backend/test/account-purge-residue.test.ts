@@ -57,6 +57,7 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   briefing_fetch_state: 'no-personal-data', // 원천·기업별 확인 상태(#137) — 사람 id 를 적지 않는다
   admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
   tts_synthesis_usage: 'no-personal-data', // 합성 사용량 장부 — 종류·날짜·숫자뿐, 사람을 가리키지 않는다(#139)
+  tts_dev_budget_holds: 'no-personal-data', // dev 예산에서 합성 직전에 잡는 몫 — 월·글자 수뿐(#139)
   subscriptions: 'per-user',
   store_transactions: 'per-user',
   promo_code_redemptions: 'per-user',

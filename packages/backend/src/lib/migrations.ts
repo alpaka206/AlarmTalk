@@ -3470,6 +3470,14 @@ export const migrations: Migration[] = [
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         PRIMARY KEY (usage_day, request_kind, outcome)
       )`,
+      // dev 월 예산에서 합성 직전에 잡아 두는 몫(`lib/tts-budget.ts` 의 `holdDevBudget`). 사람과 묶지 않는다.
+      `CREATE TABLE IF NOT EXISTS tts_dev_budget_holds (
+        id TEXT PRIMARY KEY,
+        usage_month TEXT NOT NULL,
+        characters INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_tts_dev_budget_holds_month ON tts_dev_budget_holds (usage_month, created_at)`,
     ],
   },
 ];

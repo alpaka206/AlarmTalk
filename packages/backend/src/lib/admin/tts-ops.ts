@@ -33,20 +33,29 @@ export async function loadRenderBacklog(
   const config = ttsBudgetConfigFromEnv(env);
   const production = isProductionEnvironment(env.ENVIRONMENT);
   const monthUsed = production ? 0 : await monthToDateCharacters(db, now);
-  // 한 회차 계획 — 종류를 골랐으면 그 목록 한 쪽으로, 아니면 미리 굽는 종류의 합으로(글자만 본다).
-  const targets = options.kind
-    ? await listRerenderTargets(db, revision, {
-        kind: options.kind,
+  // 한 회차 계획 — **클립 하나하나로** 세운다(코덱스 #954). 종류·상태 합을 한 덩어리로 넣으면, 한 회차 상한보다 큰 합은 통째로
+  //   미뤄져 '이번 회차 0' 으로 보였다(열 개는 들어가는데도). 종류를 골랐으면 그 목록 한 쪽, 아니면 미리 굽는 종류마다 첫 쪽을
+  //   모아 세운다. 미룬 글자는 그 쪽 밖의 몫까지 포함해 전체 필요량에서 뺀다.
+  const kinds = options.kind ? [options.kind] : [...new Set(needed.map((row) => row.kind))];
+  const pages = await Promise.all(
+    kinds.map((kind) =>
+      listRerenderTargets(db, revision, {
+        kind,
         includeLegacy: options.includeLegacy,
         limit: options.limit,
-        offset: options.offset,
-      })
-    : [];
+        offset: options.kind ? options.offset : 0,
+      }),
+    ),
+  );
+  const planItems = pages.flat();
+  const targets = options.kind ? planItems : [];
   const plan = planBulkRerender(
-    options.kind ? targets : needed.map((row) => ({ characters: row.characters })),
+    planItems,
     config,
     production ? undefined : { budget: config.devMonthlyCharBudget, monthUsed },
   );
+  const neededCharacters = needed.reduce((sum, row) => sum + row.characters, 0);
+  const totalCharacters = options.kind ? plan.totalCharacters : Math.max(neededCharacters, plan.totalCharacters);
   return {
     render_revision: revision,
     summary,
@@ -68,8 +77,8 @@ export async function loadRenderBacklog(
       mode: plan.mode,
       missing_settings: plan.missing,
       selected_characters: plan.selectedCharacters,
-      deferred_characters: plan.deferredCharacters,
-      total_characters: plan.totalCharacters,
+      deferred_characters: totalCharacters - plan.selectedCharacters,
+      total_characters: totalCharacters,
       concurrency: plan.concurrency,
     },
   };

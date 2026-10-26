@@ -19,7 +19,7 @@ import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
 import { renderStamp, serverRenderSettings } from './render-fingerprint';
 import { measureSynthesis, speechCharacters } from './tts-usage';
-import { checkDevBudget } from './tts-budget';
+import { holdDevBudget, releaseDevBudget } from './tts-budget';
 
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
@@ -1415,13 +1415,14 @@ export async function generateStockClip(
 
   // dev 월 예산은 **이 클립이 보낼 글자**로 본다 — 모자라면 굽지 않고 남긴다(`PrerenderBudgetDeferredError`). 회차 앞의
   // 확인만으로는 한 회차가 통째로 들어가고, 요청이 부르는 사전렌더(`routes/voice-profile.ts`)는 그 확인을 거치지 않았다.
-  const budget = await checkDevBudget(db, env, speechCharacters(synthesisText));
+  //   몫은 **먼저 잡는다** — 겹치는 회차·요청이 같은 남은 몫을 함께 쓰지 않게(`holdDevBudget`). 합성이 끝나면 놓는다.
+  const budget = await holdDevBudget(db, env, speechCharacters(synthesisText));
   if (!budget.ok) throw new PrerenderBudgetDeferredError();
 
   // 합성 한 번을 장부에 적는다(성공·실패·글자·지연 — `lib/tts-usage.ts`). 원장에는 이 렌더의 지문을 함께 적는다.
   const generated = await measureSynthesis(db, { kind: 'stock_prerender', text: synthesisText }, () =>
     attempt.synthesize(),
-  );
+  ).finally(() => releaseDevBudget(db, budget.holdId));
   const stamp = await renderStamp(serverRenderSettings({ ...attempt, language }));
   const bytes = generated.bytes;
   await assertCloneAuthorization();

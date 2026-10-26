@@ -19,7 +19,7 @@ import {
 import { computeTtsCacheKey, generatedTtsObjectKey, manualTtsCacheScope } from '../lib/audio-cache';
 import { logicalResultRenders, manualResultLogicalKey, renderStamp, serverRenderSettings } from '../lib/render-fingerprint';
 import { measureSynthesis, speechCharacters, type TtsUsageKind } from '../lib/tts-usage';
-import { checkDevBudget } from '../lib/tts-budget';
+import { holdDevBudget, releaseDevBudget } from '../lib/tts-budget';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 import {
   createSynthesisAttempts,
@@ -655,6 +655,8 @@ tts.post('/generate', async (c) => {
   let adRewardTransactionId: string | null = null;
   // 같은 요청의 재시도·중복 탭 표식(`request_id`) — 잡았으면 끝날 때 풀거나 끝냄으로 적는다.
   let requestClaim: ManualRequestClaim | null = null;
+  /** dev 월 예산에서 잡아 둔 몫 — 끝나면(성공·실패 모두) 놓는다(`holdDevBudget`). */
+  let devBudgetHoldId: string | null = null;
   /**
    * 직접 입력 한 번을 **센다** — 월 기본분(유료 30·무료 3) 먼저, 무료가 다 썼으면 광고 보상 한 번. 셀 수 없으면 보낼
    * 응답을 돌려준다.
@@ -1279,8 +1281,10 @@ tts.post('/generate', async (c) => {
     }
 
     // dev 월 합성 예산 — 운영이거나 정하지 않았으면 DB 를 부르지 않는다. 세기·표식보다 앞이라 막혀도 잃는 것이 없다.
-    const devBudget = await checkDevBudget(db, c.env, speechCharacters(synthesisText));
+    //   몫은 **먼저 잡는다**(코덱스 #954) — 읽기만 하면 겹치는 요청이 같은 남은 몫을 함께 써 상한을 넘겼다.
+    const devBudget = await holdDevBudget(db, c.env, speechCharacters(synthesisText));
     if (!devBudget.ok) throw new TtsBudgetExhaustedError();
+    devBudgetHoldId = devBudget.holdId;
 
     // 캐시 미스 확정 후 합성 직전에 직접 입력 한 번을 센다(월 한도 원자적 +1 또는 광고 보상 하나).
     // 그 전에 같은 요청 표식을 잡는다 — 재시도·중복 탭이 동시에 와도 한 번만 합성·차감한다(`lib/manual-tts-requests.ts`).
@@ -1613,6 +1617,8 @@ tts.post('/generate', async (c) => {
       },
       500,
     );
+  } finally {
+    await releaseDevBudget(db, devBudgetHoldId);
   }
 });
 

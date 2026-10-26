@@ -1,6 +1,6 @@
 import type { Env } from '../types';
 import type { DbExecutor } from './transactions';
-import { monthToDateCharacters } from './tts-usage';
+import { kstDay, monthToDateCharacters } from './tts-usage';
 
 /**
  * **합성 예산** — 운영자가 정한 숫자로만 움직인다(`docs/spec/tts-render-and-budget.md` §3). 값은 워커 변수(또는 스크립트의
@@ -79,6 +79,58 @@ export async function checkDevBudget(
   const used = await monthToDateCharacters(db, now);
   if (used + characters > budget) return { ok: false, enforced: true, used, budget };
   return { ok: true, enforced: true, used, budget };
+}
+
+/** 잡아 둔 몫이 이만큼 지나면 셈에서 빠진다 — 놓기 전에 워커가 죽어도 dev 예산이 영영 줄어든 채로 남지 않게. */
+export const DEV_BUDGET_HOLD_TTL_MS = 5 * 60_000;
+
+export type DevBudgetHold =
+  | { ok: true; holdId: string | null }
+  | { ok: false; used: number; budget: number };
+
+/**
+ * dev 월 예산에서 이 합성의 몫(`characters`)을 **먼저 잡는다**(코덱스 #954). 읽기만 하는 확인은 겹치는 요청이 같은 남은 몫을
+ * 함께 쓰게 했다 — 장부는 합성이 끝난 뒤에야 적히기 때문이다. '이번 달 쓴 글자 + 잡아 둔 몫 + 이번 몫 ≤ 예산' 일 때만 한
+ * 문장(INSERT … SELECT … WHERE)으로 잡으므로 둘이 동시에 와도 하나만 들어간다. 합성이 끝나면(성공·실패 모두) `releaseDevBudget`
+ * 으로 놓는다 — 놓기 전 잠깐은 장부와 잡은 몫이 겹쳐 더 엄하게 센다(넘치게 쓰지 않는 쪽).
+ * 운영이거나 예산을 정하지 않았으면 DB 를 부르지 않고 `{ ok: true, holdId: null }`.
+ */
+export async function holdDevBudget(
+  db: DbExecutor,
+  env: Env,
+  characters: number,
+  now: Date = new Date(),
+): Promise<DevBudgetHold> {
+  const budget = ttsBudgetConfigFromEnv(env).devMonthlyCharBudget;
+  if (budget === null) return { ok: true, holdId: null };
+  const month = kstDay(now).slice(0, 7);
+  const holdId = crypto.randomUUID();
+  const freshSince = new Date(now.getTime() - DEV_BUDGET_HOLD_TTL_MS).toISOString();
+  const res = await db.execute({
+    sql: `INSERT INTO tts_dev_budget_holds (id, usage_month, characters, created_at)
+          SELECT ?, ?, ?, ?
+          WHERE (SELECT COALESCE(SUM(character_count), 0) FROM tts_synthesis_usage
+                  WHERE outcome = 'success' AND usage_day >= ? AND usage_day < ?)
+              + (SELECT COALESCE(SUM(characters), 0) FROM tts_dev_budget_holds
+                  WHERE usage_month = ? AND created_at >= ?)
+              + ? <= ?`,
+    args: [holdId, month, characters, now.toISOString(), `${month}-01`, `${month}-32`, month, freshSince, characters, budget],
+  });
+  if (res.rowsAffected === 0) return { ok: false, used: await monthToDateCharacters(db, now), budget };
+  return { ok: true, holdId };
+}
+
+/** 잡아 둔 몫을 놓는다(없으면 아무것도 안 한다). 지난 몫도 함께 치운다. 실패해도 던지지 않는다 — 몫은 시간이 지나면 빠진다. */
+export async function releaseDevBudget(db: DbExecutor, holdId: string | null, now: Date = new Date()): Promise<void> {
+  if (!holdId) return;
+  try {
+    await db.execute({
+      sql: `DELETE FROM tts_dev_budget_holds WHERE id = ? OR created_at < ?`,
+      args: [holdId, new Date(now.getTime() - DEV_BUDGET_HOLD_TTL_MS).toISOString()],
+    });
+  } catch {
+    // 놓지 못한 몫은 DEV_BUDGET_HOLD_TTL_MS 뒤 셈에서 빠진다.
+  }
 }
 
 export interface BulkItem {
