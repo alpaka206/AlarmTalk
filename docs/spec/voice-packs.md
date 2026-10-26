@@ -239,6 +239,7 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
 | 서버 사본에 팩 id 를 싣지 않는다 | — | `network/RemoteAlarmMapper.kt` | `RemoteAlarmMapper.swift` |
 | 목소리 탭 '추가 팩'·팩 상세 | — | `ui/voices/VoicePackSection.kt` | `Views/Voices/VoicePackSection.swift` |
 | 받는 중으로 되돌리기·지운 팩 되살리지 않기 | — | `data/VoicePacks.kt` 의 `HeldVoicePack.fromDetail`, `sync/StockClipPrefetchWorker.kt` 의 `refreshDetailIfNeeded`·`downloadPack` | `VoicePacks.held(from:previous:)`, `VoicePackStore.adoptRevisedDetail`·`finishDownload` |
+| 개정에서 빠진 옛 클립 파일 지우기(알람이 안 쓸 때만) | — | `sync/StockClipPrefetchWorker.kt` 의 `refreshDetailIfNeeded` → `releaseUnusedAudio` | `VoicePackStore.adoptRevisedDetail` → `releaseUnreferencedClips` |
 | 미리듣기는 한 번에 하나 | — | `ui/voices/VoiceProfileManagementPanel.kt` 의 `playVoicePackSample`(같은 미리듣기 플레이어) | `AudioPreviewPlayer.play`(다른 플레이어를 끊는다) |
 | 새로고침이 팩 선택을 지우지 않는다 | — | `data/VoicePacks.kt` 의 `editorVoicePacks` | `VoiceStudioViewModel.selectionSurvivesRefresh`, `VoicePacks.editorEntries` |
 | 편집기 목록·직접 입력 감추기 | — | `ui/app/AlarmTalkApp.kt` 의 편집기 라우트(`editorVoicePacks` 로 합치기)·`ui/editor/AlarmRandomPromptSettings.kt` 의 `manualAvailable`·`ui/editor/AlarmEditorScreen.kt` 의 `fixedVoiceClipLanguage`·저장 막기 | `Views/Editor/AlarmEditorSheet.swift` 의 `editorProfiles`·`editorStockClips`·`applyVoiceSelection`, `MessageSettingsPane.manualAvailable` |

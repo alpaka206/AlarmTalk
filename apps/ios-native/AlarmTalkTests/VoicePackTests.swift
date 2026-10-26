@@ -285,7 +285,7 @@ final class VoicePackTests: XCTestCase {
         let start = try XCTUnwrap(store.heldPack(packID: "first-pack"))
         XCTAssertEqual(start.state, .ready)
 
-        let revised = try XCTUnwrap(store.adoptRevisedDetail(detail(revision: 4, clips: [clip("new-clip")]), fetchedFor: start))
+        let revised = try XCTUnwrap(store.adoptRevisedDetail(detail(revision: 4, clips: [clip("new-clip")]), fetchedFor: start, alarmStore: makeStore()))
         XCTAssertEqual(revised.state, .downloading, "클립 목록이 새로 왔으면 다시 받는 중이다")
         XCTAssertEqual(store.heldPack(packID: "first-pack")?.contentRevision, 4)
         XCTAssertTrue(VoicePacks.editorEntries(held: store.held, keepingVoiceID: nil).profiles.isEmpty,
@@ -298,6 +298,41 @@ final class VoicePackTests: XCTestCase {
         store.finishDownload(revised, complete: true)
         XCTAssertEqual(store.heldPack(packID: "first-pack")?.state, .ready)
         XCTAssertFalse(store.failedPackIDs.contains("first-pack"))
+    }
+
+    func test_새_개정에서_빠진_클립은_알람이_쓰지_않으면_지운다() throws {
+        // 캐시 정리는 `pack_` 을 건너뛰고 지우기는 지금 목록만 지운다 — 개정 때 놓으면 영영 남는다(코덱스 #960).
+        func cached(_ id: String) throws -> VoicePackClip {
+            let data = Data("audio-\(id)".utf8)
+            let c = clip(id, data: data)
+            _ = try AudioCacheStore.cacheVoicePackClip(
+                audio: VoicePackAudioResponse(
+                    clipId: c.clipId, packId: "first-pack", audioBase64: data.base64EncodedString(),
+                    audioFormat: "mp3", sha256: c.sha256, sizeBytes: c.sizeBytes
+                ),
+                expected: c,
+                packID: "first-pack"
+            )
+            return c
+        }
+        let suffix = UUID().uuidString
+        let released = try cached("gone-\(suffix)")
+        let heldByAlarm = try cached("alarm-\(suffix)")
+        let kept = try cached("kept-\(suffix)")
+        let store = try storeHolding([held(clips: [released, heldByAlarm, kept])])
+        let alarms = makeStore()
+        var record = alarm(id: "p", voiceProfileId: packVoiceID)
+        record.audioCacheKey = VoicePacks.cacheKey(clipID: heldByAlarm.clipId)
+        alarms.upsert(record)
+        let start = try XCTUnwrap(store.heldPack(packID: "first-pack"))
+
+        XCTAssertNotNil(store.adoptRevisedDetail(detail(revision: 4, clips: [kept, clip("new-\(suffix)")]), fetchedFor: start, alarmStore: alarms))
+
+        let cache = AudioCacheStore.shared
+        XCTAssertNil(cache.cachedURL(for: VoicePacks.cacheKey(clipID: released.clipId)), "아무도 안 쓰는 옛 클립은 지운다")
+        XCTAssertNotNil(cache.cachedURL(for: VoicePacks.cacheKey(clipID: heldByAlarm.clipId)), "알람이 물고 있으면 남긴다")
+        XCTAssertNotNil(cache.cachedURL(for: VoicePacks.cacheKey(clipID: kept.clipId)), "새 개정에도 있는 클립은 그대로다")
+        for c in [heldByAlarm, kept] { try? cache.deleteCachedAudio(cacheKey: VoicePacks.cacheKey(clipID: c.clipId)) }
     }
 
     func test_받는_중인_팩도_그_팩을_쓰는_알람의_편집기에는_남는다() {
@@ -315,7 +350,7 @@ final class VoicePackTests: XCTestCase {
         // 상세 요청이 도는 사이 사용자가 지운다.
         store.remove(packID: "first-pack", alarmStore: makeStore(), voiceStudio: VoiceStudioViewModel())
 
-        XCTAssertNil(store.adoptRevisedDetail(detail(revision: 4, clips: [clip("new-clip")]), fetchedFor: start))
+        XCTAssertNil(store.adoptRevisedDetail(detail(revision: 4, clips: [clip("new-clip")]), fetchedFor: start, alarmStore: makeStore()))
         store.finishDownload(start, complete: true)
         XCTAssertTrue(store.held.isEmpty, "지운 팩이 다시 생기면 또 받는다")
     }
@@ -323,9 +358,9 @@ final class VoicePackTests: XCTestCase {
     func test_개정_확인_중에_다른_받기가_개정을_바꿨으면_그쪽을_둔다() throws {
         let store = try storeHolding([held()])
         let start = try XCTUnwrap(store.heldPack(packID: "first-pack"))
-        XCTAssertNotNil(store.adoptRevisedDetail(detail(revision: 5, clips: [clip("newest")]), fetchedFor: start))
+        XCTAssertNotNil(store.adoptRevisedDetail(detail(revision: 5, clips: [clip("newest")]), fetchedFor: start, alarmStore: makeStore()))
 
-        XCTAssertNil(store.adoptRevisedDetail(detail(revision: 4, clips: [clip("older")]), fetchedFor: start))
+        XCTAssertNil(store.adoptRevisedDetail(detail(revision: 4, clips: [clip("older")]), fetchedFor: start, alarmStore: makeStore()))
         XCTAssertEqual(store.heldPack(packID: "first-pack")?.contentRevision, 5)
         store.finishDownload(start, complete: true)
         XCTAssertEqual(store.heldPack(packID: "first-pack")?.state, .downloading, "앞 개정의 끝이 새 개정을 '받음' 으로 적지 않는다")

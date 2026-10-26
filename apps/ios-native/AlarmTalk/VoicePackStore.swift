@@ -172,7 +172,9 @@ final class VoicePackStore: ObservableObject {
         if pack.latestRevision != pack.contentRevision {
             guard let detail = try? await api.getVoicePack(packID: pack.packId, token: session.token),
                   session.user.id == activeUserID,
-                  let revised = adoptRevisedDetail(detail.pack, fetchedFor: pack) else { return }
+                  let revised = adoptRevisedDetail(
+                      detail.pack, fetchedFor: pack, alarmStore: BackgroundDependencies.shared.alarmStore
+                  ) else { return }
             pack = revised
         }
         let snapshot = pack
@@ -218,12 +220,22 @@ final class VoicePackStore: ObservableObject {
 
     /// 자동 개정 확인이 받아 온 상세를 적는다 — **기다리는 사이 그 팩이 그대로일 때만**(코덱스 #960). 그 사이 지웠으면 되살리지
     /// 않고(안 그러면 지운 팩이 다시 생겨 또 받는다), 다른 받기가 이미 개정을 바꿨으면 그쪽을 둔다. 적지 않았으면 nil.
+    ///
+    /// 새 개정에서 빠진 클립의 파일은 지운다 — 어떤 알람도 더 쓰지 않을 때만(코덱스 #960, 안드로이드 `refreshDetailIfNeeded` 의
+    /// `releaseUnusedAudio` 짝). 캐시 정리(`sweepStaleCache`)는 `pack_` 을 건너뛰고 지우기는 지금 목록의 클립만 지우므로, 여기서
+    /// 놓으면 그 파일은 영영 남는다.
     @discardableResult
-    func adoptRevisedDetail(_ detail: VoicePackSummary, fetchedFor start: HeldVoicePack) -> HeldVoicePack? {
+    func adoptRevisedDetail(
+        _ detail: VoicePackSummary,
+        fetchedFor start: HeldVoicePack,
+        alarmStore: LocalAlarmStore
+    ) -> HeldVoicePack? {
         guard let current = heldPack(packID: start.packId),
               current.contentRevision == start.contentRevision else { return nil }
         let next = VoicePacks.held(from: detail, previous: current)
         replace(next)
+        let kept = Set(next.clips.map(\.clipId))
+        releaseUnreferencedClips(current.clips.filter { !kept.contains($0.clipId) }, alarmStore: alarmStore)
         return next
     }
 
@@ -281,13 +293,23 @@ final class VoicePackStore: ObservableObject {
             audioCache: .shared,
             ownerUserId: activeUserID
         )
-        // 다른 계정의 알람이 아직 물고 있는 파일은 남긴다(그 계정이 자기 목록에서 대체할 때 지운다).
+        releaseUnreferencedClips(pack.clips, alarmStore: alarmStore)
+        held.removeAll { $0.packId == packID }
+        progress[packID] = nil
+        failedPackIDs.remove(packID)
+        persist()
+    }
+
+    /// 이 클립들의 파일을 지운다 — 어떤 알람이든(다른 계정 것 포함) 아직 물고 있는 것은 남긴다(그 계정이 자기 목록에서 대체할
+    /// 때 지운다). 알람을 다 읽기 전에는 아무것도 지우지 않는다 — 빈 목록으로 판정하면 쓰는 파일까지 지운다.
+    private func releaseUnreferencedClips(_ clips: [VoicePackClip], alarmStore: LocalAlarmStore) {
+        guard !clips.isEmpty, alarmStore.hasLoadedFromDisk else { return }
         let stillReferenced = Set(
             alarmStore.alarms.compactMap(\.audioCacheKey) + alarmStore.alarms.flatMap { $0.bucketClipKeys ?? [] }
         )
         let referencedFiles = Set(alarmStore.alarms.compactMap(\.localAudioUri))
         let cache = AudioCacheStore.shared
-        for clip in pack.clips {
+        for clip in clips {
             let key = VoicePacks.cacheKey(clipID: clip.clipId)
             guard !stillReferenced.contains(key) else { continue }
             try? cache.deleteCachedAudio(cacheKey: key)
@@ -297,10 +319,6 @@ final class VoicePackStore: ObservableObject {
                 try? FileManager.default.removeItem(at: legacy.appendingPathComponent(alias))
             }
         }
-        held.removeAll { $0.packId == packID }
-        progress[packID] = nil
-        failedPackIDs.remove(packID)
-        persist()
     }
 
     // MARK: 미리듣기
