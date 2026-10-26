@@ -277,6 +277,8 @@ internal fun AlarmTalkApp(
     // '알람 추가' 흐름에서 권한 게이트로 넘어온 요청. 권한을 모두 허용하면 이어서 알람 편집
     // 페이지로 진입한다. 사용자가 모달을 닫으면 취소로 보고 비운다.
     var pendingCreateAlarmAfterPermission by remember { mutableStateOf(false) }
+    // 권한 게이트를 지나는 동안 들고 있는 '이 목소리로 새 알람 만들기' 의 목소리.
+    var pendingCreateAlarmVoiceId by remember { mutableStateOf<String?>(null) }
 
     // 권한 게이트 모달이 열린 동안 권한 상태를 추적한다: 현재 대상 권한이 채워지면 다음 미허용
     // 알람 권한으로 넘기고, 알람에 필요한 권한이 모두 채워지면 모달을 자동으로 닫는다.
@@ -297,7 +299,8 @@ internal fun AlarmTalkApp(
         if (pendingCreateAlarmAfterPermission && permissions.alarmReady) {
             pendingCreateAlarmAfterPermission = false
             viewModel.dismissPermissionGate()
-            navController.navigate(AppRoute.AlarmCreate)
+            navController.navigate(AppRoute.alarmCreate(pendingCreateAlarmVoiceId))
+            pendingCreateAlarmVoiceId = null
         }
     }
 
@@ -892,20 +895,25 @@ internal fun AlarmTalkApp(
         )
     }
 
-    /** 관문을 **이미 통과한 뒤** 편집기를 연다(권한이 모자라면 권한 게이트부터). */
-    fun openCreateAlarm() {
+    /**
+     * 관문을 **이미 통과한 뒤** 편집기를 연다(권한이 모자라면 권한 게이트부터). [preferredVoiceId] 는 목소리 탭의 '이 목소리로
+     * 새 알람 만들기' 가 넘기는 목소리 — 그 새 알람에서만 처음 고른다.
+     */
+    fun openCreateAlarm(preferredVoiceId: String? = null) {
         if (!permissions.alarmReady) {
             // 권한 게이트로 넘어가되, 허용 완료 후 이 알람 추가를 이어서 편집 페이지로 진입시킨다.
             pendingCreateAlarmAfterPermission = true
+            pendingCreateAlarmVoiceId = preferredVoiceId
             requestFirstMissingAlarmPermission()
         } else {
-            navController.navigate(AppRoute.AlarmCreate)
+            navController.navigate(AppRoute.alarmCreate(preferredVoiceId))
         }
     }
 
-    // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드가 모두 이 경로를 탄다.
-    fun requestCreateAlarm() {
-        whenAlarmVoiceReady(initialVoiceForNewAlarm()) { openCreateAlarm() }
+    // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드, 목소리 탭의 '이 목소리로 새 알람 만들기' 가 모두 이 경로를 탄다.
+    // 관문은 그 새 알람이 처음 고를 목소리를 본다 — 목소리 탭에서 넘긴 목소리가 있으면 그것이다.
+    fun requestCreateAlarm(preferredVoiceId: String? = null) {
+        whenAlarmVoiceReady(preferredVoiceId ?: initialVoiceForNewAlarm()) { openCreateAlarm(preferredVoiceId) }
     }
 
     if (authSession == null) {
@@ -1367,6 +1375,8 @@ internal fun AlarmTalkApp(
       fun EditorRoute(
           alarm: AlarmEntity?,
           saveAlarm: (AlarmDraft) -> Unit,
+          // 새 알람에서 처음 고를 목소리 — 직전 선택 자리를 이 편집기에서만 대신한다(전역 값은 그대로).
+          preferredVoiceId: String? = null,
       ) {
           val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
           val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
@@ -1415,7 +1425,7 @@ internal fun AlarmTalkApp(
                       com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context)
                   }
               },
-              lastUsedVoiceId = viewModel.lastUsedVoiceId,
+              lastUsedVoiceId = preferredVoiceId?.takeIf { alarm == null } ?: viewModel.lastUsedVoiceId,
               lastMessageContext = lastMessageContext,
               lastFreeBucket = lastFreeBucket,
               lastManualText = lastManualText,
@@ -1527,6 +1537,7 @@ internal fun AlarmTalkApp(
                           onRestorePurchases = viewModel::restorePurchases,
                           permissions = permissions,
                           onCreateAlarm = { requestCreateAlarm() },
+                          onCreateAlarmWithVoice = { voiceId -> requestCreateAlarm(voiceId) },
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
                           onDeleteAccount = viewModel::requestDeleteAccount,
                           themeMode = themeMode,
@@ -1557,10 +1568,20 @@ internal fun AlarmTalkApp(
                       )
                   }
               }
-              composable(AppRoute.AlarmCreate) {
+              composable(
+                  route = AppRoute.AlarmCreatePattern,
+                  arguments = listOf(
+                      navArgument(AppRoute.AlarmCreateVoiceArg) {
+                          type = NavType.StringType
+                          nullable = true
+                          defaultValue = null
+                      },
+                  ),
+              ) { entry ->
                   EditorRoute(
                       alarm = null,
                       saveAlarm = { draft -> viewModel.createAlarm(draft) { navController.popBackStackOrHome() } },
+                      preferredVoiceId = entry.arguments?.getString(AppRoute.AlarmCreateVoiceArg),
                   )
               }
               composable(

@@ -545,6 +545,8 @@ final class VoiceStudioViewModel: ObservableObject {
             return
         }
         activeUserID = userID
+        // 로그인 전 랜딩에서 고른 기본 목소리 — 이 계정이 아직 고른 적이 없을 때만 한 번 잇는다.
+        defaultVoiceStore.adoptLandingVoicePick(userID: userID)
         // 기본 목소리 호칭은 기기 클라 설정(유저별). 프로필 로드와 무관하게 바로 채운다.
         defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: userID)
         // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.

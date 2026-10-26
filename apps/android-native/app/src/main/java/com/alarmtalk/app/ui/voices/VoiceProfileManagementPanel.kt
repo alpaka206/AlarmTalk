@@ -379,6 +379,8 @@ internal fun VoiceProfileManagementPanel(
     // 삭제가 아니다. 남은 초안은 서버가 거둔다). 기본값을 두지 않는다 — 빠뜨리면 초안이 버려지지 않는다.
     onDiscardVoiceDraftQuietly: (String) -> Unit,
     onOpenBilling: () -> Unit,
+    /** 행 메뉴의 '이 목소리로 새 알람 만들기'(2026-10-26). 기존 알람·전역 기본값은 건드리지 않는다. */
+    onCreateAlarmWithVoice: ((String) -> Unit)? = null,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     // ⚠ 유료 안내 모달의 코드 입력(`onRegisterCode`)은 2026-10-14 에 지웠다 — 되살리지 말 것
@@ -2125,6 +2127,7 @@ internal fun VoiceProfileManagementPanel(
                                 renameSubmitAttempted = false
                             },
                             onDelete = { deleteTarget = profile },
+                            onCreateAlarm = onCreateAlarmWithVoice?.let { create -> { create(profile.id) } },
                             readiness = readiness,
                             onRetryPrerender = { retryPrerender(profile.id) },
                             retryPrerenderBusy = profile.id in prerenderRetryBusyIds,

@@ -49,6 +49,7 @@
     <string name="auth_landing_preview_pause">Pause preview</string>
     <string name="auth_landing_preview_play">Preview voice</string>
     <string name="auth_landing_sample_message">Good morning, Grandpa\nIt\'s going to rain today\nDon\'t forget your umbrella</string>
+    <string name="auth_landing_voice_greeting">A hello from %1$s</string>
     <string name="auth_password_hide">Hide password</string>
     <string name="auth_password_mismatch">Passwords don\'t match.</string>
     <string name="auth_error_email_invalid">That email address doesn\'t look right. Please check and try again.</string>
@@ -233,6 +234,7 @@
     <string name="editorp_random_detail_change">Change</string>
     <string name="editorp_random_manual_title">Your message</string>
     <string name="editor_manual_charge_notice">A new message makes a voice when you save, using 1 of this month\'s creations. Reusing a message you already made doesn\'t count.</string>
+    <string name="editorp_random_more_contexts">More (fortune, medication)</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>
@@ -446,6 +448,7 @@
     <string name="voicesr_delete_dialog_title">Delete voice</string>
     <string name="voicesr_delete_dialog_warning">Alarms using this voice will switch to a default voice. The saved audio files will also be deleted.</string>
     <string name="voicesr_edit_name">Edit name</string>
+    <string name="voicesr_create_alarm_with_voice">New alarm with this voice</string>
     <string name="voicesr_more">More</string>
     <string name="voicesr_pause">Pause</string>
     <string name="voicesr_prerender_progress">Preparing alarm voice %1$d%%</string>

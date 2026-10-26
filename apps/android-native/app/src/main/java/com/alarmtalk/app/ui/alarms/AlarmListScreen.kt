@@ -126,6 +126,8 @@ internal fun AlarmListScreen(
     onRestorePurchases: () -> Unit,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
+    /** 목소리 탭의 '이 목소리로 새 알람 만들기' — 그 목소리를 처음 고른 새 알람 편집기를 연다. */
+    onCreateAlarmWithVoice: (String) -> Unit = {},
     onOpenSettings: () -> Unit,
     onDeleteAccount: () -> Unit,
     themeMode: ThemeMode,
@@ -268,6 +270,7 @@ internal fun AlarmListScreen(
                 // 첫 섹션 제목('내 목소리')이 곧바로 내용을 연다(알람 탭의 무제목과 일관).
                 item {
                     VoiceProfileManagementPanel(
+                        onCreateAlarmWithVoice = onCreateAlarmWithVoice,
                         voiceProfiles = voiceProfiles,
                         pendingVoiceDraft = pendingVoiceDraft,
                         voiceProfileBusy = voiceProfileBusy,

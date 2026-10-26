@@ -615,6 +615,13 @@ internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
  * 있으면 그쪽이 우선한다(AlarmEditorScreen 의 lastFreeBucket). '항상 적용되는 기본값' 으로
  * 되돌리면 날씨로 저장해도 새 알람이 매번 첫 값으로 돌아간다.
  */
+/**
+ * **고른 적이 없을 때 추천하는 첫 테마 — 응원**(2026-10-26 v1.3 지시). 추가 입력이 없어도 되고 날짜를 타지 않아 첫 알람에 맞다.
+ * 클립이 아직 없으면 [FreeBucketOrder] 의 추가 입력이 필요 없는 첫 값으로 간다(`AlarmEditorScreen` 의 `firstUsable`).
+ * iOS 짝은 `FreeBucket.firstRecommended`.
+ */
+internal const val FirstRecommendedBucket = "cheer"
+
 internal val FreeBucketOrder: List<String> = EditorMessageContexts
     // ⚠ **'직접 입력' 을 먼저 걷어내야 한다.** `clonePrerenderBucketCategoryFor` 는 모르는
     //   값을 `preset` 으로 접으므로(`normalizedRandomPromptContext`), 그냥 흘리면 manual 이

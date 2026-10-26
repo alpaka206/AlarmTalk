@@ -838,6 +838,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
+    private val landingVoicePick = com.alarmtalk.app.data.LandingVoicePick(application)
     internal val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
 
     /** 계정 설정(지역·사주) 올리기를 한 번에 하나씩 — `updateDynamicPromptSettings`. */
@@ -1246,6 +1247,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
+        // 로그인 전 랜딩에서 고른 기본 목소리 — 이 계정이 아직 고른 적이 없을 때만 한 번 잇는다(`LandingVoicePick`).
+        val landingPick = landingVoicePick.take()
+        if (defaultVoiceStore.read(userId) == null && landingPick != null) defaultVoiceStore.set(userId, landingPick)
         lastUsedVoiceId = defaultVoiceStore.read(userId)
         val needsSetup = voiceSetupProbe.needsSetup(skipped = defaultVoiceStore.hasSkipped(userId))
         if (authSession?.user?.id != userId) return
