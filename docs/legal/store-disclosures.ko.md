@@ -40,6 +40,12 @@
 
 - Cloudflare, Turso, ElevenLabs, Google Cloud Vertex AI(미국), Firebase Cloud Messaging(Google), Sentry, Google(로그인·배포·결제), 이메일 발송 제공자는 수탁사/서비스 제공자입니다. Google Play form의 "sharing" 정의에 따라 최종 판단해야 합니다.
 - 광고 네트워크 또는 데이터 브로커에 제공하지 않는다면 "advertising or marketing sharing"은 아니라고 보는 방향이 합리적입니다.
+- ⚠️ **보상형 광고를 켜는 회차에 이 표를 다시 쓴다**(처리방침 8판 1.9·제5조, `docs/spec/ad-rewards.md` §6). 광고 SDK(Google AdMob·UMP)가
+  Device or other IDs(Android 광고 ID), Approximate location(IP 기반), App interactions(광고 노출·클릭), Diagnostics 를 처리하고,
+  목적에 Advertising or marketing·Fraud prevention 이 붙는다. 그때는 위 줄("광고 네트워크에 제공하지 않는다")이 더 이상 참이 아니다.
+  앱 매니페스트의 `AD_ID` 제거 줄을 지우는 것도 그 회차다. 광고를 켜기 전(지금)의 신고는 위 그대로다.
+- 처리방침 8판에서 늘어난 App activity: 음성 준비 시간·용량, 알람 저장 과정, 결제 화면·구매 확인 결과, 기능 사용 여부(사용 기록 2판),
+  아침 소식의 관심 기업(App activity > Other user-generated content 또는 In-app search history 중 Play 정의에 맞는 쪽으로 판단).
 - ⚠️ ElevenLabs 처리 조건은 실제 적용 계약·정책·DPA·보관 설정에 맞춰 Google Play Data safety의 audio/user content 항목과 앱 내 음성 동의 화면에 반영해야 합니다.
 - ⚠️ 동적 알람 문구·번역 사용 시 알람 문구와 운세 입력값(성별·생년월일·출생 시각)이 Google Cloud Vertex AI(미국)로 전송됩니다. Personal info(생년월일 등) 및 User content(알람 문구)의 국외 처리/공유 항목에 반영하고, 앱 내에 국외 이전 별도 동의(`overseas_transfer`)를 고지해야 합니다.
 - ⚠️ 음성 클론은 생체정보 처리에 해당하므로, 앱 내 별도 동의(`voice_biometric`)가 서버에서 강제됩니다. Data safety의 audio/voice 항목과 in-app 동의가 이를 일치하게 반영해야 합니다.

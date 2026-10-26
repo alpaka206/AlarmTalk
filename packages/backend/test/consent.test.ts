@@ -176,9 +176,10 @@ describe('lib/consent — config', () => {
   it('최소 버전은 privacy 만 5 이고 나머지는 3, 사용 기록 수집도 5 를 요구한다', () => {
     // 6(2026-10-16)은 탈퇴 철회 방법·결제 기록 문구 정정, 7(2026-10-20)은 커플·가족 이용권 내용을 걷어낸 축소 개정 —
     // 둘 다 수집 범위가 그대로이거나 줄기만 해 5 로 동의한 사람은 다시 묻지 않는다.
-    expect(CURRENT_POLICY_VERSION).toBe('7');
-    // 서버 먼저 — 스토어의 두 앱은 6 을 싣고 있어 6 도 받는다. 앞 버전 5(1.2.13 이하 앱의 문서)는 2026-10-16 에 지웠다.
-    expect([...ACCEPTED_POLICY_VERSIONS]).toEqual(['7']);
+    // 8(2026-10-26)은 확대 개정이지만 재동의는 8판 앱 게재·옛 앱 차단 뒤에 정한다 — 아직 어느 최소 버전도 올리지 않는다.
+    expect(CURRENT_POLICY_VERSION).toBe('8');
+    // 서버 먼저 — 스토어의 두 앱은 7 을 싣고 있어 7 도 받는다.
+    expect([...ACCEPTED_POLICY_VERSIONS]).toEqual(['8', '7']);
     expect(CONSENT_MIN_POLICY_VERSION).toEqual({
       terms: 3,
       privacy: 5,
@@ -514,17 +515,19 @@ describe('POST /user/consents — 저장되는 정책 버전', () => {
     ]);
   });
 
-  it('받는 문서 버전은 7 하나다 — 6·5·4·8·999 는 409, 받은 값은 보낸 그대로 기록한다', async () => {
+  it('받는 문서 버전은 8·7 이다 — 6·5·4·9·999 는 409, 받은 값은 보낸 그대로 기록한다', async () => {
     // 6 은 2026-10-26 에 지웠다 — 7 을 실은 두 앱(안드로이드 36·iOS 14)을 minSupported 로 강제한 뒤다.
+    // 7 은 8판 개정 동안 함께 받는다(서버 먼저 — 스토어의 앱이 7 을 싣고 있다).
+    expect((await postConsents([{ type: 'terms', agreed: true }], '8')).status).toBe(200);
     expect((await postConsents([{ type: 'terms', agreed: true }], '7')).status).toBe(200);
-    for (const v of ['6', '5', '4', '8', '999']) {
+    for (const v of ['6', '5', '4', '9', '999']) {
       const res = await postConsents([{ type: 'terms', agreed: true }], v);
       expect(res.status, v).toBe(409);
       expect(((await res.json()) as { error_code: string }).error_code).toBe(
         'POLICY_VERSION_MISMATCH',
       );
     }
-    expect(mockConsentInserts.map((r) => r.version)).toEqual(['7']);
+    expect(mockConsentInserts.map((r) => r.version)).toEqual(['8', '7']);
   });
 
   it('version 필드는 호환을 위해 받기만 하고 무시한다 — 400 으로 깨지 않는다', async () => {
@@ -826,9 +829,10 @@ describe('사용 기록의 동의 시작 시각', () => {
 });
 
 describe('사용 기록 2판 세부 칸의 고지 경계(usage-events §7.5)', () => {
-  it('지금 처리방침(7판)은 2판 범위를 고지하지 않는다 — 동의를 다 했어도 세부 칸을 받지 않는다', async () => {
-    // 이 단언이 깨지면 처리방침이 8판으로 올라간 것이다 — 그 판에 §7.5 고지 문안이 실렸는지 먼저 확인하고 고친다.
-    expect(USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION).toBeGreaterThan(Number(CURRENT_POLICY_VERSION));
+  it('7판 동의자는 2판 세부 칸을 받지 않고, 8판 동의자는 그 동의 시각부터 받는다', async () => {
+    // 8판(2026-10-26)이 §7.5 고지를 처리방침 1.2 에 실었다. 7판 본문은 그 칸을 말하지 않으므로 소급하지 않는다.
+    expect(USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION).toBe(8);
+    expect(Number(CURRENT_POLICY_VERSION)).toBeGreaterThanOrEqual(USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION);
     const db = createClient({ url: ':memory:' });
     try {
       await runMigrations(db);
@@ -837,9 +841,14 @@ describe('사용 기록 2판 세부 칸의 고지 경계(usage-events §7.5)', (
         VALUES ('t', 'u-d', 'terms', '7', 1, '2026-10-20 00:00:00.000'),
                ('a', 'u-d', 'age14', '7', 1, '2026-10-20 00:00:00.000'),
                ('p', 'u-d', 'privacy', '7', 1, '2026-10-20 00:00:00.000')`);
-      const latest = await loadLatestConsents(db, 'u-d');
-      expect(usageEventConsentSince(latest)).not.toBeNull();
-      expect(usageEventDetailConsentSince(latest)).toBeNull();
+      const before = await loadLatestConsents(db, 'u-d');
+      expect(usageEventConsentSince(before)).not.toBeNull();
+      expect(usageEventDetailConsentSince(before)).toBeNull();
+
+      await db.execute(`INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed, created_at)
+        VALUES ('p8', 'u-d', 'privacy', '8', 1, '2026-10-27 00:00:00.000')`);
+      const after = await loadLatestConsents(db, 'u-d');
+      expect(usageEventDetailConsentSince(after)).toBe(Date.parse('2026-10-27T00:00:00.000Z'));
     } finally {
       db.close();
     }
