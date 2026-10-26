@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class, UsageEventEntity::class],
-    version = 29,
+    version = 30,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -64,6 +64,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                 MIGRATION_26_27,
                 MIGRATION_27_28(context),
                 MIGRATION_28_29,
+                MIGRATION_29_30,
             )
                 // ⚠ **`fallbackToDestructiveMigration()` 을 다시 넣지 말 것**(2026-08-18 제거).
                 //
@@ -342,6 +343,23 @@ abstract class AlarmDatabase : RoomDatabase() {
         }
 
         /**
+         * 사용 기록 2판(2026-10-26, `docs/spec/usage-events.md` §7) — 공통 필드와 정해진 칸.
+         *
+         * ⚠ Room 엔티티와 **컬럼 이름·타입·기본값이 정확히 같아야 한다**(`UsageEventEntity`). 옛 행은
+         * `schemaVersion = 1` 이고 나머지는 NULL 이라 1판 그대로 올라간다. 칸(`propsJson`)은 로컬 저장 형식일 뿐이고
+         * 전송은 `props` 객체다(`UsageEventUploadWorker.toPayload`). 회귀 테스트: `UsageEventMigration28To29Test`(v28 에서 열어 28→29·29→30 을 함께 지난다).
+         */
+        internal val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE usage_events ADD COLUMN schemaVersion INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE usage_events ADD COLUMN appVersion TEXT")
+                db.execSQL("ALTER TABLE usage_events ADD COLUMN featureVersion TEXT")
+                db.execSQL("ALTER TABLE usage_events ADD COLUMN attemptId TEXT")
+                db.execSQL("ALTER TABLE usage_events ADD COLUMN propsJson TEXT")
+            }
+        }
+
+        /**
          * 커플·가족 이용권 폐지(2026-10-20) — [ReceivedAlarmConversionMigration]. 기본 라벨과 승격 기록에 기기
          * 문맥이 있어야 해서 함수다. 이름은 등록 검사(`AlarmDatabaseMigrationSafetyTest`)가 찾는 그대로 둔다.
          */
@@ -407,7 +425,7 @@ internal class ReceivedAlarmConversionMigration(
         if (convertedByOwner.isNotEmpty()) recordConverted(convertedByOwner)
     }
 
-    private companion object {
+    internal companion object {
         /**
          * 재생 방식은 `AlarmPlayModes.normalize(잠금 표시 ?: 재생 방식)` 과 같다. 받은 행이 문구·테마를 고쳐 두었어도
          * 비운다 — 2단계가 '아직 1단계 모양 그대로인가' 를 이 모양으로 가린다(`keepsReceivedConversionShape`).

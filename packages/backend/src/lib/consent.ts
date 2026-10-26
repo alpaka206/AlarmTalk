@@ -160,6 +160,22 @@ export const ACCEPTED_POLICY_VERSIONS: readonly string[] = [CURRENT_POLICY_VERSI
  */
 export const USAGE_EVENT_MIN_PRIVACY_VERSION = 5;
 
+/**
+ * **사용 기록 2판의 세부 칸을 받기 위해 필요한 privacy 동의 버전**(`docs/spec/usage-events.md` §7.5).
+ *
+ * 2판은 지금 처리방침(7판)이 고지한 범위 — "사건 시각과 알람·목소리·문구 식별자만" — 를 넘는다(앱 버전·플랫폼·준비
+ * 시간·바이트·글자 수·실패 코드·정산 수단·권한 출처·결제 화면·광고 보상 단계). 그래서 그 칸과 2판에만 있는 종류는
+ * **이 버전 이상의 처리방침에 동의한 뒤의 사건만** 저장한다. 그 전 사람의 기록은 1판 칸만 남기고(2판 종류는 버린다)
+ * 200 으로 답한다 — 고지 전에 쌓인 것을 나중에 받아 주는 우회가 생기지 않게, 시각 경계도 그 동의부터다.
+ *
+ * ⚠ 지금 값(8)은 **아직 없는 판**이다 — 저장된 기록 중 현재 문서 버전보다 큰 값은 읽을 때 0 으로 떨어지므로(아래
+ *   `sanitizeStoredPolicyVersion`) 처리방침 8판이 나와 동의가 쌓이기 전까지 2판 칸은 **하나도 저장되지 않는다.**
+ *   일부러 꺼 둔 것이다(fail-closed). 켜는 순서: 고지 문안(스펙 §7.5)을 실은 처리방침 개정 → `CURRENT_POLICY_VERSION`
+ *   상향(서버 먼저) → 기존 사용자까지 모으려면 그 판에서 privacy 최소 버전을 올려 재동의를 받는다. 숫자를 낮춰
+ *   7판 동의자에게 소급하지 말 것 — 7판 본문은 이 칸을 말하지 않는다.
+ */
+export const USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION = 8;
+
 export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
   terms: 3,
   // ⚠ **5 다 — 2026-10-16 오너 결정으로 3 에서 올렸다.** 버전 5 본문에 '서비스 이용 기록'(알람 울림·해제·다시 알림·
@@ -197,7 +213,13 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
  */
 
 /** 유형별 최신 동의 1건의 상태. version 은 파싱된 정수(파싱 실패 시 0). */
-type LatestConsent = { agreed: boolean; version: number; validSinceMs: number | null };
+type LatestConsent = {
+  agreed: boolean;
+  version: number;
+  validSinceMs: number | null;
+  /** [USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION] 이상 동의를 연속으로 충족하기 시작한 시각(그 유형 기준). */
+  detailSinceMs: number | null;
+};
 export type LatestConsentMap = ReadonlyMap<string, LatestConsent>;
 
 /** 정책 버전 문자열('1'…'4') → 정수. 파싱 불가/빈 값은 0 으로 떨어뜨려 재동의를 요구한다. */
@@ -264,15 +286,24 @@ export function latestConsentsFromRows(
 ): LatestConsentMap {
   const latest = new Map<string, LatestConsent>();
   const ended = new Set<string>();
+  const detailEnded = new Set<string>();
   for (const row of rows) {
     const type = String(row.consent_type);
     const record: LatestConsent = {
       agreed: Number(row.agreed) === 1,
       version: sanitizeStoredPolicyVersion(String(row.policy_version)),
       validSinceMs: null,
+      detailSinceMs: null,
     };
     const current = latest.get(type) ?? record;
     latest.set(type, current);
+    if (!detailEnded.has(type)) {
+      if (!record.agreed || record.version < USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION) detailEnded.add(type);
+      else {
+        current.detailSinceMs = consentTimeUpperBound(row.created_at);
+        if (current.detailSinceMs === null) detailEnded.add(type);
+      }
+    }
     if (ended.has(type)) continue;
     if (!record.agreed || record.version < minPolicyVersionOf(type)) {
       ended.add(type);
@@ -297,6 +328,18 @@ export function usageEventConsentSince(latest: LatestConsentMap): number | null 
     since = Math.max(since, start);
   }
   return since;
+}
+
+/**
+ * 사용 기록 **2판 세부 칸**을 받기 시작하는 시각 — 1판 경계([usageEventConsentSince]) 뒤이고, privacy 가
+ * [USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION] 이상을 연속으로 충족하기 시작한 뒤다. 아니면 null(받지 않는다).
+ */
+export function usageEventDetailConsentSince(latest: LatestConsentMap): number | null {
+  const base = usageEventConsentSince(latest);
+  const privacy = latest.get('privacy');
+  if (base === null || !privacy || privacy.version < USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION) return null;
+  const since = privacy.detailSinceMs;
+  return since == null ? null : Math.max(base, since);
 }
 
 /**

@@ -1080,6 +1080,9 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.audio_base64).toBeDefined();
     expect(body.audio_format).toBe('mp3');
     expect(body.voice_profile_id).toBe(V1);
+    // 기본분에서 셌다 — 원래 사용월을 함께 싣는다(사용 기록 `generation_outcome` 의 `usage_month`).
+    expect(body.charged_source).toBe('base');
+    expect(body.usage_month).toBe('2026-07');
     // category defaults to 'custom'
     const insertSql = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(insertSql!.args[6]).toBe('custom');

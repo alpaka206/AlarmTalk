@@ -1282,7 +1282,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun skipVoiceSetup() {
         defaultVoiceStore.markSkipped(authSession?.user?.id?.takeIf { it.isNotBlank() })
+        if (showVoiceSetup) recordOnboardingStep("voice_setup_skipped")
         showVoiceSetup = false
+    }
+
+    /** 로그인 뒤 첫 경험 단계(`onboarding_step`, `docs/spec/usage-events.md` §7.1) — 지금 실재하는 단계는 기본 목소리 준비 화면뿐이다. */
+    private fun recordOnboardingStep(step: String) {
+        com.alarmtalk.app.data.UsageSignals.record(
+            getApplication(),
+            com.alarmtalk.app.data.UsageEvents.ONBOARDING_STEP,
+            props = com.alarmtalk.app.data.UsageEventProps(step = step),
+        )
     }
 
     /**
@@ -1294,7 +1304,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 파일은 메인 밖에서 센다([voiceSetupProbe]) — 부르는 효과가 화면과 함께 사라지면 답도 버려진다.
      */
     suspend fun completeVoiceSetupIfDownloaded() {
-        if (voiceSetupProbe.anyDownloaded()) showVoiceSetup = false
+        if (voiceSetupProbe.anyDownloaded() && showVoiceSetup) {
+            recordOnboardingStep("voice_setup_completed")
+            showVoiceSetup = false
+        }
     }
 
     /**

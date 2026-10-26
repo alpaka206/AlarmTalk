@@ -70,6 +70,9 @@ struct AlarmEditorSheet: View {
     @State var validationAlert: ValidationAlertContent?
     @State var duplicateAlarmConfirm: DuplicateAlarmConfirmContent?
     @State var isWorking = false
+    /// 지금 저장 시도의 id — `alarm_save_attempt`·`alarm_save_blocked`·`alarm_ready` 가 같은 값을 쓴다
+    /// (`docs/spec/usage-events.md` §7.1). 같은 시각 교체 확인을 거쳐 `finishScheduling` 으로 다시 들어와도 잇는다.
+    @State var saveAttemptID: String?
     /// 이번 달 직접 입력 여유. **유료일 때만** 조회한다(무료에게 숫자를 보이면
     /// 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다).
     @State var manualQuota: ManualQuotaResponse?
@@ -1275,8 +1278,73 @@ struct AlarmEditorSheet: View {
             switchVoiceSource(to: .ttsProfile)
             adoptLastMessageChoiceIfUnset()
         }
+        let isFirstPick = DefaultVoicePreferenceStore().lastUsedVoiceId(userID: auth.session?.user.id) == nil
         voiceStudio.selectedProfileID = profileID
         voiceStudio.preparedAlarm = nil
+        recordVoiceSelected(profileID: profileID, isFirst: isFirstPick)
+    }
+
+    /// 목소리를 **고른** 순간(`voice_selected` — `docs/spec/usage-events.md` §7.1). 미리 골라 둔 값(편집기를 열 때의
+    /// 직전 선택)은 여기를 지나지 않는다. `is_first` = 이 계정이 알람에 목소리를 저장한 적이 없다. `prepared` = 그 목소리를
+    /// 지금 바로 쓸 수 있게 기기에 받아 두었나 — 기본 목소리는 선다운로드 전량, 내 목소리는 이 문구 종류의 클립 묶음.
+    func recordVoiceSelected(profileID: String, isFirst: Bool) {
+        let prepared: Bool = voiceStudio.isSystemVoiceProfile(id: profileID)
+            ? StockClipPrefetcher.defaultVoiceGate().ready
+            : !needsClipPreparation(
+                profileID: profileID,
+                randomPrompt: voiceStudio.randomPrompt,
+                randomContext: voiceStudio.randomContext
+            )
+        UsageEventQueue.shared.record(
+            .voiceSelected,
+            alarmID: editingAlarm?.id,
+            voiceProfileID: profileID,
+            props: UsageEventProps(isFirst: isFirst, prepared: prepared, surface: "editor"),
+            userID: auth.session?.user.id
+        )
+    }
+
+    /// 저장을 눌렀다 — 새 시도를 연다(`alarm_save_attempt`).
+    func beginSaveAttempt() {
+        let attemptID = UsageEventContract.newAttemptID()
+        saveAttemptID = attemptID
+        UsageEventQueue.shared.record(
+            .alarmSaveAttempt,
+            alarmID: editingAlarm?.id,
+            attemptID: attemptID,
+            userID: auth.session?.user.id
+        )
+    }
+
+    /// 저장이 **요청 전에** 막혔다(`alarm_save_blocked`). 사유는 안드로이드 `SaveBlockReason` 이름을 소문자로 —
+    /// 그 짝이 없는 iOS 갈래만 iOS 이름이다(`alarm_permission_missing`·`voice_plan_locked`·`invalid_draft`·
+    /// `bucket_clip_unavailable`).
+    func recordSaveBlocked(_ reason: String) {
+        UsageEventQueue.shared.record(
+            .alarmSaveBlocked,
+            alarmID: editingAlarm?.id,
+            attemptID: saveAttemptID,
+            props: UsageEventProps(reason: reason),
+            userID: auth.session?.user.id
+        )
+    }
+
+    /// AlarmKit 예약과 오디오 파일이 **둘 다** 갖춰졌다(`alarm_ready`). 음성 알람인데 파일이 없으면 적지 않는다 —
+    /// 알람음만 울리는 알람은 준비 완료가 아니다.
+    func recordAlarmReadyIfComplete(_ record: LocalAlarmRecord) {
+        if record.playModeEnum != .alarmOnly {
+            guard let fileName = record.localAudioUri?.nilIfBlank,
+                  let url = try? AudioCacheStore.url(for: fileName),
+                  FileManager.default.fileExists(atPath: url.path) else { return }
+        }
+        UsageEventQueue.shared.record(
+            .alarmReady,
+            alarmID: record.id,
+            voiceProfileID: record.voiceProfileId,
+            attemptID: saveAttemptID,
+            userID: auth.session?.user.id
+        )
+        saveAttemptID = nil
     }
 
     /// 음성 갈래 전환 — 목소리(TTS) ↔ 직접 녹음.
@@ -2345,6 +2413,7 @@ struct AlarmEditorSheet: View {
         guard !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
+        beginSaveAttempt()
 
         // ⚠ **정리 중인 목소리는 여기서 막는다**(버튼은 살려 둔다 — 위 `editorSaveBlocked`
         // 주석). 지금 저장하면 뒤이은 정리가 그 알람을 되돌릴 수 없이 벗긴다.
@@ -2357,6 +2426,7 @@ struct AlarmEditorSheet: View {
                 message: String(localized: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요."),
                 offersPlanActions: false
             )
+            recordSaveBlocked("voice_settling")
             return
         }
         // ⚠ **쓸 수 없는 목소리는 여기서 막는다**(버튼은 살려 둔다 — `editorSaveBlocked` 주석).
@@ -2367,6 +2437,7 @@ struct AlarmEditorSheet: View {
                 title: String(localized: "목소리를 골라주세요"),
                 message: String(localized: "고른 목소리를 지금은 쓸 수 없어요. 다른 목소리를 골라 주세요.")
             )
+            recordSaveBlocked("voice_unavailable")
             return
         }
         // ⚠ **빈 직접 입력은 여기서 막는다 — 권한 확인·한도 조회·생성 요청보다 먼저다.**
@@ -2377,6 +2448,7 @@ struct AlarmEditorSheet: View {
                 title: String(localized: "직접 입력 문구가 비어 있어요"),
                 message: String(localized: "알람이 읽어 줄 문구를 입력하거나, 문구 화면에서 다른 종류를 골라 주세요.")
             )
+            recordSaveBlocked("manual_text_missing")
             return
         }
         let errors = draft.validate()
@@ -2385,6 +2457,7 @@ struct AlarmEditorSheet: View {
                 title: String(localized: "저장할 수 없어요"),
                 message: errorMessage(first)
             )
+            recordSaveBlocked("invalid_draft")
             return
         }
 
@@ -2403,6 +2476,7 @@ struct AlarmEditorSheet: View {
                         ? AlarmKitViewModel.alarmRecoveryMessage
                         : String(localized: "알람 권한을 허용해야 알람을 저장할 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)")
                 )
+                recordSaveBlocked("alarm_permission_missing")
                 return
             }
         }
@@ -2410,6 +2484,7 @@ struct AlarmEditorSheet: View {
         if voiceModeBlocked && draft.playMode != .alarmOnly {
             draft.playMode = .alarmOnly
             showVoicePlanLockedAlert()
+            recordSaveBlocked("voice_plan_locked")
             return
         }
 
@@ -2435,6 +2510,7 @@ struct AlarmEditorSheet: View {
         if draft.playMode != .alarmOnly, voiceSourceMode == .ttsProfile {
             guard await prepareSelectedBucketClipIfNeeded() else {
                 showSaveFailureAlert()
+                recordSaveBlocked("bucket_clip_unavailable")
                 return
             }
         }
@@ -2474,6 +2550,7 @@ struct AlarmEditorSheet: View {
                    randomContext: voiceStudio.randomContext
                ) {
                 preparationVoiceID = profileID
+                recordSaveBlocked("message_preparing")
                 return
             }
             // ⚠ **라이브 랜덤 생성은 없앴다**(2026-08-18). 알람 음성은 **프리셋 + 직접 입력**
@@ -2491,6 +2568,7 @@ struct AlarmEditorSheet: View {
                 } else {
                     showSaveFailureAlert()
                 }
+                recordSaveBlocked("message_preparing")
                 return
             }
             // 문구가 글자까지 똑같으면 **서버를 부르지 않고** 전에 만든 오디오를 그대로 쓴다
@@ -2500,7 +2578,11 @@ struct AlarmEditorSheet: View {
             // 오프라인이면 저장 자체가 실패한다.
             if let alias = reusableTtsInputAlias(listenerTitle: currentListenerTitle),
                applyReusedTtsAudio(alias) {
-                // 재사용 성공 — 서버 호출을 건너뛴다.
+                // 재사용 성공 — 서버 호출을 건너뛴다. 기기 캐시 재사용으로 적는다(원문 대신 글자 수만).
+                voiceStudio.recordManualLocalReuse(
+                    messageID: voiceStudio.preparedAlarm?.messageID.nilIfBlank,
+                    textCount: voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).count
+                )
             } else if !NetworkMonitor.shared.isOnline {
                 // ⚠ **오프라인이면 요청을 보내 보지 않는다**(2026-09-06 지시).
                 // 바로 위 재사용이 실패했다 = 이 문구의 오디오가 **이 기기에 없다**.
@@ -2515,6 +2597,7 @@ struct AlarmEditorSheet: View {
                     title: String(localized: "연결이 필요해요"),
                     message: String(localized: "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요.")
                 )
+                recordSaveBlocked("offline_new_message")
                 return
             } else {
             // ① 로컬 확인 → (오프라인이면 위에서 막는다 — 요청 없음) → ② 생성 요청. 남은 횟수로 막지 않는다(§8).
@@ -2802,6 +2885,7 @@ struct AlarmEditorSheet: View {
         }
         rememberChoicesUsed(merged)
         recordSaveUsageEvent(record: merged, previous: existing)
+        recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSchedulingDidFinish()
         return true

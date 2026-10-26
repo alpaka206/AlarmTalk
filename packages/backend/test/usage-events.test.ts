@@ -5,6 +5,18 @@ import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
 
 const mockDB = createMockDB();
 
+// 2판 칸은 처리방침 8판(아직 없음) 동의자부터라(`USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION`), 저장 경로를 보려면 그 경계를
+// 1판 경계와 같게 둔다. 고지 전 갈래는 `detailGate.closed = true` 로 본다.
+const detailGate = vi.hoisted(() => ({ closed: false }));
+vi.mock('../src/lib/consent', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/consent')>();
+  return {
+    ...actual,
+    usageEventDetailConsentSince: (latest: Parameters<typeof actual.usageEventDetailConsentSince>[0]) =>
+      detailGate.closed ? actual.usageEventDetailConsentSince(latest) : actual.usageEventConsentSince(latest),
+  };
+});
+
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
@@ -41,7 +53,10 @@ const priorRequiredConsents = [
 ];
 
 describe('POST /events — 사용 기록 배치 수집', () => {
-  beforeEach(() => mockDB.reset());
+  beforeEach(() => {
+    mockDB.reset();
+    detailGate.closed = false;
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it('재동의 뒤 처음 올라온 배치에서도 동의 전 기록과 그 보관함 갱신을 버린다', async () => {
@@ -400,5 +415,124 @@ describe('POST /events — 사용 기록 배치 수집', () => {
       jsonReq('POST', '/events', { events: [event({ detail: 'x'.repeat(121) })] }),
     );
     expect(res.status).toBe(400);
+  });
+
+  describe('2판 — 공통 필드와 정해진 칸(§7)', () => {
+    const insertCall = () => mockDB.calls.find((c) => c.sql.includes('INSERT OR IGNORE INTO usage_events'))!;
+    /** INSERT 의 열 이름 → 첫 행 값. */
+    const firstRow = () => {
+      const call = insertCall();
+      const columns = /\(([^)]*)\)\s*VALUES/.exec(call.sql)![1]!.split(',').map((x) => x.trim());
+      return Object.fromEntries(columns.map((column, i) => [column, call.args[i]]));
+    };
+
+    it('준비 기록의 칸을 열마다 옮겨 적고 권한 출처를 서버가 찍는다', async () => {
+      mockDB.pushResultFor('AS has_subscription', [{ raw_plan: 'free', has_subscription: 0, has_grant: 1 }]);
+      const attempt = crypto.randomUUID();
+      const response = await buildApp().request(jsonReq('POST', '/events', {
+        events: [event({
+          type: 'voice_preparation_ready', alarm_id: null, schema_version: 2, platform: 'android',
+          app_version: '41', feature_version: 'prep-1', attempt_id: attempt,
+          props: {
+            scope: 'all_voices', language: 'ko', revision: 'r20261026', cache_state: 'partial',
+            target_count: 4, completed_count: 4, bytes: 123456, duration_ms: 2300, is_first: true,
+          },
+        })],
+      }));
+      expect(response.status).toBe(200);
+      const row = firstRow();
+      expect(row).toMatchObject({
+        type: 'voice_preparation_ready', schema_version: 2, platform: 'android', app_version: '41',
+        feature_version: 'prep-1', attempt_id: attempt, entitlement_source: 'admin', scope: 'all_voices',
+        language: 'ko', revision: 'r20261026', cache_state: 'partial', target_count: 4, completed_count: 4,
+        bytes: 123456, duration_ms: 2300, is_first: 1, prepared: null, error_code: null,
+      });
+    });
+
+    it('1판 기록(옛 앱·옛 큐)은 그대로 받고, 플랫폼만 요청 헤더로 채운다 — 앱 버전은 채우지 않는다', async () => {
+      const req = jsonReq('POST', '/events', { events: [event()] });
+      req.headers.set('X-App-Platform', 'ios');
+      req.headers.set('X-App-Version', '12');
+      const response = await buildApp().request(req);
+      expect(response.status).toBe(200);
+      expect(firstRow()).toMatchObject({
+        type: 'alarm_created', schema_version: 1, platform: 'ios', app_version: null, attempt_id: null,
+        entitlement_source: 'free',
+      });
+    });
+
+    it.each([
+      ['모르는 칸', { props: { message_text: '안녕' } }],
+      ['코드 칸에 문장', { props: { reason: '문구 원문 같은 긴 글' } }],
+      ['코드 칸에 공백', { props: { error_code: 'not a code' } }],
+      ['음수 경과', { props: { duration_ms: -1 } }],
+      ['정산 수단 밖의 값', { props: { charged_source: 'card' } }],
+      ['권한 출처는 앱이 보내지 않는다', { props: { entitlement_source: 'paid' } }],
+      ['시도 id 가 UUID 가 아님', { attempt_id: 'abc' }],
+      ['앱 버전 모양', { app_version: '1 .3' }],
+    ])('%s 는 400', async (_label, overrides) => {
+      const response = await buildApp().request(jsonReq('POST', '/events', {
+        events: [event({ type: 'generation_outcome', schema_version: 2, ...overrides })],
+      }));
+      expect(response.status).toBe(400);
+    });
+
+    it('직접 입력 결과는 정산 수단·원래 사용월·결과와 요청 id 를 남긴다', async () => {
+      mockDB.pushResultFor('AS has_subscription', [{ raw_plan: 'plus', has_subscription: 1, has_grant: 1 }]);
+      const requestId = crypto.randomUUID();
+      const response = await buildApp().request(jsonReq('POST', '/events', {
+        events: [event({
+          type: 'generation_outcome', alarm_id: null, message_id: MESSAGE_ID, schema_version: 2,
+          props: {
+            outcome: 'success', charged_source: 'ad', usage_month: '2026-10', result_id: MESSAGE_ID,
+            request_id: requestId, char_count: 42,
+          },
+        })],
+      }));
+      expect(response.status).toBe(200);
+      expect(firstRow()).toMatchObject({
+        entitlement_source: 'paid', outcome: 'success', charged_source: 'ad', usage_month: '2026-10',
+        result_id: MESSAGE_ID, request_id: requestId, char_count: 42,
+      });
+    });
+
+    it('2판 열이 아직 없으면(배포 직후 창) 500 이고 아무것도 커밋하지 않는다 — 옛 열만 넣는 갈래가 없다', async () => {
+      mockDB.pushErrorFor('INSERT OR IGNORE INTO usage_events', new Error('table usage_events has no column named schema_version'));
+      const response = await buildApp().request(jsonReq('POST', '/events', { events: [event()] }));
+      expect(response.status).toBe(500);
+      expect(mockDB.transactions.commits).toBe(0);
+      const inserts = mockDB.calls.filter((c) => c.sql.includes('INSERT OR IGNORE INTO usage_events'));
+      expect(inserts.every((c) => c.sql.includes('schema_version'))).toBe(true);
+    });
+  
+    it('고지 전(처리방침 2판 범위 미동의)이면 2판 종류는 버리고, 1판 종류는 2판 칸을 비워 받는다', async () => {
+      detailGate.closed = true;
+      const req = jsonReq('POST', '/events', {
+        events: [
+          event({ type: 'voice_preparation_ready', schema_version: 2, props: { duration_ms: 10 } }),
+          event({ schema_version: 2, app_version: '41', attempt_id: crypto.randomUUID(), props: { reason: 'x' } }),
+        ],
+      });
+      req.headers.set('X-App-Platform', 'android');
+      const response = await buildApp().request(req);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ accepted: 1 });
+      const row = firstRow();
+      expect(row).toMatchObject({
+        type: 'alarm_created', schema_version: 1, platform: null, app_version: null, attempt_id: null,
+        entitlement_source: null, reason: null,
+      });
+      // 권한 출처는 아예 묻지 않는다.
+      expect(mockDB.calls.some((c) => c.sql.includes('AS has_subscription'))).toBe(false);
+    });
+
+    it('전부 고지 전 2판 종류면 쓰기 없이 200', async () => {
+      detailGate.closed = true;
+      const response = await buildApp().request(jsonReq('POST', '/events', {
+        events: [event({ type: 'sample_started', schema_version: 2 })],
+      }));
+      expect(await response.json()).toEqual({ accepted: 0 });
+      expect(mockDB.calls.some((c) => /INSERT/i.test(c.sql))).toBe(false);
+    });
   });
 });

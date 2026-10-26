@@ -1133,7 +1133,14 @@ internal suspend fun MainViewModel.cacheVoiceClips(
     onProgress: (Int, Int) -> Unit,
 ): Boolean = withContext(Dispatchers.IO) {
     val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
-    voiceClipDownloads.cache(
+    // 음성 준비 기록(`voice_preparation_*`, `docs/spec/usage-events.md` §7.3) — 목소리 하나를 받는 **이 자리**가 소유자다.
+    // 목소리 탭 폴링·클론 구동·선다운로드가 모두 여기를 지나지만 목소리마다 한 벌이라(`voiceClipDownloads`) 같은 다운로드를
+    // 두 번 적지 않는다. 받을 것이 없으면(빠진 것 0) 적지 않는다.
+    var preparation: com.alarmtalk.app.data.PreparationAttempt? = null
+    val preparedBytes = java.util.concurrent.atomic.AtomicLong(0)
+    val preparedClips = java.util.concurrent.atomic.AtomicInteger(0)
+    val ok = try {
+        voiceClipDownloads.cache(
         voiceId = voiceProfileId,
         clips = clips,
         missing = { list ->
@@ -1144,20 +1151,34 @@ internal suspend fun MainViewModel.cacheVoiceClips(
                     "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}",
                     clip.audioUrl,
                 )
+            }.also { toFetch ->
+                if (toFetch.isNotEmpty()) {
+                    preparedClips.set(list.size - toFetch.size)
+                    preparation = com.alarmtalk.app.data.PreparationAttempt(
+                        context = getApplication(),
+                        scope = com.alarmtalk.app.data.UsageEventProps.SCOPE_SELECTED_VOICE,
+                        // 받는 클립의 언어다 — 클론은 등록 때 고른 언어 한 벌이라 기기 언어와 다를 수 있다(코덱스 #958). 섞였으면 비운다.
+                        language = list.mapNotNull { it.language }.distinct().singleOrNull(),
+                        voiceProfileId = voiceProfileId,
+                    ).also { it.start(targetCount = list.size, alreadyCached = list.size - toFetch.size) }
+                }
             }
         },
         download = { clip ->
             val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
             try {
                 val response = downloadTtsMessageAudio(clip.messageId)
+                val bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT)
                 audioStore.cacheGeneratedAudio(
-                    bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
+                    bytes = bytes,
                     format = response.audioFormat,
                     rawAudioUri = response.audioUrl,
                     displayName = cacheKey,
                     cacheKey = cacheKey,
                     messageId = clip.messageId,
                 )
+                preparedBytes.addAndGet(bytes.size.toLong())
+                preparedClips.incrementAndGet()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -1167,7 +1188,22 @@ internal suspend fun MainViewModel.cacheVoiceClips(
             }
         },
         onProgress = onProgress,
-    )
+        )
+    } catch (error: CancellationException) {
+        // 취소는 실패가 아니다 — 끝나지 않은 시작으로 남는다(§7.3).
+        throw error
+    } catch (error: Exception) {
+        preparation?.failed(preparedClips.get(), preparedBytes.get(), errorCode = "unexpected")
+        throw error
+    }
+    preparation?.let { prep ->
+        if (ok) {
+            prep.ready(preparedClips.get(), preparedBytes.get())
+        } else {
+            prep.failed(preparedClips.get(), preparedBytes.get(), errorCode = "clip_download_failed")
+        }
+    }
+    ok
 }
 
 /** 사전렌더 실패 시 재생성 요청. true 면 재시작 수락 — 호출측이 폴링을 재개한다. */
