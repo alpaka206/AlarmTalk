@@ -5,7 +5,7 @@ import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
 
 const mockDB = createMockDB();
 
-// 2판 칸은 처리방침 8판(아직 없음) 동의자부터라(`USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION`), 저장 경로를 보려면 그 경계를
+// 2판 칸은 처리방침 8판 동의자부터라(`USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION`), 저장 경로를 보려면 그 경계를
 // 1판 경계와 같게 둔다. 고지 전 갈래는 `detailGate.closed = true` 로 본다.
 const detailGate = vi.hoisted(() => ({ closed: false }));
 vi.mock('../src/lib/consent', async (importOriginal) => {
@@ -505,8 +505,14 @@ describe('POST /events — 사용 기록 배치 수집', () => {
       expect(inserts.every((c) => c.sql.includes('schema_version'))).toBe(true);
     });
   
+    // 고지 전 = 처리방침 7판까지만 동의했다(목업의 기본 동의 행은 지금 버전 8 이라 직접 넣는다).
+    const preNoticeConsents = () => mockDB.pushResultFor('FROM user_consents', [
+      consent('privacy', '7', '2026-09-01 00:00:00.000'), ...priorRequiredConsents,
+    ]);
+
     it('고지 전(처리방침 2판 범위 미동의)이면 2판 종류는 버리고, 1판 종류는 2판 칸을 비워 받는다', async () => {
       detailGate.closed = true;
+      preNoticeConsents();
       const req = jsonReq('POST', '/events', {
         events: [
           event({ type: 'voice_preparation_ready', schema_version: 2, props: { duration_ms: 10 } }),
@@ -528,6 +534,7 @@ describe('POST /events — 사용 기록 배치 수집', () => {
 
     it('전부 고지 전 2판 종류면 쓰기 없이 200', async () => {
       detailGate.closed = true;
+      preNoticeConsents();
       const response = await buildApp().request(jsonReq('POST', '/events', {
         events: [event({ type: 'sample_started', schema_version: 2 })],
       }));
