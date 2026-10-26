@@ -847,6 +847,7 @@
     <string name="voice_pack_delete_message_none">The downloaded files will be removed. You can download it again.</string>
     <string name="voice_pack_editor_detail">Extra pack</string>
     <string name="voice_pack_download_failed">Couldn\'t download. Please try again.</string>
+    <string name="voice_pack_retry_download">Download again</string>
     <string name="voice_pack_manual_unavailable">Extra pack voices can\'t read messages you type yourself. Please choose a theme.</string>
     <string name="voice_pack_not_available">This pack isn\'t available right now.</string>
     <string name="voice_pack_switch_drops_text_title">Switch to the extra pack voice?</string>

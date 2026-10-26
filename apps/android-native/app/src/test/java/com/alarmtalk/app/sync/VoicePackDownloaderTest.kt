@@ -96,6 +96,8 @@ class VoicePackDownloaderTest {
         assertTrue(audioStore.hasCachedAudio(voicePackCacheKey("c1"), voicePackRemoteIdentity("first-pack", "c1", held.clipList[0].sha256)))
         assertFalse("해시가 다른 바이트는 넣지 않는다", audioStore.hasCachedAudio(voicePackCacheKey("c2")))
         assertFalse("하나라도 빠지면 '받음' 이 아니다", store.find("user-a", "first-pack")!!.ready)
+        // 회차가 끝났으면 진행률을 내린다 — 남기면 상세가 '받는 중' 으로 읽고 '다시 받기' 를 감춘다(코덱스 #960).
+        assertFalse(VoicePackStore.progress.value.containsKey("first-pack"))
 
         val second = FakeApi(audio = audio)
         VoicePackDownloader.run(context, second, "Bearer t", "user-a")

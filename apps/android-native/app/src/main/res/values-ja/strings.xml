@@ -843,6 +843,7 @@
     <string name="voice_pack_delete_message_none">ダウンロードしたファイルを削除します。もう一度ダウンロードできます。</string>
     <string name="voice_pack_editor_detail">追加パック</string>
     <string name="voice_pack_download_failed">ダウンロードできませんでした。もう一度お試しください。</string>
+    <string name="voice_pack_retry_download">もう一度ダウンロード</string>
     <string name="voice_pack_manual_unavailable">追加パックの声は自分で入力した文には使えません。テーマを選んでください。</string>
     <string name="voice_pack_not_available">このパックは現在ダウンロードできません。</string>
     <string name="voice_pack_switch_drops_text_title">追加パックの声に変えますか？</string>

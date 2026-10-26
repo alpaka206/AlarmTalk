@@ -182,6 +182,9 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
   `stock_` 네임스페이스와 따로 둔다(기본 목소리 매니페스트 기준 정리가 팩 파일을 지우지 않게, 오래된 캐시 정리도 `pack_`
   을 건너뛴다).
 - 다 받았을 때만 '받음' 이고, 그때부터 편집기에 나온다. 일부 실패는 같은 회차·다음 회차가 이어 받는다.
+  - 다 받지 못했는데 받는 회차가 없으면(두 번 받고도 빠졌다·앱을 다시 켰다) 상태는 "받지 못했어요. 다시 시도해 주세요." 이고,
+    팩 상세에 **'다시 받기'** 가 있다. 팩을 지우지 않고 선다운로드를 깨워 빠지거나 해시가 다른 클립만 받는다 — 지우고 다시
+    받게 하면 그 팩 알람이 미나로 바뀐다. 받는 동안·다 받은 팩·게시가 끝난 팩에는 두지 않는다.
   - 개정이 바뀌어 상세(클립 목록)를 새로 적으면 다시 **받는 중**이다 — 새 클립을 다 받아 대조할 때까지 '받음' 이 아니고,
     받다가 실패해도 '받음' 으로 남지 않는다. 빠진 클립이 남은 회차의 끝도 같다.
   - 상세를 기다리는 사이 사용자가 팩을 지웠으면 **되살리지 않는다**(다시 받지도 않는다). 그 사이 다른 받기가 개정을
@@ -249,6 +252,7 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
 | 전경 복귀마다 기한 지난 팩 대체(네트워크 없이) | — | `ui/main/MainViewModel.kt` 의 진입 구독(`AppSignals.appEntries`) → `MainViewModelVoicePacks.kt` 의 `retireDueVoicePacksOnEntry` | `AlarmTalkApp.swift` 의 전경 복귀(`.active`) → `VoicePackStore.retireExpired` |
 | 받은 팩 클립은 일반 알람 정리가 지우지 않는다 | — | `data/VoicePackStore.kt` 의 `heldClipCacheKeysOnDevice`, `AlarmRepository.deleteAlarmLocked`·`deleteAudioNoAlarmUses` | `VoicePackStore.heldClipCacheKeysOnDevice`, `AlarmKitViewModel.deleteLocalAlarm`·`VoiceStudioViewModel.degrade`·`VoicePackStore.remove` |
 | 팩별 사용 기록(`pack_selected`, 저장 성공 때 `pack_id` 하나) | — | `data/UsageSignals.kt` 의 `recordPackSelected`(`MainViewModelAlarmActions` 의 create/update `onSuccess`) | `VoicePacks.packSelectionProps`(`AlarmEditorSheet.finishScheduling`) |
+| 다 받지 못한 팩의 '다시 받기'(지우지 않고 이어 받기) | — | `ui/voices/VoicePackSection.kt` 의 `canRetryVoicePackDownload`(→ `downloadVoicePack`), `sync/StockClipPrefetchWorker.kt` 의 `downloadPack`(회차 끝에 진행률을 내린다) | `VoicePackStore.canRetryDownload`·`retryDownload`, `Views/Voices/VoicePackSection.swift` 의 `VoicePackDetailSheet` |
 | 미리듣기는 한 번에 하나 | — | `ui/voices/VoiceProfileManagementPanel.kt` 의 `playVoicePackSample`(같은 미리듣기 플레이어) | `AudioPreviewPlayer.play`(다른 플레이어를 끊는다) |
 | 새로고침이 팩 선택을 지우지 않는다 | — | `data/VoicePacks.kt` 의 `editorVoicePacks` | `VoiceStudioViewModel.selectionSurvivesRefresh`, `VoicePacks.editorEntries` |
 | 편집기 목록·직접 입력 감추기 | — | `ui/app/AlarmTalkApp.kt` 의 편집기 라우트(`editorVoicePacks` 로 합치기)·`ui/editor/AlarmRandomPromptSettings.kt` 의 `manualAvailable`·`ui/editor/AlarmEditorScreen.kt` 의 `fixedVoiceClipLanguage`·저장 막기 | `Views/Editor/AlarmEditorSheet.swift` 의 `editorProfiles`·`editorStockClips`·`applyVoiceSelection`, `MessageSettingsPane.manualAvailable` |

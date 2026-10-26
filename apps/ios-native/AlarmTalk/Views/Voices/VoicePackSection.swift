@@ -125,7 +125,8 @@ enum VoicePackStatusText {
             let date = until.formatted(.dateTime.month().day())
             return String(localized: "게시가 끝났어요. \(String(date))까지 기존 알람에서 울려요.")
         }
-        if store.failedPackIDs.contains(held.packId), held.state != .ready {
+        // 다 받지 못했는데 받는 회차가 없으면(실패·앱을 다시 켬) '받는 중' 이 아니다 — 상세의 '다시 받기' 를 가리킨다.
+        if store.canRetryDownload(packID: held.packId) {
             return String(localized: "받지 못했어요. 다시 시도해 주세요.")
         }
         switch held.state {
@@ -226,6 +227,18 @@ struct VoicePackDetailSheet: View {
 
     @ViewBuilder
     private var actionButton: some View {
+        // 다 받지 못한 팩은 지우지 않고 이어 받는다(지우고 다시 받으면 그 팩 알람이 미나로 바뀐다).
+        if packs.canRetryDownload(packID: packID) {
+            Button {
+                packs.retryDownload(packID: packID)
+            } label: {
+                Text(String(localized: "다시 받기"))
+                    .font(theme.typography.labelLarge)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(theme.palette.primary)
+        }
         if row.held != nil {
             Button(role: .destructive) {
                 let count = packs.alarmCount(usingPackID: packID, alarmStore: alarmStore)

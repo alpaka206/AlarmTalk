@@ -13780,6 +13780,23 @@
         }
       }
     },
+    "다시 받기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度ダウンロード"
+          }
+        }
+      }
+    },
     "이 팩은 지금 받을 수 없어요." : {
       "extractionState" : "manual",
       "localizations" : {

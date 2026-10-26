@@ -165,6 +165,22 @@ final class VoicePackStore: ObservableObject {
         }
     }
 
+    /// 받은 팩을 **이어 받을 수 있는가** — 다 받지 못했고(실패했거나, 지금 받는 회차가 없다) 게시 중이다. 그때 상세가 '다시 받기' 를
+    /// 보인다(코덱스 #960). 지우고 다시 받게 하면 그 팩 알람이 미나로 바뀌므로, 지우지 않고 이어 받는 길이 따로 있어야 한다.
+    func canRetryDownload(packID: String) -> Bool {
+        guard let pack = heldPack(packID: packID), pack.state != .ready, pack.withdrawnPlaybackUntil == nil else { return false }
+        return failedPackIDs.contains(packID) || progress[packID] == nil
+    }
+
+    /// '다시 받기' — 팩을 지우지 않고 선다운로드를 깨운다. 받기 회차가 개정을 다시 보고 빠지거나 해시가 다른 클립만 받는다
+    /// (`runDownloadStage`). 안드로이드 `VoicePackSection` 의 같은 자리('다시 받기' → `downloadVoicePack`) 짝.
+    func retryDownload(packID: String) {
+        guard canRetryDownload(packID: packID), let pack = heldPack(packID: packID) else { return }
+        failedPackIDs.remove(packID)
+        progress[packID] = Progress(done: progress[packID]?.done ?? 0, total: pack.clips.count)
+        wakePrefetch?()
+    }
+
     /// **선다운로드 회차의 마지막 단계**(기본 목소리·클론 다음 — 지시서 7.3 의 4번 '선택한 추가 팩').
     ///
     /// 카탈로그를 다시 보고(기한·개정), 기한이 지난 팩을 대체한 뒤, 받은 팩의 빠진/해시 다른 클립만 받는다.

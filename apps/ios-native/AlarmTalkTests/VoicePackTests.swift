@@ -491,4 +491,35 @@ final class VoicePackTests: XCTestCase {
         store.remove(packID: "first-pack", alarmStore: alarms, voiceStudio: VoiceStudioViewModel())
         XCTAssertNil(AudioCacheStore.shared.cachedURL(for: key), "아무 계정도 쥐지 않으면 놓는 쪽이 지운다")
     }
+
+    // MARK: - 다 받지 못한 팩은 지우지 않고 다시 받는다 (코덱스 #960)
+
+    func test_못_받은_팩은_지우지_않고_다시_받기로_선다운로드를_깨운다() throws {
+        let store = try storeHolding([held(state: .downloading)])
+        var woke = 0
+        store.wakePrefetch = { woke += 1 }
+        let pack = try XCTUnwrap(store.heldPack(packID: "first-pack"))
+        store.finishDownload(pack, complete: false)
+        XCTAssertTrue(store.canRetryDownload(packID: "first-pack"))
+        XCTAssertEqual(
+            VoicePackStatusText.text(for: VoicePackRowModel(summary: nil, held: store.heldPack(packID: "first-pack")), store: store),
+            String(localized: "받지 못했어요. 다시 시도해 주세요.")
+        )
+
+        store.retryDownload(packID: "first-pack")
+        XCTAssertEqual(woke, 1, "기존 선다운로드를 깨운다")
+        XCTAssertNotNil(store.heldPack(packID: "first-pack"), "팩을 지우지 않는다 — 지우면 그 팩 알람이 미나로 바뀐다")
+        XCTAssertFalse(store.failedPackIDs.contains("first-pack"))
+        XCTAssertFalse(store.canRetryDownload(packID: "first-pack"), "받는 동안에는 다시 받기를 감춘다")
+    }
+
+    func test_다_받은_팩과_게시가_끝난_팩은_다시_받기가_없다() throws {
+        let store = try storeHolding([
+            held(packID: "ready-pack"),
+            held(packID: "gone-pack", state: .downloading, withdrawnUntil: Date(timeIntervalSinceNow: 3600)),
+        ])
+        XCTAssertFalse(store.canRetryDownload(packID: "ready-pack"))
+        XCTAssertFalse(store.canRetryDownload(packID: "gone-pack"))
+        XCTAssertFalse(store.canRetryDownload(packID: "missing-pack"))
+    }
 }

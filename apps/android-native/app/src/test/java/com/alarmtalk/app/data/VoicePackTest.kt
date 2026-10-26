@@ -294,4 +294,14 @@ class VoicePackTest {
         assertTrue("진입 대체는 저장된 기한으로만 한다(`retireDuePacks`)", body.contains("VoicePackDownloader.retireDuePacks("))
         assertFalse("진입 대체는 네트워크를 부르지 않는다", body.contains("api."))
     }
+
+    @Test
+    fun unfinishedPacksOfferARetryThatKeepsThePack() {
+        // 못 받았거나 받다 멈춘 팩은 지우지 않고 '다시 받기' — 지우고 다시 받으면 그 팩 알람이 미나로 바뀐다(코덱스 #960).
+        assertTrue(com.alarmtalk.app.canRetryVoicePackDownload(heldPack(ready = false), percent = null))
+        assertFalse("받는 회차가 돌고 있으면 감춘다", com.alarmtalk.app.canRetryVoicePackDownload(heldPack(ready = false), percent = 40))
+        assertFalse("다 받은 팩", com.alarmtalk.app.canRetryVoicePackDownload(heldPack(), percent = null))
+        assertFalse("게시가 끝난 팩은 새로 받지 않는다", com.alarmtalk.app.canRetryVoicePackDownload(heldPack(ready = false, withdrawnUntil = 5L), percent = null))
+        assertFalse("받지 않은 팩은 '받기' 다", com.alarmtalk.app.canRetryVoicePackDownload(null, percent = null))
+    }
 }

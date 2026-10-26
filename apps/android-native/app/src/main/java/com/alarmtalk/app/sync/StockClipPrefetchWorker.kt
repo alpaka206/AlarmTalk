@@ -1139,7 +1139,8 @@ internal object VoicePackDownloader {
         store.update(userId) { list ->
             list.map { if (it.packId == pack.packId && it.contentRevision == pack.contentRevision) it.copy(ready = ready) else it }
         }
-        if (ready) VoicePackStore.clearProgress(pack.packId)
+        // 회차가 끝났으면 다 받았든 못 받았든 진행률을 내린다 — 남기면 상세가 '받는 중' 으로 읽고 '다시 받기' 를 감춘다(코덱스 #960).
+        VoicePackStore.clearProgress(pack.packId)
         Log.i(TAG, "Voice pack prefetch pack=${pack.packId} ready=$ready missing=${missing.size}")
     }
 

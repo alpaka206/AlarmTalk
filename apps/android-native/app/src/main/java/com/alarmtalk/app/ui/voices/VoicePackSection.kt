@@ -199,6 +199,10 @@ private fun voicePackStatusLine(context: android.content.Context, row: VoicePack
     return listOf(language, size, state).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
+/** 받은 팩을 이어 받을 수 있는가 — 다 받지 못했고, 지금 받는 회차가 없고(진행률 없음), 게시 중이다. iOS `VoicePackStore.canRetryDownload` 짝. */
+internal fun canRetryVoicePackDownload(held: HeldVoicePack?, percent: Int?): Boolean =
+    held != null && !held.ready && !held.withdrawn && percent == null
+
 private fun voicePackStateText(context: android.content.Context, row: VoicePackRowModel, percent: Int?): String {
     val held = row.held
     return when {
@@ -207,7 +211,9 @@ private fun voicePackStateText(context: android.content.Context, row: VoicePackR
             DateFormat.getDateInstance(DateFormat.LONG).format(Date(held.withdrawnPlaybackUntilMillis ?: 0L)),
         )
         held?.ready == true -> context.getString(R.string.voice_pack_ready)
-        held != null -> context.getString(R.string.voice_pack_downloading, percent ?: 0)
+        // 다 받지 못했는데 받는 회차가 없으면(실패·앱을 다시 켬) '받는 중' 이 아니다 — 상세의 '다시 받기' 를 가리킨다.
+        held != null && percent == null -> context.getString(R.string.voice_pack_download_failed)
+        held != null -> context.getString(R.string.voice_pack_downloading, percent)
         else -> context.getString(R.string.voice_pack_not_downloaded)
     }
 }
@@ -243,7 +249,7 @@ private fun VoicePackDetailSheet(
                 }
             }
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (held != null && !held.ready && !held.withdrawn) {
+                if (held != null && !held.ready && !held.withdrawn && percent != null) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(14.dp),
                         strokeWidth = 2.dp,
@@ -299,14 +305,15 @@ private fun VoicePackDetailSheet(
                     ) { Text(stringResource(R.string.voice_pack_download)) }
                 }
             }
-            // 받다 멈춘 팩은 같은 '받기' 로 이어 받는다(빠진 클립만 받는다).
-            if (held != null && !held.ready && !held.withdrawn && percent == null) {
+            // 받다 멈췄거나 못 받은 팩은 지우지 않고 '다시 받기' 로 이어 받는다(빠진 클립만 받는다). 지우고 다시 받으면 그 팩 알람이
+            // 미나로 바뀐다(코덱스 #960). 판정은 [canRetryVoicePackDownload].
+            if (canRetryVoicePackDownload(held, percent)) {
                 Button(
                     onClick = onDownload,
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                     colors = wakerButtonColors(),
-                ) { Text(stringResource(R.string.voice_pack_download)) }
+                ) { Text(stringResource(R.string.voice_pack_retry_download)) }
             }
         }
     }
