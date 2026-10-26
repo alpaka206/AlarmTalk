@@ -787,9 +787,19 @@ internal val FreeBucketOrder: List<String> = EditorMessageContexts
 
 /**
  * 날짜 지정 알람의 **날짜 고르기** — 폼 시트(좌 취소 · 가운데 제목 · 우 확정, `docs/spec/alarm-editor.md` §4)
- * 안의 M3 달력. 오늘(이 기기 기준)보다 앞의 날은 고를 수 없다. 확정해야만 [onConfirm] 이 불린다 — 달력을 넘겨 보기만
+ * 안의 M3 달력. 오늘(**알람의 시간대** 기준 — [datedPickerToday])보다 앞의 날은 고를 수 없다. 확정해야만 [onConfirm] 이 불린다 — 달력을 넘겨 보기만
  * 하고 취소하면 날짜는 그대로다.
  */
+/**
+ * 날짜 고르기의 '오늘' — 날짜는 알람의 시간대(`targetTimezone`)로 읽으므로 하한도 그 시간대의 오늘이다(코덱스 #955).
+ * 기기 시간대로 재면 로스앤젤레스 알람을 서울로 옮긴 기기에서 로스앤젤레스의 오늘을 못 고른다. iOS
+ * `AlarmEditorSheet+DatedAlarm` 이 같은 시간대로 잰다. 시간대를 못 읽으면 기기 시간대.
+ */
+internal fun datedPickerToday(targetTimezone: String?, nowMillis: Long = System.currentTimeMillis()): LocalDate {
+    val zone = targetTimezone?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() } ?: java.time.ZoneId.systemDefault()
+    return java.time.Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+}
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun DatedAlarmDatePickerSheet(

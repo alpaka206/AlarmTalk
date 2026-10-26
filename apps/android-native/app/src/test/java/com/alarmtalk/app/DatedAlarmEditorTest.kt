@@ -28,6 +28,14 @@ class DatedAlarmEditorTest {
     private fun millis(value: String, zone: ZoneId = seoul): Long =
         LocalDateTime.parse(value).atZone(zone).toInstant().toEpochMilli()
 
+    @Test
+    fun `날짜 고르기의 오늘은 알람의 시간대로 잰다`() {
+        // 서울은 10/27 01:00 인데 로스앤젤레스는 아직 10/26 09:00 — 로스앤젤레스 알람은 10/26 을 고를 수 있어야 한다(코덱스 #955).
+        val now = millis("2026-10-27T01:00")
+        assertEquals(LocalDate.of(2026, 10, 26), datedPickerToday("America/Los_Angeles", now))
+        assertEquals(LocalDate.of(2026, 10, 27), datedPickerToday("Asia/Seoul", now))
+    }
+
     private fun editor(hour: Int = 7, minute: Int = 30): AlarmEditorState =
         AlarmEditorState.from(null, defaultPlayMode = AlarmPlayModes.ALARM_ONLY).also {
             it.hour = hour

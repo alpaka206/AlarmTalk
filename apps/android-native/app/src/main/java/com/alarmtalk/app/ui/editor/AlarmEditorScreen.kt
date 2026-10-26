@@ -2167,6 +2167,7 @@ internal fun AlarmEditorScreen(
     if (datePickerOpen && pickingDate != null) {
         DatedAlarmDatePickerSheet(
             initialDate = pickingDate,
+            today = datedPickerToday(editor.targetTimezone),
             onCancel = { datePickerOpen = false },
             onConfirm = { date ->
                 editor.selectTargetDate(date)
