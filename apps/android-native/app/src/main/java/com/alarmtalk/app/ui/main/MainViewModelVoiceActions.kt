@@ -852,7 +852,10 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 }
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
-    if (!isPaidVoiceEntitledOptimistic() && !request.isFreeSystemPresetRequest()) {
+    // 무료가 앱에서 먼저 막는 것은 **등록(클론) 목소리**뿐이다. 기본 목소리 직접 입력은 무료도 월 3회 만든다
+    // (`docs/spec/voice-and-message.md` §8, 2026-10-26) — 예전에는 프리셋만 통과시켜 무료의 기본 목소리 직접 입력이 서버에 닿기도
+    // 전에 "유료 이용권" 문구로 막혔다. 횟수·광고 보상은 서버의 429 하나가 정한다.
+    if (!isPaidVoiceEntitledOptimistic() && !request.isFreeSystemPresetRequest() && !request.isFreeSystemManualRequest()) {
         throw UserFacingException(getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message))
     }
     val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
@@ -866,6 +869,13 @@ internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
         !translate &&
         language == "ko" &&
         text.isBlank()
+
+/** 무료도 보낼 수 있는 직접 입력 — 기본(시스템) 목소리로 친 문구 그대로(번역·생성 없음). iOS 는 앱에서 막지 않는다. */
+internal fun TtsGenerateRequest.isFreeSystemManualRequest(): Boolean =
+    isSystemVoiceId(voiceProfileId) &&
+        !random &&
+        !translate &&
+        text.isNotBlank()
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
     val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
