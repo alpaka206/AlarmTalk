@@ -98,11 +98,19 @@ export function tagBlocks(xml: string, tag: string): string[] {
  * 엔티티를 풀고 `cleanText` 로 정리한다. 결과는 **글자**다 — HTML 로 다시 해석하지 말 것.
  */
 export function htmlToText(html: string): string {
-  const withoutCode = html
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<(script|style|iframe|object|noscript)\b[\s\S]*?<\/\1\s*>/gi, ' ');
+  // ⚠ **한 번 걷고 끝내지 않는다**(CodeQL js/incomplete-multi-character-sanitization). `<scr<script></script>ipt>` 처럼
+  //   걷어 낸 자리에서 새 태그가 생길 수 있어, 더 걷을 것이 없을 때까지 되풀이한다.
+  let withoutCode = html;
+  for (let previous = ''; previous !== withoutCode; ) {
+    previous = withoutCode;
+    withoutCode = withoutCode
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+      .replace(/<(script|style|iframe|object|noscript)\b[\s\S]*?<\/\1\s*>/gi, ' ');
+  }
   const tagless = withoutCode.replace(/<\/?(p|div|br|li|tr|td|h[1-6]|table|ul|ol)\b[^>]*>/gi, ' ').replace(/<[^>]*>/g, '');
-  return cleanText(decodeEntities(tagless));
+  // 엔티티를 푼 뒤 남은 꺾쇠는 지운다 — `&lt;script&gt;` 가 풀려 태그처럼 보이는 글자가 되지 않게. 결과는 낭독·요약 글자라
+  // 꺾쇠가 필요 없다.
+  return cleanText(decodeEntities(tagless).replace(/[<>]/g, ' '));
 }
 
 /**

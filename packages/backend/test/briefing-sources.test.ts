@@ -286,6 +286,17 @@ describe('글자 도구', () => {
     expect(cut.length).toBeLessThanOrEqual(10);
     expect(cut).toBe(`${'가'.repeat(8)}…`);
   });
+
+  it('걷어 낸 자리에서 생긴 태그도 걷고, 풀린 엔티티의 꺾쇠는 글자로 남기지 않는다', () => {
+    const nested = htmlToText('앞<scr<script>x</script>ipt>alert(1)</script>뒤');
+    expect(nested).not.toMatch(/[<>]/);
+    expect(nested).not.toMatch(/<script/i);
+    expect(htmlToText('&lt;script&gt;alert(1)&lt;/script&gt; 안내')).not.toMatch(/[<>]/);
+    const comment = htmlToText('<p>정책</p><!-- <!-- x --> -->브리핑');
+    expect(comment).not.toMatch(/[<>]/);
+    expect(comment.startsWith('정책')).toBe(true);
+    expect(comment.endsWith('브리핑')).toBe(true);
+  });
 });
 
 describe('낭독 문단', () => {
