@@ -230,7 +230,13 @@ internal fun AlarmListScreen(
     // 섞여 있어, 그것만 받는 중인데 기본 목소리 알람에 '받는 중' 이 뜨고 진짜 날씨 경고까지 가렸다. 워커 진행이 바뀔 때마다
     // 캐시를 다시 센다(디스크를 읽으니 IO 에서).
     val statusContext = androidx.compose.ui.platform.LocalContext.current
+    // ⚠ **받기가 실제로 돌고 있을 때만**이다 — 재시도를 다 써서 멈췄는데 파일이 빠져 있다는 이유로 '받는 중' 을 띄우면 끝없이
+    //   받는 중이라 하고 날씨 경고까지 가린다. `voicePrefetchProgress` 는 워커가 RUNNING 이고 덜 받았을 때만 값이 있다.
     val defaultVoicesDownloading by androidx.compose.runtime.produceState(false, voicePrefetchProgress, authSession?.user?.id) {
+        if (voicePrefetchProgress == null) {
+            value = false
+            return@produceState
+        }
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
                 com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(statusContext, authSession?.user?.id)

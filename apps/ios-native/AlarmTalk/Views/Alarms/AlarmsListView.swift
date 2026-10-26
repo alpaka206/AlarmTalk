@@ -79,6 +79,12 @@ struct AlarmsListView: View {
         }
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
         .task(id: stockClipPrefetcher.state) {
+            // ⚠ **받기가 실제로 돌고 있을 때만**이다 — 세 번 다 실패해 멈췄는데(`.failed`) 파일이 빠져 있다는 이유로 '받는 중' 을
+            //   띄우면 끝없이 받는 중이라 하고 날씨 경고까지 가린다.
+            guard stockClipPrefetcher.isRunning else {
+                defaultVoicesDownloading = false
+                return
+            }
             let progress = await StockClipPrefetcher.progressOffMain()
             guard !Task.isCancelled else { return }
             defaultVoicesDownloading = progress.map { $0.total > 0 && $0.done < $0.total } ?? false
