@@ -28,7 +28,7 @@
 | W06 다음 알람 상태 | #950 | 로컬·CI | develop 만 | **양 OS 실기기 검증**(지시서 완료 기준) |
 | W07 보상형 광고 | #959(#141 승인 세션·SSV 대조, GMA·UMP 양 앱) | 로컬·CI. 실광고 시청 없음 | **노출 꺼짐**(오너 지시 — `ADMOB_REWARDED_ADS_ENABLED` 미설정) | AdMob 앱·단위 ID(워커 `ADMOB_REWARDED_AD_UNITS`, Android `alarmTalk{Dev,Prod}AdmobAppId`·`…RewardedAdUnitId`, iOS `ADMOB_APP_ID`·`ADMOB_REWARDED_AD_UNIT_ID`), SSV URL·app-ads.txt·GDPR 메시지, 스토어 데이터 공개, 처리방침 개정 |
 | W08 계측 | #958(#142 사용 기록 2판, 관리자 사용 지표), #962(응원 선택·아침 소식 사건), 날짜 알람 저장은 #955·팩 선택은 #960 이 심었다 | 로컬·CI | 2판 칸은 **처리방침 8판 동의자부터만 저장**(지금 7판 — 그래서 지금은 쌓이지 않는다) | 처리방침 8판. 체험 출처(`trial`)는 구독 행에 표식이 없어 아직 `paid` 로 섞인다. 고정한 응원 문구 id 는 칸이 없어 싣지 않는다(필요하면 서버 먼저 칸 추가) |
-| W09 응원 변주·기상 인사 | #961(#143) | 로컬·CI | develop 만. 스톡 클립 미게시 | 세 언어 문장 검수 → `cost:stock` → `preview:stock -- --category cheer_v2`(와 `wake`) → 청취 검수 → `publish:stock -- --env dev` → `--release` → prod |
+| W09 응원 변주·기상 인사 | #961(#143) | 로컬·CI | develop 만. 스톡 클립 미게시 | 세 언어 문장 검수 → `cost:stock` → `preview:stock -- --category cheer_v2`(와 `wake`) → 청취 검수 → 게시·공개(§4-1 의 명령 — 새 묶음은 `--category` 를 대야 올라간다) |
 | W10 날짜 지정 알람 | #955(#140, Room 30→31) | 로컬·CI | develop 만 | **실기기**: AlarmKit `.fixed` 가 앱 꺼짐·잠금에서 우는지, 안드로이드 Doze 발동, 시간대 변경 뒤 발사 시각 |
 | W11 녹음 품질 | #953 | 로컬·CI | develop 만 | VAD 실기기 |
 | W12 렌더 지문·예산 | #954(#139) | 로컬·CI. 합성 API 호출 없음 | develop 만. 예산 값 미설정 = 제한 없음 | 오너가 정할 값 넷: `TTS_DEV_MONTHLY_CHAR_BUDGET`·`TTS_RERENDER_BATCH_MAX_CHARS`·`TTS_RERENDER_CONCURRENCY`·`TTS_PROVIDER_REMAINING_ALERT_CHARS`. ElevenLabs 구독 응답 실측 |
@@ -88,7 +88,16 @@
 - [ ] **처리방침 8판** — 사용 기록 2판 칸, 광고 SDK(켤 때), 관심 기업 수집 여부. 서버 먼저(7·8 동시 수락) → 8판을 실은 앱.
 - [ ] **ASC 서버 알림 V2 URL** 두 개 등록 → Request a Test Notification 으로 수신 확인.
 - [ ] **응원·기상 인사 스톡**: 세 언어 문장 검수 → `cost:stock` → `preview:stock -- --category cheer_v2`(와 `wake`) → 청취 검수 →
-      `publish:stock -- --env dev` → `--release` → prod. 게시 전에는 새 응원이 앱에 나오지 않는다.
+      게시·공개를 환경마다 한다(`packages/backend` 에서 — R2·DB 가 환경별이라 **두 번**이다). 새 묶음은 기본 게시에서 빠지므로
+      `--category` 를 꼭 댄다. 공개(`--release`)는 묶음 이름이다(카테고리 `wake` → 묶음 `wake_v1`).
+      ```
+      npm run publish:stock -- --env dev --category cheer_v2,wake
+      npm run publish:stock -- --env dev --release cheer_v2 --dry-run   # 다 올라갔는지 본다
+      npm run publish:stock -- --env dev --release cheer_v2
+      npm run publish:stock -- --env dev --release wake_v1
+      # dev 앱으로 확인한 뒤 같은 넷을 --env prod 로
+      ```
+      공개 전에는 새 응원·기상 인사가 앱에 나오지 않는다.
 - [ ] **dev 합성 예산 값 넷** 정하기(§1 W12) — 안 정하면 제한 없음.
 - [ ] **main 릴리스** — §2 순서. 10/31 15:00Z ~ 11/04 창을 피한다.
 - [ ] **1.3 앱 빌드·심사·게재** → 게재 확인 뒤에만 `minSupported` 상향.
