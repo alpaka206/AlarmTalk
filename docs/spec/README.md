@@ -68,6 +68,7 @@
 | [error-codes.md](error-codes.md) | 에러 코드 — 목록은 하나, 코드는 바꾸지 않는다, 기록은 전부·경보는 골라서, 앱의 묶음 키(코드 + 호출 자리) |
 | [localization.md](localization.md) | 앱 화면 번역 — 같은 화면의 용어, 저장값과 표시 문구, 오류·언어 변경 |
 | [admin-console.md](admin-console.md) | 관리자 콘솔 — 사용 현황, 앱 빌드·접속 기록(동의 검사 앞, 90일), 알림 보내기(시험 발송 먼저, 걸음으로 나눠 보내기, 광고는 동의자·08~21시) |
+| [morning-briefing.md](morning-briefing.md) | 아침 소식 — 관심 기업(최대 3) 공시(OpenDART) + 정책브리핑 정책뉴스, 원문 링크·확인 시각, 15분 캐시, 실패는 '없음' 이 아니다(stale·unavailable·complete), 주가·투자 판단 없음, 이미지 재게시 없음 |
 
 ## 여기 넣지 않는 것
 

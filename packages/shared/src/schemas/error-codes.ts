@@ -273,6 +273,25 @@ export const ERROR_CODES = [
   'PERSO_FAILED',
   'PERSO_NOT_CONFIGURED',
   'VOICE_NOT_AVAILABLE',
+  // 아침 소식 (briefing.ts) — `docs/spec/morning-briefing.md` §5.
+  /** 기업 목록 캐시를 아직 받는 중이다(처음이거나 하루 넘게 비었다) — `Retry-After` 뒤에 다시 부른다. */
+  'BRIEFING_CORP_CODES_NOT_READY',
+  /** 고른 기업이 기업 목록 캐시에 없다(상장사만 담는다). */
+  'BRIEFING_CORP_NOT_FOUND',
+  'BRIEFING_INVALID_INTERESTS',
+  'BRIEFING_INVALID_QUERY',
+  /** 두 원천의 키가 다 없다 — 서버 설정 문제다. 지어낸 소식을 보여 주지 않는다. */
+  'BRIEFING_NOT_CONFIGURED',
+  // ↓ 응답 본문의 `errors[].code` 로만 나간다(`GET /briefing/today` 는 일부 실패에도 200 이다).
+  /** 원천이 키를 받지 않는다(OpenDART 010·011·012·901, data.go.kr 20·30·31·32·33). 우리 설정을 고쳐야 한다. */
+  'BRIEFING_SOURCE_KEY_INVALID',
+  'BRIEFING_SOURCE_FAILED',
+  /** 원천 점검 중(OpenDART 800). */
+  'BRIEFING_SOURCE_MAINTENANCE',
+  /** 그 원천의 키가 이 서버에 없다. */
+  'BRIEFING_SOURCE_NOT_CONFIGURED',
+  /** 원천의 요청 한도(OpenDART 020, data.go.kr 22). `retry_after_seconds` 동안 다시 묻지 않는다. */
+  'BRIEFING_SOURCE_RATE_LIMITED',
   // 공통·미들웨어 (index.ts, middleware/)
   // ⚠ 라우트 도메인에 속하지 않는 것들. 앱은 이 코드로 "다시 시도" 를 안내한다.
   'DB_INIT_FAILED',

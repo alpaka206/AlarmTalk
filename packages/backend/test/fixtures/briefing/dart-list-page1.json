@@ -1,0 +1,32 @@
+{
+  "status": "000",
+  "message": "정상",
+  "page_no": 1,
+  "page_count": 2,
+  "total_count": 4,
+  "total_page": 2,
+  "list": [
+    {
+      "corp_code": "00126380",
+      "corp_name": "삼성전자",
+      "stock_code": "005930",
+      "corp_cls": "Y",
+      "report_nm": "[기재정정]사업보고서 (2025.12)",
+      "rcept_no": "20261026000123",
+      "flr_nm": "삼성전자",
+      "rcept_dt": "20261026",
+      "rm": "유정"
+    },
+    {
+      "corp_code": "00126380",
+      "corp_name": "삼성전자",
+      "stock_code": "005930",
+      "corp_cls": "Y",
+      "report_nm": "주요사항보고서(자기주식취득결정)",
+      "rcept_no": "20261023000456",
+      "flr_nm": "삼성전자",
+      "rcept_dt": "20261023",
+      "rm": "유연"
+    }
+  ]
+}

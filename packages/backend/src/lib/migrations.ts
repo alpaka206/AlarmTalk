@@ -3346,6 +3346,63 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_apple_server_notifications_received ON apple_server_notifications (received_at)`,
     ],
   },
+  {
+    // **아침 소식**(관심 기업 공시 + 정책브리핑 정책뉴스, `docs/spec/morning-briefing.md`). 새 표만 만든다 — 읽는 코드는
+    // 같은 배포의 `routes/briefing.ts` 뿐이고, 표가 없는 창(배포 → 마이그레이션)에서는 그 라우트가 500 으로 끝난다
+    // (fail-closed — 쓰다 만 행이 없다).
+    //  - `briefing_corp_codes`: OpenDART 고유번호 **공용** 캐시(상장사만). 사람과 묶지 않는다. 하루 한 번 이하로 바꾼다.
+    //  - `briefing_interests`: 사람 × 관심 기업(최대 3 — 라우트가 통째 교체로 지킨다). **탈퇴 파기가 지운다.**
+    //  - `briefing_items`: 받아 둔 공시·정책뉴스(공용). `content_hash` 가 같으면 다시 쓰지 않는다. 30일 지나면 크론이 지운다.
+    //  - `briefing_fetch_state`: 원천·기업마다 마지막 성공·시도·오류, 요청 한도 대기(`retry_after`), 고유번호 받기 잠금.
+    id: 137,
+    name: 'morning-briefing',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS briefing_corp_codes (
+        corp_code TEXT PRIMARY KEY,
+        corp_name TEXT NOT NULL,
+        stock_code TEXT,
+        modify_date TEXT NOT NULL,
+        refreshed_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_briefing_corp_codes_stock ON briefing_corp_codes (stock_code)`,
+      `CREATE TABLE IF NOT EXISTS briefing_interests (
+        user_id TEXT NOT NULL,
+        corp_code TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (user_id, corp_code)
+      )`,
+      `CREATE TABLE IF NOT EXISTS briefing_items (
+        source_kind TEXT NOT NULL CHECK (source_kind IN ('opendart', 'policy_news')),
+        source_id TEXT NOT NULL,
+        corp_code TEXT,
+        title TEXT NOT NULL,
+        org_name TEXT,
+        summary TEXT NOT NULL DEFAULT '',
+        remarks TEXT NOT NULL DEFAULT '',
+        flags_json TEXT NOT NULL DEFAULT '{}',
+        published_date TEXT NOT NULL,
+        published_at TEXT,
+        source_url TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        PRIMARY KEY (source_kind, source_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_briefing_items_corp
+        ON briefing_items (source_kind, corp_code, published_date)`,
+      `CREATE INDEX IF NOT EXISTS idx_briefing_items_published
+        ON briefing_items (source_kind, published_date)`,
+      `CREATE TABLE IF NOT EXISTS briefing_fetch_state (
+        scope_key TEXT PRIMARY KEY,
+        last_success_at TEXT,
+        last_attempt_at TEXT,
+        last_error_code TEXT,
+        window_end TEXT,
+        complete INTEGER NOT NULL DEFAULT 0,
+        retry_after TEXT,
+        lock_until TEXT
+      )`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
