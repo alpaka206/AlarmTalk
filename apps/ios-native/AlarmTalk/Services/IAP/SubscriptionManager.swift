@@ -278,7 +278,9 @@ final class SubscriptionManager: ObservableObject {
             // 올라간다 — 서버가 대조할 값이 없으면 나중 계정이 구독을 가져간다.
             // 안드로이드는 `setObfuscatedAccountId(sha256(userId))` 로 처음부터 했다.
             // 애플은 해시가 아니라 **UUID 만** 받으므로 사용자 id 를 그대로 싣는다.
-            let accountToken = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+            // 구매를 시작한 계정 — 확인 기록도 이 계정의 것이다(아래 `recordPurchaseVerified`).
+            let purchaserID = authProvider()?.user.id
+            let accountToken = purchaserID.nilIfBlank.flatMap(UUID.init(uuidString:))
             // ⚠ **토큰을 못 만들면 결제를 시작하지 않는다**(코덱스 #730).
             //   `b05c6c19` 이전에 만들어진 구글 계정은 `users.id` 가 UUID 가 아니라 구글
             //   subject(숫자 문자열)라 위 변환이 실패한다. 그대로 진행하면 표식 없는
@@ -308,7 +310,7 @@ final class SubscriptionManager: ObservableObject {
             case .success(let verificationResult):
                 let transaction = try checkVerified(verificationResult)
                 let outcome = await syncWithBackend(transaction: transaction)
-                recordPurchaseVerified(transaction: transaction, outcome: outcome)
+                recordPurchaseVerified(transaction: transaction, outcome: outcome, purchaserID: purchaserID)
                 // 확정 여부와 무관하게 끝낸다 — 구독은 `currentEntitlements` 에 남아 다음 동기화가
                 // 따라잡는다. ⚠ 확정 전에는 끝내지 않던 선물(소모성) 갈래는 2026-10-14 에 없앴다
                 // (App Store 지침 3.1.1 두 번째 반려 — 되살리지 말 것, 할인·무료 이용은 스토어 오퍼 코드).
@@ -355,7 +357,10 @@ final class SubscriptionManager: ObservableObject {
 
     /// 사용자가 시작한 구매를 서버가 확인했는가(`store_purchase_verified` — `docs/spec/usage-events.md` §7.1).
     /// 체험과 결제는 **스토어가 말한 조건**(`store_offer`)으로 가른다 — 서버는 아직 체험 구간을 모른다(§7.2).
-    private func recordPurchaseVerified(transaction: Transaction, outcome: ConfirmOutcome) {
+    /// ⚠ **구매한 계정이 아직 로그인해 있을 때만** 적는다 — 확인을 기다리는 사이 다른 계정으로 바꿨으면 버린다. 기록기는 지금
+    /// 계정으로 올리므로 그대로 적으면 앞 계정의 구매가 뒤 계정의 기록·권한 출처로 남는다(코덱스 #958).
+    private func recordPurchaseVerified(transaction: Transaction, outcome: ConfirmOutcome, purchaserID: String?) {
+        guard let purchaserID, authProvider()?.user.id == purchaserID else { return }
         UsageEventQueue.shared.record(
             .storePurchaseVerified,
             props: UsageEventProps(
@@ -364,7 +369,7 @@ final class SubscriptionManager: ObservableObject {
                 productID: transaction.productID,
                 storeOffer: Self.storeOffer(paymentMode: transaction.offer?.paymentMode, hasOffer: transaction.offer != nil)
             ),
-            userID: authProvider()?.user.id
+            userID: purchaserID
         )
     }
 
