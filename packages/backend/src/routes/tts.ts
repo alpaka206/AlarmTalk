@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { stockContentInfo, stockThemeForCategory, type ErrorCode } from '@alarmtalk/shared';
+import { MANUAL_TTS_TEXT_MAX_LENGTH, stockContentInfo, stockThemeForCategory, type ErrorCode } from '@alarmtalk/shared';
 import { jsonError } from '../lib/api-error';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
@@ -459,7 +459,7 @@ tts.post('/generate', async (c) => {
   //   프리셋·초안 미리듣기는 지나게 둔다. 최종 안전망은 아래 합성 직전의
   //   `normalizeAlarmTextWithoutTags(...)  > 200` 하나다.
   const userTypedText = draftPreviewRequested || presetTextUsed ? '' : requestText;
-  if (userTypedText && userTypedText.length > 200) {
+  if (userTypedText && userTypedText.length > MANUAL_TTS_TEXT_MAX_LENGTH) {
     return c.json(
       { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
       400,
@@ -950,7 +950,7 @@ tts.post('/generate', async (c) => {
     //   프리셋 20개 중 12개가 낭독 기준으로도 200자를 넘는다(최장 283자). 여기서 막으면
     //   그 문구를 고른 알람이 **라이브 폴백 경로에서만 400** 이 나 원인을 찾기 어렵다.
     //   (평소에는 사전렌더 클립을 쓰므로 이 경로에 오지 않는다.)
-    if (!presetTextUsed && normalizeAlarmTextWithoutTags(synthesisText).length > 200) {
+    if (!presetTextUsed && normalizeAlarmTextWithoutTags(synthesisText).length > MANUAL_TTS_TEXT_MAX_LENGTH) {
       return c.json(
         { error: 'Prepared text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
         400,
@@ -1521,6 +1521,9 @@ tts.post('/generate', async (c) => {
             random_context: randomRequested ? randomContext : null,
             manual_quota: manualQuotaResult,
             charged_source: chargedSource,
+            // 기본 제공분에서 실제로 차감한 **원래 사용월**(KST) — 사용 기록 `generation_outcome` 의 `usage_month`
+            // (`docs/spec/usage-events.md` §7.2). 광고 보상·차감 없음은 null(기본분 달에서 빼지 않았다 — 그 갈래는 이 값을 채우지 않는다).
+            usage_month: manualQuotaMonth,
             preview_playback_token: activePreviewClaimToken,
             preview_playback_confirmed: false,
           },

@@ -118,6 +118,8 @@ internal fun AlarmListScreen(
     voiceRegistrationFailure: VoiceRegistrationFailure? = null,
     onVoiceRegistrationFailureShown: () -> Unit = {},
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
+    // 목소리 탭 '추가 팩' 섹션 — 목소리 패널에 그대로 넘긴다(`docs/spec/voice-packs.md` §7).
+    voicePacks: VoicePackPanelState = VoicePackPanelState(),
     planPrices: Map<String, String>,
     /** 플랜 key → 지금 받을 수 있는 무료 체험 기간(ISO 8601). 없으면 빈 표. */
     planTrials: Map<String, String> = emptyMap(),
@@ -156,6 +158,16 @@ internal fun AlarmListScreen(
 
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    // 결제 화면을 열었다(`paywall_viewed`, `docs/spec/usage-events.md` §7.1) — 이 탭에 들어온 순간 한 번.
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == NativeTab.Billing) {
+            com.alarmtalk.app.data.UsageSignals.record(
+                context,
+                com.alarmtalk.app.data.UsageEvents.PAYWALL_VIEWED,
+                props = com.alarmtalk.app.data.UsageEventProps(surface = "billing"),
+            )
+        }
+    }
 
     val homeGradient = homeGradientBrush()
     // 다중 선택 삭제 — 롱프레스로 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
@@ -295,6 +307,7 @@ internal fun AlarmListScreen(
                         voiceRegistrationFailure = voiceRegistrationFailure,
                         onVoiceRegistrationFailureShown = onVoiceRegistrationFailureShown,
                         onRegistrationWindowOpenChange = onRegistrationWindowOpenChange,
+                        voicePacks = voicePacks,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         voiceDraftQuota = voiceDraftQuota,
                         voicePrefetchProgress = voicePrefetchProgress,

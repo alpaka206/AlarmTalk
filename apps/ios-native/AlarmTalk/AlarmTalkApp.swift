@@ -311,6 +311,15 @@ struct AlarmTalkApp: App {
                     }
                     .task(id: auth.session?.user.id) {
                         stockClipPrefetcher.cancel()
+                        // 받은 추가 음성팩 목록도 계정 것이다 — 선다운로드보다 먼저 갈아 끼운다(그 회차의 팩 단계가 이 목록을 본다).
+                        // '받기' 는 이 프리페처 회차를 깨운다(`docs/spec/voice-packs.md` §7 — 새 프리페처를 만들지 않는다).
+                        VoicePackStore.shared.activate(userID: auth.session?.user.id)
+                        VoicePackStore.shared.wakePrefetch = {
+                            stockClipPrefetcher.start(
+                                session: auth.session,
+                                ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+                            )
+                        }
                         remoteSync.clearUserScopedRemoteState()
                         voiceStudio.clearUserScopedRemoteState(preservingManifestFor: auth.session?.user.id)
                         socialFeatures.restoreAccessSnapshot(session: auth.session)
@@ -562,6 +571,9 @@ struct AlarmTalkApp: App {
                     //   iOS 만 한 번이었다. 전부 멱등이라 여기서 또 돌아도 안전하다.
                     await rebindStockClipsIfNeeded()
                     guard auth.session != nil else { return }
+                    // 게시 기한이 지난 추가 음성팩은 네트워크 없이 받아 둔 기한으로 미나로 대체한다(`docs/spec/voice-packs.md` §5).
+                    // 예약은 `scheduleReconcileRevision` 태스크가 다시 건다.
+                    VoicePackStore.shared.retireExpired(alarmStore: alarmStore, voiceStudio: voiceStudio)
                     // ⚠ **보충은 재바인딩 뒤에 시작한다**(2026-09-29 효율 감사 M1 — iOS). 재바인딩은
                     //   매니페스트를 **강제로** 받아 공개하므로(의도), 그 뒤에 도는 선다운로드는
                     //   신선도 창(`StockClipPrefetcher.manifestFreshnessWindow`)으로 그 공개본을 쓴다.

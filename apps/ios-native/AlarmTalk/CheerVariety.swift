@@ -194,3 +194,22 @@ enum CheerVariety {
         return beforeMode != nextMode || (nextMode == .pinned && before.cheerPinnedContentId != afterPinned)
     }
 }
+
+// MARK: - 사용 기록(`content_selected`)
+
+extension CheerVariety {
+    /// 응원의 '다양하게 / 이 문구로 고정' 을 사용 기록 칸으로(`docs/spec/usage-events.md` §7.1). **저장에 성공한** 알람의
+    /// 선택이다 — 부르는 자리는 `AlarmEditorSheet.finishScheduling` 의 성공 끝(「직전 선택 유지」와 같은 시점) 한 곳뿐이다.
+    /// 안드로이드 `contentSelectionProps`(`data/UsageSignals.kt`) 짝.
+    ///
+    /// 응원 알람이 아니면 nil — 테마가 다르거나, 알람 전용(iOS 는 테마만 남긴다 — 안드로이드는 이때 모드를 저장하지 않는다)
+    /// 이거나, 모드 저장값이 없다.
+    /// ⚠ 고정한 문구 ID(`cheer_v2_05`)는 싣지 않는다 — 그 ID 를 담을 정해진 칸이 없고(`pack_id` 는 팩·테마·목소리 키다),
+    ///   칸을 새로 만들려면 서버를 먼저 올려야 한다(§7.2). 모드만 남긴다.
+    static func contentSelectionProps(for record: LocalAlarmRecord) -> UsageEventProps? {
+        guard record.bucketId == bucketID,
+              record.playModeEnum != .alarmOnly,
+              let mode = record.cheerMode else { return nil }
+        return UsageEventProps(contentMode: CheerMode.normalize(mode) == .pinned ? .fixed : .varied)
+    }
+}

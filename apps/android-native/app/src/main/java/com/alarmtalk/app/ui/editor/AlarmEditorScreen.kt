@@ -61,6 +61,8 @@ import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.DynamicPromptPreferenceStore
 import com.alarmtalk.app.data.DynamicPromptPreferences
 import com.alarmtalk.app.data.isSystemVoiceId
+import com.alarmtalk.app.data.isVoicePackVoiceId
+import com.alarmtalk.app.data.clipCacheKey
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
@@ -150,6 +152,31 @@ internal enum class SaveBlockReason {
      * 실패를 기다렸다 에러를 보여 주는 것보다, 누른 즉시 이유를 말하는 편이 낫다.
      */
     OFFLINE_NEW_MESSAGE,
+
+    /** 날짜 알람의 시각이 이미 지났다 — 누르는 순간 다시 잰다(`docs/spec/alarm-lifecycle.md` §4-3). */
+    DATED_TIME_PASSED,
+
+    /** 날짜 알람이 같은 시:분의 다른 알람과 겹친다 — 교체를 묻지 않고 다른 시각을 고르게 한다(§4-3). */
+    DATED_TIME_CONFLICT,
+}
+
+/**
+ * 날짜 알람만의 저장 사유 — 재생 방식과 무관하게 **누르는 순간** 본다(편집하는 사이 시각이 지날 수 있다).
+ * [otherAlarmTimes] 는 이 계정에 보이는 **다른** 알람들의 (시, 분)이다 — 저장소의 '한 시각에 알람 하나' 판정과
+ * 같은 대상. 날짜 알람이 아니면 null. 테스트에서 부를 수 있게 컴포저블 밖에 둔다(`AlarmEditorStateTest`).
+ */
+internal fun datedSaveBlockReason(
+    editor: AlarmEditorState,
+    otherAlarmTimes: Set<Pair<Int, Int>>,
+    nowMillis: Long = System.currentTimeMillis(),
+): SaveBlockReason? {
+    if (!editor.isDated) return null
+    val fireAt = editor.datedFireAtMillis()
+    return when {
+        fireAt == null || fireAt <= nowMillis -> SaveBlockReason.DATED_TIME_PASSED
+        (editor.hour to editor.minute) in otherAlarmTimes -> SaveBlockReason.DATED_TIME_CONFLICT
+        else -> null
+    }
 }
 
 /**
@@ -185,6 +212,8 @@ internal fun saveBlockAlertStrings(reason: SaveBlockReason): Pair<Int, Int> {
         SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_title
         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
         SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_title
+        SaveBlockReason.DATED_TIME_PASSED -> R.string.editor_block_dated_past_title
+        SaveBlockReason.DATED_TIME_CONFLICT -> R.string.editor_block_dated_conflict_title
     }
     val messageRes = when (reason) {
         SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_message
@@ -196,6 +225,8 @@ internal fun saveBlockAlertStrings(reason: SaveBlockReason): Pair<Int, Int> {
         SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_message
         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_message
         SaveBlockReason.MANUAL_TEXT_MISSING -> R.string.editor_block_manual_text_message
+        SaveBlockReason.DATED_TIME_PASSED -> R.string.editor_block_dated_past_message
+        SaveBlockReason.DATED_TIME_CONFLICT -> R.string.editor_block_dated_conflict_message
     }
     return titleRes to messageRes
 }
@@ -294,6 +325,11 @@ internal fun AlarmEditorScreen(
      * 저장 버튼이 살아 있어 두 번 저장되고, 완료 콜백이 백스택을 두 번 팝해 검은 화면이 된다.
      */
     saving: Boolean = false,
+    /**
+     * 이 계정에 보이는 **다른** 알람들의 (시, 분). 날짜 알람은 같은 시각의 알람을 교체하지 않으므로 저장을 누르는
+     * 순간 이걸로 막는다([datedSaveBlockReason]).
+     */
+    otherAlarmTimes: Set<Pair<Int, Int>> = emptySet(),
     onSave: (AlarmDraft) -> Unit,
 ) {
     // 시스템 스톡 보이스 도입으로 무료 플랜도 음성 모드를 쓸 수 있다 (스톡 보이스 + 프리셋 문구).
@@ -346,6 +382,10 @@ internal fun AlarmEditorScreen(
             ?: java.util.Locale.getDefault().language
         supportedAppVoiceLanguage(lang)
     }
+    // **고른 목소리의 클립 언어** — 기본 목소리는 앱 언어, 추가 팩은 그 팩의 언어 하나다(`docs/spec/voice-packs.md` §2).
+    // 기본 목소리에서는 [appVoiceLanguage] 와 언제나 같다. 팩에서 앱 언어로 거르면 팩 클립이 하나도 안 잡혀 테마를 못 고른다.
+    val fixedVoiceClipLanguage = com.alarmtalk.app.data.voicePackLanguageOf(stockClips, editor.voiceProfileId)
+        ?: appVoiceLanguage
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
     val dynamicPromptPreferenceStore = remember(appContext) { DynamicPromptPreferenceStore(appContext) }
@@ -368,6 +408,8 @@ internal fun AlarmEditorScreen(
     // 이건 안내가 아니라 **차단**이라 사라지는 스낵바도 맞지 않는다.
     // iOS 는 처음부터 `validationAlert` 알럿이었다 — 양쪽을 같은 동작으로 맞춘다.
     var blockAlert by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // 날짜 지정 알람의 날짜 고르기 시트(`docs/spec/alarm-editor.md` §2-1).
+    var datePickerOpen by remember { mutableStateOf(false) }
     var isRecording by remember { mutableStateOf(false) }
     // 음성 생성 구간(편집기 안에서 도는 부분). 저장 전체는 아래 [busy] 로 본다.
     var generating by remember { mutableStateOf(false) }
@@ -623,7 +665,8 @@ internal fun AlarmEditorScreen(
             }
         }
         clips.forEachIndexed { index, clip ->
-            val cacheKey = "stock_${clip.messageId}"
+            // 기본 목소리는 `stock_`, 추가 팩은 `pack_` 이다(`docs/spec/voice-packs.md` §7) — 한 함수가 고른다.
+            val cacheKey = clip.clipCacheKey()
             // ⚠ **캐시 확인은 IO 에서 한다**(2026-09-29). 이 함수는 테마를 누르는 순간 메인에서
             //   불린다 — 클립마다 파일을 뒤지면 그동안 화면이 멎는다.
             // 길이는 **대표(첫 클립)만** 잰다 — 편집기에 박히는 오디오는 대표 하나이고, 나머지는
@@ -730,15 +773,21 @@ internal fun AlarmEditorScreen(
         adRewardBusy = true
         scope.launch {
             try {
+                // 시청 시작(`reward_view_started`)은 광고가 **실제로 뜬 순간**에 적는다 — 동의·재고·표시 실패로 아무것도 못 본
+                // 시도를 시청으로 세지 않는다(코덱스 #958). 제안·대기·지급·사용이 같은 시도로 묶인다(`AdRewardAttempts`).
                 val flow = RewardedAdFlow(
                     client = sessions,
                     adUnit = RewardedAds.adUnitId,
                     load = { userId, customData -> RewardedAds.load(activity, userId, customData) },
-                    show = { ad -> RewardedAds.show(activity, ad) },
+                    show = { ad ->
+                        RewardedAds.show(activity, ad) { com.alarmtalk.app.data.AdRewardAttempts.viewStarted(context) }
+                    },
                     errorCode = ::apiErrorCode,
                 )
                 when (val result = flow.watch()) {
                     RewardedWatchResult.Earned -> {
+                        // 끝까지 봤다 — 서버 확인(SSV)을 기다린다. 적립은 서버만 한다.
+                        com.alarmtalk.app.data.AdRewardAttempts.pending(context)
                         var credited = false
                         for (attempt in 0 until AD_REWARD_POLL_ATTEMPTS) {
                             delay(AD_REWARD_POLL_INTERVAL_MS)
@@ -749,6 +798,9 @@ internal fun AlarmEditorScreen(
                                 break
                             }
                         }
+                        // 이 화면이 지켜보는 동안 서버가 적립을 확인했을 때만 '지급' 이다. 못 봤으면 대기로 남는다 —
+                        // 늦게 들어온 보상은 관리자 화면이 '30분 넘게 지급 없음' 으로 센다(지어내지 않는다).
+                        if (credited) com.alarmtalk.app.data.AdRewardAttempts.granted(context)
                         if (credited) {
                             selectManualRequest += 1
                             blockAlert = context.getString(R.string.editor_ad_reward_granted_title) to
@@ -819,6 +871,8 @@ internal fun AlarmEditorScreen(
 
     /** 저장이 막힌 이유를 알럿으로 말한다 — 저장 버튼과 저장 흐름이 같은 표를 쓴다([saveBlockAlertStrings]). */
     fun showSaveBlockAlert(reason: SaveBlockReason) {
+        // 요청 전에 막혔다(`alarm_save_blocked`) — 사유는 그 이름의 소문자 코드다.
+        com.alarmtalk.app.data.AlarmSaveAttempts.blocked(context, reason.name.lowercase())
         val (titleRes, messageRes) = saveBlockAlertStrings(reason)
         blockAlert = context.getString(titleRes) to context.getString(messageRes)
     }
@@ -829,10 +883,12 @@ internal fun AlarmEditorScreen(
         // 그 전에 일어나는 유료 호출이다. 결국 못 만들 거면 생성부터 하지 않는다.
         // 알람 권한 셋은 전부 필수다(CLAUDE.md 「알람 권한 3종은 필수」).
         if (!PermissionSnapshot.read(context).alarmReady) {
+            com.alarmtalk.app.data.AlarmSaveAttempts.blocked(context, "alarm_permission_missing")
             onMissingAlarmPermission()
             return
         }
         if (voicePlanLocked && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+            com.alarmtalk.app.data.AlarmSaveAttempts.blocked(context, "voice_plan_locked")
             showVoicePlanGate()
             return
         }
@@ -933,6 +989,12 @@ internal fun AlarmEditorScreen(
             openClipPreparation(profileId)
             return
         }
+        // 추가 팩 목소리로는 직접 입력을 만들 수 없다(`docs/spec/voice-packs.md` §1) — 테마를 고르지 않았으면 여기서 말한다.
+        // 서버는 그 목소리를 모르므로(404) 요청을 보내지 않는다.
+        if (isVoicePackVoiceId(profileId) && !editor.hasMessageKindChoice()) {
+            audioMessage = context.getString(R.string.voice_pack_manual_unavailable)
+            return
+        }
         // 문구가 글자까지 똑같으면 서버를 부르지 않고 전에 만든 오디오를 그대로 쓴다.
         // (대기 없음 + 직접 입력 월 한도 안 깎임 + 오프라인에서도 저장됨.)
         //
@@ -1024,6 +1086,12 @@ internal fun AlarmEditorScreen(
                 // 진행 안내는 저장 버튼의 스피너(EditorActionButtons)가 맡는다 — 방금 누른
                 // 자리에서 도는 게 화면 위쪽 카드에 뜬 '준비하는 중이에요' 한 줄보다 직관적이고,
                 // 이 자리에 안내를 넣으면 실패했을 때 그 자리에 들어올 에러 문구를 밀어낸다.
+                val manualRequestId = manualRequestIds.idFor(profileId, editor.activeVoiceLanguage(), text)
+                val generationAttemptId = com.alarmtalk.app.data.UsageEventProps.newAttemptId()
+                // 이 생성을 시작한 계정 — 응답을 기다리는 사이 계정이 바뀌어도 그 계정의 기록으로 남긴다(코덱스 #958).
+                val generationOwner = authSession?.user?.id
+                // 서버가 결과를 냈다고 적었는가 — 그 뒤(받은 소리를 폰에 두다가) 실패하면 생성 실패로 다시 적지 않는다(코덱스 #958).
+                var generationRecorded = false
                 runCatching {
                     val response = onGenerateTts(
                         TtsGenerateRequest(
@@ -1044,10 +1112,19 @@ internal fun AlarmEditorScreen(
                             random = false,
                             randomContext = null,
                             listenerTitle = listenerTitleForSave,
-                            requestId = manualRequestIds.idFor(profileId, editor.activeVoiceLanguage(), text),
+                            requestId = manualRequestId,
                         ),
                     )
                     manualRequestIds.completed()
+                    com.alarmtalk.app.data.recordManualGenerationResult(
+                        context = context,
+                        response = response,
+                        requestId = manualRequestId,
+                        attemptId = generationAttemptId,
+                        ownerUserId = generationOwner,
+                        charCount = text.length,
+                    )
+                    generationRecorded = true
                     val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
                     val cacheKey = AlarmAudioStore.ttsCacheKey(
                         profileId = profileId,
@@ -1102,6 +1179,25 @@ internal fun AlarmEditorScreen(
                 }.onFailure { error ->
                     AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
                     val ttsErrorCode = apiErrorCode(error)
+                    if (error !is kotlin.coroutines.cancellation.CancellationException && !generationRecorded) {
+                        // 새 제작 실패(`generation_outcome` failure) — 서버는 실패를 세지 않는다(환불). 코드는 서버 코드의 소문자.
+                        com.alarmtalk.app.data.UsageSignals.record(
+                            context,
+                            com.alarmtalk.app.data.UsageEvents.GENERATION_OUTCOME,
+                            voiceProfileId = profileId,
+                            attemptId = generationAttemptId,
+                            ownerUserId = generationOwner,
+                            props = com.alarmtalk.app.data.UsageEventProps(
+                                outcome = com.alarmtalk.app.data.UsageEventProps.OUTCOME_FAILURE,
+                                // 서버가 거절했을 때만 '세지 않음' 이다 — 연결이 끊겼으면 셌는지 모른다(비운다, 스펙 §7.2).
+                                chargedSource = com.alarmtalk.app.data.UsageEventProps.CHARGED_NONE
+                                    .takeIf { ttsErrorCode != null },
+                                requestId = manualRequestId,
+                                charCount = text.length,
+                                errorCode = com.alarmtalk.app.data.UsageEventProps.code(ttsErrorCode) ?: "unexpected",
+                            ),
+                        )
+                    }
                     // 무료가 기본분(3)도 보상도 다 쓴 자리 — 광고를 볼 수 있으면 광고 게이트를 연다(`docs/spec/ad-rewards.md` §1·§4).
                     // 예전에는 잠긴 '직접 입력' 행이 이 게이트를 열었다. 입력을 잠그지 않게 되면서 새로 만들어야 하는 이 순간으로
                     // 옮겼다. 광고를 못 보면(광고 단위가 없는 빌드·이번 달 상한) 아래 문구로 말한다.
@@ -1176,6 +1272,17 @@ internal fun AlarmEditorScreen(
                 )
                 audioMessage = context.getString(R.string.editor_existing_voice_cache_used)
                 editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
+                // 이미 만든 결과를 기기에서 다시 썼다(`manual_result_reused`, local) — 서버도 한도도 안 탄다. 원문 대신 길이만.
+                com.alarmtalk.app.data.UsageSignals.record(
+                    context,
+                    com.alarmtalk.app.data.UsageEvents.MANUAL_RESULT_REUSED,
+                    voiceProfileId = profileId,
+                    messageId = reusable.audio.messageId,
+                    props = com.alarmtalk.app.data.UsageEventProps(
+                        reuseLocation = com.alarmtalk.app.data.UsageEventProps.REUSE_LOCAL,
+                        charCount = text.length,
+                    ),
+                )
                 onSave(editor.toDraft())
             },
             onMissing = missing@{
@@ -1232,10 +1339,10 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    LaunchedEffect(appVoiceLanguage, editor.playMode, editor.voiceSource, editor.voiceRandomPrompt) {
+    LaunchedEffect(fixedVoiceClipLanguage, editor.playMode, editor.voiceSource, editor.voiceRandomPrompt) {
         if (editor.playMode != AlarmPlayModes.ALARM_ONLY && editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
-            if (editor.voiceLanguage != appVoiceLanguage) {
-                editor.voiceLanguage = appVoiceLanguage
+            if (editor.voiceLanguage != fixedVoiceClipLanguage) {
+                editor.voiceLanguage = fixedVoiceClipLanguage
                 editor.clearTtsMeta()
             }
         }
@@ -1264,7 +1371,7 @@ internal fun AlarmEditorScreen(
     // ⚠ **`editor.voiceRandomContext` 가 키에 있어야 한다**(2026-09-02). 문구 목록을 하나로
     //   합친 뒤로 스톡 클립 목소리도 다섯 종류를 고를 수 있는데, 고른 종류가 키에 없으면
     //   이 효과가 다시 돌지 않아 **방금 고른 운세가 붙지 않는다.**
-    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
+    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, fixedVoiceClipLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
         if (usesStockClips && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
@@ -1276,7 +1383,7 @@ internal fun AlarmEditorScreen(
                 val manualChosen = editor.hasTypedManualText()
                 if (manualChosen) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
-                if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
+                if (editor.voiceLanguage != fixedVoiceClipLanguage) editor.voiceLanguage = fixedVoiceClipLanguage
                 // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
                 // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
                 // 막기 위해, 허용 버킷으로 해석된 상태가 아니면 잔재를 먼저 비운다(Codex #599).
@@ -1286,7 +1393,7 @@ internal fun AlarmEditorScreen(
                 // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
                 val profileId = editor.voiceProfileId
                 if (!profileId.isNullOrBlank()) {
-                    val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage, expectedVariants)
+                    val buckets = freeBucketsFor(stockClips, profileId, fixedVoiceClipLanguage, expectedVariants)
                     // 새 알람은 마지막에 고른 테마를 이어받는다 — 이게 없으면 매번 FreeBucketOrder
                     // 첫 값(약)으로 돌아가, 날씨로 바꿔 저장해도 다음 알람이 다시 약이 된다.
                     // 기존 알람은 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). 날씨는 도시가
@@ -1541,7 +1648,7 @@ internal fun AlarmEditorScreen(
         editor.selectedBucket = null
         // 여기서는 기억하지 않는다 — 문구를 눌러만 보고 알람을 저장하지 않은 것까지 다음 알람의
         // 기본값이 되면 안 된다. 기록은 저장 성공 시(rememberMessageChoiceUsed) 한 곳에서만 한다.
-        editor.voiceLanguage = appVoiceLanguage
+        editor.voiceLanguage = fixedVoiceClipLanguage
         editor.voiceText = ""
         editor.voiceWeatherCountry = result.weatherCountry
         editor.voiceWeatherCity = result.weatherCity
@@ -1735,14 +1842,16 @@ internal fun AlarmEditorScreen(
                             minute = editor.minute,
                             repeatDaysMask = editor.repeatDaysMask,
                             holidayOff = editor.holidayOff,
-                            onToggleDay = { dayIndex ->
-                                val nextMask = editor.repeatDaysMask xor (1 shl dayIndex)
-                                editor.repeatDaysMask = nextMask
-                                if (nextMask == 0) editor.holidayOff = false
-                            },
+                            onToggleDay = { dayIndex -> editor.toggleRepeatDay(dayIndex) },
                             onHolidayOffChange = { enabled ->
                                 if (editor.repeatDaysMask != 0) editor.holidayOff = enabled
                             },
+                            targetDate = editor.targetDate,
+                            targetTimezone = editor.targetTimezone,
+                            onDatedChange = { on ->
+                                if (on) editor.enterDatedMode() else editor.exitDatedMode()
+                            },
+                            onPickTargetDate = { datePickerOpen = true },
                         )
                     }
                 }
@@ -1900,7 +2009,11 @@ internal fun AlarmEditorScreen(
                             // 그 함수는 `editorSaveBlockReason` 보다 **먼저** 선언돼 있어
                             // 지역 val 을 볼 수 없다(코틀린 지역 선언 순서).
                             onSave = {
-                                val reason = editorSaveBlockReason
+                                // 저장을 눌렀다(`alarm_save_attempt`) — 막히든 아니든 한 번. 결과는 같은 시도로 적힌다.
+                                com.alarmtalk.app.data.AlarmSaveAttempts.begin(context, alarm?.id)
+                                // 날짜 알람의 지난 시각·같은 시각은 재생 방식과 무관하게 먼저 본다(§4-3).
+                                val reason = datedSaveBlockReason(editor, otherAlarmTimes)
+                                    ?: editorSaveBlockReason
                                 if (reason == null) {
                                     saveEditor()
                                 } else {
@@ -1996,7 +2109,7 @@ internal fun AlarmEditorScreen(
                 //   기본 목소리는 서버에 구워 둔 카테고리만 나온다. 시딩이 끝나면 앱을
                 //   고치지 않아도 나타난다(`freeBucketsFor` 가 매니페스트와 교차한다).
                 availableContexts = if (usesStockClips) {
-                    freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage, expectedVariants)
+                    freeBucketsFor(stockClips, editor.voiceProfileId, fixedVoiceClipLanguage, expectedVariants)
                         .mapNotNull { randomPromptContextForBucket(it) }
                 } else {
                     // 기상 인사(`wake`)는 기본 목소리 전용 클립이다 — 클론의 같은 자리는 '기본 인사말'(preset)이다
@@ -2018,6 +2131,8 @@ internal fun AlarmEditorScreen(
                 // 입력·편집은 막지 않고, 새로 만들어야 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(스펙 voice-and-message
                 // §8, ad-rewards §1). 잠긴 행이 열던 광고 게이트는 그 429 자리로 옮겼다.
                 manualLocked = false,
+                // 추가 팩 목소리는 직접 입력을 쓸 수 없다 — 그 화자로 아무 문장이나 합성할 권한이 없다(`docs/spec/voice-packs.md` §1).
+                manualAvailable = !isVoicePackVoiceId(editor.voiceProfileId),
                 manualRewardCredits = AdRewardGate.credits(freeVoiceTier, manualQuota?.adReward),
                 selectManualRequest = selectManualRequest,
                 onSaveSettings = ::applyRandomPromptSettings,
@@ -2063,6 +2178,19 @@ internal fun AlarmEditorScreen(
         )
     }
 
+    val pickingDate = editor.targetDate
+    if (datePickerOpen && pickingDate != null) {
+        DatedAlarmDatePickerSheet(
+            initialDate = pickingDate,
+            today = datedPickerToday(editor.targetTimezone),
+            onCancel = { datePickerOpen = false },
+            onConfirm = { date ->
+                editor.selectTargetDate(date)
+                datePickerOpen = false
+            },
+        )
+    }
+
     if (voicePlanGateOpen) {
         // ⚠ **상태는 셋인데 분기는 둘이었다 — 그래서 유료 사용자가 '로그인이 필요해요' 를
         // 봤다**(2026-08-07 사용자 문의로 확인). `freeVoiceTier` 는 `로그인함 && !유료` 라,
@@ -2083,6 +2211,24 @@ internal fun AlarmEditorScreen(
         }
         // 새로 만들 자리가 없는 저장(429)이 연 무료 게이트는 **보상과 쓰는 범위를 먼저 말한다**(`ad-rewards.md` §3 「흐름」 1).
         val adOfferGate = gateReason == VoiceGateReason.PLAN_REQUIRED && manualGateFromLockedRow
+        // 사용 기록(`docs/spec/usage-events.md` §7.1) — 게이트가 **뜬 순간** 한 번. 무료 이용권 안내는 결제 화면의 입구다
+        // (`paywall_viewed`, surface `editor_gate`), 광고 보고 한 번 쓰기를 붙였으면 그 제안도(`reward_offer`).
+        val offeringRewardedAd = gateReason == VoiceGateReason.PLAN_REQUIRED &&
+            manualGateFromLockedRow &&
+            adRewardSessions != null &&
+            AdRewardGate.canOfferAd(freeVoiceTier, manualQuota?.adReward, RewardedAds.configured)
+        LaunchedEffect(gateReason) {
+            if (gateReason == VoiceGateReason.PLAN_REQUIRED) {
+                com.alarmtalk.app.data.UsageSignals.record(
+                    context,
+                    com.alarmtalk.app.data.UsageEvents.PAYWALL_VIEWED,
+                    props = com.alarmtalk.app.data.UsageEventProps(surface = "editor_gate"),
+                )
+            }
+        }
+        LaunchedEffect(offeringRewardedAd) {
+            if (offeringRewardedAd) com.alarmtalk.app.data.AdRewardAttempts.offered(context, surface = "editor_gate")
+        }
         PlanGateDialog(
             title = stringResource(
                 when {

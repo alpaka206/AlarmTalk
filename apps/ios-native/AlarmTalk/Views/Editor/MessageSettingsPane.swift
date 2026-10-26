@@ -46,6 +46,9 @@ struct MessageSettingsPane: View {
     /// 골랐다는 것은 이유가 되지 않는다. 유료면 기본 목소리로도 직접 입력을 쓸 수 있고
     /// 횟수만 차감된다(2026-08-11 확정).
     var manualLocked: Bool = false
+    /// '직접 입력' 을 그릴 것인가. 추가 음성팩 목소리면 false — 그 목소리로는 직접 입력을 만들 수 없다
+    /// (`docs/spec/voice-packs.md` §7). 잠금(`manualLocked`)과 다르다: 잠긴 항목은 남아 이유를 말하고, 이건 아예 없다.
+    var manualAvailable: Bool = true
 
     /// 잠긴 '직접 입력' 행을 눌렀을 때 — 호출부가 유료 안내로 보낸다.
     ///
@@ -142,7 +145,7 @@ struct MessageSettingsPane: View {
 
     private var allVisibleOptions: [(id: String, label: String)] {
         Self.options.filter {
-            $0.id == MessageSettingsResult.manualContext || availableContexts.contains($0.id)
+            ($0.id == MessageSettingsResult.manualContext && manualAvailable) || availableContexts.contains($0.id)
         }
     }
 

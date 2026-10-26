@@ -75,7 +75,7 @@ enum APIErrorMessages {
         case "VOICE_LOCKED_FREE_PLAN":
             return String(localized: "무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 구독하면 돌아와요.")
         case "FREE_PLAN_PRESET_ONLY", "BASIC_VOICE_PRESET_ONLY":
-            return String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.")
+            return String(localized: "기본 목소리로는 이 문구를 만들 수 없어요. 준비된 문구를 고르거나 직접 입력해 주세요.")
         case "MANUAL_TTS_QUOTA_EXCEEDED":
             return String(localized: "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요.")
         // 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3). 안드로이드 `ApiErrorMessages.kt` 와 같은 네 문장이다.
@@ -116,6 +116,10 @@ enum APIErrorMessages {
             return String(localized: "등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요.")
         case "VOICE_NOT_READY":
             return String(localized: "목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요.")
+        // 추가 음성팩 — 받을 수 없는 팩(비게시·권리 끝·지역·빌드)은 있다는 사실도 드러내지 않는다(`docs/spec/voice-packs.md` §3).
+        // 안드로이드 `ApiErrorMessages.kt` 의 같은 두 코드와 짝이다.
+        case "VOICE_PACK_NOT_FOUND", "VOICE_PACK_CLIP_NOT_FOUND":
+            return String(localized: "이 팩은 지금 받을 수 없어요.")
         // 500 — 제공자(ElevenLabs) 장애·네트워크·서버 오류를 다 받는 갈래다. 녹음 탓으로 말하지 않는다(말소리가 없는
         // 녹음은 `VOICE_CLONE_NO_SPEECH` 가 따로 말한다). 같은 녹음으로 다시 시도하면 되는 실패다.
         case "VOICE_CLONING_FAILED":

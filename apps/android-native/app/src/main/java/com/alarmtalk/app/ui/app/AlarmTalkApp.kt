@@ -97,6 +97,10 @@ internal fun AlarmTalkApp(
     val authSession = viewModel.authSession
     val authBusy = viewModel.authBusy
     val voiceProfiles = viewModel.voiceProfiles
+    // 받은 추가 팩 — 저장소(워커도 쓴다)가 바뀌거나 계정이 바뀌면 다시 읽는다(`docs/spec/voice-packs.md` §7).
+    val voicePackChanges by com.alarmtalk.app.data.VoicePackStore.changes.collectAsState()
+    val voicePackProgress by com.alarmtalk.app.data.VoicePackStore.progress.collectAsState()
+    LaunchedEffect(voicePackChanges, authSession?.user?.id) { viewModel.refreshHeldVoicePacks() }
     val pendingVoiceDraft = viewModel.pendingVoiceDraft
     val voiceProfileBusy = viewModel.voiceProfileBusy
     val billingBusy = viewModel.billingBusy
@@ -537,6 +541,8 @@ internal fun AlarmTalkApp(
         viewModel.preloadVoiceProfiles()
         viewModel.loadStockClips()
         viewModel.prefetchStockClips()
+        // 추가 팩 카탈로그 — 받은 팩의 게시 끝 기한을 적고 기한 지난 팩을 미나로 바꾼다(`docs/spec/voice-packs.md` §5).
+        viewModel.loadVoicePackCatalog()
         // 준비도(생성+다운로드)를 함께 센다 — 편집기 관문과 준비 화면이 이 값을 본다.
         // ⚠ **매번 다시 센다.** '한 번 받았다' 를 기록해 건너뛰면 캐시 삭제·기본 목소리
         // 추가로 비어도 알아채지 못한다(docs/spec/voice-and-message.md).
@@ -718,8 +724,8 @@ internal fun AlarmTalkApp(
                 viewModel.preloadVoiceProfiles()
                 // 유료 클론 확정 후 cron 이 세션 중 새로 만든 사전렌더 클립을 반영하려면 다시 본다.
                 // 신선도 창(45초) 안에 받은 게 있으면 그걸 쓴다 — 탭을 오갈 때마다 받지 않게
-                // (`StockClipManifestFlights`, 효율 감사 M1).
                 viewModel.loadStockClips(com.alarmtalk.app.ManifestNeed.RECENT)
+                viewModel.loadVoicePackCatalog()
             }
             // 알람 홈: 히어로가 구독 데이터를 쓰므로 함께 갱신한다.
             NativeTab.Alarms -> {
@@ -1098,6 +1104,21 @@ internal fun AlarmTalkApp(
         )
     }
 
+    viewModel.datedAlarmNotice?.let { notice ->
+        IosAlertDialog(
+            title = stringResource(notice.titleRes),
+            message = stringResource(notice.messageRes),
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.dated_alarm_notice_ok),
+                    emphasized = true,
+                    onClick = { viewModel.dismissDatedAlarmNotice() },
+                ),
+            ),
+            onDismiss = { viewModel.dismissDatedAlarmNotice() },
+        )
+    }
+
     // 하단바·FAB 등 앱 크롬 노출 조건(로그인·동의 완료, 업데이트 강제/삭제 대기 아님).
     // 온보딩 목소리 고르기 중에는 하단 탭·알람 추가 FAB 를 감춘다 — 선택을 끝내기 전에
     // 다른 화면으로 샐 수 있는 출구를 두지 않는다.
@@ -1397,6 +1418,16 @@ internal fun AlarmTalkApp(
                   kotlinx.coroutines.delay(2000)
               }
           }
+          // **받은 추가 팩은 편집기에 넘길 때만 합친다**(`docs/spec/voice-packs.md` §7). 다 받았고 게시 중인 팩 + 이 알람이 이미
+          // 쓰는 팩이다. 기본 목소리처럼(`isSystem`) 테마 클립으로 묶인다 — 뷰모델의 `stockClips` 에는 섞지 않는다(기본 4종
+          // 관문·선다운로드가 그 목록을 센다).
+          val editorPacks = com.alarmtalk.app.data.editorVoicePacks(viewModel.heldVoicePacks, alarm?.voiceProfileId)
+          val editorVoiceProfiles = if (editorPacks.isEmpty()) voiceProfiles else voiceProfiles + editorPacks.map { it.toVoiceProfile() }
+          val editorStockClips = if (editorPacks.isEmpty()) {
+              viewModel.stockClips
+          } else {
+              viewModel.stockClips + editorPacks.flatMap { it.toStockClips() }
+          }
           AlarmEditorScreen(
               contentPadding = padding,
               // ⚠ 편집기 유료 게이트의 코드 입력(`onRegisterCode`)은 2026-10-14 에 지웠다 — 되살리지 말 것
@@ -1405,12 +1436,12 @@ internal fun AlarmTalkApp(
               authSession = authSession,
               subscriptionResponse = subscriptionResponse,
               storeEntitledNow = viewModel.isStoreEntitledNow(),
-              voiceProfiles = voiceProfiles,
+              voiceProfiles = editorVoiceProfiles,
               settlingVoiceProfileIds = viewModel.settlingVoiceProfileIds,
               onVoiceUnavailable = { reason -> viewModel.message = reason },
               voiceProfileBusy = voiceProfileBusy,
               voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
-              stockClips = viewModel.stockClips,
+              stockClips = editorStockClips,
               expectedVariants = viewModel.expectedVariants,
               clipReadiness = viewModel.clipReadiness,
               onRetryClipRenders = viewModel::retryFailedClipRendersAsync,
@@ -1430,6 +1461,8 @@ internal fun AlarmTalkApp(
               lastMessageContext = lastMessageContext,
               lastFreeBucket = lastFreeBucket,
               lastManualText = lastManualText,
+              // 날짜 알람의 같은 시각 판정 — 이 계정에 보이는 다른 알람(`observeAlarms` 가 이미 소유자로 거른다).
+              otherAlarmTimes = alarms.filter { it.id != alarm?.id }.map { it.hour to it.minute }.toSet(),
               onCancel = ::goBackInApp,
               onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
               onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
@@ -1517,6 +1550,17 @@ internal fun AlarmTalkApp(
                           voiceRegistrationFailure = viewModel.voiceRegistrationFailure,
                           onVoiceRegistrationFailureShown = { viewModel.consumeVoiceRegistrationFailure() },
                           onRegistrationWindowOpenChange = { open -> viewModel.voiceRegistrationWindowChanged(open) },
+                          voicePacks = VoicePackPanelState(
+                              catalog = viewModel.voicePackCatalog,
+                              held = viewModel.heldVoicePacks,
+                              progress = voicePackProgress,
+                              catalogLoaded = viewModel.voicePackCatalogLoaded,
+                              catalogFailed = viewModel.voicePackCatalogFailed,
+                              onDownload = { packId -> viewModel.downloadVoicePack(packId) },
+                              onDelete = { packId -> viewModel.removeVoicePack(packId) },
+                              countAlarmsUsing = { voiceId -> viewModel.countAlarmsUsingVoicePack(voiceId) },
+                              ensureSample = { summary -> viewModel.ensureVoicePackSample(summary) },
+                          ),
                           lastUsedVoiceId = viewModel.lastUsedVoiceId,
                           // 워커(온보딩·앱 시작의 선다운로드)가 받는 중이면 그 진행을 먼저 보여 준다.
                           // '백그라운드에서 계속' 으로 받기 화면을 닫은 뒤 진행을 볼 곳이 여기다.

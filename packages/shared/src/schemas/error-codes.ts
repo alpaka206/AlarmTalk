@@ -145,6 +145,7 @@ export const ERROR_CODES = [
   'INVALID_MESSAGE_ID',
   'INVALID_REPEAT_DAYS',
   'INVALID_SNOOZE_MINUTES',
+  'INVALID_TARGET_DATE',
   'INVALID_TIME_FORMAT',
   'INVALID_TIME_VALUE',
   'INVALID_VIBRATION_PATTERN',
@@ -257,7 +258,16 @@ export const ERROR_CODES = [
   // 푸시 (push.ts)
   'INVALID_PLATFORM',
   'INVALID_PUSH_TOKEN',
+  // 추가 음성팩 (voice-packs.ts) — `docs/spec/voice-packs.md` §3. 받을 수 없는 팩(비게시·권리 끝·지역·빌드)은 있다는 사실도
+  // 드러내지 않고 이 코드로 답한다.
+  'VOICE_PACK_CLIP_NOT_FOUND',
+  'VOICE_PACK_NOT_FOUND',
   // 관리자 (admin.ts) — 콘솔 화면만 받는다. 앱은 이 코드를 보지 않는다(`docs/spec/admin-console.md`).
+  /** 음성팩 가져오기·권리·전이의 입력이 틀렸다(가져오기 스크립트가 받는다). */
+  'ADMIN_VOICE_PACK_INVALID',
+  /** draft 가 아니라 클립·공개 정보를 못 바꾸거나, 지금 상태에서 할 수 없는 전이다. */
+  'ADMIN_VOICE_PACK_LOCKED',
+  'ADMIN_VOICE_PACK_NOT_FOUND',
   'ADMIN_PUSH_COPY_INVALID',
   'ADMIN_PUSH_FAILED',
   'ADMIN_PUSH_JOB_NOT_FOUND',

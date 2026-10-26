@@ -414,6 +414,8 @@ internal fun VoiceProfileManagementPanel(
     onVoiceRegistrationFailureShown: () -> Unit = {},
     // 등록 창이 열리고 닫히는 것을 뷰모델에 알린다 — 닫힌 뒤에 온 실패는 스낵바로 가야 한다.
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
+    // 기본 목소리 아래 '추가 팩' 섹션(`docs/spec/voice-packs.md` §7).
+    voicePacks: VoicePackPanelState = VoicePackPanelState(),
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -727,18 +729,60 @@ internal fun VoiceProfileManagementPanel(
                     player.release()
                     return@runCatching
                 }
+                var sample: com.alarmtalk.app.data.SamplePlayback? = null
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
+                        // 끝까지 들었다(`sample_completed`). 멈추면 이 콜백이 오지 않는다.
+                        sample?.completed()
                         it.release()
                         if (mediaPlayer === it) mediaPlayer = null
                         if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
                     }
                     start()
                 }
+                sample = com.alarmtalk.app.data.SamplePlayback.start(context, voiceId, surface = "voices")
             }.onFailure { error ->
                 AlarmTalkLog.reportError(failureLog, error)
                 if (greetingPreviewRequestId == requestId) {
                     if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
+                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
+                }
+            }
+        }
+    }
+
+    // 추가 팩 미리듣기 샘플 — 인사말 미리듣기와 같은 플레이어·같은 '트는 중' 표시를 쓴다(겹쳐 울리지 않게).
+    // 받기 전에도 샘플 클립 하나만 받아 캐시한다(`MainViewModel.ensureVoicePackSample`).
+    fun playVoicePackSample(summary: com.alarmtalk.app.network.VoicePackSummary) {
+        if (playingGreetingVoiceId == summary.voiceId) {
+            stopMediaPreview()
+            return
+        }
+        val requestId = greetingPreviewRequestId + 1
+        greetingPreviewRequestId = requestId
+        scope.launch {
+            stopMediaPreview(invalidateGreetingPreview = false)
+            playingGreetingVoiceId = summary.voiceId
+            runCatching {
+                val cached = voicePacks.ensureSample(summary)
+                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
+                    ?: error("Failed to create voice pack sample player.")
+                if (greetingPreviewRequestId != requestId) {
+                    player.release()
+                    return@runCatching
+                }
+                mediaPlayer = player.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                        if (playingGreetingVoiceId == summary.voiceId) playingGreetingVoiceId = null
+                    }
+                    start()
+                }
+            }.onFailure { error ->
+                AlarmTalkLog.reportError("Failed to play voice pack sample", error)
+                if (greetingPreviewRequestId == requestId) {
+                    if (playingGreetingVoiceId == summary.voiceId) playingGreetingVoiceId = null
                     localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
                 }
             }
@@ -762,14 +806,17 @@ internal fun VoiceProfileManagementPanel(
                 return
             }
             playingGreetingVoiceId = profile.id
+            var sample: com.alarmtalk.app.data.SamplePlayback? = null
             mediaPlayer = player.apply {
                 setOnCompletionListener {
+                    sample?.completed()
                     it.release()
                     if (mediaPlayer === it) mediaPlayer = null
                     if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
                 }
                 start()
             }
+            sample = com.alarmtalk.app.data.SamplePlayback.start(context, profile.id, surface = "voices")
             return
         }
         playGreetingClip(profile.id, failureLog = "Failed to play greeting preview")
@@ -2186,6 +2233,20 @@ internal fun VoiceProfileManagementPanel(
             }
         }
         // 기본 목소리 받기 진행은 위 헤더 옆으로 옮겼다(2026-09-17).
+
+        // 추가 팩은 기본 목소리 **아래**다(`docs/spec/voice-packs.md` §7). 기본 4종 받기·관문과 섞지 않는다.
+        VoicePackSection(
+            catalog = voicePacks.catalog,
+            held = voicePacks.held,
+            progress = voicePacks.progress,
+            catalogLoaded = voicePacks.catalogLoaded,
+            catalogFailed = voicePacks.catalogFailed,
+            playingVoiceId = playingGreetingVoiceId,
+            onPlaySample = { summary -> playVoicePackSample(summary) },
+            onDownload = { packId -> voicePacks.onDownload(packId) },
+            onDelete = { packId -> voicePacks.onDelete(packId) },
+            countAlarmsUsing = { voiceId -> voicePacks.countAlarmsUsing(voiceId) },
+        )
     }
 
     // 이번에 등록할 목소리의 권리는 입구에서 확인한다. 법정 민감 동의는 기존 업로드 경로가 따로 받는다.

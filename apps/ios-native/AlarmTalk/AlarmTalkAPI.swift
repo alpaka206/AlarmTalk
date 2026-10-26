@@ -365,6 +365,14 @@ final class AlarmTalkAPI: @unchecked Sendable {
             let voice_profile_id: String?
             let message_id: String?
             let detail: String?
+            // 2판(`docs/spec/usage-events.md` §7.2). 옛 큐의 기록은 아래가 비어 1판으로 간다 — nil 은 키째 빠진다.
+            let schema_version: Int?
+            /// 1판 기록에는 싣지 않는다 — 서버가 요청 헤더로 채운다(같은 기기라 바뀌지 않는다).
+            let platform: String?
+            let app_version: String?
+            let feature_version: String?
+            let attempt_id: String?
+            let props: UsageEventProps?
         }
         struct Body: Encodable { let events: [Payload] }
         // 서버 스키마가 오프셋 있는 ISO-8601 을 요구한다(`z.string().datetime({ offset: true })`).
@@ -378,7 +386,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 alarm_id: event.alarmID,
                 voice_profile_id: event.voiceProfileID,
                 message_id: event.messageID,
-                detail: event.detail
+                detail: event.detail,
+                schema_version: event.schemaVersion,
+                platform: event.schemaVersion == nil ? nil : "ios",
+                app_version: event.appVersion,
+                feature_version: event.featureVersion,
+                attempt_id: event.attemptID,
+                props: event.props
             )
         }
         let _: EmptyResponse = try await request(
@@ -438,6 +452,30 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     func getTTSMessageAudio(id: String, token: String) async throws -> TtsMessageAudioResponse {
         try await request("tts/messages/\(id)/audio", token: token)
+    }
+
+    // MARK: 추가 음성팩(`docs/spec/voice-packs.md` §3)
+    //
+    // 받을 수 없는 팩(비게시·권리 끝·지역·빌드)은 404 `VOICE_PACK_NOT_FOUND` 다. 빌드는 공통 헤더(`X-App-Version`)로 간다.
+
+    /// 지금 받을 수 있는 팩 목록 + 게시가 끝난 팩의 기존 재생 기한.
+    func getVoicePacks(token: String) async throws -> VoicePackListResponse {
+        try await request("voice-packs", token: token)
+    }
+
+    /// 팩 상세(다운로드 상태를 셀 클립 목록).
+    func getVoicePack(packID: String, token: String) async throws -> VoicePackDetailResponse {
+        try await request("voice-packs/\(Self.pathSegment(packID))", token: token)
+    }
+
+    /// 팩 클립 하나의 오디오(base64 + 해시·크기).
+    func getVoicePackClipAudio(packID: String, clipID: String, token: String) async throws -> VoicePackAudioResponse {
+        try await request("voice-packs/\(Self.pathSegment(packID))/clips/\(Self.pathSegment(clipID))/audio", token: token)
+    }
+
+    /// 경로 한 칸 — 서버가 준 id 라도 슬래시·물음표가 경로를 바꾸지 못하게 인코딩한다.
+    private static func pathSegment(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_"))) ?? value
     }
 
     /// 사전렌더 테마(날씨)의 **어느 클립을 틀지**를 서버에 물어본다.

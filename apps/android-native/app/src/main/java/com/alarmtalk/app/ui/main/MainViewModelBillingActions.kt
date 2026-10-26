@@ -466,6 +466,16 @@ internal fun MainViewModel.confirmGooglePurchase(
                 android.util.Log.i("MainViewModel", "Dropping Play confirm result: account changed")
                 return@onSuccess
             }
+            recordStorePurchaseVerified(
+                origin = origin,
+                productId = productId,
+                outcome = if (response.success) {
+                    com.alarmtalk.app.data.UsageEventProps.OUTCOME_SUCCESS
+                } else {
+                    com.alarmtalk.app.data.UsageEventProps.OUTCOME_FAILURE
+                },
+                errorCode = null,
+            )
             if (response.success) {
                 if (showsResult) {
                     message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
@@ -477,6 +487,14 @@ internal fun MainViewModel.confirmGooglePurchase(
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to confirm Play purchase productId=$productId", error)
+            if (error !is kotlinx.coroutines.CancellationException && authSession?.user?.id == ownerUserId) {
+                recordStorePurchaseVerified(
+                    origin = origin,
+                    productId = productId,
+                    outcome = com.alarmtalk.app.data.UsageEventProps.OUTCOME_FAILURE,
+                    errorCode = com.alarmtalk.app.data.UsageEventProps.code(apiErrorCode(error)) ?: "unexpected",
+                )
+            }
             if (showsResult && authSession?.user?.id == ownerUserId) {
                 message = billingFailureMessage(
                     getApplication<android.app.Application>(),
@@ -487,6 +505,33 @@ internal fun MainViewModel.confirmGooglePurchase(
         }
         if (ownsBusy) billingBusy = false
     }
+}
+
+/**
+ * 스토어 구매를 서버가 확인했다(`store_purchase_verified`, `docs/spec/usage-events.md` §7.1). 사용자가 누른 구매·복원만
+ * 적는다 — 앱 시작마다 도는 자동 정합화([PurchaseConfirmOrigin.AutoReconcile])는 구매가 아니다. 조건(`store_offer`)은 이번에
+ * 연 결제 시트의 오퍼로 가르고, 복원은 모른다(`unknown`) — 지어내지 않는다.
+ */
+private fun MainViewModel.recordStorePurchaseVerified(
+    origin: PurchaseConfirmOrigin,
+    productId: String,
+    outcome: String,
+    errorCode: String?,
+) {
+    if (origin == PurchaseConfirmOrigin.AutoReconcile) return
+    val offer = playBilling.lastLaunchedOffer?.takeIf { origin == PurchaseConfirmOrigin.UserPurchase && it.first == productId }?.second
+        ?: com.alarmtalk.app.data.UsageEventProps.OFFER_UNKNOWN
+    com.alarmtalk.app.data.UsageSignals.record(
+        getApplication(),
+        com.alarmtalk.app.data.UsageEvents.STORE_PURCHASE_VERIFIED,
+        props = com.alarmtalk.app.data.UsageEventProps(
+            outcome = outcome,
+            productId = productId,
+            storeOffer = offer,
+            errorCode = errorCode,
+            surface = if (origin == PurchaseConfirmOrigin.UserRestore) "restore" else "purchase",
+        ),
+    )
 }
 
 // 서버가 스토어 구독을 직접 해지하지 못해 사용자를 스토어 구독 관리로 보내야 하는 에러 코드.

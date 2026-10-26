@@ -3481,6 +3481,14 @@ export const migrations: Migration[] = [
     ],
   },
   {
+    // **날짜 지정 알람(한 번)**(2026-10-26, `docs/spec/alarm-lifecycle.md` §4). 기기가 올린 알람 사본에 그 날짜
+    // (`YYYY-MM-DD`)를 적는다. 시간대는 이미 있는 `timezone` 칸에 사용자가 확인한 값이 실린다. NULL = 날짜 없는 알람
+    // (지금까지의 모든 행). 136~139 는 다른 작업이 쓰고 있어 건너뛴다 — 러너는 id 순서가 아니라 기록으로 판정한다.
+    id: 140,
+    name: 'alarm-target-date',
+    statements: [`ALTER TABLE alarms ADD COLUMN target_date TEXT`],
+  },
+  {
     // **광고 시청 승인 세션**(2026-10-26, `docs/spec/ad-rewards.md` §3). 광고를 띄우기 전에 서버가 승인 id 를 만들고 그 달의
     // 획득 자리 하나를 잡아 둔다 — 한 계정에 열린 세션(준비·시작)은 하나뿐이라 두 기기가 마지막 자리를 함께 쓰지 못한다
     // (부분 고유 인덱스). 앱은 그 id 를 SSV 의 `custom_data` 로 싣고, 콜백은 계정·광고 단위·승인 id 를 대조해 승인 하나에
@@ -3534,6 +3542,56 @@ export const migrations: Migration[] = [
     ],
   },
   {
+    // **사용 기록 2판의 정해진 칸**(2026-10-26, `docs/spec/usage-events.md` §7). 지시서 10장 — 준비시간·첫 경험·
+    // 저장·직접 입력·광고·결제 계측. 큰 JSON 을 `detail` 에 끼우지 않고 칸마다 열을 하나씩 둔다(`UsageEventPropsSchema`
+    // 와 한 쌍 — 칸을 늘리면 둘 다). 옛 행(1판)은 전부 NULL 이고 `schema_version` NULL 은 1판이다.
+    // `entitlement_source` 는 앱이 아니라 서버가 **받는 순간** 계정 상태로 찍는다(paid/trial/admin/promo/free).
+    // 문구 원문·관심기업·기사 원문을 담을 칸은 없다. 보관은 기존 행과 같이 1년(`USAGE_EVENT_RETENTION_DAYS`).
+    //
+    // ⚠ 배포 직후 창: 새 쓰기 경로(`routes/events.ts`)는 이 열을 **언제나** 넣으므로 열이 없으면 INSERT 가 던져
+    //   500 이다 — 앱은 큐를 지우지 않고 다시 보낸다(fail-closed, 잃는 것 없음). 옛 열만 넣는 갈래를 두지 않는다.
+    id: 142,
+    name: 'usage-events-v2-fields',
+    statements: [
+      `ALTER TABLE usage_events ADD COLUMN schema_version INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN platform TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN app_version TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN feature_version TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN attempt_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN entitlement_source TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN scope TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN language TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN revision TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN cache_state TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN target_count INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN completed_count INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN bytes INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN duration_ms INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN error_code TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN outcome TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN reason TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN method TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN step TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN pack_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN is_first INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN prepared INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN reuse_location TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN charged_source TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN usage_month TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN result_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN request_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN char_count INTEGER`,
+      `ALTER TABLE usage_events ADD COLUMN content_mode TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN surface TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN product_id TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN store_offer TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN from_plan TEXT`,
+      `ALTER TABLE usage_events ADD COLUMN to_plan TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_attempt ON usage_events (attempt_id) WHERE attempt_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_user_type_time ON usage_events (user_id, type, occurred_at)`,
+    ],
+  },
+  {
     // **응원 변주·짧은 기상 인사**(2026-10-26, v1.3 W09 — `docs/spec/voice-and-message.md` §5-4).
     //  - `stock_content_releases`: 환경마다 공개한 문구 묶음(`cheer_v2`·`wake_v1`). 게시 스크립트가 4목소리 × 3언어가 다
     //    올라간 것을 확인한 뒤 적고(`publish:stock -- --release`), 매니페스트·`expected_variants`·클론 보충이 한 요청에서
@@ -3553,6 +3611,70 @@ export const migrations: Migration[] = [
       `ALTER TABLE alarms ADD COLUMN cheer_pinned_content_id TEXT`,
       `ALTER TABLE voice_prerender_queue ADD COLUMN content_sets TEXT`,
       `ALTER TABLE voice_prerender_queue ADD COLUMN supplement INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    // **추가 음성팩**(2026-10-26, v1.3 W13 — `docs/spec/voice-packs.md`). 권리를 확인한 고정 클립 묶음이다.
+    //  - 팩 목소리는 `voice_profiles` 행이 **아니다** — `voice_id`(…-9100- 대역)를 따로 둔다. 그래야 직접 입력 합성·
+    //    목소리 등록·접근권 대조가 그 목소리를 모른다(스펙 §1).
+    //  - `rights_*`·`existing_*` 는 **내부 값**이다. 앱 API 는 `toPublicPack` 화이트리스트로만 내려간다. 계약서 원문은
+    //    올리지 않고 위치(`rights_evidence_ref`)만 적는다.
+    //  - 클립은 draft 에서만 바뀐다. 같은 자리를 바꾸면 새 id 가 나고 `content_revision` 이 오른다.
+    //  - `voice_pack_events` 는 감사 기록이다 — 사람을 가리키는 값이 없다(콘솔은 비밀번호 하나라 행위자를 가르지 못한다).
+    //  - 사람과 묶이는 표가 아니라 탈퇴 파기 대상이 아니다(받은 팩 목록은 기기에만 있다).
+    //  - **행을 심지 않는다** — 첫 팩은 외부 권리/음원 대기다(스펙 §0).
+    id: 144,
+    name: 'voice-packs',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS voice_packs (
+        id TEXT PRIMARY KEY,
+        voice_id TEXT NOT NULL UNIQUE,
+        content_revision INTEGER NOT NULL DEFAULT 1,
+        speaker_name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        usage_note TEXT NOT NULL DEFAULT '',
+        language TEXT NOT NULL CHECK (language IN ('ko', 'en', 'ja')),
+        min_android_build INTEGER NOT NULL DEFAULT 0,
+        min_ios_build INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'review', 'published', 'suspended')),
+        rights_status TEXT NOT NULL DEFAULT 'pending' CHECK (rights_status IN ('pending', 'verified', 'expired', 'revoked')),
+        rights_evidence_ref TEXT NOT NULL DEFAULT '',
+        rights_valid_from TEXT,
+        rights_valid_until TEXT,
+        rights_allowed_text TEXT NOT NULL DEFAULT '',
+        rights_allowed_regions TEXT NOT NULL DEFAULT '[]',
+        existing_file_terms TEXT NOT NULL DEFAULT 'stop_on_suspend'
+          CHECK (existing_file_terms IN ('stop_on_suspend', 'until_rights_end', 'until_date')),
+        existing_playback_until TEXT,
+        published_at TEXT,
+        suspended_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE TABLE IF NOT EXISTS voice_pack_clips (
+        id TEXT PRIMARY KEY,
+        pack_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        variant INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        audio_key TEXT NOT NULL,
+        audio_format TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (pack_id, category, variant)
+      )`,
+      `CREATE TABLE IF NOT EXISTS voice_pack_events (
+        id TEXT PRIMARY KEY,
+        pack_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        from_status TEXT,
+        to_status TEXT,
+        actor TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_pack_events_pack ON voice_pack_events (pack_id, created_at)`,
     ],
   },
 ];

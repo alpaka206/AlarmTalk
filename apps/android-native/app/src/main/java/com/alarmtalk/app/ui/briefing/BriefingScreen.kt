@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +45,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.core.AlarmTalkLog
+import com.alarmtalk.app.data.BriefingSignals
+import com.alarmtalk.app.data.BriefingSource
 import com.alarmtalk.app.network.BriefingCompany
 import com.alarmtalk.app.network.BriefingDisclosure
 import com.alarmtalk.app.network.BriefingInterest
@@ -76,7 +79,12 @@ internal object BriefingLinks {
 }
 
 /** 소식 음성 미리보기 한 건 — 무엇을 읽을지와 그 문장. */
-private data class BriefingSpeechTarget(val key: String, val text: String)
+private data class BriefingSpeechTarget(
+    val key: String,
+    val text: String,
+    /** 사용 기록의 원천 종류(`briefing_audio_requested`) — 문장·제목은 기록에 싣지 않는다. */
+    val source: BriefingSource,
+)
 
 /**
  * **아침 소식** — 더보기에서 들어가는 하위 화면(`docs/spec/morning-briefing.md` §8). 열 때와 '다시 확인' 을 누를 때만 묻는다.
@@ -203,7 +211,13 @@ internal fun BriefingScreen(
         }
     }
 
+    // 화면이 열렸다(`briefing_opened`) — 한 번 들어온 것을 회전·재생성마다 다시 세지 않는다.
+    var openRecorded by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
+        if (!openRecorded) {
+            openRecorded = true
+            BriefingSignals.opened(context)
+        }
         loadInterests()
         loadToday()
     }
@@ -270,9 +284,19 @@ internal fun BriefingScreen(
                         item(key = "company-${section.corpCode}") {
                             BriefingCompanyCard(
                                 section = section,
-                                onOpen = { url -> context.openWebUrl(url) },
+                                onOpen = { url ->
+                                    BriefingSignals.sourceOpened(
+                                        context,
+                                        BriefingSource.DISCLOSURE,
+                                    )
+                                    context.openWebUrl(url)
+                                },
                                 onSpeech = { item ->
-                                    speechTarget = BriefingSpeechTarget("d:${item.id}", BriefingSpeech.disclosure(item))
+                                    speechTarget = BriefingSpeechTarget(
+                                        "d:${item.id}",
+                                        BriefingSpeech.disclosure(item),
+                                        BriefingSource.DISCLOSURE,
+                                    )
                                 },
                             )
                         }
@@ -280,9 +304,19 @@ internal fun BriefingScreen(
                     item(key = "news") {
                         BriefingNewsCard(
                             section = current.news,
-                            onOpen = { url -> context.openWebUrl(url) },
+                            onOpen = { url ->
+                                BriefingSignals.sourceOpened(
+                                    context,
+                                    BriefingSource.POLICY_NEWS,
+                                )
+                                context.openWebUrl(url)
+                            },
                             onSpeech = { item ->
-                                speechTarget = BriefingSpeechTarget("n:${item.id}", BriefingSpeech.policyNews(item))
+                                speechTarget = BriefingSpeechTarget(
+                                    "n:${item.id}",
+                                    BriefingSpeech.policyNews(item),
+                                    BriefingSource.POLICY_NEWS,
+                                )
                             },
                         )
                     }
@@ -799,6 +833,7 @@ private fun BriefingSpeechDialog(
         if (generating) return
         generating = true
         message = null
+        BriefingSignals.audioRequested(context, target.source, chosen)
         scope.launch {
             try {
                 val response = onGenerateSpeech(chosen, target.text, requestIds.idFor(chosen, "ko", target.text))

@@ -678,6 +678,22 @@ class AlarmAudioStore(
         return ReusableTtsAudio(audio = audio, alias = alias)
     }
 
+    /**
+     * 캐시 키 여러 개를 **디렉터리 한 번**으로 지운다(메타 사이드카 포함). 추가 팩을 지울 때 쓴다 — 키마다
+     * [deleteCachedAudio] 를 부르면 그만큼 디렉터리를 다시 읽는다. 지운 파일 수를 돌려준다.
+     */
+    fun deleteCachedAudioKeys(cacheKeys: Set<String>): Int {
+        if (cacheKeys.isEmpty()) return 0
+        val safeKeys = cacheKeys.mapTo(HashSet()) { safeCacheKey(it) }
+        var deleted = 0
+        listAudioDirFiles(audioDir)?.forEach { file ->
+            if (file.isFile && file.extension != PARTIAL_EXTENSION && file.nameWithoutExtension in safeKeys && file.delete()) {
+                deleted += 1
+            }
+        }
+        return deleted
+    }
+
     fun deleteCachedAudio(cacheKey: String) {
         val safeKey = safeCacheKey(cacheKey)
         listAudioDirFiles(audioDir)?.forEach { file ->
@@ -753,6 +769,8 @@ class AlarmAudioStore(
             // 미리 받아둔 기본 목소리 클립은 어떤 알람도 참조하지 않으므로 in-use 집합에
             // 안 들어간다. 그대로 두면 TTL 이 지나 전부 삭제되고 오프라인 재생이 깨진다.
             if (file.nameWithoutExtension.startsWith(STOCK_CACHE_KEY_PREFIX)) return@forEach
+            // 받은 추가 팩 클립도 같다 — 팩을 지우거나 게시 끝 기한이 지나면 그 자리에서 지운다(`docs/spec/voice-packs.md` §7).
+            if (file.nameWithoutExtension.startsWith(VOICE_PACK_CACHE_KEY_PREFIX)) return@forEach
             if (file.nameWithoutExtension in inUseFileNames) return@forEach
             // 받은 알람이 받아 두었던 보낸 사람 음성은 더 생기지 않는다 — 어떤 알람도 물지 않으면
             // 나이와 무관하게 지운다(받은 알람은 업데이트하며 내 알람으로 바뀐다 — `AlarmDatabase` 27→28).
