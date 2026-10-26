@@ -713,4 +713,10 @@
     <string name="voice_registration_consent_title">声を登録する前に</string>
     <string name="voice_registration_consent_body">自分の声、または声の持ち主が音声の複製とアラームでの使用に明示的に同意した声のみ登録してください。声の持ち主の同意を確認しており、無断登録、権利侵害、なりすましによる責任は登録した本人にあることを確認します。</string>
     <string name="voice_registration_consent_agree">同意する</string>
+    <string name="next_alarm_status_title">次のアラーム</string>
+    <string name="next_alarm_status_title_voice">次のアラーム · %1$s</string>
+    <string name="next_alarm_status_ready">次のアラームと声の準備ができています。</string>
+    <string name="next_alarm_status_preparing">標準の声をダウンロードしています。その間もアラームは鳴ります。</string>
+    <string name="next_alarm_status_weather">天気をまだ更新できていません。接続されたら再取得します。</string>
+    <string name="next_alarm_status_voice_ending">登録した声は%1$sまで使えます。その後は標準の声で鳴ります。</string>
 </resources>

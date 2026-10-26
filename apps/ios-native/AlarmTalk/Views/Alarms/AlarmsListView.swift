@@ -11,6 +11,7 @@ struct AlarmsListView: View {
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
+    @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
     @State private var actionMessage: String?
 
     /// 다중 선택 삭제 — 길게 눌러 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
@@ -34,7 +35,21 @@ struct AlarmsListView: View {
                         // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
                         // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
                         // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
-                        if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
+                        // **다음 알람 상태 카드**(2026-10-26 v1.3 W06) — 켜진 알람이 있으면 지금 할 일 하나를 말한다(권한 부족 포함).
+                        // 켜진 알람이 없는데 권한이 모자라면 예전처럼 배너만 둔다.
+                        if let next = nextAlarmForHeadline {
+                            NextAlarmStatusCard(
+                                status: NextAlarmStatus.resolve(
+                                    alarm: next,
+                                    nextFire: next.nextFireDate,
+                                    alarmAuthorized: alarmKit.alarmAuthorized,
+                                    defaultVoiceDownloadInProgress: stockClipPrefetcher.isRunning,
+                                    limitedPlanEndsAt: auth.session?.user.personalPromo?.endsAtDate
+                                ),
+                                voiceName: voiceName(for: next),
+                                onRequestPermission: { Task { await alarmKit.requestAuthorization() } }
+                            )
+                        } else if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
                             alarmPermissionBanner
                         }
                         // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태

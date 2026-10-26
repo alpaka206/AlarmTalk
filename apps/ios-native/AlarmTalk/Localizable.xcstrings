@@ -12503,6 +12503,144 @@
         }
       }
     },
+    "다음 알람과 목소리가 준비됐어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your next alarm and its voice are ready."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のアラームと声の準備ができています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 알람과 목소리가 준비됐어요."
+          }
+        }
+      }
+    },
+    "기본 목소리를 받고 있어요. 받는 동안에도 알람은 울려요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading the default voices. Your alarm still rings meanwhile."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標準の声をダウンロードしています。その間もアラームは鳴ります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기본 목소리를 받고 있어요. 받는 동안에도 알람은 울려요."
+          }
+        }
+      }
+    },
+    "날씨를 아직 갱신하지 못했어요. 연결되면 다시 받아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't update the weather yet. It will retry when you're online."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気をまだ更新できていません。接続されたら再取得します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날씨를 아직 갱신하지 못했어요. 연결되면 다시 받아요."
+          }
+        }
+      }
+    },
+    "등록한 목소리는 %@에 이용이 끝나요. 그 뒤에는 기본 목소리로 울려요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your registered voice is available until %@. After that, the alarm uses a default voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録した声は%@まで使えます。その後は標準の声で鳴ります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "등록한 목소리는 %@에 이용이 끝나요. 그 뒤에는 기본 목소리로 울려요."
+          }
+        }
+      }
+    },
+    "다음 알람 · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next alarm · %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のアラーム · %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 알람 · %@"
+          }
+        }
+      }
+    },
+    "다음 알람" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next alarm"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のアラーム"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 알람"
+          }
+        }
+      }
+    },
     "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
