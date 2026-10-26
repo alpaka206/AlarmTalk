@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import com.alarmtalk.app.network.StockClip
+import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.sync.PrefetchTarget
 import com.alarmtalk.app.sync.StockClipPrefetchPriority
 import org.junit.Assert.assertEquals
@@ -82,5 +83,24 @@ class StockClipPrefetchPriorityTest {
         assertFalse(systemVoiceStillDownloading("70000000-0000-4000-9000-00000000000c", progress))
         // 내 목소리는 이 판정의 대상이 아니다(ClipGate 가 본다).
         assertFalse(systemVoiceStillDownloading("clone-1", mapOf("clone-1" to (0 to 5))))
+    }
+
+    @Test
+    fun 무료면_관문도_편집기처럼_클론을_거르고_기본_목소리를_본다() {
+        // 코덱스 #952 — 관문이 무료가 된 사용자의 클론을 직전 선택으로 보고 통과시키면, 편집기는 그 클론을 걸러 받는 중인 기본
+        // 목소리로 연다. 관문은 편집기와 같은 목록(`editorVisibleVoiceProfiles`)에서 고른다.
+        val system = VoiceProfile(id = "70000000-0000-4000-9000-00000000000a", name = "미나", status = "ready", isSystem = true)
+        val clone = VoiceProfile(id = "clone-1", name = "엄마", status = "ready")
+        fun initial(free: Boolean): String? {
+            val visible = editorVisibleVoiceProfiles(listOf(clone, system), free)
+            return preferredInitialVoiceProfileId(
+                lastUsedVoiceId = "clone-1",
+                ownVoiceIds = visible.filter { it.isSystem != true }.map { it.id },
+                systemVoiceIds = visible.filter { it.isSystem == true }.map { it.id },
+                profileLoadFinished = true,
+            )
+        }
+        assertEquals(system.id, initial(free = true))
+        assertEquals("clone-1", initial(free = false))
     }
 }

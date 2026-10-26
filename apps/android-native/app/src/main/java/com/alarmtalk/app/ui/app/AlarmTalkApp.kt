@@ -878,7 +878,12 @@ internal fun AlarmTalkApp(
 
     /** 새 알람의 편집기가 처음 고를 목소리 — 편집기의 자동 선택과 같은 규칙(`preferredInitialVoiceProfileId`). */
     fun initialVoiceForNewAlarm(): String? {
-        val selectable = voiceProfiles.filter { (it.status == null || it.status == "ready") && it.id !in viewModel.settlingVoiceProfileIds }
+        // 편집기와 같은 목록에서 고른다 — 무료면 클론을 거르고(`editorVisibleVoiceProfiles`), 정리 중·준비 안 된 것도 뺀다.
+        val visible = editorVisibleVoiceProfiles(
+            voiceProfiles,
+            editorFreeVoiceTier(authSession, subscriptionResponse, viewModel.isStoreEntitledNow()),
+        )
+        val selectable = visible.filter { (it.status == null || it.status == "ready") && it.id !in viewModel.settlingVoiceProfileIds }
         return preferredInitialVoiceProfileId(
             lastUsedVoiceId = viewModel.lastUsedVoiceId,
             ownVoiceIds = selectable.filter { it.isSystem != true }.map { it.id },

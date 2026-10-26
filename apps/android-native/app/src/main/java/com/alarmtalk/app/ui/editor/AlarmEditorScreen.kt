@@ -297,23 +297,11 @@ internal fun AlarmEditorScreen(
     // 2026-08-31: 손으로 쓴 폴백을 **유일 판정기**로 옮겼다(`resolvePaidVoiceAccess`).
     // 표시·저장 게이트라 **모르면 잠그지 않는다** — 잘못 잠그면 산 기능을 못 쓰고,
     // 잘못 열어 두면 다음 동기화에서 정리된다.
-    val freeVoiceTier = authSession != null &&
-        !resolvePaidVoiceAccess(
-            subscriptionResponse = subscriptionResponse,
-            userPlan = authSession.user.plan,
-            storeEntitled = storeEntitledNow,
-            nowMillis = System.currentTimeMillis(),
-            // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
-            userPlanPromo = authSession.planPromoStamp(),
-        ).isEntitledOptimistic()
+    val freeVoiceTier = editorFreeVoiceTier(authSession, subscriptionResponse, storeEntitledNow)
     // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
     // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능
     // 목록이 모두 이 걸러진 목록을 참조한다.
-    val visibleVoiceProfiles = if (freeVoiceTier) {
-        voiceProfiles.filter { it.isSystem == true }
-    } else {
-        voiceProfiles
-    }
+    val visibleVoiceProfiles = editorVisibleVoiceProfiles(voiceProfiles, freeVoiceTier)
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.VOICE_ONLY
     // 새 알람은 마지막에 고른 문구 종류를 기본값으로 이어받는다(한 번도 고른 적 없으면 목록에
     // 노출하지 않는 '기본 인사말'=preset 으로 시작).
@@ -2120,3 +2108,26 @@ private enum class VoiceGateReason {
      */
     SYSTEM_VOICE_LIMIT,
 }
+
+/**
+ * 편집기의 **무료 등급** 판정 — 알람 설정 관문(`AlarmTalkApp.initialVoiceForNewAlarm`)도 이걸 불러 편집기와 같은 목록을 본다
+ * (코덱스 #952 — 관문이 무료가 된 사용자의 클론을 보고 통과시키면, 편집기는 그 클론을 걸러 받는 중인 기본 목소리로 연다).
+ * 표시·저장 게이트라 **모르면 잠그지 않는다** — 판정기는 `resolvePaidVoiceAccess` 하나다.
+ */
+internal fun editorFreeVoiceTier(
+    authSession: AuthSession?,
+    subscriptionResponse: BillingSubscriptionResponse?,
+    storeEntitledNow: Boolean,
+): Boolean = authSession != null &&
+    !resolvePaidVoiceAccess(
+        subscriptionResponse = subscriptionResponse,
+        userPlan = authSession.user.plan,
+        storeEntitled = storeEntitledNow,
+        nowMillis = System.currentTimeMillis(),
+        // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
+        userPlanPromo = authSession.planPromoStamp(),
+    ).isEntitledOptimistic()
+
+/** 편집기가 보여 주고 고를 수 있는 목소리 — 무료면 기본 목소리만. */
+internal fun editorVisibleVoiceProfiles(voiceProfiles: List<VoiceProfile>, freeVoiceTier: Boolean): List<VoiceProfile> =
+    if (freeVoiceTier) voiceProfiles.filter { it.isSystem == true } else voiceProfiles
