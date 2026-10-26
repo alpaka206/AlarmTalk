@@ -1316,6 +1316,23 @@
         }
       }
     },
+    "기본 목소리로 직접 입력 월 3회" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type it yourself: 3 a month (default voices)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分で入力 月3回(基本の声)"
+          }
+        }
+      }
+    },
     "기본 목소리가 바뀌어서 알람에 쓸 음성을 다시 받는 중이에요. 다 받아야 알람이 새 목소리로 울려요.\n\n네트워크가 불안정하면 멈출 수 있어요. 그럴 때는 아래 버튼을 눌러 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1333,42 +1350,42 @@
         }
       }
     },
-    "기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요." : {
+    "기본 목소리로 바꾸면 지금 입력한 문구가 지워져요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Basic voices only speak ready-made lines, so the message you typed will be removed."
+            "value" : "Switching to a default voice clears the message you typed."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "基本の声は用意された文だけを話すので、直接入力した文はなくなります。"
+            "value" : "基本の声に変えると、いま入力した文は消えます。"
           }
         }
       }
     },
-    "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요." : {
+    "기본 목소리로는 이 문구를 만들 수 없어요. 준비된 문구를 고르거나 직접 입력해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type."
+            "value" : "This message can't be made with a default voice. Pick a prepared message or type your own."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "基本の声は用意された文だけを話せます。自由入力の文で起こすには、自分の声を選んでください。"
+            "value" : "基本の声ではこの文を作成できません。用意された文を選ぶか、自分で入力してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
+            "value" : "기본 목소리로는 이 문구를 만들 수 없어요. 준비된 문구를 고르거나 직접 입력해 주세요."
           }
         }
       }
@@ -5702,19 +5719,36 @@
         }
       }
     },
-    "원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요." : {
+    "직접 입력 월 30회(등록한 목소리 포함)" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No file of the voice you want? Play a video and record that."
+            "value" : "Type it yourself: 30 a month (incl. your registered voice)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使いたい声の音源がなければ、動画を流して録音しても大丈夫です。"
+            "value" : "自分で入力 月30回(登録した声も)"
+          }
+        }
+      }
+    },
+    "허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Have permission but no audio file? Play a video of them and record that."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "許可を得た声で音源がなければ、動画を流して録音しても大丈夫です。"
           }
         }
       }
@@ -7442,6 +7476,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "地域"
+          }
+        }
+      }
+    },
+    "목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a region from the list. We don't use location permission."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リストから地域を選んでください。位置情報の権限は使いません。"
           }
         }
       }

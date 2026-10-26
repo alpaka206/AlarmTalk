@@ -440,7 +440,7 @@ struct VoiceCloneUploadFlow: View {
             rerecordReasonLine
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(localized: "너무 짧으면 목소리가 다르게 나올 수 있어요."))
-                Text(String(localized: "원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요."))
+                Text(String(localized: "허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요."))
             }
             .font(theme.typography.bodySmall)
             .foregroundStyle(theme.palette.onSurfaceVariant)

@@ -32,8 +32,8 @@ struct WeatherRegionPickerSheet: View {
     @State private var country: WeatherCountry
     /// 나라 세그먼트의 실제 높이 — 목록 높이 상한에서 뺀다(`SheetScrollingContent.reservedHeight`).
     @State private var countryBarHeight: CGFloat = 0
-    /// 옛 값 안내 줄의 실제 높이 — 같은 이유로 뺀다.
-    @State private var legacyNoteHeight: CGFloat = 0
+    /// 제목 아래 안내 줄(옛 값 안내 또는 고르는 법)의 실제 높이 — 같은 이유로 뺀다.
+    @State private var noteHeight: CGFloat = 0
     /// 목록 아래 날씨 출처 줄의 실제 높이 — 같은 이유로 뺀다. Dynamic Type 으로 줄 수가 바뀌어도 실측이라 맞는다.
     @State private var attributionHeight: CGFloat = 0
 
@@ -53,13 +53,23 @@ struct WeatherRegionPickerSheet: View {
     /// 목록 아래 날씨 출처 줄을 그리는가 — 서버가 지금 쓰는 원천을 말할 때만(`WeatherAttribution.showsLine`).
     private var showsAttribution: Bool { WeatherAttribution.showsLine(versionGate.weatherAttribution) }
 
-    /// 목록 높이 상한에서 뺄 몫 — 나라 세그먼트(+ 그 아래 간격), 옛 값 안내 줄, 출처 줄(+ 그 위 간격).
+    /// 제목 아래 안내 줄 — 되짚지 못한 옛 값이면 "목록에 없어요", 아니면 고르는 법과 위치 권한을 쓰지 않는다는
+    /// 사실(지시서 v1.3 8.1). 안드로이드 `WeatherLocationDialog` 의 부제(`region_picker_legacy_value_hint` /
+    /// `region_picker_hint`)와 같다. 줄은 언제나 있다 — 그래서 높이도 언제나 뺀다.
+    private var noteText: String {
+        if let legacyLabel {
+            return String(localized: "‘\(legacyLabel)’은(는) 목록에 없어요. 다시 골라 주세요.")
+        }
+        return String(localized: "목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요.")
+    }
+
+    /// 목록 높이 상한에서 뺄 몫 — 나라 세그먼트(+ 그 아래 간격), 안내 줄, 출처 줄(+ 그 위 간격).
     /// ⚠ 출처 줄은 **그릴 때만** 뺀다. 안 그리는데 빼면 목록이 그만큼 짧아지고, 그리는데 안 빼면 시트가 화면을
     /// 꽉 채워 스크림이 사라진다. 판정은 높이 값이 아니라 `showsAttribution` 이다 — 한 번 그렸다 숨기면
     /// `attributionHeight` 에는 옛 실측이 남는다.
     private var reservedListHeight: CGFloat {
         var reserved = countryBarHeight + BottomSheetTitle.titleToContentSpacing
-        if legacyLabel != nil { reserved += legacyNoteHeight + 3 }
+        reserved += noteHeight + 3
         if showsAttribution { reserved += attributionHeight + BottomSheetTitle.titleToContentSpacing }
         return reserved
     }
@@ -68,16 +78,15 @@ struct WeatherRegionPickerSheet: View {
         VStack(alignment: .leading, spacing: BottomSheetTitle.titleToContentSpacing) {
             VStack(alignment: .leading, spacing: 3) {
                 BottomSheetTitle(text: String(localized: "지역"))
-                // 목록에 없는 것을 고른 채로 둘 수는 없으므로 체크 표시는 없다 — 대신 무엇이 적혀
-                // 있는지 말한다(안드로이드 `WakerSelectionSheet` 의 부제 자리).
-                if let legacyLabel {
-                    Text(String(localized: "‘\(legacyLabel)’은(는) 목록에 없어요. 다시 골라 주세요."))
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, BottomSheetTitle.horizontalPadding)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { legacyNoteHeight = $0 }
-                }
+                // 옛 값이면 목록에 없는 것을 고른 채로 둘 수는 없으므로 체크 표시는 없다 — 대신 무엇이 적혀
+                // 있는지 말한다(안드로이드 `WakerSelectionSheet` 의 부제 자리). 아니면 고르는 법을 말한다(`noteText`).
+                Text(noteText)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, BottomSheetTitle.horizontalPadding)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noteHeight = $0 }
             }
 
             // 나라는 시스템 세그먼트다 — 셋뿐이고, 목록 위에서 한 번에 보여야 한다.

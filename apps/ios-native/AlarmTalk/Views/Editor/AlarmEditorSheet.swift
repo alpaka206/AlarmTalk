@@ -566,7 +566,7 @@ struct AlarmEditorSheet: View {
             }
             Button(String(localized: "닫기"), role: .cancel) { pendingVoiceSwitch = nil }
         } message: {
-            Text(String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요."))
+            Text(String(localized: "기본 목소리로 바꾸면 지금 입력한 문구가 지워져요."))
         }
         // 플랜이 시트 오픈 후 비동기로 free 로 확정되는 경우(socialFeatures.subscription
         // 가 늦게 채워질 때) freeVoiceTier 가 뒤늦게 flip 된다. Android 가
@@ -1277,7 +1277,7 @@ struct AlarmEditorSheet: View {
             preparationVoiceID = option.id
             return
         }
-        // 기본 목소리는 준비된 문구로만 말할 수 있다 — 직접 입력한 문구가 있으면 묻는다.
+        // 기본 목소리로 바꾸면 편집기가 직접 입력 문구를 비운다(안드로이드 `selectVoiceProfile`) — 문구가 있으면 묻는다.
         if losesText {
             pendingVoiceSwitch = option
             return
@@ -2325,7 +2325,7 @@ struct AlarmEditorSheet: View {
             message = PaidGateCopy.message
         case .paid:
             // 유료인데 막혔다 = 플랜이 아니라 **목소리 종류**의 문제다.
-            message = String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.")
+            message = String(localized: "기본 목소리로는 이 문구를 만들 수 없어요. 준비된 문구를 고르거나 직접 입력해 주세요.")
         }
         let title: String
         switch planAccess {
@@ -2933,6 +2933,16 @@ struct AlarmEditorSheet: View {
         }
         rememberChoicesUsed(merged)
         recordSaveUsageEvent(record: merged, previous: existing)
+        // 응원 선택(`content_selected`) — 저장에 성공했을 때만, 저장을 **시작한** 계정으로(예약을 기다리는 사이 바뀌어도).
+        if let props = CheerVariety.contentSelectionProps(for: merged) {
+            UsageEventQueue.shared.record(
+                .contentSelected,
+                alarmID: merged.id,
+                voiceProfileID: merged.voiceProfileId,
+                props: props,
+                userID: ownerID
+            )
+        }
         recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSchedulingDidFinish()

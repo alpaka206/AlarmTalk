@@ -71,11 +71,11 @@ export const USAGE_EVENT_V2_TYPES = [
   'reward_pending',
   'reward_granted',
   'reward_spent',
-  // 콘텐츠 — 스키마만(해당 기능 PR 이 심는다)
+  // 콘텐츠 — `content_selected` 는 알람 저장 성공 때 적는다. `dated_alarm_saved`·`pack_selected` 는 스키마만(해당 기능 PR 이 심는다)
   'content_selected',
   'dated_alarm_saved',
   'pack_selected',
-  // 소식 — 스키마만. 관심기업·기사 원문을 싣지 않는다
+  // 소식 — 원천 종류(`surface`)만. 관심기업·기사 원문·URL 을 싣지 않는다
   'briefing_opened',
   'source_opened',
   'briefing_audio_requested',
