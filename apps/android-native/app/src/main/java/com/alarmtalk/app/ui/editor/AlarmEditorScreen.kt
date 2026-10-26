@@ -2079,7 +2079,9 @@ internal fun AlarmEditorScreen(
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 com.alarmtalk.app.ui.voices.ClipPreparationScreen(
-                    voices = clipReadiness,
+                    // 고르려던 목소리 하나만 보여 준다 — 위 폴링이 그 목소리가 준비되면 멈추므로, 전부를 보여 주면 다른 목소리
+                    // 때문에 100% 에 닿지 못한 채 멈춘다(코덱스 #952). 그 목소리가 목록에 아직 없으면 전부를 보여 준다.
+                    voices = clipReadiness.filter { it.voiceProfileId == voiceId }.ifEmpty { clipReadiness },
                     onRetry = onRetryClipRenders,
                     onDismiss = { preparationVoiceId = null },
                     modifier = Modifier.padding(vertical = 32.dp),
