@@ -88,6 +88,17 @@ data class AlarmEntity(
     // 잠금/복원은 현재 세션이 이 알람의 소유자일 때만 수행한다 — 다른 계정으로 로그인해 무료/유료가 돼도
     // 남의 목소리 알람을 잠그거나(→소유자가 복원 못하는 영구 잠금) 복원하지(→남의 목소리 재생) 못하게 한다.
     val ownerUserId: String? = null,
+    /**
+     * 응원 테마의 **다양하게 / 이 문구로 고정**(`CheerModes`, 스펙 voice-and-message §5-4). null = 다양하게.
+     * 서버 사본(`alarms.cheer_mode`)과 왕복한다. iOS 짝은 `LocalAlarmRecord.cheerMode`.
+     */
+    val cheerMode: String? = null,
+    /** 고정한 문구 ID(`cheer_v2_05`). 서버 `alarms.cheer_pinned_content_id`. */
+    val cheerPinnedContentId: String? = null,
+    /** 준비·예약한 응원 문구 ID 이력(JSON 배열, 오래된 것 → 최근). **기기 로컬** — 서버로 가지 않는다. */
+    val cheerHistoryJson: String? = null,
+    /** 지금 회차의 응원 선택(JSON, `CheerSelection`). **기기 로컬.** 울릴 때 이 클립을 튼다. */
+    val cheerSelectionJson: String? = null,
 )
 
 data class AlarmDraft(
@@ -133,6 +144,9 @@ data class AlarmDraft(
     val alarmSoundUri: String? = null,
     val alarmSoundLabel: String? = null,
     val alarmSoundEnabled: Boolean = true,
+    /** 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4). 응원이 아니면 null 로 둔다. */
+    val cheerMode: String? = null,
+    val cheerPinnedContentId: String? = null,
 )
 
 /** bucketClipKeysJson(JSON 문자열 배열) ↔ List<String> 변환 유틸. */

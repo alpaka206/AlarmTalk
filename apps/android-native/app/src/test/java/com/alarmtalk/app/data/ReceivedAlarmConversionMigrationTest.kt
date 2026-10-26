@@ -203,6 +203,8 @@ class ReceivedAlarmConversionMigrationTest {
     private fun AlarmEntity.toV27Values(): ContentValues = ContentValues().apply {
         for (field in AlarmEntity::class.java.declaredFields) {
             if (Modifier.isStatic(field.modifiers) || field.isSynthetic) continue
+            // v28 뒤에 더한 칸은 v27 표에 없다(28→29 가 더한다 — `AlarmDatabase.MIGRATION_28_29`).
+            if (field.name in COLUMNS_ADDED_AFTER_V28) continue
             field.isAccessible = true
             when (val value = field.get(this@toV27Values)) {
                 null -> putNull(field.name)
@@ -392,5 +394,8 @@ class ReceivedAlarmConversionMigrationTest {
                 "`detail` TEXT, `userId` TEXT, PRIMARY KEY(`id`))"
 
         const val V27_IDENTITY_HASH = "4a530b775c10581d206bf02349065ea8"
+
+        /** 28 뒤에 더한 칸 — 응원 다양하게/고정(29, 스펙 voice-and-message §5-4). */
+        val COLUMNS_ADDED_AFTER_V28 = setOf("cheerMode", "cheerPinnedContentId", "cheerHistoryJson", "cheerSelectionJson")
     }
 }

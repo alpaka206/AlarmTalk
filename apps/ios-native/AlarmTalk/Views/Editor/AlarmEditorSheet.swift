@@ -420,7 +420,9 @@ struct AlarmEditorSheet: View {
                 //   고치지 않아도 나타난다(`availableFreeBuckets` 가 매니페스트와 교차한다).
                 availableContexts: usesStockClips
                     ? availableFreeBuckets.compactMap { RandomPromptContext.forBucket($0.rawValue)?.rawValue }
-                    : MessageSettingsPane.allContextIDs,
+                    // 기상 인사(`wake`)는 기본 목소리 전용 클립이다 — 클론의 같은 자리는 '기본 인사말'(preset)이다
+                    // (스펙 voice-and-message §5-4, 안드로이드 `AlarmEditorScreen` 의 `WakeMessageContext` 제외와 같다).
+                    : MessageSettingsPane.allContextIDs.filter { $0 != RandomPromptContext.wake.rawValue },
                 // ⚠ **직접 입력을 잠그지 않는다**(2026-10-26). 무료도 기본 목소리로 월 3회 만든다 — 입력·편집은 막지 않고,
                 // 새로 만들어야 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(`voice-and-message.md` §8).
                 manualLocked: false,
@@ -430,7 +432,16 @@ struct AlarmEditorSheet: View {
                 // 고르던 화면 밖으로 튕기면 안 된다 — 알럿은 편집기(스택 루트)에 붙어
                 // 있어 밀어 올린 이 화면 위에 그대로 뜬다.
                 onManualLocked: { showVoicePlanLockedAlert() },
-                onSave: applyMessageSettings
+                onSave: applyMessageSettings,
+                // 응원의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 고정 목록은 이 목소리·언어로 매니페스트에
+                // 있는 새 응원뿐이다 — 하나도 없으면(공개 전·보충 전) 카드를 그리지 않는다.
+                cheerMode: draft.cheerMode,
+                cheerPinnedContentId: draft.cheerPinnedContentId,
+                cheerPhrases: cheerPhrases,
+                onCheerSettingsChange: { mode, pinned in
+                    draft.cheerMode = mode
+                    draft.cheerPinnedContentId = pinned
+                }
             )
             // ⚠ **밀어 올린 화면에도 게이트를 붙인다**(2026-08-17 실측). SwiftUI 의
             // `.alert` 는 **지금 보이는 뷰**에 붙어 있어야 뜬다 — 편집기(스택 루트)에만
@@ -1743,7 +1754,20 @@ struct AlarmEditorSheet: View {
     }
 
     /// 문구 화면의 저장 — 최종 반영은 여기 한 곳이다.
+    /// 문구 화면의 응원 고정 목록 — 이 목소리·언어로 매니페스트에 있는 새 응원(스펙 voice-and-message §5-4).
+    var cheerPhrases: [CheerCandidate] {
+        guard let profileID = voiceStudio.selectedProfileID.nilIfBlank else { return [] }
+        return CheerVariety.phrases(
+            clips: voiceStudio.stockClips,
+            voiceID: profileID,
+            language: bucketClipLanguage(forCategory: CheerVariety.bucketID, profileID: profileID)
+        ).map(\.candidate)
+    }
+
     func applyMessageSettings(_ result: MessageSettingsResult) {
+        // 응원 설정은 오디오와 무관한 값이라 아래 관문보다 먼저 받는다(안드로이드 `applyRandomPromptSettings` 와 같다).
+        draft.cheerMode = result.cheerMode
+        draft.cheerPinnedContentId = result.cheerPinnedContentId
         // ⚠ **관문 2/3 — 문구 종류 선택.** 판정은 `needsClipPreparation` 한 곳에만 있다.
         //
         // 같은 목소리라도 **종류마다 버킷 category 가 다르다**(`RandomPromptContext.bucketCategory`).
@@ -2703,6 +2727,25 @@ struct AlarmEditorSheet: View {
         // 오프라인이면 조용히 미해결로 저장한다(알람 생성을 막지 않는다) — 준비창 갱신이 채운다.
         // 안드로이드 `withResolvedWeatherVariant` 와 같은 자리다.
         await applyWeatherVariant(to: &merged, previous: editingAlarm)
+
+        // ── 응원은 **이 회차의 문구를 지금 고른다**(스펙 voice-and-message §5-4). AlarmKit 은 예약할 때 받은 소리만
+        // 울리므로 저장이 곧 준비 기회다. 발사 시각이 바뀌었거나(새 회차) 모드·고정 문구를 바꿨으면 새로 고르고, 아니면
+        // 고른 것을 그대로 쓴다(같은 회차의 다시 저장은 이력을 더하지 않는다). 응원이 아니면 저장값을 비운다 —
+        // 서버 사본에 뜻 없는 값이 남지 않게(안드로이드 `AlarmEditorState.toDraft` 와 같다).
+        if merged.bucketId != CheerVariety.bucketID {
+            merged.cheerMode = nil
+            merged.cheerPinnedContentId = nil
+        }
+        merged = CheerVariety.prepared(
+            merged,
+            occurrence: merged.fireAtMillis,
+            candidates: CheerVariety.candidates(for: merged, audioCache: .shared),
+            explicitChange: CheerVariety.settingsChanged(
+                before: editingAlarm,
+                afterMode: merged.cheerMode,
+                afterPinned: merged.cheerPinnedContentId
+            )
+        )
 
         // 무료 잠금 보관본(원래 유료 목소리)은 **목소리를 그대로 둔 저장**에서만 남긴다. 목소리·문구·
         // 재생 방식을 바꿨으면 그 편집이 이긴다 — 남기면 재결제 때 복원이 사용자의 편집을 옛 유료

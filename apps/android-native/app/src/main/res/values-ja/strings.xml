@@ -243,6 +243,11 @@
     <string name="editorp_fortune_save_button">保存</string>
     <string name="editorp_random_fortune_required">まだ入力していません</string>
     <string name="editorp_random_detail_change">変更</string>
+    <string name="editorp_cheer_variety_title">応援の言葉</string>
+    <string name="editorp_cheer_vary">いろいろな言葉で</string>
+    <string name="editorp_cheer_pinned">この言葉に固定</string>
+    <string name="editorp_cheer_vary_hint">最近用意した言葉は少しお休みして、別の応援を用意します。</string>
+    <string name="editorp_cheer_pinned_hint">選んだ言葉だけが流れます。</string>
     <string name="editorp_random_manual_title">入力した文面</string>
     <string name="editor_manual_charge_notice">新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。作成済みの文はもう一度使っても回数を使いません。</string>
     <string name="editorp_random_more_contexts">もっと見る（運勢・お薬）</string>
@@ -499,6 +504,7 @@
     <string name="editor2_ctx_wake_weather">天気</string>
     <string name="editor2_ctx_wake_fortune">運勢</string>
     <string name="editor2_ctx_love">応援</string>
+    <string name="editor2_ctx_wake">目覚めのあいさつ</string>
     <string name="editor2_ctx_medication">薬</string>
     <string name="editor2_repeat_every_day">毎日</string>
     <string name="editor2_repeat_weekly">毎週 %1$s</string>

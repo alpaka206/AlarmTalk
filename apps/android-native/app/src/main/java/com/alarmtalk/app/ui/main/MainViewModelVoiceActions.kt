@@ -8,6 +8,7 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import kotlinx.coroutines.delay
 import java.util.Locale
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
+import com.alarmtalk.app.data.bucketTheme
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.TtsGenerateRequest
@@ -996,7 +997,8 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = nul
             val clips = stockClips.filter {
                 (if (voiceProfileId != null) it.voiceProfileId == voiceProfileId else isSystemVoiceId(it.voiceProfileId)) &&
                     (it.language ?: "ko") == language &&
-                    it.category in FreeBucketOrder
+                    // 테마로 본다 — `cheer_v2` 카테고리는 테마 `cheer` 다(스펙 voice-and-message §5-4).
+                    it.bucketTheme in FreeBucketOrder
             }
             if (clips.isEmpty()) return@launch
             // 이미 캐시된 클립도 진행 수에 포함해 n/전체가 실제 준비율을 보여주게 한다.

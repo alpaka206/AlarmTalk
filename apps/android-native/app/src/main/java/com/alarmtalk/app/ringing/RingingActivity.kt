@@ -254,8 +254,8 @@ class RingingActivity : ComponentActivity() {
                     withContext(Dispatchers.IO) {
                         val repository = AlarmAppContainer.repository(appContext)
                         repository.getAlarm(id)?.let { alarm ->
-                            val playbackVariantIndex = repository.resolveBucketClipSelection(alarm)?.variantIndex
-                            alarm.toRingingUiState(appContext, playbackVariantIndex)
+                            val playback = repository.resolveBucketClipSelection(alarm)
+                            alarm.toRingingUiState(appContext, playback?.variantIndex, playback?.text)
                         }
                     }
                 } ?: defaultRingingUiState(appContext)
@@ -1121,6 +1121,8 @@ private fun defaultRingingUiState(context: android.content.Context): RingingUiSt
 private fun AlarmEntity.toRingingUiState(
     context: android.content.Context,
     playbackVariantIndex: Int?,
+    // 응원 선택처럼 클립의 문구를 따로 아는 경우(스펙 voice-and-message §5-4) — 음성과 같은 문구다.
+    playbackText: String? = null,
 ): RingingUiState {
     val customTitle = customRingingAlarmLabel(label)
     // 표시 텍스트: 버킷 알람이면 발사 시 고른 variant 의 문구를 쓴다(오디오와 같은 bucketVariantIndex).
@@ -1132,7 +1134,8 @@ private fun AlarmEntity.toRingingUiState(
     // 빈/공백 문구는 null 로 취급해 대표 voiceText 로 폴백한다(Elvis 는 null 에만 걸려, "" 면 잠금화면
     // 문구가 통째로 사라진다). 한 variant 의 text 가 비어도 대표 문구는 보인다.
     val bucketText = if (bucketId != null && playbackVariantIndex != null) {
-        bucketClipTexts().getOrNull(playbackVariantIndex)?.takeIf { it.isNotBlank() }
+        playbackText?.takeIf { it.isNotBlank() }
+            ?: bucketClipTexts().getOrNull(playbackVariantIndex)?.takeIf { it.isNotBlank() }
     } else {
         null
     }

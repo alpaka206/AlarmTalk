@@ -924,6 +924,9 @@ struct AlarmTalkApp: App {
         _ = await weather.refreshDue(token: session.token, ownerUserId: session.user.id)
         // 이 대기 뒤에도 본다 — 아래 재조정이 남의 계정 위에서 돌면 안 된다.
         guard auth.session?.user.id == session.user.id else { return }
+        // 응원 다양하게 — 이번 회차의 문구를 아직 고르지 않은 알람을 골라 둔다(스펙 voice-and-message §5-4 「플랫폼 차이」).
+        // AlarmKit 은 예약할 때 받은 소리만 울리므로 앱 복귀가 다음 변주를 준비할 기회다. 바뀐 알람은 아래 재조정이 다시 건다.
+        alarmStore.prepareCheerSelections()
         // ⚠ **여기가 마지막 관문이다.** 위 두 갱신은 행의 음원을 갈아 끼우는데, 그것만으로는
         // OS 가 예약 때 받아 간 옛 파일이 그대로 울린다(동적 문구 알람은 매일 새 문구를
         // 만들어 놓고 어제 문구로 울었다 — 서버 호출과 월 한도는 매번 차감하면서).

@@ -2,6 +2,8 @@ package com.alarmtalk.app.network
 
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
+import com.alarmtalk.app.data.CHEER_BUCKET_ID
+import com.alarmtalk.app.data.CheerModes
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.hasLockedPaidVoice
 import com.alarmtalk.app.data.isSystemVoiceId
@@ -33,6 +35,11 @@ object RemoteAlarmMapper {
             timezone = TimeZone.getDefault().id,
             bucketId = alarm.bucketId.trimmedOrNull(),
             clientAlarmId = alarm.id,
+            // 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4) — 응원 알람만 싣는다. 이력·선택은 기기 로컬이다.
+            cheerMode = CheerModes.normalize(alarm.cheerMode).takeIf { alarm.bucketId == CHEER_BUCKET_ID },
+            cheerPinnedContentId = alarm.cheerPinnedContentId.trimmedOrNull().takeIf {
+                alarm.bucketId == CHEER_BUCKET_ID && CheerModes.normalize(alarm.cheerMode) == CheerModes.PINNED
+            },
             // 기본 목소리로 바꿔 둔 알람(무료 잠금 · 잠금 확정 · 목소리를 잃어 미나로 바꾼 알람)은 비어
             // 있는 문구·테마를 서버에서도 지운다 — 안 지우면 클론의 message_id·bucket_id 가 기본 목소리
             // 옆에 남는다(Codex #820) — 기본 목소리 + 클론 `greeting` 테마는 토글마다 400 `INVALID_BUCKET_ID`

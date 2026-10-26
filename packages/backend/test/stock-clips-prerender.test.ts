@@ -62,7 +62,9 @@ async function setupDb() {
       requested_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       -- 마이그레이션 #101. 교체 회차인지(기존 preset 을 덮어쓸지) 나른다.
-      refresh_existing INTEGER NOT NULL DEFAULT 0
+      refresh_existing INTEGER NOT NULL DEFAULT 0,
+      -- 마이그레이션 #143. 클론 보충 묶음·보충 회차(스펙 voice-and-message §5-4).
+      content_sets TEXT, supplement INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE generated_audio_assets (
       id TEXT PRIMARY KEY,

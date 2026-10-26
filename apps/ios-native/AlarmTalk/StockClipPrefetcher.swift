@@ -180,7 +180,8 @@ final class StockClipPrefetcher: ObservableObject {
     static func isDefaultVoiceTarget(_ clip: StockClip, language: String) -> Bool {
         isSystemVoiceId(clip.voiceProfileId)
             && (clip.language ?? "ko") == language
-            && freeBucketCategories.contains(clip.category ?? "")
+            // 테마로 본다 — `cheer_v2` 카테고리는 테마 `cheer` 다(스펙 voice-and-message §5-4). 안드로이드 `isDefaultVoiceTarget` 미러.
+            && freeBucketCategories.contains(clip.bucketTheme ?? "")
     }
 
     /// 기본 목소리 클립을 **몇 개 중 몇 개 받았는가**. 알람 설정 관문과 목소리 탭 진행 표시가 본다.

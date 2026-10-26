@@ -22,6 +22,7 @@ import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.data.StockClipManifestStore
 import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
+import com.alarmtalk.app.data.bucketTheme
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.AccessTicket
@@ -847,7 +848,8 @@ class StockClipPrefetchWorker(
         internal fun StockClip.isDefaultVoiceTarget(language: String): Boolean =
             isSystemVoiceId(voiceProfileId) &&
                 (this.language ?: "ko") == language &&
-                category in FREE_BUCKET_CATEGORIES
+                // 테마로 본다 — `cheer_v2` 카테고리는 테마 `cheer` 다(스펙 voice-and-message §5-4).
+                bucketTheme in FREE_BUCKET_CATEGORIES
 
         /**
          * 기본 목소리 클립을 **몇 개 중 몇 개 받았는가**(done to total). 매니페스트를 한 번도

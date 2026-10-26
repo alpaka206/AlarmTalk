@@ -7,6 +7,7 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.ClipReadiness
 import com.alarmtalk.app.data.isSystemVoiceId
+import com.alarmtalk.app.data.bucketTheme
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -82,6 +83,8 @@ internal suspend fun MainViewModel.refreshClipReadiness() {
     // 그 몫이 진행률에서 통째로 빠진다.
     val categoriesByVoice = clips.groupBy { it.voiceProfileId }
         .mapValues { (_, list) -> list.mapNotNull { it.category }.distinct().sorted() }
+    // 카테고리 → 테마(`cheer_v2` → `cheer`, 스펙 voice-and-message §5-4). 기본 목소리가 무료 테마를 고를 때 쓴다.
+    val themeByCategory = clips.mapNotNull { clip -> clip.category?.let { it to (clip.bucketTheme ?: it) } }.toMap()
 
     clipReadiness = withContext(Dispatchers.IO) {
         // 디렉터리는 한 번만 읽는다 — 클립마다 `getCachedAudio` 로 물으면 디렉터리를 다시 읽고
@@ -95,7 +98,7 @@ internal suspend fun MainViewModel.refreshClipReadiness() {
             categoriesFor = { voiceId ->
                 val all = categoriesByVoice[voiceId].orEmpty()
                 // 기본 목소리는 무료 테마만 쓴다(greeting 은 미리듣기 전용이라 알람에 안 쓴다).
-                if (isSystemVoiceId(voiceId)) all.filter { it in FREE_BUCKET_CATEGORIES } else all
+                if (isSystemVoiceId(voiceId)) all.filter { (themeByCategory[it] ?: it) in FREE_BUCKET_CATEGORIES } else all
             },
             renderState = { renderStates[it] ?: (false to false) },
             isCached = { clip ->
