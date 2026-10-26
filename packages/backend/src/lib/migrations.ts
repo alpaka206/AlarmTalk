@@ -3420,6 +3420,7 @@ export const migrations: Migration[] = [
         metric TEXT NOT NULL,
         value INTEGER NOT NULL,
         fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+        source_date TEXT,
         PRIMARY KEY (platform, day, metric)
       )`,
       `CREATE TABLE IF NOT EXISTS store_download_sync (

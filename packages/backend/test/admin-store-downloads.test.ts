@@ -291,10 +291,17 @@ function fakeStores(opts: { gcsStatus?: number; requests?: unknown[] } = {}) {
     if (url.startsWith('https://segments.example/')) {
       if (url.includes('/inst-dl-18')) return new Response(dlSegment(['2026-10-18\t알람톡\tFirst-time download\tKR\t4']));
       if (url.includes('/inst-dl-19/0')) {
-        return new Response(dlSegment(['2026-10-19\t알람톡\tFirst-time download\tKR\t5', '2026-10-19\t알람톡\tRedownload\tKR\t1']));
+        // 처리일 10-19 인스턴스가 10-18 숫자를 고쳐 다시 낸다(4 → 6) — 처리일이 더 늦은 쪽이 이긴다.
+        return new Response(
+          dlSegment([
+            '2026-10-19\t알람톡\tFirst-time download\tKR\t5',
+            '2026-10-19\t알람톡\tRedownload\tKR\t1',
+            '2026-10-18\t알람톡\tFirst-time download\tKR\t6',
+          ]),
+        );
       }
       if (url.includes('/inst-dl-19/1')) return new Response(dlSegment(['2026-10-19\t알람톡\tFirst-time download\tJP\t2']));
-      // 설치·삭제 보고서는 그날 줄이 없다 → 0 채움
+      // 설치·삭제 보고서는 줄이 없다 → 아무것도 적지 않는다(그날이 0 인지 모른다)
       return new Response(new Uint8Array(gzipSync(Buffer.from('Date\tEvent\tCounts\n'))));
     }
     throw new Error(`unexpected fetch ${url}`);
@@ -367,18 +374,37 @@ describe('크론', () => {
       (await rows(`SELECT day || ':' || metric AS k, value FROM store_download_daily WHERE platform = 'ios'`)).map((r) => [r.k, r.value]),
     );
     expect(ios).toEqual({
-      '2026-10-18:first_time_downloads': 4, // 같은 날 인스턴스 둘 — 더하지 않는다
+      // 같은 날 인스턴스 셋(처리일 10-18 둘·10-19 하나) — 더하지 않고, 처리일이 늦은 10-19 의 고친 숫자가 남는다.
+      '2026-10-18:first_time_downloads': 6,
       '2026-10-18:redownloads': 0,
       '2026-10-19:first_time_downloads': 7, // 조각 둘은 더한다
       '2026-10-19:redownloads': 1,
-      '2026-10-19:installs': 0, // 줄이 없던 하루치는 0
-      '2026-10-19:deletions': 0,
+      // 줄이 없던 설치·삭제 인스턴스는 0 으로 채우지 않는다.
     });
     const android = await rows(
       `SELECT value FROM store_download_daily WHERE platform = 'android' AND day = '2026-10-19' AND metric = 'daily_user_installs'`,
     );
     expect(android).toEqual([{ value: 19 }]);
     expect(await rows(`SELECT COUNT(*) AS n FROM store_report_instances`)).toEqual([{ n: 4 }]);
+  });
+
+  it('회차를 건너도 더 이른 처리일은 더 늦은 처리일이 적은 숫자를 덮지 못한다', async () => {
+    // 지난 회차가 처리일 10-25 인스턴스에서 고친 숫자를 이미 적었다.
+    await db.execute({
+      sql: `INSERT INTO store_download_daily (platform, day, metric, value, fetched_at, source_date)
+            VALUES ('ios', '2026-10-18', 'first_time_downloads', 9, '2026-10-25T00:00:00Z', '2026-10-25')`,
+      args: [],
+    });
+    vi.stubGlobal('fetch', vi.fn(fakeStores().impl));
+    await runStoreDownloadSync(db, env, NOW);
+    const kept = await rows(
+      `SELECT value, source_date FROM store_download_daily WHERE platform = 'ios' AND day = '2026-10-18' AND metric = 'first_time_downloads'`,
+    );
+    expect(kept).toEqual([{ value: 9, source_date: '2026-10-25' }]);
+    const later = await rows(
+      `SELECT value, source_date FROM store_download_daily WHERE platform = 'ios' AND day = '2026-10-19' AND metric = 'first_time_downloads'`,
+    );
+    expect(later).toEqual([{ value: 7, source_date: '2026-10-19' }]);
   });
 
   it('인증 머리 — 스토어 API 에는 토큰을, 서명된 조각 주소에는 싣지 않는다. 오류·상태에 조각 주소를 남기지 않는다', async () => {

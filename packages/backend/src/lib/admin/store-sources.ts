@@ -229,9 +229,13 @@ export interface AscFetchResult {
   requestCreated: boolean;
   /** 이번에 다 받은 인스턴스(적고 나면 다시 받지 않는다). */
   ingested: AscInstance[];
-  /** 받은 숫자. 숫자 줄이 하나도 없던 인스턴스는 그 처리일에 0 을 채운다(`zeroFill`). */
+  /**
+   * 받은 숫자. 숫자 줄이 하나도 없던 인스턴스는 아무것도 채우지 않는다 — 처리일은 보고서가 덮는 날짜가 아니고, 설치 수는
+   * 다섯 명 미만이면 애플이 빼고 낸다. 빈 인스턴스로는 그날이 0 인지 알 수 없다.
+   */
   daily: DailyMetrics;
-  zeroFill: Array<{ day: string; metrics: readonly string[] }>;
+  /** 날짜·지표(`day|metric`)마다 그 숫자를 낸 인스턴스의 처리일 — 겹치면 더 늦은 처리일이 이긴다(DB 에도 같이 적는다). */
+  sourceDates: Map<string, string>;
   /** 예산이 모자라 남긴 인스턴스 수 — 다음 회차가 잇는다. */
   deferred: number;
 }
@@ -275,7 +279,7 @@ export async function fetchAscDownloads(
   } catch {
     throw new StoreReportError('ASC_API_PRIVATE_KEY 를 읽지 못했어요(.p8 내용 전체인지 확인해 주세요)');
   }
-  const result: AscFetchResult = { requestCreated: false, ingested: [], daily: new Map(), zeroFill: [], deferred: 0 };
+  const result: AscFetchResult = { requestCreated: false, ingested: [], daily: new Map(), sourceDates: new Map(), deferred: 0 };
   const cacheKey = `${issuerId}:${keyId}:${bundleId}`;
   const ids = ascIds.get(cacheKey) ?? {};
   ascIds.set(cacheKey, ids);
@@ -379,12 +383,21 @@ export async function fetchAscDownloads(
       const bytes = await gunzipIfNeeded(new Uint8Array(await res.arrayBuffer()));
       mergeDaily(daily, parseAscReport(bytes, inst.kind));
     }
-    if (daily.size === 0) result.zeroFill.push({ day: inst.processingDate, metrics: ASC_REPORT_METRICS[inst.kind] });
-    else {
-      // 그 보고서가 내는 지표 중 그날 줄이 없던 것은 0 이다(예: 재다운로드가 없던 날).
-      for (const metrics of daily.values()) for (const m of ASC_REPORT_METRICS[inst.kind]) metrics[m] ??= 0;
-      // 인스턴스끼리는 더하지 않고 덮는다 — 같은 날의 인스턴스를 애플이 다시 내면 더하는 순간 두 배가 된다.
-      for (const [day, metrics] of daily) result.daily.set(day, { ...(result.daily.get(day) ?? {}), ...metrics });
+    // 그 보고서가 내는 지표 중 그날 줄이 없던 것은 0 이다(예: 재다운로드가 없던 날) — 그날 줄이 하나라도 있어 보고서가 그 날짜를
+    // 덮는다는 것이 확인된 경우만이다.
+    for (const metrics of daily.values()) for (const m of ASC_REPORT_METRICS[inst.kind]) metrics[m] ??= 0;
+    // 인스턴스끼리는 더하지 않고 덮는다 — 같은 날의 인스턴스를 애플이 다시 내면 더하는 순간 두 배가 된다. 덮는 쪽은 **처리일이
+    // 더 늦은** 인스턴스다(애플이 고친 숫자를 낸 쪽). 새 것부터 받으므로 뒤에 오는 옛 인스턴스가 고친 숫자를 되돌리면 안 된다.
+    for (const [day, metrics] of daily) {
+      const merged = { ...(result.daily.get(day) ?? {}) };
+      for (const [metric, value] of Object.entries(metrics)) {
+        const key = `${day}|${metric}`;
+        const seen = result.sourceDates.get(key);
+        if (seen !== undefined && seen > inst.processingDate) continue;
+        merged[metric] = value;
+        result.sourceDates.set(key, inst.processingDate);
+      }
+      result.daily.set(day, merged);
     }
     result.ingested.push(inst);
   }

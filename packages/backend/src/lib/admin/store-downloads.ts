@@ -53,14 +53,25 @@ export interface StoreSyncOutcome {
 
 type Stmt = { sql: string; args: Array<string | number | null> };
 
-const UPSERT_SQL = `INSERT INTO store_download_daily (platform, day, metric, value, fetched_at) VALUES (?, ?, ?, ?, ?)
-  ON CONFLICT (platform, day, metric) DO UPDATE SET value = excluded.value, fetched_at = excluded.fetched_at`;
+// `source_date` 는 App Store 인스턴스의 처리일이다(Play 는 NULL — 그 달 파일을 통째로 다시 받으니 언제나 새 것이다). 회차를
+// 건너 옛 인스턴스가 늦게 오더라도 더 늦은 처리일이 적어 둔 숫자를 덮지 않는다.
+const UPSERT_SQL = `INSERT INTO store_download_daily (platform, day, metric, value, fetched_at, source_date) VALUES (?, ?, ?, ?, ?, ?)
+  ON CONFLICT (platform, day, metric) DO UPDATE SET value = excluded.value, fetched_at = excluded.fetched_at,
+    source_date = excluded.source_date
+  WHERE excluded.source_date IS NULL OR store_download_daily.source_date IS NULL
+     OR excluded.source_date >= store_download_daily.source_date`;
 
-function upserts(platform: StorePlatform, daily: DailyMetrics, fetchedAt: string): Stmt[] {
+function upserts(
+  platform: StorePlatform,
+  daily: DailyMetrics,
+  fetchedAt: string,
+  sourceDates?: ReadonlyMap<string, string>,
+): Stmt[] {
   const out: Stmt[] = [];
   for (const [day, metrics] of daily) {
     for (const [metric, value] of Object.entries(metrics)) {
-      out.push({ sql: UPSERT_SQL, args: [platform, day, metric, value, fetchedAt] });
+      const source = sourceDates?.get(`${day}|${metric}`) ?? null;
+      out.push({ sql: UPSERT_SQL, args: [platform, day, metric, value, fetchedAt, source] });
     }
   }
   return out;
@@ -147,17 +158,8 @@ export async function runStoreDownloadSync(
         });
         return new Set(res.rows.map((r) => String(r.instance_id)));
       });
-      const stmts = upserts('ios', result.daily, at);
-      // 숫자 줄이 하나도 없던 하루치는 0 을 채우되 **이미 있는 값은 덮지 않는다** — 처리일과 보고서 날짜가 어긋나도
-      // 받은 숫자를 0 으로 지우지 않게.
-      for (const z of result.zeroFill) {
-        for (const metric of z.metrics) {
-          stmts.push({
-            sql: `INSERT OR IGNORE INTO store_download_daily (platform, day, metric, value, fetched_at) VALUES ('ios', ?, ?, 0, ?)`,
-            args: [z.day, metric, at],
-          });
-        }
-      }
+      // 숫자 줄이 하나도 없던 인스턴스는 아무것도 적지 않는다 — 그날이 0 인지 모른다(`fetchAscDownloads`).
+      const stmts = upserts('ios', result.daily, at, result.sourceDates);
       for (const inst of result.ingested) {
         stmts.push({
           sql: `INSERT OR IGNORE INTO store_report_instances (instance_id, report, processing_date, ingested_at) VALUES (?, ?, ?, ?)`,
