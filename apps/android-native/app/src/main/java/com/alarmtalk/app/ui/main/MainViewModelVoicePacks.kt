@@ -35,6 +35,12 @@ internal fun MainViewModel.refreshHeldVoicePacks() {
  */
 internal fun MainViewModel.loadVoicePackCatalog() {
     val session = authSession ?: return
+    // 숨긴 동안(`VOICE_PACKS_VISIBLE`)은 받아 둔 팩이 있을 때만 묻는다 — 그 팩의 게시 끝 기한·개정은 계속 따라가야 한다.
+    if (!com.alarmtalk.app.data.VOICE_PACKS_VISIBLE &&
+        com.alarmtalk.app.data.VoicePackStore(getApplication()).held(session.user.id).isEmpty()
+    ) {
+        return
+    }
     val owner = session.user.id
     val generation = authSessionStore.sessionGeneration()
     viewModelScope.launch {

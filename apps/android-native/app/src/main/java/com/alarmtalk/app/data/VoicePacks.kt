@@ -18,6 +18,12 @@ import java.security.MessageDigest
  * iOS 짝은 `VoicePacks.swift` — 한쪽만 고치지 말 것.
  */
 
+/**
+ * **추가 음성팩을 화면에 내보이는가**(2026-10-27 오너 — 권리·음원이 없어 아직 숨긴다). 끄면 목소리 탭의 '추가 팩' 칸을 그리지
+ * 않고, 받아 둔 팩이 없으면 카탈로그도 묻지 않는다. 코드는 남긴다 — 켜면 그대로 돌아온다. iOS 짝 `VoicePacks.isVisible`.
+ */
+const val VOICE_PACKS_VISIBLE = false
+
 /** 팩 목소리 id 의 대역 — 서버 `VOICE_PACK_VOICE_ID_PREFIX` 와 같다. 기본 목소리(`…-9000-`)와 겹치지 않는다. */
 const val VOICE_PACK_VOICE_ID_PREFIX = "70000000-0000-4000-9100-"
 
