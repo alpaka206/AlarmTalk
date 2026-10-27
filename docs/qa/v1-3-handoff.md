@@ -24,7 +24,7 @@
 | W02 무료 3·플러스 30·서버가 처리하면 1회 | #942(월 한도·같은 요청 표식). 재다운로드 무차감은 2026-10-27 오너 결정으로 되돌렸다 — 서버 캐시 히트·서비스 재렌더도 1회, 같은 `request_id` 재시도는 한 번, 실패는 환불, 폰에 있는 결과는 서버를 안 불러 무차감(feat/manual-redownload-charged) | 로컬·CI | develop 만 | 없음 |
 | W03 10월 종료·보관·구버전 | #941(지급은 유료 권한 — 보관·스윕·종료 전환 대상에서 빠진다), #944 옛 앱 호환 응답·정원 칸·정책 6판 제거, #938 강제 업데이트 | 로컬·CI. `old-app-compat.test.ts` | develop 만 | #944 는 #938 과 **같은 릴리스나 그 뒤**에만 main 으로 |
 | W04 첫 경험·목소리 화면 | #945 | 로컬·CI | develop 만 | 실기기 첫 실행 확인 |
-| W05 고른 목소리 먼저 받기 | #952 | 로컬·CI | develop 만 | iOS 백그라운드 `URLSession` 이전은 안 함(스펙에 적음). 받는 도중 목소리 바꾸기·앱 종료·재부팅 실기기 |
+| W05 고른 목소리 먼저 받기 | #952, iOS 앱을 닫아도 받기(background `URLSession`, feat/ios-background-clip-download) | 로컬·CI | develop 만 | 받는 도중 목소리 바꾸기·앱 종료·재부팅 실기기(iOS 는 백그라운드 다운로드 이어 받기 포함). 강제 종료하면 iOS 가 전송을 멈춘다(스펙에 적음) |
 | W06 다음 알람 상태 | #950 | 로컬·CI | develop 만 | **양 OS 실기기 검증**(지시서 완료 기준) |
 | W07 보상형 광고 | #959(#141 승인 세션·SSV 대조, GMA·UMP 양 앱) | 로컬·CI. 실광고 시청 없음 | **노출 꺼짐**(오너 지시 — `ADMOB_REWARDED_ADS_ENABLED` 미설정) | AdMob 앱·단위 ID(워커 `ADMOB_REWARDED_AD_UNITS`, Android `alarmTalk{Dev,Prod}AdmobAppId`·`…RewardedAdUnitId`, iOS `ADMOB_APP_ID`·`ADMOB_REWARDED_AD_UNIT_ID`), SSV URL·app-ads.txt·GDPR 메시지, 스토어 데이터 공개, 처리방침 개정 |
 | W08 계측 | #958(#142 사용 기록 2판, 관리자 사용 지표), #962(응원 선택 사건. 같이 심은 아침 소식 사건은 W14 와 함께 제거), 날짜 알람 저장은 #955·팩 선택은 #960 이 심었다 | 로컬·CI | 2판 칸은 **처리방침 8판 동의자부터만 저장**(지금 7판 — 그래서 지금은 쌓이지 않는다) | 처리방침 8판. 체험 출처(`trial`)는 구독 행에 표식이 없어 아직 `paid` 로 섞인다. 고정한 응원 문구 id 는 칸이 없어 싣지 않는다(필요하면 서버 먼저 칸 추가) |
@@ -131,7 +131,7 @@
 
 ### 4-3. 개발로 남은 것 (이번에 일부러 하지 않았다)
 
-- [ ] iOS 목소리 받기를 background `URLSession` 으로 옮기기 — 지금은 앱이 떠 있는 동안만 받는다(`voice-and-message.md`).
+- [x] iOS 목소리 받기를 background `URLSession` 으로 옮기기 — 백그라운드로 갈 때 빠진 것을 넘기고 앞으로 오면 거둔다(`voice-and-message.md` 「앱을 닫아도 받는다 (iOS)」, feat/ios-background-clip-download). 실기기 확인은 남았다.
 - [ ] 사용 기록의 체험 출처(`trial`) — 서버 구독 행에 스토어 체험 표식을 둔 뒤 `lib/usage-entitlement.ts` 에 갈래 추가.
 - [ ] 고정한 응원 문구 id 를 기록에 싣기 — 칸이 없다(필요하면 shared 스키마·#142 칸 목록을 서버 먼저).
 - [ ] 날짜 지정 알람 문구의 '말 다듬기'(`alarm-lifecycle.md` §4 후속).

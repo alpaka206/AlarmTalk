@@ -21,6 +21,12 @@
      갱신하기도 해서, `body` 안에서 메인 액터를 물려받은 클로저가 그 자리에서 트랩했다(2026-10-14 1.2.13,
      같은 이슈 ALARMTALK-IOS-4 — `Views/Auth/AuthBackdrop.swift` 의 `SunriseScene`).
 
+  4. `URLSession…Delegate` 를 따르는 타입이 `@MainActor` 가 아니고, 그 채택이 `@preconcurrency` 가 아닌가 — 같은 사고의
+     델리게이트 판이다. background `URLSession` 은 델리게이트를 **세션의 delegate 큐**에서 부르고, iOS 가 다운로드를
+     배달하려고 앱을 다시 띄운 실행에도 그렇다(`BackgroundClipDownloader`, 2026-10-27). 메인 액터 타입이 이 프로토콜을
+     따르면 Swift 6 은 `nonisolated` 를 요구하거나(`@preconcurrency` 로 막으면) 진입부에 격리 검사를 심어 그 큐에서 트랩한다.
+     한계: 타입 선언에서만 본다 — 다른 파일의 `@MainActor` 타입을 `extension` 으로 채택하면 놓친다(그 꼴은 이 저장소에 없다).
+
 격리를 건너는 일은 클로저 **안에서** `Task { @MainActor in ... }` 로 명시적으로 한다.
 
 테스트 디렉터리는 보지 않는다 — 더블에 꽂는 핸들러는 시스템 큐에서 불리지 않는다.
@@ -55,6 +61,13 @@ LABELED_CLOSURE = re.compile(r"\b(?:renderer|content)\s*:\s*\{")
 # 초기화 하나를 따라 읽는 최대 줄 수.
 RENDER_LOOKAHEAD = 20
 COMMENT_START = ("//", "///", "*", "/*")
+# `URLSession…Delegate` 를 채택하는 타입 선언(같은 줄의 상속 절).
+URLSESSION_DELEGATE_DECL = re.compile(
+    r"\b(?:class|actor|struct|extension)\s+\w+[^{]*:[^{]*\bURLSession\w*Delegate\b"
+)
+PRECONCURRENCY_URLSESSION = re.compile(r"@preconcurrency\s+URLSession\w*Delegate\b")
+# 선언 앞 몇 줄의 특성(`@MainActor` 가 줄을 따로 쓴다).
+ATTRIBUTE_LOOKBACK = 3
 
 # register 호출이 줄바꿈으로 갈린 경우(`BGTaskScheduler.shared` 다음 줄에 `.register(`)까지 본다.
 LOOKBACK = 3
@@ -142,6 +155,21 @@ def check_file(path: Path, problems: list[str]) -> None:
                     f"    {line.strip()}"
                 )
 
+        delegate_decl = URLSESSION_DELEGATE_DECL.search(line)
+        if delegate_decl:
+            # 선언 키워드 앞(같은 줄의 특성)과, 바로 위에 줄을 따로 쓴 특성들.
+            attributes = [line[:delegate_decl.start()]]
+            for back in range(1, ATTRIBUTE_LOOKBACK + 1):
+                prior = lines[index - back].strip() if index - back >= 0 else ""
+                if not prior.startswith("@"):
+                    break
+                attributes.append(prior)
+            if any("@MainActor" in text for text in attributes) or PRECONCURRENCY_URLSESSION.search(line):
+                problems.append(
+                    f"{rel}:{index + 1}: URLSession 델리게이트 타입이 메인 액터 격리를 가진다\n"
+                    f"    {line.strip()}"
+                )
+
         for opened in RENDER_INIT.finditer(line):
             for row in render_closure_opens(lines, index, opened.start()):
                 problems.append(
@@ -183,6 +211,11 @@ SELF_TEST_CASES: list[tuple[str, int]] = [
     ("BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { task in }", 1),
     ("BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { @Sendable task in }", 0),
     ("task.expirationHandler = { work.cancel() }", 1),
+    ("final class D: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {}", 0),
+    ("@MainActor\nfinal class D: NSObject, URLSessionDownloadDelegate {}", 1),
+    ("@MainActor final class D: NSObject, URLSessionDelegate {}", 1),
+    ("final class D: NSObject, @preconcurrency URLSessionTaskDelegate {}", 1),
+    ("@MainActor\nfinal class V: ObservableObject {}", 0),
 ]
 
 
@@ -231,11 +264,12 @@ def main() -> int:
             "(2026-09-21 Sentry ALARMTALK-IOS-4/-7/-8). TimelineView·Canvas 는 SwiftUI 가 그리기 스레드에서\n"
             "부른다(2026-10-14 같은 이슈) — 그리는 코드는 `View` 밖의 타입에 둔다(`SunriseSceneRenderer`).\n"
             "클로저를 `{ @Sendable ... in` 으로 열고, 메인 액터로 건너뛰는 일은 그 안에서\n"
-            "`Task { @MainActor in ... }` 로 명시적으로 할 것 — `BackgroundSyncTask.handleLaunch` 가 그 꼴이다."
+            "`Task { @MainActor in ... }` 로 명시적으로 할 것 — `BackgroundSyncTask.handleLaunch` 가 그 꼴이다.\n"
+            "URLSession 델리게이트는 메인 액터가 아닌 타입에 두고(`BackgroundClipDownloader`), 메인 일은 안에서 넘긴다."
         )
         return 1
 
-    print("BGTask·SwiftUI 렌더 콜백 격리 검사 통과")
+    print("BGTask·SwiftUI 렌더·URLSession 델리게이트 격리 검사 통과")
     return 0
 
 

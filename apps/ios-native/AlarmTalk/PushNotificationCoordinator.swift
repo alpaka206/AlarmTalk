@@ -772,7 +772,34 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 주기 사이클이 목소리 접근권을 다시 받아야 한다(푸시를 놓쳤을 때의 그물).
             voiceStudio: deps.voiceStudio
         )
+        // ⚠ **백그라운드로 받은 클립을 예약에 반영하는 훅도 launch 에서 꽂는다** — iOS 가 다운로드 완료를 배달하려고 앱을
+        //   다시 띄우면 scene 이 없어 화면의 `.task` 가 돌지 않는다(위 등록·실행기와 같은 이유). 새 재조정 경로를 만들지 않고
+        //   기존 리컨사일러를 부른다 — 캐시를 보고 어긋난 예약만 다시 건다(`docs/spec/voice-and-message.md` 「앱을 닫아도 받는다」).
+        BackgroundClipDownloader.shared.onClipsCached = { @Sendable in
+            await Self.reconcileAfterBackgroundClips()
+        }
         return true
+    }
+
+    @MainActor
+    private static func reconcileAfterBackgroundClips() async {
+        let deps = BackgroundDependencies.shared
+        await deps.alarmStore.waitUntilLoadedFromDisk()
+        guard deps.alarmStore.hasLoadedFromDisk, let ownerID = deps.auth.session?.user.id else { return }
+        _ = await AlarmScheduleReconciler.reconcile(store: deps.alarmStore, alarmKit: deps.alarmKit, ownerUserId: ownerID)
+    }
+
+    /// 앱이 꺼져 있거나 멈춘 동안 **스톡 클립 백그라운드 다운로드**가 끝나면 iOS 가 앱을 (다시) 띄워 이걸 부른다. 같은 이름의
+    /// 세션을 다시 만들어 이벤트를 받고, 다 받으면 [completionHandler] 를 메인에서 부른다(`BackgroundClipDownloader`).
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        if !BackgroundClipDownloader.shared.handleEvents(forSessionIdentifier: identifier, completionHandler: completionHandler) {
+            // 우리 세션이 아니다 — 받을 것이 없으니 곧바로 끝났다고 알린다.
+            completionHandler()
+        }
     }
 
     func application(

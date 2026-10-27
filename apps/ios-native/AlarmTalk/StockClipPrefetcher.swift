@@ -30,8 +30,9 @@ final class StockClipPrefetcher: ObservableObject {
     static let freeBucketCategories: Set<String> = Set(FreeBucket.order.map(\.rawValue))
 
     /// 클립당 HTTP 왕복 1회다. 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로 겹친다
-    /// (서버·기기 부담을 감안해 안드로이드와 같은 4).
-    private static let parallelism = 4
+    /// (서버·기기 부담을 감안해 안드로이드와 같은 4). 백그라운드 다운로드의 호스트당 연결 수도 이 값이다
+    /// (`BackgroundClipDownloader.makeBackgroundConfiguration`).
+    nonisolated static let parallelism = 4
 
     /// 매니페스트 **신선도 창**(초, 2026-09-29 효율 감사 M1 — iOS). 이 안에 출발해 공개된 매니페스트가
     /// 있으면 `run` 은 다시 받지 않고 그 공개본으로 받는다(`StockClipManifestStore.recentlyPublished`).
@@ -289,6 +290,63 @@ final class StockClipPrefetcher: ObservableObject {
                 self?.runningManifestDepartedAfter = nil
             }
         }
+    }
+
+    /// 한 회차가 받는 클립 — 기본 목소리(기기 언어 × 무료 테마) + 내가 등록한 목소리의 사전렌더 전부. 포그라운드 회차(`run`)와
+    /// 백그라운드 넘기기(`handOffToBackground`)가 **같은 대상**을 본다 — 둘이 따로 세면 한쪽만 받는 클립이 생긴다.
+    static func targetClips(
+        in manifest: StockClipListResponse,
+        language: String,
+        ownedVoiceProfileIDs: Set<String>
+    ) -> [StockClip] {
+        manifest.clips.filter { clip in
+            if isSystemVoiceId(clip.voiceProfileId) {
+                return isDefaultVoiceTarget(clip, language: language)
+            }
+            // 내가 등록한 클론 — **카테고리·언어를 거르지 않는다.**
+            // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르면
+            // 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다
+            // (안드로이드 `downloadAllPresetClips` 도 거르지 않는다).
+            return ownedVoiceProfileIDs.contains(clip.voiceProfileId)
+        }
+    }
+
+    // MARK: - 앱을 닫아도 받는다 (background URLSession — `docs/spec/voice-and-message.md` 「앱을 닫아도 받는다」)
+
+    /// 앱이 **백그라운드로 갈 때** 부른다(`AlarmTalkApp` 의 `scenePhase == .background`). 아직 빠진 클립을 받을 순서
+    /// (`prioritized`) 그대로 OS 백그라운드 다운로드에 넘긴다 — 앱이 멈추거나 시스템이 앱을 내려도 iOS 가 이어 받는다.
+    /// 안드로이드는 처음부터 WorkManager 워커라 이 일이 없다.
+    ///
+    /// - 목록은 **디스크에 공개된 매니페스트**다 — 백그라운드로 가는 몇 초 안에 매니페스트를 새로 받지 않는다. 없으면 넘길 것도
+    ///   없다(다음 포그라운드 회차가 받는다).
+    /// - 넘길 것이 있으면 **포그라운드 회차를 끊는다** — 같은 클립을 두 곳이 받지 않는다. 끊긴 회차는 결과를 적지 않는다
+    ///   (`start` 의 규칙 그대로 — 다음 포그라운드 회차가 캐시를 다시 세는 새 시도다).
+    /// - 대상은 포그라운드와 같다(`targetClips`) — 무료 계정이면 내 목소리 id 가 비어 클론 클립을 넘기지 않는다.
+    /// - Returns: 넘긴 클립 수.
+    @discardableResult
+    func handOffToBackground(
+        session: AuthSession?,
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        ownedVoiceProfileIDs: Set<String> = [],
+        currentUserID: @escaping () -> String? = { KeychainStore.readSession()?.user.id },
+        downloader: BackgroundClipDownloader = .shared
+    ) async -> Int {
+        guard let session else { return 0 }
+        // 그 사이 앱이 다시 앞으로 와 거두기(`cancelAll`)가 돌았으면 넘기지 않는다 — 시작할 때의 번호를 잡아 둔다.
+        let epoch = downloader.handOffEpoch
+        let owner = session.user.id
+        let owned = ownedVoiceProfileIDs.union(runningOwnedVoiceProfileIDs)
+        let manifest = await Task.detached(priority: .utility) {
+            StockClipManifestStore.load(ownerUserID: owner)
+        }.value
+        guard let manifest, currentUserID() == owner else { return 0 }
+        let clips = Self.targetClips(in: manifest, language: language, ownedVoiceProfileIDs: owned)
+        let missing = await Self.missingClipsOffMain(clips)
+        guard !missing.isEmpty, currentUserID() == owner else { return 0 }
+        let ordered = Self.prioritized(missing, saved: savedTargets(), requested: requestedTarget)
+        guard downloader.handOffEpoch == epoch else { return 0 }
+        if task != nil { cancel() }
+        return await downloader.enqueue(ordered, session: session, epoch: epoch)
     }
 
     /// 기본 목소리 선다운로드 대상인가 — 기기 언어 하나 × 무료 테마.
@@ -557,16 +615,7 @@ final class StockClipPrefetcher: ObservableObject {
                 departedAfter: manifestDepartedAfter,
                 gen: gen
             ) else { return }
-            let clips = manifest.clips.filter { clip in
-                if isSystemVoiceId(clip.voiceProfileId) {
-                    return Self.isDefaultVoiceTarget(clip, language: language)
-                }
-                // 내가 등록한 클론 — **카테고리·언어를 거르지 않는다.**
-                // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르면
-                // 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다
-                // (안드로이드 `downloadAllPresetClips` 도 거르지 않는다).
-                return ownedVoiceProfileIDs.contains(clip.voiceProfileId)
-            }
+            let clips = Self.targetClips(in: manifest, language: language, ownedVoiceProfileIDs: ownedVoiceProfileIDs)
             guard !clips.isEmpty else { setState(.finished, gen: gen); return }
 
             var missing = await Self.missingClipsOffMain(clips)

@@ -2003,11 +2003,38 @@ AlarmKit 예약을 다시 만들 수 있다.
 - **목소리 교체 차단 화면에도 같은 퍼센트를 보여 준다**(2026-09-17 지시). 분모는 기본 목소리 전부다. 분모가 0이면 줄을
   그리지 않는다 — 뜻 없는 0% 를 보여 주지 않는다.
 - 잃는 것을 알고 택했다: 새로 깔고 **그 목소리**를 받기 전에 네트워크가 끊기면 그동안 그 목소리로는 알람을 설정할 수 없다.
-- **iOS 의 받기는 앱이 떠 있는 동안의 작업이다** — OS 백그라운드 다운로드(background `URLSession`)가 아니다. 강제 종료하면
-  거기서 멈추고, 다시 열면 남은 것만 이어 받는다(받아 둔 파일은 그대로 쓴다). 진행·'준비 완료' 는 실제 캐시 파일 기준이다.
-  background `URLSession` 이전은 아직 하지 않았다(v1.3 W05 후속).
-- **실기기 미검증**: 받는 도중 목소리 바꾸기·앱 종료·재부팅 뒤 이어 받기(안드로이드 WorkManager 재시작)는 이 규칙을 넣은
-  뒤 실기기로 아직 보지 않았다.
+- **앱을 닫아도 받는다** — 아래 「앱을 닫아도 받는다 (iOS)」. 진행·'준비 완료' 는 언제나 실제 캐시 파일 기준이다.
+- **실기기 미검증**: 받는 도중 목소리 바꾸기·앱 종료·재부팅 뒤 이어 받기(안드로이드 WorkManager 재시작, iOS 백그라운드
+  다운로드)는 이 규칙을 넣은 뒤 실기기로 아직 보지 않았다.
+
+##### 앱을 닫아도 받는다 (iOS, 2026-10-27)
+
+안드로이드는 처음부터 WorkManager 워커(`StockClipPrefetchWorker`)라 앱을 닫아도 받는다. iOS 는 앱이 떠 있는 동안만 받다가
+(앱 전역 프리페처), 이제 **백그라운드로 갈 때 빠진 것을 OS 백그라운드 다운로드(background `URLSession`)로 넘긴다.**
+
+- **앞에 있는 동안은 그대로** — 프리페처가 받는 순서(위 「받는 순서」)대로 받는다.
+- **백그라운드로 갈 때**(장면이 `.background`) 아직 빠진 클립을 **받는 순서 그대로** 넘긴다. 대상은 포그라운드와 같다 —
+  기본 목소리(기기 언어 × 무료 테마) + 내 목소리 사전렌더(무료면 내 목소리 id 가 비어 넘기지 않는다). 목록은 **디스크에 공개된
+  매니페스트**다 — 그 몇 초 안에 매니페스트를 새로 받지 않고, 없으면 넘기지 않는다. 넘길 것이 있으면 도는 포그라운드 회차를 끊는다.
+- **요청과 해석은 포그라운드와 같다** — 같은 요청 빌더(경로·Bearer·앱 메타 헤더), 받은 파일(서버 JSON, base64 음원)은 같은 해석
+  (2xx 디코드·401 세션 만료·403 동의·탈퇴 유예 알림)과 같은 캐시 쓰기(무결성·'지나간 응답' 가드 포함)로 넣는다. 받는 길만 다르다.
+  401·403 이면 남은 task 를 거둔다.
+- **누구 것인지 task 가 스스로 말한다** — 앱이 내려간 뒤 iOS 가 다시 띄워 완료를 배달하면 메모리에 남은 것이 없어서, task 설명에
+  클립·캐시 자리·계정·묶음을 싣는다. 받은 때 로그인한 계정이 다르거나(로그아웃·전환·탈퇴) 그 묶음을 버렸으면 **쓰지 않는다**
+  (내 목소리 클립이 떠난 계정 뒤에 남지 않게). 로그아웃했다가 같은 계정으로 돌아와도 앞 묶음은 버린다.
+- **다시 앞으로 오면 남은 task 를 거둔다** — 프리페처가 캐시를 다시 세어 빠진 것만 받는다(백그라운드에서 받은 것은 건너뛴다).
+  같은 클립을 두 곳이 동시에 받지 않는다. 넘기는 몇백 ms 사이에 앞으로 왔으면 넘기지 않는다.
+- **계정을 떠나면 전부 거둔다** — 로그아웃·계정 전환·탈퇴. 같은 계정의 콜드 스타트는 거두지 않는다(그 묶음의 완료는 쓸 수 있다).
+- **앱이 꺼져 있었으면** iOS 가 다운로드 완료 때 앱을 백그라운드로 띄운다 — 같은 이름의 세션을 다시 만들어 이벤트를 받고, 받은
+  것을 다 넣은 뒤 예약을 기존 리컨사일러로 한 번 맞추고, 시스템이 준 완료 핸들러를 **메인에서** 부른다. 울림 경로에는 네트워크가
+  들어가지 않는다 — 예약은 캐시를 보고 건다(앱을 열면 전경 복귀의 재조정이 다시 본다).
+- **준비 기록**(`voice_preparation_*`)은 백그라운드 완료로 새 사건을 만들지 않는다. 끊긴 포그라운드 회차는 결과를 적지 않고
+  (끊긴 회차의 규칙 그대로), 다음 포그라운드 회차가 캐시를 다시 세어 받을 것이 있을 때만 새 시도를 적는다.
+- **iOS 가 멈추거나 늦추는 경우** — 사용자가 **앱 전환기에서 위로 밀어 강제 종료**하면 iOS 가 그 앱의 백그라운드 전송을 취소한다
+  (다음에 열면 남은 것만 이어 받는다). 저전력 모드·셀룰러 데이터 설정·기기 상태에 따라 iOS 가 전송을 늦출 수 있다(즉시 받는다는
+  약속이 아니다). 재부팅 뒤에도 iOS 가 이어 갈 수 있지만 보장하지 않는다.
+- `UIBackgroundModes` 는 늘리지 않는다 — background `URLSession` 은 백그라운드 모드 없이 동작한다(Apple 「Downloading files in
+  the background」). 추가 음성팩(`docs/spec/voice-packs.md` §7)은 지금처럼 앞에 있는 동안만 받는다.
 
 - 받는 대상(기본 목소리) = 기본(시스템) 목소리 **전부**(시우·미나·도현·애니 **4종** —
   `data/SystemVoices.kt`) × **기기 언어 하나** × 알람에 쓰는 카테고리 **넷**
@@ -2800,6 +2827,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 재바인딩 뒤 서버 반영 | `nextLocalSyncState` (`data/AlarmEntity.kt`) | `nextLocalSyncState(for:)` (`LocalAlarmStore.swift`) | — |
 | 알람마다 필요한 목소리만 본다(설정 관문) | `StockClipPrefetchWorker.defaultVoiceProgress(context, userId, voiceId)` → `AlarmTalkApp.whenAlarmVoiceReady`(`requestCreateAlarm` 은 `initialVoiceForNewAlarm`, `onEditAlarm` 은 그 알람의 목소리) ← `DefaultVoiceGate`(IO·탭당 1회·도는 중 탭은 버림·화면/계정이 바뀌면 결과 버림, 회귀 `DefaultVoiceGateTest`) | `StockClipPrefetcher.voiceGate`(탭당 1회) → `MainTabsView.openEditorIfVoiceReady` · 받기 화면 판정(`RootView`)은 기본 목소리 전부 · 회귀 `StockClipProgressScanTests` | `GET /tts/stock-clips` |
 | 편집기에서 다 받지 못한 기본 목소리는 못 고른다 | `systemVoiceStillDownloading`(`ClipPreparationGate.kt`) ← `AlarmEditorScreen` 의 `onNeedsClipPreparation`·`openClipPreparation`(`onPrioritizeVoice`) ← `EditorRoute` 의 `systemVoiceDownload`(`defaultVoiceProgressByVoice`, 2초 폴링) · 회귀 `StockClipPrefetchPriorityTest` | `StockClipPrefetcher.isStillDownloading` ← `AlarmEditorSheet` 목소리 선택 · 회귀 `StockClipPriorityTests` | — |
+| 앱을 닫아도 받는다(백그라운드로 넘기기·앞으로 오면 거두기·계정을 떠나면 버리기) | `StockClipPrefetchWorker`(WorkManager — 처음부터 앱 밖에서 돈다) | `StockClipPrefetcher.handOffToBackground`(대상 `targetClips`·순서 `prioritized`) → `BackgroundClipDownloader`(`enqueue`·`cancelAll`·`accountChanged`·델리게이트·`handleDownloaded`) ← `AlarmTalkApp` 의 `scenePhase`(`.background` 넘기기·`.active` 거두기)·계정 키 `.task` · 재실행 `PushAppDelegate.application(_:handleEventsForBackgroundURLSession:completionHandler:)`·`reconcileAfterBackgroundClips` · 요청·해석 `AlarmTalkAPI.ttsMessageAudioRequest`·`interpret` · 격리 lint `scripts/check-bgtask-handler-isolation.py` · 회귀 `BackgroundClipDownloaderTests`·`StockClipBackgroundHandOffTests` | `GET /tts/messages/:id/audio` |
 | 받는 순서(저장된 다음 알람 → 고른 목소리 → 나머지) | `StockClipPrefetchPriority.order`·`request` ← `StockClipPrefetchWorker` 배치마다 다시 줄 세움 · 회귀 `StockClipPrefetchPriorityTest` | `StockClipPrefetcher.prioritized`·`request(voiceID:)` · 회귀 `StockClipPriorityTests` | — |
 | 교체 화면 퍼센트 | `StockReplacementScreen(progress)` ← 워커 진행 또는 `defaultVoiceProgress` | `StockReplacementView` 의 `defaultVoiceProgress` 폴링 | — |
 | 받기 진행 = 헤더 옆 | `VoiceProfileManagementPanel` 기본 목소리 `VoiceCatalogSectionHeader(trailing)` ← 워커 진행 | `VoiceProfileManagementPanel.defaultVoiceDownloadBadge` ← `StockClipPrefetcher.state` | — |
