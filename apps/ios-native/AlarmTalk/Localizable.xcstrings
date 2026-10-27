@@ -15072,25 +15072,25 @@
         }
       }
     },
-    "음성을 받을 때마다 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성도 다시 받으면 1회를 써요." : {
+    "새로 만들면 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성은 다시 받아도 횟수를 쓰지 않아요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Each time you get a voice, it uses 1 of this month's custom messages. Getting a voice you already made with the same text and voice again also uses 1."
+            "value" : "Making a new voice uses 1 of this month's custom messages. A voice you already made with the same text and voice doesn't count again."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "音声を受け取るたびに今月の直接入力の回数を1回使います。同じ文・同じ声ですでに作った音声も、もう一度受け取ると1回使います。"
+            "value" : "新しく作ると今月の直接入力の回数を1回使います。同じ文・同じ声ですでに作った音声は、もう一度受け取っても回数を使いません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "음성을 받을 때마다 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성도 다시 받으면 1회를 써요."
+            "value" : "새로 만들면 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성은 다시 받아도 횟수를 쓰지 않아요."
           }
         }
       }

@@ -830,7 +830,7 @@
     <string name="briefing_speech_title">Voice text preview</string>
     <string name="briefing_speech_length">%1$d/%2$d characters</string>
     <string name="briefing_speech_voice_label">Voice</string>
-    <string name="briefing_speech_charge_notice">Each time you get a voice, it uses 1 of this month\'s custom messages. Getting a voice you already made with the same text and voice again also uses 1.</string>
+    <string name="briefing_speech_charge_notice">Making a new voice uses 1 of this month\'s custom messages. A voice you already made with the same text and voice doesn\'t count again.</string>
     <string name="briefing_speech_remaining">%1$d left this month</string>
     <string name="briefing_speech_make">Make voice</string>
     <string name="briefing_speech_ready">Voice is ready.</string>

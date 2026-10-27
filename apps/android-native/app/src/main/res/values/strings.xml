@@ -855,7 +855,7 @@
     <string name="briefing_speech_title">음성 문장 미리보기</string>
     <string name="briefing_speech_length">%1$d/%2$d자</string>
     <string name="briefing_speech_voice_label">목소리</string>
-    <string name="briefing_speech_charge_notice">음성을 받을 때마다 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성도 다시 받으면 1회를 써요.</string>
+    <string name="briefing_speech_charge_notice">새로 만들면 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성은 다시 받아도 횟수를 쓰지 않아요.</string>
     <string name="briefing_speech_remaining">이번 달 남은 횟수 %1$d회</string>
     <string name="briefing_speech_make">음성 만들기</string>
     <string name="briefing_speech_ready">음성을 만들었어요.</string>

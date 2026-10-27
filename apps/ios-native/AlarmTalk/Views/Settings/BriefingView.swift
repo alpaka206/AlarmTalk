@@ -767,7 +767,7 @@ private struct BriefingSpeechSheet: View {
                     .buttonStyle(.plain)
                     .disabled(generating)
                 }
-                Text(String(localized: "음성을 받을 때마다 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성도 다시 받으면 1회를 써요."))
+                Text(String(localized: "새로 만들면 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성은 다시 받아도 횟수를 쓰지 않아요."))
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                 if let quota, quota.limit > 0 {
@@ -820,7 +820,7 @@ private struct BriefingSpeechSheet: View {
                 token: token
             )
             requestIDs.completed()
-            // 창을 닫았으면 들려주지 않는다. 서버가 처리한 요청이라 그 1회는 이미 셌다(다시 열어 받으면 새 요청이라 또 1회다).
+            // 창을 닫았으면 들려주지 않는다 — 같은 요청 id 라 다시 열어 만들면 횟수를 쓰지 않고 받는다.
             guard !Task.isCancelled else { return }
             let url = try Self.writeSpeechFile(response)
             audioURL = url

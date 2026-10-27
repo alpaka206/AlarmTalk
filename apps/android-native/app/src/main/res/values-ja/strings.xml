@@ -826,7 +826,7 @@
     <string name="briefing_speech_title">音声の文のプレビュー</string>
     <string name="briefing_speech_length">%1$d/%2$d文字</string>
     <string name="briefing_speech_voice_label">声</string>
-    <string name="briefing_speech_charge_notice">音声を受け取るたびに今月の直接入力の回数を1回使います。同じ文・同じ声ですでに作った音声も、もう一度受け取ると1回使います。</string>
+    <string name="briefing_speech_charge_notice">新しく作ると今月の直接入力の回数を1回使います。同じ文・同じ声ですでに作った音声は、もう一度受け取っても回数を使いません。</string>
     <string name="briefing_speech_remaining">今月の残り %1$d回</string>
     <string name="briefing_speech_make">音声を作る</string>
     <string name="briefing_speech_ready">音声を作りました。</string>
