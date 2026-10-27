@@ -60,33 +60,42 @@ export async function claimManualRequest(
   now: Date = new Date(),
 ): Promise<ClaimOutcome> {
   const claimedAt = now.toISOString();
-  const before = await db.execute({
-    sql: `SELECT status FROM manual_tts_requests WHERE user_id = ? AND request_id = ?`,
-    args: [input.userPk, input.requestId],
-  });
-  const wasPresent = before.rows.length > 0;
-  const wasDone = wasPresent && String(before.rows[0]!.status) === 'done';
   const staleBefore = new Date(now.getTime() - MANUAL_REQUEST_STALE_MS).toISOString();
-  // 없으면 넣고, 같은 입력의 버려진(2분) 표식·끝난 표식(결과가 지워져 다시 만드는 경우)이면 가져간다 — 한 문장이라
-  // 동시에 온 두 요청 중 하나만 잡는다.
-  const res = await db.execute({
+  const claim: ManualRequestClaim = { userPk: input.userPk, requestId: input.requestId, claimedAt };
+  // ⚠ **잡는 것과 '잡기 직전에 무엇이었나' 를 한 문장으로 안다**(Codex #971). 예전에는 상태를 먼저 SELECT 하고 따로 UPSERT 로
+  //   잡았다 — 그 사이 첫 요청이 표식을 `done` 으로 바꾸면 둘째의 UPSERT 가 끝난 표식을 가져가는데 `reclaimedDone` 은 앞서
+  //   읽은 pending 그대로라, 같은 요청을 한 번 더 세거나(캐시 히트도 센다) 마지막 횟수였으면 이미 치른 결과 대신 429 를 줬다.
+  //   그래서 갈래마다 **조건이 곧 이전 상태인** 문장을 따로 두고, 바뀐 행이 있는지(RETURNING)로 가른다.
+  //   ① 없으면 넣는다 — 들어갔으면 처음 보는 id 다.
+  const inserted = await db.execute({
     sql: `INSERT INTO manual_tts_requests (user_id, request_id, input_hash, status, claimed_at)
           VALUES (?, ?, ?, 'pending', ?)
-          ON CONFLICT(user_id, request_id) DO UPDATE SET status = 'pending', claimed_at = excluded.claimed_at
-          WHERE manual_tts_requests.input_hash = excluded.input_hash
-            AND (manual_tts_requests.status = 'done'
-                 OR julianday(manual_tts_requests.claimed_at) <= julianday(?))
+          ON CONFLICT(user_id, request_id) DO NOTHING
           RETURNING claimed_at`,
-    args: [input.userPk, input.requestId, input.fingerprint, claimedAt, staleBefore],
+    args: [input.userPk, input.requestId, input.fingerprint, claimedAt],
   });
-  if (res.rows.length > 0) {
-    return {
-      kind: 'claimed',
-      claim: { userPk: input.userPk, requestId: input.requestId, claimedAt },
-      reclaimedDone: wasDone,
-      retried: wasPresent,
-    };
-  }
+  if (inserted.rows.length > 0) return { kind: 'claimed', claim, reclaimedDone: false, retried: false };
+  //   ② 같은 입력의 끝난 표식을 가져간다 — `status = 'done'` 이 조건이라, 바뀌었으면 **잡기 직전에 끝나 있었다.**
+  const reclaimDone = () =>
+    db.execute({
+      sql: `UPDATE manual_tts_requests SET status = 'pending', claimed_at = ?
+            WHERE user_id = ? AND request_id = ? AND input_hash = ? AND status = 'done'
+            RETURNING claimed_at`,
+      args: [claimedAt, input.userPk, input.requestId, input.fingerprint],
+    });
+  if ((await reclaimDone()).rows.length > 0) return { kind: 'claimed', claim, reclaimedDone: true, retried: true };
+  //   ③ 같은 입력의 버려진(2분) 표식을 가져간다 — 조건이 `status = 'pending'` 이라 끝난 표식은 여기서 가져가지 않는다.
+  //     워커가 중간에 죽은 요청이라 셌는지 알 수 없다 — 새 요청으로 센다.
+  const reclaimedStale = await db.execute({
+    sql: `UPDATE manual_tts_requests SET claimed_at = ?
+          WHERE user_id = ? AND request_id = ? AND input_hash = ? AND status = 'pending'
+            AND julianday(claimed_at) <= julianday(?)
+          RETURNING claimed_at`,
+    args: [claimedAt, input.userPk, input.requestId, input.fingerprint, staleBefore],
+  });
+  if (reclaimedStale.rows.length > 0) return { kind: 'claimed', claim, reclaimedDone: false, retried: true };
+  //   ④ ② 와 ③ 사이에 첫 요청이 끝났을 수 있다 — 한 번 더 본다. 그래도 못 잡으면 아직 만드는 중이거나 다른 입력이다.
+  if ((await reclaimDone()).rows.length > 0) return { kind: 'claimed', claim, reclaimedDone: true, retried: true };
   const existing = await db.execute({
     sql: `SELECT input_hash FROM manual_tts_requests WHERE user_id = ? AND request_id = ?`,
     args: [input.userPk, input.requestId],

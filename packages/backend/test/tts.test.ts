@@ -1913,6 +1913,9 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResultFor('INSERT INTO manual_tts_requests', [], 0); // 다른 요청이 잡고 있다
+    mockDB.pushResultFor("SET status = 'pending', claimed_at = ?", [], 0); // 끝난 표식이 아니다
+    mockDB.pushResultFor("AND julianday(claimed_at) <= julianday(?)", [], 0); // 버려진 표식도 아니다
+    mockDB.pushResultFor("SET status = 'pending', claimed_at = ?", [], 0);
     mockDB.pushResultFor('SELECT input_hash FROM manual_tts_requests', [{ input_hash: 'x' }]);
 
     const res = await reqWithEnv(
@@ -1942,8 +1945,8 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     const r2 = createMockR2Bucket({ [RACED_KEY]: new Uint8Array([67, 72]) });
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    mockDB.pushResultFor('SELECT status FROM manual_tts_requests', [{ status: 'done' }]);
-    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [{ claimed_at: 'now' }], 1);
+    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [], 0); // 이미 있는 id
+    mockDB.pushResultFor("SET status = 'pending', claimed_at = ?", [{ claimed_at: 'now' }], 1); // 끝난 표식을 잡았다
     mockDB.pushResultFor('FROM generated_audio_assets ga', [racedHit]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]); // 히트의 '지금 목소리인가' 재확인
     mockDB.pushResultFor('FROM subscriptions s', []);
@@ -1965,7 +1968,7 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     expect(mockDB.calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
     expect(mockTextToSpeech).not.toHaveBeenCalled();
     // 표식을 잡은 것이 캐시 확인보다 앞이다.
-    const claimAt = mockDB.calls.findIndex((c) => c.sql.includes('INSERT INTO manual_tts_requests'));
+    const claimAt = mockDB.calls.findIndex((c) => c.sql.includes("SET status = 'pending', claimed_at = ?"));
     const cacheAt = mockDB.calls.findIndex((c) => c.sql.includes('FROM generated_audio_assets ga'));
     expect(claimAt).toBeGreaterThanOrEqual(0);
     expect(claimAt).toBeLessThan(cacheAt);
@@ -1975,7 +1978,6 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     const r2 = createMockR2Bucket({ [RACED_KEY]: new Uint8Array([67, 72]) });
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    mockDB.pushResultFor('SELECT status FROM manual_tts_requests', []); // 처음 보는 id
     mockDB.pushResultFor('INSERT INTO manual_tts_requests', [{ claimed_at: 'now' }], 1);
     mockDB.pushResultFor('FROM generated_audio_assets ga', [racedHit]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
@@ -2001,7 +2003,6 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     const r2 = createMockR2Bucket({ [RACED_KEY]: new Uint8Array([67, 72]) });
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    mockDB.pushResultFor('SELECT status FROM manual_tts_requests', []); // 처음 보는 id
     mockDB.pushResultFor('INSERT INTO manual_tts_requests', [{ claimed_at: 'now' }], 1);
     mockDB.pushResultFor('FROM generated_audio_assets ga', [racedHit]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
@@ -2023,8 +2024,8 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     const r2 = createMockR2Bucket({ [RACED_KEY]: new Uint8Array([67, 72]) });
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    mockDB.pushResultFor('SELECT status FROM manual_tts_requests', [{ status: 'done' }]);
-    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [{ claimed_at: 'now' }], 1);
+    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [], 0); // 이미 있는 id
+    mockDB.pushResultFor("SET status = 'pending', claimed_at = ?", [{ claimed_at: 'now' }], 1); // 끝난 표식을 잡았다
     mockDB.pushResultFor('FROM generated_audio_assets ga', [racedHit]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResultFor('FROM subscriptions s', []);
