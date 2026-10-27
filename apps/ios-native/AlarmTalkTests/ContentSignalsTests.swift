@@ -1,10 +1,9 @@
 import XCTest
 @testable import AlarmTalk
 
-/// 사용 기록 2판의 콘텐츠·소식 종류(`docs/spec/usage-events.md` §7.1) — 싣는 칸이 정해진 칸 하나뿐이고 문구 ID·링크·
-/// 제목 같은 원문이 끼어들 자리가 없는가, 그리고 저장 성공 때만 적는가. 안드로이드 짝은 `ContentAndBriefingSignalsTest`·
-/// `ContentAndBriefingSignalWiringTest`.
-final class ContentAndBriefingSignalsTests: XCTestCase {
+/// 사용 기록 2판의 콘텐츠 종류(`docs/spec/usage-events.md` §7.1) — 싣는 칸이 정해진 칸 하나뿐이고 문구 ID 같은 원문이
+/// 끼어들 자리가 없는가, 그리고 저장 성공 때만 적는가. 안드로이드 짝은 `ContentSignalsTest`·`ContentSignalWiringTest`.
+final class ContentSignalsTests: XCTestCase {
     private func cheerAlarm(mode: String?, playMode: AlarmPlayMode = .voiceOnly, bucket: String? = CheerVariety.bucketID) -> LocalAlarmRecord {
         var record = LocalAlarmRecord(
             label: "",
@@ -49,16 +48,6 @@ final class ContentAndBriefingSignalsTests: XCTestCase {
         // 고정한 문구 ID 는 싣지 않는다 — 담을 정해진 칸이 없다.
         XCTAssertEqual(try keys(props), ["content_mode"])
         XCTAssertEqual(props.sanitized(), props)
-    }
-
-    func test_briefingPropsCarryOnlyTheSourceKind() throws {
-        for source in BriefingSource.allCases {
-            let props = BriefingUsageSignals.sourceProps(source)
-            XCTAssertEqual(props.sanitized(), props, "서버 코드 모양 안이어야 한다")
-            XCTAssertEqual(try keys(props), ["surface"])
-        }
-        XCTAssertEqual(BriefingSource.disclosure.rawValue, "disclosure")
-        XCTAssertEqual(BriefingSource.policyNews.rawValue, "policy_news")
     }
 
     /// 저장이 **성공한 뒤에만**, 저장을 시작한 계정으로 적는다 — 예약 실패·롤백 갈래(`return false`)보다 뒤다.
@@ -117,19 +106,5 @@ final class ContentAndBriefingSignalsTests: XCTestCase {
         XCTAssertLessThan(content.upperBound, record.lowerBound, "응원 선택 옆이다")
         XCTAssertTrue(body[record.lowerBound...].contains("userID: ownerID"))
         XCTAssertTrue(body.contains("voicePacks.activeUserID == ownerID"), "팩 목록은 저장을 시작한 계정의 것만 본다")
-    }
-
-    func test_briefingRecordsNeverTakeTheLinkOrText() throws {
-        let source = try AppSourceText.read("Views/Settings/BriefingView.swift")
-        let opened = source.components(separatedBy: "BriefingUsageSignals.sourceOpened(").dropFirst()
-        XCTAssertEqual(opened.count, 1)
-        for call in opened {
-            let args = call.prefix(while: { $0 != ")" })
-            XCTAssertEqual(String(args), "source, userID: auth.session?.user.id")
-        }
-        let generate = String(try AppSourceText.region(of: source, from: "private func generate() async", to: "private func play("))
-        let requested = try XCTUnwrap(generate.range(of: "BriefingUsageSignals.audioRequested(target.source, voiceID: voiceID,"))
-        let call = try XCTUnwrap(generate.range(of: "AlarmTalkAPI.shared.generateTTS("))
-        XCTAssertLessThan(requested.lowerBound, call.lowerBound, "요청을 보내기 전에 적는다")
     }
 }

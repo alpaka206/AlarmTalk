@@ -136,44 +136,6 @@ internal fun recordPackSelected(context: Context, saved: AlarmEntity, ownerUserI
     UsageSignals.record(context, UsageEvents.PACK_SELECTED, alarmId = saved.id, props = props, ownerUserId = ownerUserId)
 }
 
-/** 아침 소식의 원천 — 공시(OpenDART) / 정책뉴스(정책브리핑). 기록의 `surface` 칸 값이다(그 링크·음성이 어느 줄에서 열렸나). */
-internal enum class BriefingSource(val code: String) {
-    DISCLOSURE("disclosure"),
-    POLICY_NEWS("policy_news"),
-}
-
-/**
- * 아침 소식 사용(`briefing_opened` / `source_opened` / `briefing_audio_requested`, `docs/spec/morning-briefing.md` §8).
- *
- * ⚠ **관심 기업·기사 제목·원문·URL 을 싣지 않는다**(§7.1). 원천 구분은 [BriefingSource] 코드 하나(`surface`)뿐이다 — 기업
- *   고유번호·접수번호도 넣지 않는다(무엇을 봤는지가 곧 관심 기업이다).
- */
-internal object BriefingSignals {
-    /** 화면이 열렸다. 들어오는 곳은 더보기 하나다. */
-    const val SURFACE_MENU = "menu"
-
-    fun opened(context: Context) {
-        UsageSignals.record(context, UsageEvents.BRIEFING_OPENED, props = UsageEventProps(surface = SURFACE_MENU))
-    }
-
-    /** 원문 링크를 열었다. 링크는 받지 않는다 — 원천 종류만. */
-    fun sourceOpened(context: Context, source: BriefingSource) {
-        UsageSignals.record(context, UsageEvents.SOURCE_OPENED, props = sourceProps(source))
-    }
-
-    /** '음성 만들기' 를 눌러 요청을 보낸다. 문장은 받지 않는다 — 원천 종류와 고른 목소리 id 만. */
-    fun audioRequested(context: Context, source: BriefingSource, voiceProfileId: String) {
-        UsageSignals.record(
-            context,
-            UsageEvents.BRIEFING_AUDIO_REQUESTED,
-            voiceProfileId = voiceProfileId,
-            props = sourceProps(source),
-        )
-    }
-
-    fun sourceProps(source: BriefingSource): UsageEventProps = UsageEventProps(surface = source.code)
-}
-
 /**
  * 샘플(목소리 미리듣기) 한 번. **실제로 재생을 시작한 직후** [start] 로 만들고, 끝까지 갔을 때만 [completed].
  * 중간에 멈추거나 오류가 나면 아무것도 하지 않는다(시작만 남는다).

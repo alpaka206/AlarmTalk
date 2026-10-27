@@ -236,7 +236,6 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 콘텐츠 | `content_selected` | 응원의 고정/다양하게(`content_mode` = `fixed`/`varied`, voice-and-message §5-4). **저장에 성공한** 응원 알람의 선택이다 — 편집기에서 눌러만 보고 취소한 것은 적지 않는다. 고정한 문구 ID 는 싣지 않는다(담을 정해진 칸이 없다) | 알람 저장 성공 한 곳(「직전 선택 유지」와 같은 시점), 저장을 **시작한** 계정으로 |
 | | `dated_alarm_saved` | 날짜 지정 알람(한 번)을 저장했다 — 날짜·시간대·문구는 싣지 않는다 | 편집기 저장 성공(Android `recordDatedAlarmSaved` · iOS `AlarmEditorSheet.finishScheduling`) |
 | | `pack_selected` | 추가 음성팩 목소리로 우는 알람을 **저장에 성공했다**(`voice-packs.md`). 칸은 `pack_id`(팩 id) 하나 — 원문·문구·클립 id 를 싣지 않는다. 편집기에서 눌러만 보고 취소한 것, 알람 모드·직접 녹음으로 저장한 것은 적지 않는다 | `content_selected` 와 같은 자리(알람 저장 성공 한 곳), 저장을 **시작한** 계정으로 — 안드로이드 `recordPackSelected`, iOS `VoicePacks.packSelectionProps` |
-| 소식 | `briefing_opened` / `source_opened` / `briefing_audio_requested` | 아침 소식 화면이 열렸다(`surface` = `menu`) / 원문 링크를 열었다 / '음성 만들기' 로 음성 문장을 요청했다(보내기 **전에** 적는다 — 결과는 직접 입력과 같은 길이 말한다). 원천 구분은 `surface` = `disclosure`(공시)·`policy_news`(정책뉴스)뿐이다. **관심기업·기업 고유번호·접수번호·기사 제목·원문·URL 을 싣지 않는다** | 아침 소식 화면(열림은 화면 하나에 한 번) |
 | 결제 | `paywall_viewed` / `store_purchase_verified` / `entitlement_changed` | 결제 화면(`surface`) / 스토어 구매를 서버가 확인했다(`product_id`·`store_offer`·`outcome`) / 앱이 본 플랜이 바뀌었다(`from_plan`→`to_plan`) | 결제 화면·구매 흐름·플랜 갱신 |
 
 ⚠ **기존 `alarm_created` 를 저장 시도로 재해석하지 않는다.** `alarm_created` 는 '로컬 행이 생겼다' 이고, 저장 시도·막힘·
@@ -305,7 +304,7 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 
 고지에 더할 취지(문안은 법무 검토 뒤 확정): 앱 버전·운영체제 종류, 음성 준비에 걸린 시간·내려받은 용량·실패 코드, 알람 저장
 시도·막힌 사유, 직접 입력 음성의 새 제작·재사용 여부·글자 수·차감 수단, 광고 보상의 제안·시청·지급·사용 단계, 결제 화면 열람·
-스토어 구매 확인 결과·이용권 출처. 문구 원문·음성 파일·관심기업·기사 원문은 담지 않는다. 보관은 1년(§6) 그대로다.
+스토어 구매 확인 결과·이용권 출처. 문구 원문·음성 파일은 담지 않는다. 보관은 1년(§6) 그대로다.
 
 ### 7.6 집계
 
@@ -349,9 +348,8 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 저장 시도·막힘·준비 완료 | `data/UsageSignals.kt` 의 `AlarmSaveAttempts` ← `ui/editor/AlarmEditorScreen.kt`(`onSave`·`showSaveBlockAlert`·`saveEditor`), 준비 완료는 `MainViewModelAlarmActions.recordAlarmReadyIfReady` → `AlarmRepository.isReadyToRing`(`AlarmScheduler.isScheduled` + 파일) | `AlarmEditorSheet.saveFlow` 의 `beginSaveAttempt`·`recordSaveBlocked`, `finishScheduling` 의 `recordAlarmReadyIfComplete` | — |
 | 직접 입력 재사용·생성 결과 | 기기 `AlarmEditorScreen.kt` 의 `manualAudioReuse` `onFound`, 서버·결과 `UsageSignals.recordManualGenerationResult`(실패는 `startGeneration` 의 `onFailure`) | 기기 `VoiceStudioViewModel.recordManualLocalReuse`, 서버·결과 `recordManualGenerationAnswer`·`recordManualGenerationFailure` | `routes/tts.ts` 응답의 `cache_hit`·`charged_source`·`usage_month` |
 | 광고 보상 | `data/UsageSignals.kt` 의 `AdRewardAttempts` ← 편집기 플랜 게이트·`AlarmEditorScreen.watchRewardedAd`(지급은 서버 적립을 확인했을 때만) | — (광고 보상 흐름 없음, 종류만) | — |
-| 응원 고정/다양하게(`content_selected`) — 저장 성공 때만 | `data/UsageSignals.kt` 의 `contentSelectionProps`·`recordContentSelected` ← `ui/main/MainViewModelAlarmActions.kt` 의 `createAlarm`·`updateAlarm` `onSuccess`(계정은 시작할 때 잡은 `ownerUserId`) — 회귀 `ContentAndBriefingSignalsTest`·`ContentAndBriefingSignalWiringTest` | `CheerVariety.contentSelectionProps(for:)` ← `AlarmEditorSheet.finishScheduling` 의 성공 끝(`userID: ownerID`) — 회귀 `ContentAndBriefingSignalsTests` | — |
-| 팩 목소리 사용(`pack_selected`) — 저장 성공 때만, `pack_id` 하나 | `data/UsageSignals.kt` 의 `packSelectionProps`·`recordPackSelected` ← 같은 `onSuccess`(`recordContentSelected` 옆, `ownerUserId`) — 회귀 `ContentAndBriefingSignalsTest`·`ContentAndBriefingSignalWiringTest` | `VoicePacks.packSelectionProps(for:held:)` ← `AlarmEditorSheet.finishScheduling` 의 `contentSelected` 옆(`userID: ownerID`) — 회귀 `ContentAndBriefingSignalsTests` | — |
-| 아침 소식 열람·원문·음성 요청(원천 종류만) | `data/UsageSignals.kt` 의 `BriefingSignals`·`BriefingSource` ← `ui/briefing/BriefingScreen.kt`(열림 `LaunchedEffect` + `rememberSaveable`, 원문 `onOpen`, 음성 `BriefingSpeechDialog.generate`) | `BriefingView.swift` 의 `BriefingUsageSignals`·`BriefingSource` ← `.task`(열림 `openRecorded`), `BriefingItemActions`(원문), `BriefingSpeechSheet.generate`(음성) | — |
+| 응원 고정/다양하게(`content_selected`) — 저장 성공 때만 | `data/UsageSignals.kt` 의 `contentSelectionProps`·`recordContentSelected` ← `ui/main/MainViewModelAlarmActions.kt` 의 `createAlarm`·`updateAlarm` `onSuccess`(계정은 시작할 때 잡은 `ownerUserId`) — 회귀 `ContentSignalsTest`·`ContentSignalWiringTest` | `CheerVariety.contentSelectionProps(for:)` ← `AlarmEditorSheet.finishScheduling` 의 성공 끝(`userID: ownerID`) — 회귀 `ContentSignalsTests` | — |
+| 팩 목소리 사용(`pack_selected`) — 저장 성공 때만, `pack_id` 하나 | `data/UsageSignals.kt` 의 `packSelectionProps`·`recordPackSelected` ← 같은 `onSuccess`(`recordContentSelected` 옆, `ownerUserId`) — 회귀 `ContentSignalsTest`·`ContentSignalWiringTest` | `VoicePacks.packSelectionProps(for:held:)` ← `AlarmEditorSheet.finishScheduling` 의 `contentSelected` 옆(`userID: ownerID`) — 회귀 `ContentSignalsTests` | — |
 | 결제 화면·구매 확인·플랜 변경 | `ui/alarms/AlarmListScreen.kt`(이용권 탭)·편집기 플랜 게이트, `MainViewModelBillingActions.recordStorePurchaseVerified`(`store_offer` 는 `PlayBillingManager.launchPurchase` 가 고른 오퍼), `MainViewModelAuthActions.refreshAppSessionNow` | `BillingPanel` 의 `.onAppear`, `SubscriptionManager.purchase` → `recordPurchaseVerified`(`transaction.offer`), `AuthViewModel.persistSession` → `recordPlanChangeIfNeeded` | — |
 | 2판 열 | — | — | 마이그레이션 #142(`usage-events-v2-fields`), `routes/events.ts` 의 `PROP_COLUMNS` — `usage-events.test.ts` 「2판」 |
 | 권한 출처(서버가 찍음) | — | — | `lib/usage-entitlement.ts` 의 `loadEntitlementSource` — `admin-usage-metrics.test.ts` 「권한 출처」 |

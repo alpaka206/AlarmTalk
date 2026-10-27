@@ -76,7 +76,7 @@ export const FEATURE_CONSENT_TYPES = ['voice_biometric'] as const;
  *  재동의 요구를 영구히 무력화한다 — 그래서 목록 밖은 409 다).
  *  '8' (2026-10-26): v1.3 의 **확대 개정**이다 — 사용 기록 2판의 칸(앱 버전·준비 시간·저장 과정·직접 입력 차감 방식·
  *  광고 단계·결제 화면 등, `docs/spec/usage-events.md` §7.5), 날짜 지정 알람·응원 방식, 녹음 품질 판정, 무료 체험 등
- *  구독 조건, App Store 서버 알림, 관리자 지급 기간, 직접 입력 요청 식별자, 아침 소식의 관심 기업, 보상형 광고와 Google
+ *  구독 조건, App Store 서버 알림, 관리자 지급 기간, 직접 입력 요청 식별자, 보상형 광고와 Google
  *  AdMob 처리·국외 이전을 더했다. **아직 어느 유형의 최소 버전도 올리지 않는다** — 서버 먼저(8·7 을 함께 받는다) →
  *  8판 앱 게재·`minSupported` → 그 뒤에 재동의를 받을지(privacy 최소 버전 8) 오너·법무가 정한다(`docs/legal/README.md`).
  *  사용 기록 2판 칸은 재동의 없이도 8판에 동의한 사람의 사건부터 저장된다(`USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION`).

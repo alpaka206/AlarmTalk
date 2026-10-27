@@ -43,14 +43,11 @@ enum UsageEventType: String, Codable {
     case rewardPending = "reward_pending"
     case rewardGranted = "reward_granted"
     case rewardSpent = "reward_spent"
-    /// 콘텐츠·소식 — `contentSelected`·`packSelected` 는 알람 저장 성공(`CheerVariety.contentSelectionProps`·
-    /// `VoicePacks.packSelectionProps`), 소식 셋은 `BriefingUsageSignals`. `datedAlarmSaved` 는 스키마만 — 그 기능 PR 이 심는다. 관심기업·기사 원문·URL 을 싣지 않는다.
+    /// 콘텐츠 — `contentSelected`·`packSelected` 는 알람 저장 성공(`CheerVariety.contentSelectionProps`·
+    /// `VoicePacks.packSelectionProps`)이 적는다. `datedAlarmSaved` 는 스키마만 — 그 기능 PR 이 심는다.
     case contentSelected = "content_selected"
     case datedAlarmSaved = "dated_alarm_saved"
     case packSelected = "pack_selected"
-    case briefingOpened = "briefing_opened"
-    case sourceOpened = "source_opened"
-    case briefingAudioRequested = "briefing_audio_requested"
     case paywallViewed = "paywall_viewed"
     case storePurchaseVerified = "store_purchase_verified"
     case entitlementChanged = "entitlement_changed"

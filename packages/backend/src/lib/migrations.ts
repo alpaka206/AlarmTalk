@@ -3354,6 +3354,7 @@ export const migrations: Migration[] = [
     //  - `briefing_interests`: 사람 × 관심 기업(최대 3 — 라우트가 통째 교체로 지킨다). **탈퇴 파기가 지운다.**
     //  - `briefing_items`: 받아 둔 공시·정책뉴스(공용). `content_hash` 가 같으면 다시 쓰지 않는다. 30일 지나면 크론이 지운다.
     //  - `briefing_fetch_state`: 원천·기업마다 마지막 성공·시도·오류, 요청 한도 대기(`retry_after`), 고유번호 받기 잠금.
+    // ⚠ 기능은 2026-10-27 에 제거됐다 — 위 스펙·라우트는 이제 없고, 이 표 넷은 #145 가 지운다. 이 항목은 append-only 라 그대로 둔다.
     id: 137,
     name: 'morning-briefing',
     statements: [
@@ -3675,6 +3676,19 @@ export const migrations: Migration[] = [
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`,
       `CREATE INDEX IF NOT EXISTS idx_voice_pack_events_pack ON voice_pack_events (pack_id, created_at)`,
+    ],
+  },  {
+    // **아침 소식 제거**(2026-10-27, 오너 결정 — "당장 할 생각은 없으니 코드도 제거"). #137 이 만든 표 넷을 지운다.
+    // 운영·스토어에 나간 적 없는 기능이라(develop 에만 있었다) 표를 읽고 쓰는 코드는 같은 배포에서 이미 사라졌다 —
+    // 배포 → 마이그레이션 창에 옛 표를 부르는 경로가 없다. 탈퇴 파기의 `briefing_interests` 줄도 함께 지웠다.
+    // 인덱스는 표와 함께 지워진다. `IF EXISTS` 라 #137 이 돈 적 없는 DB 에서도 그대로 지나간다.
+    id: 145,
+    name: 'drop-morning-briefing',
+    statements: [
+      `DROP TABLE IF EXISTS briefing_interests`,
+      `DROP TABLE IF EXISTS briefing_items`,
+      `DROP TABLE IF EXISTS briefing_fetch_state`,
+      `DROP TABLE IF EXISTS briefing_corp_codes`,
     ],
   },
 ];

@@ -554,5 +554,9 @@
   "144": {
     "name": "voice-packs",
     "sha": "933f3ca06805f59f"
+  },
+  "145": {
+    "name": "drop-morning-briefing",
+    "sha": "fa5bc8e993f20b2b"
   }
 }

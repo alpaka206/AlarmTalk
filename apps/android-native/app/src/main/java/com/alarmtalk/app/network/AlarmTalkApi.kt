@@ -9,6 +9,5 @@ interface AlarmTalkApi :
     HolidayApi,
     PushApi,
     UsageEventApi,
-    BriefingApi,
     VoicePackApi,
     AdRewardApi
