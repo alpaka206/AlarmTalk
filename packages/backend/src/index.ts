@@ -50,7 +50,6 @@ import voicePacksRoutes from './routes/voice-packs';
 import holidayRoutes from './routes/holiday';
 import eventRoutes from './routes/event';
 import adminRoutes from './routes/admin';
-import briefingRoutes from './routes/briefing';
 
 /**
  * 사용 기록 보관 기간. **처리방침(개인정보 처리방침 3장)에 적은 값과 같아야 한다** —
@@ -310,8 +309,6 @@ api.route('/billing', billingRoutes);
 api.route('/push', pushRoutes);
 // 사용 기록 — 앱이 오프라인에 쌓아 둔 이벤트를 모아 보낸다(routes/events.ts).
 api.route('/events', eventsRoutes);
-// 아침 소식 — 관심 기업 공시(OpenDART) + 정책브리핑 정책뉴스(`docs/spec/morning-briefing.md`).
-api.route('/briefing', briefingRoutes);
 // 광고 시청 승인 세션 — 광고를 띄우기 전 승인·시작·끝 알림(`docs/spec/ad-rewards.md` §3). 콜백(`/api/ads`)과 다른 경로다.
 api.route('/ad-rewards', adRewardSessionRoutes);
 // 추가 음성팩 — 권리를 확인한 무료 고정 목소리(`docs/spec/voice-packs.md`).
@@ -715,19 +712,6 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 토큰이라 이 경로가 소비하면 안 됨). 발사 자체는 로컬에 맡긴다.
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
   //  틱마다 Turso row-read 만 소모했다.)
-
-  // 아침 소식 — 한국 시각 06시대에만 DB 를 부른다: 기업 고유번호 캐시를 하루 한 번 받고(잠금), 첫 틱에 오래된 항목을
-  // 지운다(`lib/briefing/store.ts` 의 `runBriefingCron`). 그 밖의 틱은 시간 계산만 하고 끝난다.
-  try {
-    const { runBriefingCron } = await import('./lib/briefing/store');
-    const briefing = await runBriefingCron(db, env, now);
-    // 키가 거절되면 우리 설정을 고쳐야 한다 — 하루 한 시간 창에서만 도니 경보로 올려도 시끄럽지 않다.
-    if (briefing?.status === 'failed' && briefing.kind === 'key_invalid') {
-      captureCron('scheduled.briefing.corp_codes', new Error('OpenDART rejected the API key'));
-    }
-  } catch (err) {
-    captureCron('scheduled.briefing', err);
-  }
 
   // 지역별 날씨 미리 계산(`weatherRegionDailyTick`, 스펙 5-1). 클론 드레인(아래)**보다 먼저** 둔다: 그쪽은
   // subrequest 가 모자라면 스스로 멈추고 다음 틱에 잇지만, 여기는 슬롯이 닫히면 다음 슬롯(12시간 뒤)까지 기다린다.

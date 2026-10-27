@@ -146,20 +146,6 @@ enum APIErrorMessages {
         case "TTS_GENERATION_FAILED":
             return String(localized: "음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
 
-        // ── 아침 소식 ─────────────────────────────────────────────────────
-        // HTTP 로 오는 다섯이다(`docs/spec/morning-briefing.md` §8 「문구 표」). 응답 본문의 `errors[].code`
-        // (`BRIEFING_SOURCE_*`)는 화면의 표(`BriefingPresentation.sourceErrorMessage`)가 받는다. 안드로이드 짝과 같은 문장이다.
-        case "BRIEFING_NOT_CONFIGURED":
-            return String(localized: "아침 소식은 아직 준비 중이에요.")
-        case "BRIEFING_CORP_CODES_NOT_READY":
-            return String(localized: "기업 목록을 준비하고 있어요. 잠시 뒤에 다시 찾아 주세요.")
-        case "BRIEFING_INVALID_QUERY":
-            return String(localized: "기업 이름이나 종목코드를 30자 안으로 입력해 주세요.")
-        case "BRIEFING_INVALID_INTERESTS":
-            return String(localized: "관심 기업은 3곳까지 고를 수 있어요.")
-        case "BRIEFING_CORP_NOT_FOUND":
-            return String(localized: "찾을 수 없는 기업이 있어요. 다시 검색해 주세요.")
-
         default:
             return nil
         }

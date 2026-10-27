@@ -75,10 +75,6 @@ export const USAGE_EVENT_V2_TYPES = [
   'content_selected',
   'dated_alarm_saved',
   'pack_selected',
-  // 소식 — 원천 종류(`surface`)만. 관심기업·기사 원문·URL 을 싣지 않는다
-  'briefing_opened',
-  'source_opened',
-  'briefing_audio_requested',
   // 결제
   'paywall_viewed',
   'store_purchase_verified',

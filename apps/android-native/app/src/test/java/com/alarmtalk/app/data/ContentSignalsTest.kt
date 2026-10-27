@@ -6,10 +6,10 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * 사용 기록 2판의 콘텐츠·소식 종류(`docs/spec/usage-events.md` §7.1) — 싣는 칸이 정해진 칸 하나뿐이고, 문구 ID·링크·
- * 제목 같은 원문이 끼어들 자리가 없는가. 배선(저장 성공 때만·링크를 넘기지 않음)은 `ContentAndBriefingSignalWiringTest`.
+ * 사용 기록 2판의 콘텐츠 종류(`docs/spec/usage-events.md` §7.1) — 싣는 칸이 정해진 칸 하나뿐이고, 문구 ID·제목
+ * 같은 원문이 끼어들 자리가 없는가. 배선(저장 성공 때만)은 `ContentSignalWiringTest`.
  */
-class ContentAndBriefingSignalsTest {
+class ContentSignalsTest {
     @Test
     fun `응원 고정은 fixed, 다양하게는 varied 다`() {
         assertEquals("fixed", contentSelectionProps(CHEER_BUCKET_ID, CheerModes.PINNED)!!.contentMode)
@@ -48,18 +48,5 @@ class ContentAndBriefingSignalsTest {
         assertNull(packSelectionProps(rehearsalCloneAlarm(voiceProfileId = packVoice, playMode = AlarmPlayModes.ALARM_ONLY), held))
         assertNull(packSelectionProps(saved.copy(voiceSource = VoiceSources.LOCAL_AUDIO), held))
         assertNull(packSelectionProps(saved, emptyList()))
-    }
-
-    @Test
-    fun `소식 기록은 원천 종류 하나만 싣고 서버 모양을 지난다`() {
-        BriefingSource.entries.forEach { source ->
-            val props = BriefingSignals.sourceProps(source)
-            // 다듬어도 그대로다 — 서버 `CodeSchema` 모양 안이다.
-            assertEquals(props, props.sanitized())
-            val json = JsonParser.parseString(props.toJson()).asJsonObject
-            assertEquals(setOf("surface"), json.keySet())
-        }
-        assertEquals("disclosure", BriefingSource.DISCLOSURE.code)
-        assertEquals("policy_news", BriefingSource.POLICY_NEWS.code)
     }
 }
