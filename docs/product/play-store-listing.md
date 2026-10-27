@@ -269,7 +269,7 @@ Support: https://alarm-talk.com/en/contact/
 - Play 정책 메모: 정기 결제 정책은 무료 체험의 기간·체험 뒤 청구 금액·해지 방법을 결제 전에 분명히 알리라고 한다 — 앱의 결제
   카드가 그 말을 하고, 설명은 그와 어긋나지 않게만 쓴다(금액은 나라마다 달라 적지 않는다).
 
-### ko-KR (2647/4000)
+### ko-KR (2649/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -311,7 +311,7 @@ Support: https://alarm-talk.com/en/contact/
 • 로그인이 필요해요(이메일 또는 간편 로그인).
 • 목소리 등록, 문구 준비, 동기화에는 인터넷이 필요해요.
 • 알람 권한을 허용해야 제시간에 울려요.
-• 직접 입력 횟수는 한국 시간 매월 1일에 다시 채워지고, 이미 만든 같은 음성을 다시 쓰면 줄지 않아요.
+• 직접 입력 횟수는 한국 시간 매월 1일에 다시 채워지고, 이 폰에 남아 있는 음성을 다시 쓰면 줄지 않아요.
 • 앱 화면은 한국어·영어·일본어를 지원해요.
 
 ■ Android에서
@@ -333,7 +333,7 @@ Support: https://alarm-talk.com/en/contact/
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3635/4000)
+### en-US (3645/4000)
 
 ```text
 Wake up to a voice you love.
@@ -367,7 +367,7 @@ No math, no shaking.
 ■ Good to know
 • Sign-in required; registering a voice, preparing messages and sync need internet
 • Allow alarm permission so alarms ring on time
-• Typed-message counts refill on the 1st of each month (Korea time); reusing audio you already made doesn't count
+• Typed-message counts refill on the 1st of each month (Korea time); reusing audio that's still on this phone doesn't count
 
 ■ On Android
 • Sign in with Google or email
@@ -388,7 +388,7 @@ Terms of Service: https://alarm-talk.com/en/terms/
 Support: https://alarm-talk.com/en/contact/
 ```
 
-### ja-JP (2510/4000)
+### ja-JP (2513/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -430,7 +430,7 @@ Support: https://alarm-talk.com/en/contact/
 • ログインが必要です(メールまたは簡単ログイン)。
 • 声の登録、メッセージの準備、同期にはインターネット接続が必要です。
 • 時間どおりに鳴らすには、アラームの権限を許可してください。
-• 自分で入力の回数は韓国時間の毎月1日にまた使えるようになり、すでに作った同じ音声をもう一度使っても減りません。
+• 自分で入力の回数は韓国時間の毎月1日にまた使えるようになり、このスマホに残っている音声をもう一度使っても減りません。
 • アプリは日本語・韓国語・英語に対応しています。
 
 ■ Androidでは
@@ -501,8 +501,8 @@ R2 (100자)
 | 전체 설명 — (C) | 4000 | 2435 | 3205 | 2307 |
 | 전체 설명 — (C) + R1 | 4000 | 2488 | 3265 | 2349 |
 | 전체 설명 — (C) + R1 + R2 | 4000 | 2590 | 3383 | 2449 |
-| 전체 설명 — (D) | 4000 | 2647 | 3635 | 2510 |
-| 전체 설명 — (D) + R1 + R2 | 4000 | 2802 | 3813 | 2652 |
+| 전체 설명 — (D) | 4000 | 2649 | 3645 | 2513 |
+| 전체 설명 — (D) + R1 + R2 | 4000 | 2804 | 3823 | 2655 |
 
 글자 수는 유니코드 코드 포인트 수다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.
 (2026-10-26: (C) 의 전체 설명 글자 수가 이용권 이름을 '플러스' 로 바꾸기 전 값으로 남아 있어 다시 셌다. 줄바꿈은 1자로 센다.

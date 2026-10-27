@@ -1318,9 +1318,9 @@ final class VoiceStudioViewModel: ObservableObject {
 
     private var manualGenerationTrack: ManualGenerationTrack?
 
-    /// 서버가 답했다 — 서버 재사용(`cache_hit`)이면 `manual_result_reused`(server, 차감 없음), 아니면 새 제작의
-    /// `generation_outcome`. 정산 수단은 **서버가 말한 값만** 싣는다(옛 서버면 비운다). 실제 원래 사용월은 응답에 없어
-    /// 비운다 — 기기에서 지어내지 않는다.
+    /// 서버가 답했다 — 서버 재사용(`cache_hit`)이면 `manual_result_reused`(server), 아니면 새 제작의
+    /// `generation_outcome`. 서버 재사용도 한 번 센다(2026-10-27, `docs/spec/voice-and-message.md` §8) — 그래서 두 갈래 모두
+    /// 정산 수단·사용월을 **서버가 말한 값 그대로** 싣는다(옛 서버면 비운다). 기기에서 지어내지 않는다.
     private func recordManualGenerationAnswer(_ response: TtsGenerateResponse) {
         guard let track = manualGenerationTrack else { return }
         manualGenerationTrack = nil
@@ -1333,7 +1333,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 featureVersion: "manual-1",
                 props: UsageEventProps(
                     reuseLocation: .server,
-                    chargedSource: UsageEventProps.ChargedSource.none,
+                    chargedSource: response.chargedSource.flatMap(UsageEventProps.ChargedSource.init(rawValue:)),
+                    usageMonth: response.usageMonth,
                     resultID: response.messageId,
                     requestID: track.requestID,
                     charCount: track.charCount

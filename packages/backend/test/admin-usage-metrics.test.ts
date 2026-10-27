@@ -106,6 +106,8 @@ beforeAll(async () => {
     ev('generation_outcome', 52, { props: { outcome: 'success', charged_source: 'base', usage_month: '2026-10', char_count: 30 } }),
     ev('generation_outcome', 51, { props: { outcome: 'failure', charged_source: 'none', error_code: 'tts_failed' } }),
     ev('manual_result_reused', 50, { props: { reuse_location: 'local' } }),
+    // 서버 재사용도 한 번 센다(2026-10-27) — 정산에 함께 든다.
+    ev('manual_result_reused', 50, { props: { reuse_location: 'server', charged_source: 'ad' } }),
     ev('reward_pending', 45, { attempt_id: crypto.randomUUID() }),
     ev('alarm_rang', 40),
     ev('alarm_dismissed', 39),
@@ -169,8 +171,11 @@ describe('사용 지표', () => {
 
   it('직접 입력의 새 제작·실패·재사용·평균 글자·정산', async () => {
     const m = await loadUsageMetrics(db, parseUsageFilter(() => undefined));
-    expect(m.manual).toMatchObject({ created: 1, failed: 1, reusedLocal: 1, reusedServer: 0, avgChars: 30 });
-    expect(m.manual.charged).toEqual([{ source: 'base', count: 1 }]);
+    expect(m.manual).toMatchObject({ created: 1, failed: 1, reusedLocal: 1, reusedServer: 1, avgChars: 30 });
+    expect(m.manual.charged).toEqual([
+      { source: 'base', count: 1 },
+      { source: 'ad', count: 1 },
+    ]);
   });
 
   it('광고 지급 지연과 30분 넘은 누락', async () => {

@@ -348,11 +348,11 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 나머지는 한 글자도 같다:
 
 - 「무료」 절: 직접 입력 한 줄(기본 목소리로 새로 만들기 월 3회).
-- 「플러스」 절: 직접 입력 줄을 '기본 목소리와 합쳐 월 30회' 로(옛 줄의 '이 폰에 남아 있으면' 조건은 v1.3 에서 서버에 남은
-  내 결과도 세지 않게 바뀌어 빼고, 재사용 규칙은 「이용 안내」 한 줄로 옮겼다).
+- 「플러스」 절: 직접 입력 줄을 '기본 목소리와 합쳐 월 30회' 로(재사용 규칙은 「이용 안내」 한 줄로 옮겼다. 2026-10-27 에 서버에서
+  다시 받는 것도 1회로 되돌려, 그 줄은 다시 '이 폰에 남아 있는' 음성만 무차감이라고 말한다).
 - 「목소리와 개인정보」: 이용권이 끝나면 등록한 목소리를 쓰던 알람이 기본 목소리(미나)로 울리고, 3일 안에 다시 시작하면
   원래 목소리로 돌아온다(`docs/spec/billing-lifecycle.md` — 대체 목소리는 미나 하나).
-- 「이용 안내」: 직접 입력 횟수의 초기화(한국 시간 매월 1일)와 재사용 무차감.
+- 「이용 안내」: 직접 입력 횟수의 초기화(한국 시간 매월 1일)와 이 폰에 남아 있는 음성의 재사용 무차감.
 - 「이용권과 결제」: 첫 구독 1개월 무료 체험과 체험 뒤 자동 결제. 자동 갱신 고지 문장은 그대로 두고 '체험이 있으면 체험이
   끝날 때 청구'·'현재 기간(무료 체험 포함)' 을 끼워 넣어 두 문장이 어긋나지 않게 했다.
 
@@ -373,7 +373,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 - 2.3 · 2.3.1 — 메타데이터는 그 버전의 실제 기능이어야 한다 → F.
 - 3.1.1 — 코드로 유료 기능을 연다는 말을 쓰지 않는다(`scripts/check-paid-unlock-codes.py`).
 
-### ko (2413/4000)
+### ko (2415/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -415,7 +415,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 • 로그인이 필요해요(이메일 또는 간편 로그인).
 • 목소리 등록, 문구 준비, 동기화에는 인터넷이 필요해요.
 • 알람 권한을 허용해야 제시간에 울려요.
-• 직접 입력 횟수는 한국 시간 매월 1일에 다시 채워지고, 이미 만든 같은 음성을 다시 쓰면 줄지 않아요.
+• 직접 입력 횟수는 한국 시간 매월 1일에 다시 채워지고, 이 폰에 남아 있는 음성을 다시 쓰면 줄지 않아요.
 • 앱 화면은 한국어·영어·일본어를 지원해요.
 
 ■ iPhone에서
@@ -430,7 +430,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 Apple 표준 사용권 계약(EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### en-US (3472/4000)
+### en-US (3482/4000)
 
 ```text
 Wake up to a voice you love.
@@ -464,7 +464,7 @@ No math, no shaking.
 ■ Good to know
 • Sign-in required; registering a voice, preparing messages and sync need internet
 • Allow alarm permission so alarms ring on time
-• Typed-message counts refill on the 1st of each month (Korea time); reusing audio you already made doesn't count
+• Typed-message counts refill on the 1st of each month (Korea time); reusing audio that's still on this phone doesn't count
 
 ■ On iPhone
 • Sign in with Apple or with email.
@@ -478,7 +478,7 @@ Privacy Policy: https://alarm-talk.com/en/privacy/
 Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### ja (2291/4000)
+### ja (2294/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -520,7 +520,7 @@ Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/st
 • ログインが必要です(メールまたは簡単ログイン)。
 • 声の登録、メッセージの準備、同期にはインターネット接続が必要です。
 • 時間どおりに鳴らすには、アラームの権限を許可してください。
-• 自分で入力の回数は韓国時間の毎月1日にまた使えるようになり、すでに作った同じ音声をもう一度使っても減りません。
+• 自分で入力の回数は韓国時間の毎月1日にまた使えるようになり、このスマホに残っている音声をもう一度使っても減りません。
 • アプリは日本語・韓国語・英語に対応しています。
 
 ■ iPhoneでは
@@ -606,7 +606,7 @@ alarmtalk,alarm-talk,alarm,voice,talking,custom,record,message,morning,ai,ringto
 | 프로모션 — 상시판 | 170자 | 82 | 133 | 65 |
 | 설명 — (C) | 4000자 | 2206 | 3070 | 2091 |
 | 설명 — INTERIM | 4000자 | 2128 | 2986 | 2015 |
-| 설명 — (D) | 4000자 | 2413 | 3472 | 2291 |
+| 설명 — (D) | 4000자 | 2415 | 3482 | 2294 |
 
 글자 수는 유니코드 코드 포인트 수, 바이트는 UTF-8 이다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.
 (2026-10-26: (C)·INTERIM 의 설명 글자 수가 이용권 이름을 '플러스' 로 바꾸기 전 값으로 남아 있어 다시 셌다. 줄바꿈은 1자로 센다.)

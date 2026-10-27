@@ -333,8 +333,13 @@ export async function loadUsageMetrics(db: Client, f: UsageFilter, nowMs: number
         charged.set(source, (charged.get(source) ?? 0) + n);
       } else if (x.outcome === 'failure') manual.failed += n;
     } else if (x.type === 'manual_result_reused') {
-      if (x.loc === 'server') manual.reusedServer += n;
-      else manual.reusedLocal += n;
+      if (x.loc === 'server') {
+        manual.reusedServer += n;
+        // 서버 재사용도 한 번 센다(2026-10-27) — 서버가 말한 정산 수단을 함께 더한다. 옛 앱·옛 서버의 줄은 칸이 비어 있어
+        //   정산에 넣지 않는다(그 시절에는 세지 않았다).
+        const source = str(x.charged);
+        if (source) charged.set(source, (charged.get(source) ?? 0) + n);
+      } else manual.reusedLocal += n;
     } else manual.rewardSpent += n;
   }
   manual.avgChars = charsCount > 0 ? Math.round(charsWeighted / charsCount) : null;

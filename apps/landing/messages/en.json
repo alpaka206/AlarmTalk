@@ -68,7 +68,7 @@
       },
       {
         "q": "How many times can I type my own line?",
-        "a": "This counts new audio made from text you write. Free gets 3 a month with the built-in voices, and Plus gets 30 a month, including your registered voice. Each account has one count, and it refills on the 1st of every month, Korea time (KST). Reusing audio you already made doesn’t use a count. If you make the audio and then cancel saving the alarm, that one still counts, and if making it fails, we give it back."
+        "a": "This counts new audio made from text you write. Free gets 3 a month with the built-in voices, and Plus gets 30 a month, including your registered voice. Each account has one count, and it refills on the 1st of every month, Korea time (KST). Reusing audio that’s still on this phone doesn’t use a count, but getting it again from our server when it isn’t on this phone uses one, just like making new audio. If you make the audio and then cancel saving the alarm, that one still counts, and if making it fails, we give it back."
       },
       {
         "q": "Is there a free trial?",
@@ -244,7 +244,7 @@
     },
     "notes": {
       "trial": "First-time Plus subscribers get a 1-month free trial (the store decides who qualifies). After the trial, $3.90 a month is charged automatically. You can cancel anytime before then in App Store account settings or Google Play subscriptions.",
-      "reuse": "Typing your own line uses a count only when new audio is made. Reusing the same audio you already made doesn’t. Counts refill on the 1st of every month, Korea time (KST)."
+      "reuse": "Typing your own line uses a count each time audio is made or fetched again from our server. Reusing audio that’s still on this phone doesn’t. Counts refill on the 1st of every month, Korea time (KST)."
     }
   },
   "finalCta": {

@@ -61,7 +61,7 @@ export const USAGE_EVENT_V2_TYPES = [
   /** OS 예약과 오디오 파일이 **둘 다** 갖춰졌다. */
   'alarm_ready',
   // 직접 입력
-  /** 이미 만든 결과를 다시 썼다(`reuse_location` = local|server). 차감 없음. */
+  /** 이미 만든 결과를 다시 썼다(`reuse_location` = local|server). local 은 차감 없음, server 는 한 번 센다(2026-10-27 — `charged_source`). */
   'manual_result_reused',
   /** 새 제작 결과(`outcome`·`charged_source`·`usage_month`·`result_id`·`request_id`). */
   'generation_outcome',

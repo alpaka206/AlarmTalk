@@ -273,7 +273,7 @@
     <string name="editorp_cheer_vary_hint">최근에 준비한 문구는 잠시 쉬고, 다른 응원으로 준비해요.</string>
     <string name="editorp_cheer_pinned_hint">고른 문구로만 울려요.</string>
     <string name="editorp_random_manual_title">직접 입력 문구</string>
-    <string name="editor_manual_charge_notice">새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이미 만든 문구는 다시 써도 횟수를 쓰지 않아요.</string>
+    <string name="editor_manual_charge_notice">새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요.</string>
     <string name="editorp_random_more_contexts">더 보기 (운세·약)</string>
     <string name="editorp_random_fortune_title">운세 정보</string>
     <string name="editorp_random_save_button">저장</string>
@@ -855,7 +855,7 @@
     <string name="briefing_speech_title">음성 문장 미리보기</string>
     <string name="briefing_speech_length">%1$d/%2$d자</string>
     <string name="briefing_speech_voice_label">목소리</string>
-    <string name="briefing_speech_charge_notice">새로 만들면 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성은 다시 받아도 횟수를 쓰지 않아요.</string>
+    <string name="briefing_speech_charge_notice">음성을 받을 때마다 이번 달 직접 입력 횟수를 1회 써요. 같은 문장·같은 목소리로 이미 만든 음성도 다시 받으면 1회를 써요.</string>
     <string name="briefing_speech_remaining">이번 달 남은 횟수 %1$d회</string>
     <string name="briefing_speech_make">음성 만들기</string>
     <string name="briefing_speech_ready">음성을 만들었어요.</string>
