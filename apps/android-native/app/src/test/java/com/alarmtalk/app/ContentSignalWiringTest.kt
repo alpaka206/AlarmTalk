@@ -6,10 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 콘텐츠·소식 사용 기록의 **배선**(`docs/spec/usage-events.md` §7.1). `MainViewModel` 과 화면은 단위 테스트로 세울 수 없어
+ * 콘텐츠 사용 기록의 **배선**(`docs/spec/usage-events.md` §7.1). `MainViewModel` 과 화면은 단위 테스트로 세울 수 없어
  * 소스로 본다([readSource]).
  */
-class ContentAndBriefingSignalWiringTest {
+class ContentSignalWiringTest {
     @Test
     fun `응원 선택은 저장 성공 갈래에서만 적고 시작한 계정으로 적는다`() {
         val source = withoutLineComments(readSource("ui/main/MainViewModelAlarmActions.kt"))
@@ -48,23 +48,6 @@ class ContentAndBriefingSignalWiringTest {
             assertFalse("$signature 의 실패 갈래는 적지 않는다", braceBlock(body, ".onFailure { error ->").contains("recordPackSelected"))
         }
         assertFalse("편집기는 적지 않는다", readSource("ui/editor/AlarmEditorScreen.kt").contains("PACK_SELECTED"))
-    }
-
-    @Test
-    fun `소식 기록은 링크·제목·문장을 넘기지 않는다`() {
-        val source = withoutLineComments(readSource("ui/briefing/BriefingScreen.kt"))
-        val opened = Regex("BriefingSignals\\.sourceOpened\\(([^)]*)\\)").findAll(source).map { it.groupValues[1] }.toList()
-        assertEquals("공시·정책뉴스 두 줄에서 적는다", 2, opened.size)
-        opened.forEach { args ->
-            assertFalse("원문 링크를 넘기지 않는다: $args", args.contains("url"))
-            assertTrue(args.contains("BriefingSource."))
-        }
-        assertEquals(1, Regex("BriefingSignals\\.opened\\(context\\)").findAll(source).count())
-        val requested = Regex("BriefingSignals\\.audioRequested\\(([^)]*)\\)").findAll(source).map { it.groupValues[1] }.toList()
-        assertEquals(listOf("context, target.source, chosen"), requested)
-        // 요청을 보내기 전에 적는다 — 실패해도 '요청했다' 는 남는다.
-        val generate = functionBody(source, "fun generate()")
-        assertTrue(generate.indexOf("BriefingSignals.audioRequested") in 0 until generate.indexOf("onGenerateSpeech("))
     }
 
     /** [marker] 에서 시작하는 첫 중괄호 블록(람다 하나). */

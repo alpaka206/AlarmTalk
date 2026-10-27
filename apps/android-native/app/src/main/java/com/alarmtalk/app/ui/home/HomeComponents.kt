@@ -143,7 +143,6 @@ internal fun MenuTabPanel(
     onChangeTheme: (ThemeMode) -> Unit,
     onOpenBilling: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenBriefing: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -231,16 +230,6 @@ internal fun MenuTabPanel(
                 label = stringResource(R.string.hs_profile_menu_pass),
                 onClick = onOpenBilling,
             )
-        }
-        // 아침 소식 — 선택 기능이다. 알람 만들기·울림은 이 화면을 거치지 않는다(`docs/spec/morning-briefing.md` §8).
-        // 서버가 사람별 관심 기업을 읽으므로 로그인했을 때만 둔다.
-        if (authSession != null) {
-            SettingsCard(title = null) {
-                MenuTabRow(
-                    label = stringResource(R.string.briefing_menu_label),
-                    onClick = onOpenBriefing,
-                )
-            }
         }
         // 법적 정보(약관·오픈소스)는 설정 화면 하단으로 이동 — 더보기는 핵심 항목만 남긴다.
         // 탈퇴하기 — 토스처럼 독립 카드 행. 확인 다이얼로그는 앱 레벨에서 뜬다.

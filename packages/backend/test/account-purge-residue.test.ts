@@ -53,10 +53,6 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   plan_grants: 'per-user', // 관리자 기간 지급(#134)
   manual_tts_requests: 'per-user', // 직접 입력 같은 요청 표식(#135)
   apple_server_notifications: 'per-user', // 애플 서버 알림 수신 기록 — 주인을 찾은 행만 계정 id 를 담는다(#136)
-  briefing_interests: 'per-user', // 아침 소식 관심 기업(#137)
-  briefing_corp_codes: 'no-personal-data', // OpenDART 고유번호 공용 캐시(#137)
-  briefing_items: 'no-personal-data', // 받아 둔 공시·정책뉴스 공용 캐시(#137)
-  briefing_fetch_state: 'no-personal-data', // 원천·기업별 확인 상태(#137) — 사람 id 를 적지 않는다
   admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
   tts_synthesis_usage: 'no-personal-data', // 합성 사용량 장부 — 종류·날짜·숫자뿐, 사람을 가리키지 않는다(#139)
   tts_dev_budget_holds: 'no-personal-data', // dev 예산에서 합성 직전에 잡는 몫 — 월·글자 수뿐(#139)
@@ -360,10 +356,6 @@ async function seed(): Promise<void> {
      VALUES ('pg-a', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-a-000001')`,
     [A_PK],
   );
-  // 아침 소식 관심 기업 — 옛 로그인 id 로 적힌 행까지 함께 지운다.
-  await run(`INSERT INTO briefing_interests (user_id, corp_code) VALUES (?, '00126380')`, [A_PK]);
-  await run(`INSERT INTO briefing_interests (user_id, corp_code) VALUES (?, '00164779')`, [A_LOGIN]);
-  await run(`INSERT INTO briefing_interests (user_id, corp_code) VALUES (?, '00126380')`, [B_PK]);
   await run(
     `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
      VALUES ('pg-b', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-b-000001')`,
@@ -476,7 +468,6 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(await ids(`SELECT id FROM plan_grants`)).toEqual(['pg-b']);
       expect(await ids(`SELECT request_id AS id FROM manual_tts_requests`)).toEqual(['req-b']);
       expect(await ids(`SELECT user_id FROM apple_server_notifications`)).toEqual([B_PK]);
-      expect(await ids(`SELECT user_id FROM briefing_interests`)).toEqual([B_PK]);
       expect(await ids(`SELECT id FROM ad_reward_sessions`)).toEqual(['ads-b']);
       expect(await ids(`SELECT transaction_id AS id FROM ad_reward_callbacks`)).toEqual(['adcb-b']);
       expect(await ids(`SELECT id FROM user_consents`)).toEqual(['uc-b']);

@@ -43,7 +43,7 @@ class TtsGenerateGateTest {
     fun freeManualGateAllowsSystemVoiceTypedTextOnly() {
         val manual = TtsGenerateRequest(
             voiceProfileId = "70000000-0000-4000-9000-000000000102",
-            text = "10월 26일 확인한 정책브리핑 정책뉴스입니다.",
+            text = "오늘도 좋은 하루 보내세요.",
             category = "custom",
             language = "ko",
         )
