@@ -123,7 +123,10 @@ struct VoiceProfileManagementPanel: View {
                 systemVoicesSection
             }
             // 추가 음성팩 — 기본 목소리 **아래**(`docs/spec/voice-packs.md` §7). 받기는 고른 팩만이다.
-            VoicePackSection()
+            // 지금은 숨긴다(`VoicePacks.isVisible`).
+            if VoicePacks.isVisible {
+                VoicePackSection()
+            }
         }
         // ⚠ **자격을 잃으면 열려 있던 액션도 닫는다**(2026-09-01 리뷰). 목록에서 걷어내는
         // 것만으로는 부족하다 — 이미 떠 있는 액션시트·이름변경·**삭제 확인**은 그대로

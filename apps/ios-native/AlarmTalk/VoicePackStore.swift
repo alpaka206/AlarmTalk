@@ -125,6 +125,8 @@ final class VoicePackStore: ObservableObject {
     @discardableResult
     func refreshCatalog(session: AuthSession?, force: Bool = false) async -> Bool {
         guard let session, session.user.id == activeUserID else { return false }
+        // 숨긴 동안(`VoicePacks.isVisible`)은 받아 둔 팩이 있을 때만 묻는다 — 그 팩의 게시 끝 기한·개정은 계속 따라가야 한다.
+        guard VoicePacks.isVisible || !held.isEmpty else { return false }
         if !force, let lastCatalogFetch, Date().timeIntervalSince(lastCatalogFetch) < Self.catalogFreshnessWindow {
             return true
         }
