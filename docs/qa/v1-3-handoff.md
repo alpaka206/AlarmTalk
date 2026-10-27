@@ -32,7 +32,7 @@
 | W10 날짜 지정 알람 | #955(#140, Room 30→31) | 로컬·CI | develop 만 | **실기기**: AlarmKit `.fixed` 가 앱 꺼짐·잠금에서 우는지, 안드로이드 Doze 발동, 시간대 변경 뒤 발사 시각 |
 | W11 녹음 품질 | #953 | 로컬·CI | develop 만 | VAD 실기기 |
 | W12 렌더 지문·예산 | #954(#139) | 로컬·CI. 합성 API 호출 없음 | develop 만. 예산 값 미설정 = 제한 없음 | 오너가 정할 값 넷: `TTS_DEV_MONTHLY_CHAR_BUDGET`·`TTS_RERENDER_BATCH_MAX_CHARS`·`TTS_RERENDER_CONCURRENCY`·`TTS_PROVIDER_REMAINING_ALERT_CHARS`. ElevenLabs 구독 응답 실측 |
-| W13 음성팩 | #960(#144) | 로컬·CI | 팩 0개(권리·음원 없음 — 운영 DB 에 심지 않음) | 권리 계약·실음원 → `scripts/import-voice-pack.ts` → 관리자 검수·게시. 게시 조건은 테마 넷의 완전한 세트이고 새 응원(`cheer_v2`)·기상 인사(`wake_v1`)는 조건에서 뺐다 — 팩도 갖춰야 하면 `voicePackExpectedVariants` 를 고친다 |
+| W13 음성팩 | #960(#144) | 로컬·CI | 팩 0개(권리·음원 없음 — 운영 DB 에 심지 않음). **앱 화면에서 숨김**(2026-10-27 오너, 스위치 `VOICE_PACKS_VISIBLE`·`VoicePacks.isVisible`) | 권리 계약·실음원 → `scripts/import-voice-pack.ts` → 관리자 검수·게시. 게시 조건은 테마 넷의 완전한 세트이고 새 응원(`cheer_v2`)·기상 인사(`wake_v1`)는 조건에서 뺐다 — 팩도 갖춰야 하면 `voicePackExpectedVariants` 를 고친다 |
 | W14 공시·정책뉴스 | #951 서버, #957 앱 화면 | 로컬·CI. 고정 응답(fixture) | 키 없음 → 라우트 503(닫힘) | `OPENDART_API_KEY`·`KOREA_POLICY_NEWS_API_KEY`. 정책뉴스 응답 필드 이름을 실제 응답으로 맞춘 뒤 운영 키. 관심 기업의 처리방침 수집 항목 여부(법무). 정책브리핑 저작권정책 주소(`BriefingLinks`) |
 | W15 문구 평가 도구 | #947 | 로컬·CI | 운영 경로 없음(오프라인 도구) | Jev SDK 이름·버전·라이선스, `JEV_API_KEY`, 외부 전송 가부 |
 | W16 Apple 서버 알림 V2 | #948(#136) | 로컬·CI. 실제 Apple G3→G6 인증서로 서명 검증 | ASC 미설정 → 아직 받지 않음 | ASC → App Store 서버 알림 V2: 운영 `https://api.alarm-talk.com/api/billing/apple/notifications`, 샌드박스 `https://api-dev.alarm-talk.com/api/billing/apple/notifications`, Request a Test Notification |
@@ -89,8 +89,13 @@
       1.3 앱에 실린다. 내용은 `docs/legal/README.md` 「버전 8」.
 - [ ] **8판 법무 검토** — 특히 보상형 광고(맞춤 광고·위탁/제3자 구분)와 관심 기업 수집. 고칠 것이 나오면 8 이 main 에 오르기 전이면
       제자리에서 고친다(`docs/legal/README.md` 번호 규칙).
-- [ ] **재동의 여부 결정** — 8판은 확대 개정이라 기준상 privacy 최소 버전 8 대상이다. 올리면 기존 사용자 전원이 처리방침을 다시
-      동의한다. 올리지 않아도 2판 칸은 8판 동의자(신규 가입·8판 앱 재동의)부터만 저장된다. 정하는 시점은 8판 앱 게재·옛 앱 차단 뒤.
+- [ ] **모든 사용자 8판 재동의**(2026-10-27 오너 결정 — 들어오는 사람 전원이 8판에 다시 동의한다). ⚠ **1.3 게재 전에 켜지 않는다** —
+      7판만 실은 1.2.16 앱은 8판에 동의할 수 없어, 최소 버전 8 을 먼저 올리면 재동의 화면이 끝없이 다시 뜬다. 순서:
+      ① 이번 main 릴리스는 서버가 8·7 을 함께 받는 것까지(develop 에 있다) ② 1.3 이 **두 스토어에 게재된 뒤** 서버 PR 하나로
+      `app-version.ts` 의 `minSupported` 를 1.3 빌드로 올리고, `CONSENT_MIN_POLICY_VERSION` 의 `terms`·`privacy`·`overseas_transfer`
+      를 8 로 올리고, `ACCEPTED_POLICY_VERSIONS` 에서 `'7'` 을 뺀다(`docs/spec/consent.md` 의 ③ 단계) ③ 그 PR 의 main 배포 뒤
+      1.3 사용자가 앱을 열면 처리방침·약관·국외 이전 동의 화면이 한 번 뜬다(앱 변경 없음 — 서버의 `collect` 가 띄운다).
+      마케팅·음성 생체정보 동의는 내용이 그대로라 다시 묻지 않는다.
 - [ ] **랜딩 공개 시점** — 랜딩이 이 문서를 빌드 때 읽는다. 랜딩 배포 브랜치에 8판이 들어가는 순간 공개 페이지가 8판이 되므로
       main 릴리스·1.3 게재와 맞춘다.
 - [ ] **ASC 서버 알림 V2 — 샌드박스 URL**(`https://api-dev.alarm-talk.com/api/billing/apple/notifications`) 등록 → Request a Test
@@ -155,7 +160,7 @@
 - **아침 소식**(더보기): 관심 기업 최대 3곳의 공시와 정책뉴스, 확인 시각·출처, 고른 항목을 음성 문장으로(직접 입력과 같은 한도).
   키가 들어오기 전에는 '준비 중'.
 - **음성팩**(목소리 탭 '추가 팩'): 권리를 확인한 무료 고정 목소리를 받아 기본 목소리처럼 쓴다. 게시가 끝나면 기한까지 울고 그 뒤 미나로.
-  지금은 게시된 팩이 없다.
+  지금은 게시된 팩이 없고 **화면에서 숨겨 두었다**(첫 팩을 게시할 때 스위치를 켠다).
 - **공개 문구**: 랜딩·FAQ·llms.txt·스토어 원문을 무료 3회·플러스 30·체험·자동 결제에 맞췄다(한·영·일).
 - **눈에 안 보이는 것**: Apple 서버 알림 V2(환불·해지 즉시 반영), 합성 렌더 지문과 dev 예산(설정을 바꿔 다시 구워도 차감 0), 사용 기록
   2판과 관리자 사용 지표·광고 대조·스토어 다운로드 수, 옛 앱 호환 응답 정리(강제 업데이트 뒤).

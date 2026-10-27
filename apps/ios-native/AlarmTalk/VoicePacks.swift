@@ -24,6 +24,10 @@ func isFreeFixedVoiceID(_ id: String?) -> Bool {
 }
 
 enum VoicePacks {
+    /// **추가 음성팩을 화면에 내보이는가**(2026-10-27 오너 — 권리·음원이 없어 아직 숨긴다). 끄면 목소리 탭의 '추가 팩' 칸을
+    /// 그리지 않고, 받아 둔 팩이 없으면 카탈로그도 묻지 않는다. 코드는 남긴다. 안드로이드 짝 `VOICE_PACKS_VISIBLE`.
+    static let isVisible = false
+
     /// 팩 클립 캐시 키 접두. 기본 목소리 `stock_` 와 따로 둔다 — 기본 목소리 매니페스트 기준 정리
     /// (`AudioCacheStore.pruneReplacedStockAudio`)가 팩 파일을 지우지 않게, 오래된 캐시 정리도 건너뛴다.
     static let cacheKeyPrefix = "pack_"

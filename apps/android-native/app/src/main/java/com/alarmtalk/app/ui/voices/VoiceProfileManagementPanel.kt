@@ -2235,7 +2235,8 @@ internal fun VoiceProfileManagementPanel(
         // 기본 목소리 받기 진행은 위 헤더 옆으로 옮겼다(2026-09-17).
 
         // 추가 팩은 기본 목소리 **아래**다(`docs/spec/voice-packs.md` §7). 기본 4종 받기·관문과 섞지 않는다.
-        VoicePackSection(
+        // 지금은 숨긴다(`VOICE_PACKS_VISIBLE`).
+        if (com.alarmtalk.app.data.VOICE_PACKS_VISIBLE) VoicePackSection(
             catalog = voicePacks.catalog,
             held = voicePacks.held,
             progress = voicePacks.progress,
