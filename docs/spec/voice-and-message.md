@@ -2422,7 +2422,7 @@ ElevenLabs 삭제와 푸시 전송만 DB 커밋 뒤에 실행한다.
 잠금화면·앱 종료 상태에서 목소리가 아예 안 울린다. `AVAssetReader`→`AVAssetWriter` 로
 CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파일은 생기는데 열리지 않는다).
 
-## 8. 직접 입력 월 한도 — **새로 만들 때만** 깎인다 (2026-10-26 개정)
+## 8. 직접 입력 월 한도 — **서버가 처리하면** 깎인다 (2026-10-27 개정)
 
 | 등급 | 월 기본분(KST 달력월, 계정 하나의 풀, 이월 없음) | 쓸 수 있는 목소리 | 기본분을 다 쓰면 |
 | --- | --- | --- | --- |
@@ -2442,34 +2442,54 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 
 ### 무엇을 세는가
 
+**규칙은 한 줄이다: 서버가 처리한 직접 입력 생성 요청은 한 번 센다**(2026-10-27 오너 결정 — "직접 입력 차감 만든 거, 다시
+받아도 다시 차감되도록"). 결과가 서버 캐시 히트(다시 받기)든 새 합성이든 서비스 재렌더든 같다. 예외는 둘뿐이다 — **같은
+`request_id` 의 재시도**(한 번만 센다)와 **실패**(돌려준다). 세는 장부·순서는 그대로다(월 기본분 → 무료는 광고 보상,
+응답 `charged_source` `base`/`ad`).
+
 | 상황 | 차감 |
 | --- | --- |
 | 샘플 듣기·문장 입력만 | 없음 |
 | **새 음성을 만들어 성공** | **1회** |
-| 이미 만든 **내** 음성이 폰에 있다 — 몇 번을 쓰든, 다른 알람에 붙이든 | 없음 |
-| 폰에 없지만 서버에 내 결과가 남아 있다(다시 받기) | **없음** — 2026-10-26 개정(그전에는 서버 캐시 히트도 1회였다) |
+| 이미 만든 **내** 음성이 **폰에** 있다 — 몇 번을 쓰든, 다른 알람에 붙이든 | 없음(서버를 부르지 않는다 — 아래) |
+| 폰에 없지만 서버에 내 결과가 남아 있다(다시 받기 — `cache_hit`) | **1회** — 2026-10-27 개정(2026-10-26 #942 부터 하루 동안은 세지 않았다. 그 앞 2026-09-07 결정과 같아졌다) |
 | 같은 문장을 다른 목소리로 처음 만든다 | 1회(새 결과다) |
 | 시각·요일·다시 울림만 바꾼다 | 없음 |
-| 같은 요청 재시도·중복 탭(`request_id`) | 한 번 |
+| 같은 요청 재시도·중복 탭(`request_id`) | 한 번 — 결과가 캐시 히트든 새 합성이든 |
 | 생성·검증·저장이 기술적으로 실패 | 예약을 **원래 사용월로** 돌려준다(광고 보상이면 그 보상을) |
 | 만든 뒤 알람 저장을 취소하거나 알람·문구를 지움 | 돌려주지 않는다 |
-| 30일 미사용 정리·명시적 삭제로 파일이 없어 다시 만들어야 함 | 새 1회(만들기 전에 알린다) |
-| 같은 요청인데 **서비스가 합성 설정을 바꿔**(모델·음량·합성 옵션 등) 또는 LRU 재등록으로 서버가 다시 굽는다 | **없음**(2026-10-26 — [tts-render-and-budget.md](tts-render-and-budget.md) §2) |
+| 30일 미사용 정리·명시적 삭제로 파일이 없어 다시 만들어야 함 | 1회 |
+| 같은 요청인데 **서비스가 합성 설정을 바꿔**(모델·음량·합성 옵션 등) 또는 LRU 재등록으로 서버가 다시 굽는다 | **1회** — 2026-10-27 개정(#954 의 '세지 않음' 을 되돌렸다, [tts-render-and-budget.md](tts-render-and-budget.md) §2) |
 
-- **서버 캐시 히트를 세지 않는 이유**: 그 사람이 이미 낸 결과다. 이 캐시는 **그 사람 범위**(`manualTtsCacheScope`)라 남의
-  결과를 나눠 주지 않는다. 다시 받기에도 지금 권한 검사는 그대로다 — 등록 목소리는 플러스일 때만, 무료의 기본 목소리
-  결과는 계속 받는다. 횟수 검사와 오디오 권한 검사는 별개다.
+- **기기 안의 재사용은 서버가 알 수 없다 — 그래서 세지 않는다.** 안드로이드 `AlarmAudioStore` 입력 캐시(`findReusableTtsAudio`),
+  iOS 의 같은 입력 캐시로 폰에 있는 결과를 쓰면 서버 호출이 없다. 이것은 정책상의 면제가 아니라 '서버가 처리하지 않았다' 는
+  사실이다. ⚠ **세기 위해 앱이 일부러 서버를 부르게 바꾸지 말 것** — 오프라인 저장·빠른 저장이 깨진다. 반대로 서버를 부른
+  다시 받기를 '이미 만든 것' 이라고 세지 않는 쪽으로 되돌리지 말 것(2026-10-27 결정).
+- **다시 받기도 지금 권한 검사가 먼저다** — 등록 목소리는 플러스일 때만, 무료는 기본 목소리만. 세는 자리는 그 검사와 '지금
+  목소리인가'(제자리 교체) 확인 **뒤**라, 막힌 히트는 횟수를 태우지 않는다. 이 캐시는 **그 사람 범위**(`manualTtsCacheScope`)라
+  남의 결과를 나눠 주지 않는다.
+- **남은 횟수가 0 이면 다시 받기도 429 `MANUAL_TTS_QUOTA_EXCEEDED`** 다(새 합성과 같은 응답 — `manual_quota`, 무료면
+  `ad_reward`). 무료가 기본분을 다 썼고 광고 보상이 있으면 보상 하나로 받는다.
+- 응답: 캐시 히트도 새 합성과 같은 칸을 싣는다 — `manual_quota`(셌은 뒤의 값)·`charged_source`(`base`/`ad`, 같은 요청의
+  재시도면 `none`)·`usage_month`(기본분에서 셌을 때만).
 - 과거 사용량을 돌려주거나 다시 계산하지 않는다. 시행 뒤 요청부터 적용한다.
-- **로컬 오디오는 참조 카운트로 지운다.** 그 알람을 지웠고 다른 알람도 안 쓰면 파일이 사라진다 — 그 뒤에도 서버에 남아
-  있으면 다시 받기는 세지 않는다.
+- **로컬 오디오는 참조 카운트로 지운다.** 그 알람을 지웠고 다른 알람도 안 쓰면 파일이 사라진다 — 그 뒤 같은 문구로 저장하면
+  서버에서 다시 받으므로 1회다.
 
 ### 같은 요청 — `request_id`
 
-앱은 '음성 만들기' 한 번마다 UUID 를 만들고 재시도에도 같은 값을 싣는다. 서버는 캐시 미스가 확정된 뒤, 세기 전에 그 id
-를 잡는다(`lib/manual-tts-requests.ts`, 표 #135). 잡혀 있는 동안 같은 id 는 409 `TTS_REQUEST_IN_PROGRESS`(잠시 뒤 다시
-보내면 캐시 히트로 받는다), 같은 id 에 다른 입력은 409 `TTS_REQUEST_ID_CONFLICT`. 실패하면 표식을 풀고, 2분 넘게 잡힌
-표식은 버려진 것으로 본다. 끝난 표식을 다시 잡으면(두 회차가 함께 캐시 미스를 봤다) 세기 전에 캐시를 한 번 더 본다. 옛 앱은
-id 를 보내지 않아 예전처럼 간다. 응답의 `charged_source` 는 `none`·`base`·`ad` 다. 기본분에서 셌으면 그 KST 달을 `usage_month` 로 함께 싣는다(사용 기록 전용 — `usage-events.md` §7.2).
+앱은 '음성 만들기' 한 번마다 UUID 를 만들고 재시도에도 같은 값을 싣는다. 서버는 그 id 를 **캐시를 보기 전에** 잡는다
+(`lib/manual-tts-requests.ts`, 표 #135 — 2026-10-27 에 캐시 미스 뒤에서 앞으로 옮겼다. 캐시 히트도 세므로, 첫 응답을 잃은
+재전송이 히트로 받으면서 또 세지 않으려면 히트보다 먼저 '이미 셌다' 를 알아야 한다). 잡혀 있는 동안 같은 id 는 409
+`TTS_REQUEST_IN_PROGRESS`(잠시 뒤 다시 보내면 끝난 표식이라 세지 않고 받는다), 같은 id 에 다른 입력은 409
+`TTS_REQUEST_ID_CONFLICT`. **끝난 표식을 다시 잡으면 그 요청은 이미 셌다** — 세지 않고 결과를 준다(캐시에 없으면 세지 않고
+다시 만든다). 그 재시도가 실패하면 표식을 지우지 않고 끝냄으로 되돌린다(지우면 다음 재시도가 또 센다). ⚠ **잡는 것과 '잡기 직전에 끝나 있었나' 는 한 문장으로 안다**
+(Codex #971) — 상태를 먼저 읽고 따로 잡으면 그 사이 첫 요청이 끝났을 때 끝난 표식을 새 요청으로 가져가 한 번 더 센다(마지막 횟수였으면
+429). 넣기·끝난 표식 가져가기(`status = 'done'` 조건)·버려진 표식 가져가기(`status = 'pending'` 조건)를 따로 두고 바뀐 행으로 가른다
+(회귀 `test/manual-tts-requests.test.ts` — 진짜 SQLite, 둘째의 문장 사이마다 첫 요청을 끝낸다). 처음 잡은 요청이
+실패하면 표식을 풀고, 2분 넘게 잡힌 표식은 버려진 것으로 본다(셌는지 알 수 없어 새로 센다). 옛 앱은 id 를 보내지 않아 표식
+없이 간다 — 다시 받기마다 1회다. 응답의 `charged_source` 는 `none`(같은 요청의 재시도)·`base`·`ad` 다. 기본분에서 셌으면 그
+KST 달을 `usage_month` 로 함께 싣는다(사용 기록 전용 — `usage-events.md` §7.2).
 - 두 앱: 같은 입력(목소리·언어·문구)으로 다시 누르면 **같은 id**, 입력이 바뀌면 새 id, 성공하면 잊는다 — 안드로이드
   `ManualRequestIds`(편집기), iOS `VoiceStudioViewModel.manualRequestIDFor`. 409 `TTS_REQUEST_IN_PROGRESS` 는 "아직 음성을
   만들고 있어요. 잠시 뒤 다시 저장해 주세요." 로 말한다(두 앱의 공용 표).
@@ -2478,9 +2498,10 @@ id 를 보내지 않아 예전처럼 간다. 응답의 `charged_source` 는 `non
 
 **① 로컬 확인 → ② 오프라인이면 여기서 막는다(요청 없음) → ③ 생성 요청.** 폰에 있으면 서버를 아예 부르지 않는다.
 
-⚠ **남은 횟수가 0 이라고 요청을 막지 않는다**(2026-10-26 개정). 서버에 내 결과가 남아 있으면 세지 않고 받기 때문이다.
-앱은 남은 횟수를 '만들면 1회를 써요' 안내와 광고 제안에만 쓰고, 막는 것은 서버의 429(`MANUAL_TTS_QUOTA_EXCEEDED` —
-`manual_quota`, 무료면 `ad_reward` 상태를 함께 싣는다)다.
+⚠ **남은 횟수가 0 이라고 앱이 요청을 막지 않는다.** 무료는 기본분을 다 쓰면 광고 보상으로 넘어가고, 화면의 숫자는 다른 기기가
+그 사이 바꿨을 수 있다 — 판정은 서버만 한다. 다시 받기도 이제 1회라(2026-10-27) 다 썼으면 그것도 서버가 막는다. 앱은 남은
+횟수를 '1회를 써요' 안내와 광고 제안에만 쓰고, 막는 것은 서버의 429(`MANUAL_TTS_QUOTA_EXCEEDED` — `manual_quota`, 무료면
+`ad_reward` 상태를 함께 싣는다)다. 폰에 있는 결과(①)는 이 순서에 닿기 전에 끝나 세지 않는다.
 
 ⚠ **오프라인 갈래는 생성 요청보다 위다.** 순서가 뒤집히면 소켓이 매달릴 때 저장 버튼이 멈춘 것처럼 보인다(2026-09-07 리뷰).
 
@@ -2663,15 +2684,15 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
   요청 뒤에 게시된 클립만 세므로 0 부터 다시 센다(말투 재렌더와 같은 모양). 알람 편집기는 막히지 않는다 —
   목소리 고르기 관문은 매니페스트에 클립이 다 있는가를 보고(옛 클립이 그대로 있다), `rendered_for_current_voice`
   도 보이스가 같아 참이다.
-- **직접 입력 서버 캐시가 한 번 빗나간다.** 모델 id 가 캐시 키에 들어간다 — 같은 문구도 새로 합성된다(2026-10-26 부터는
-  서비스가 설정을 바꿔 다시 굽는 것이라 **세지 않는다** — [tts-render-and-budget.md](tts-render-and-budget.md) §2. 그전
-  2026-09-30 에는 '폰에 없어서 서버를 부르면 1회' 였다). 기기에 있는 옛 파일은 그대로 쓴다 — 옛 v3 소리가
+- **직접 입력 서버 캐시가 한 번 빗나간다.** 모델 id 가 캐시 키에 들어간다 — 같은 문구도 새로 합성된다(폰에 없어서 서버를
+  부르면 1회다. 2026-10-26 #954 부터 하루 동안은 서비스 재렌더라 세지 않았고, 2026-10-27 에 되돌렸다 —
+  [tts-render-and-budget.md](tts-render-and-budget.md) §2). 기기에 있는 옛 파일은 그대로 쓴다 — 옛 v3 소리가
   알람에 남는 것은 사용자가 그 문구를 다시 만들 때까지다(한도를 태우므로 우리가 다시 굽지 않는다).
 - **확정만 하고 정식 등록 전이던 초안 미리듣기**는 배포 뒤 다시 들으려 하면 `VOICE_PREVIEW_UNAVAILABLE` 이 된다(모델 id 가
   캐시 키에 들어간다). 등록은 그대로 할 수 있고, 문구나 관계·호칭을 고치면 새로 만든다.
 - 밀려난 클론(`elevenlabs_voice_id` NULL)은 #124 가 건너뛴다 — 복구 때 새 보이스로 다시 굽힌다.
 - **음량을 올리는 배포(2026-10-08)도 서버 캐시를 한 번 빗나가게 한다** — 올린 값이 캐시 키에 들어간다. 직접 입력은 같은
-  문구도 새로 합성하고(그때는 1회였다 — 2026-10-26 부터는 세지 않는다, [tts-render-and-budget.md](tts-render-and-budget.md) §2), 확정만 하고 정식 등록 전이던 초안 미리듣기는
+  문구도 새로 합성하고(1회다 — 2026-10-26 #954 부터 하루 동안 세지 않았다가 2026-10-27 에 되돌렸다, [tts-render-and-budget.md](tts-render-and-budget.md) §2), 확정만 하고 정식 등록 전이던 초안 미리듣기는
   `VOICE_PREVIEW_UNAVAILABLE` 이 된다(모델을 바꿀 때와 같은 모양 — 위 두 항목).
 - **이미 만든 소리는 다시 굽지 않는다** — 그 배포 전에 서버가 구운 클론 프리셋 클립(사전렌더)·직접 입력 파일, 기기에 받아
   둔 파일은 올리기 전 크기 그대로다. 배포 뒤 새로 등록·교체한 목소리의 클립과 새로 만든 직접 입력부터 올린 크기다. 클론
@@ -2854,8 +2875,8 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 고를 때는 **캐시 우선**(네트워크 폴백) | `ui/editor/AlarmEditorScreen.kt` 의 `bindStockBucketClips` | `VoiceStudioViewModel.prepareStockClip` | — |
 | 테마 선택은 **독립 상태**(음원 파생 금지) | `AlarmEditorState.selectedBucket` | `AlarmEditorSheet.selectedBucketDraft` | — |
 | 저장된 알람이 기기 언어를 따라감 | `sync/StockClipLanguageRebinder.kt` | `StockClipLanguageRebinder.swift` | — |
-| 직접 입력 한도 차감 | `ui/editor/AlarmEditorScreen.kt` 의 저장 경로(로컬 확인 → 횟수 확인) | `Views/Editor/AlarmEditorSheet.swift` 의 `manualQuotaBlockIfExhausted` | `routes/tts.ts` 의 `reserveManualTtsQuota`(캐시 히트·미스 양쪽) |
-| 서비스가 설정을 바꿔 다시 굽는 같은 요청은 세지 않는다(§8 표, [tts-render-and-budget.md](tts-render-and-budget.md) §2) | — 서버가 한다(응답 `charged_source`) | — 같음 | `routes/tts.ts` 의 `serviceRerender` ← `lib/render-fingerprint.ts` 의 `manualResultLogicalKey` |
+| 직접 입력 한도 차감 — 서버가 처리하면 한 번(캐시 히트·새 합성·서비스 재렌더), 같은 `request_id` 재시도는 한 번, 실패는 환불(§8) | `ui/editor/AlarmEditorScreen.kt` 의 저장 경로(① 로컬 확인 `manualAudioReuse` → 오프라인 → `startGeneration`, 남은 횟수로 막지 않는다) · 429 뒤 `AdRewardGate.route` · 사용 기록 `UsageSignals.recordManualGenerationResult`(서버 재사용도 `charged_source`·`usage_month`, 회귀 `ManualServerReuseChargeWiringTest`) | `Views/Editor/AlarmEditorSheet.swift` 의 `refreshManualQuotaBeforeGenerate`(막지 않는다) · `VoiceStudioViewModel.recordManualGenerationAnswer`(회귀 `ManualServerReuseChargeTests`) | `routes/tts.ts` 의 `reserveManualGeneration`(캐시 히트는 '지금 목소리인가' 확인 뒤, 미스는 합성 직전) · 같은 요청 표식은 캐시보다 앞(`claimManualRequest`, 끝난 표식 = `requestAlreadyCharged`) · 회귀 `test/tts.test.ts`(캐시 히트 차감·0 이면 429·광고 보상·실패 환불·끝난 표식 재시도 미차감) |
+| 서비스가 설정을 바꿔 다시 굽는 같은 요청도 한 번 센다(§8 표, 2026-10-27 — [tts-render-and-budget.md](tts-render-and-budget.md) §2). 판정은 사용량 장부 갈래(`manual_rerender`)로만 남는다 | — 서버가 한다(응답 `charged_source`) | — 같음 | `routes/tts.ts` 의 `serviceRerender`(장부 갈래 전용) ← `lib/render-fingerprint.ts` 의 `manualResultLogicalKey` |
 | 오프라인이면 **요청 없이** 막는다 | `SaveBlockReason.OFFLINE_NEW_MESSAGE` — 저장 버튼이 `saveEditor()` **전에** 판정 | `AlarmEditorSheet.saveFlow` 의 오프라인 갈래는 `manualQuotaBlockIfExhausted` **앞** | — |
 | 직접 입력 글자 웃음 → `[laughs]`(합성 글자만) · 같은 언어는 Gemini 를 부르지 않는다 | — 서버가 한다. 화면은 서버의 `text`(친 글 그대로) | — 같음 | `lib/typed-laughter.ts` `typedLaughterToTags` · `lib/vertex-translate.ts` `speakTypedLaughter`(웃음만 있으면 그대로) · `prepareAlarmTextWithVertex` 의 `speakTypedLaughter` 옵션(번역일 때만 Gemini) ← `routes/tts.ts`(프리셋 제외). 회귀 `typed-laughter.test.ts`·`vertex-translate.test.ts`·`tts.test.ts` |
 | 같은 언어 직접 입력의 화면 문구 = 친 글 · 캐시 키가 화면 문구까지 가린다 · 대괄호 친 번역의 화면 문구에서 서버 웃음 벗기기 | — | — | `routes/tts.ts` 의 `messageText`(`typedSameLanguage` → `deriveAlarmDisplayText(requestText, …)`)·`cacheKeyText` · `deriveAlarmDisplayText` 의 `withoutServerLaughter`(`lib/vertex-translate.ts`) |

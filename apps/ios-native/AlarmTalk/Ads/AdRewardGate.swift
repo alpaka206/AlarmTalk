@@ -2,8 +2,9 @@ import Foundation
 
 /// 새 직접 입력 제작이 필요할 때 어디로 가나(`docs/spec/ad-rewards.md` §1-1 표). 안드로이드 `ManualCreationRoute` 와 같다.
 ///
-/// ⚠ **본인 결과 재사용은 여기까지 오지 않는다.** 폰의 입력 캐시가 먼저, 그다음 서버가 같은 입력의 내 결과를 세지 않고
-/// 돌려준다(`cache_hit`). 이 판정은 서버가 새로 만들어야 한다고 답한 뒤(429 `MANUAL_TTS_QUOTA_EXCEEDED`)의 갈래다.
+/// ⚠ **폰에 있는 결과의 재사용은 여기까지 오지 않는다**(폰의 입력 캐시 — 서버를 부르지 않아 세지 않는다). 서버에 남은 내
+/// 결과를 다시 받는 것(`cache_hit`)은 2026-10-27 부터 새 제작과 같이 한 번이라, 횟수가 없으면 서버가 같은 429 로 막는다.
+/// 이 판정은 서버가 셀 것이 없다고 답한 뒤(429 `MANUAL_TTS_QUOTA_EXCEEDED`)의 갈래다.
 enum ManualCreationRoute: Equatable {
     /// 플러스·스토어 체험·관리자 지급 — 월 30회 규칙. 광고를 권하지 않는다.
     case planRules

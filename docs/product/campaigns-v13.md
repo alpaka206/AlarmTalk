@@ -99,7 +99,7 @@ v1.3 지시서 16.2·16.3(W17)의 작업 원본이다. 시연 소재 세 가지�
 자막:
 1. "듣고 싶은 말을 쓰고" / "Write what you want to hear" / "聞きたい言葉を書いて"
 2. "무료는 기본 목소리로 한 달에 3번" / "Free: 3 a month with built-in voices" / "無料は基本の声で月3回"
-3. "만든 음성은 다시 써도 횟수 그대로" / "Reusing it doesn't use another" / "作った音声はもう一度使っても回数そのまま"
+3. "이 폰에 있는 음성은 다시 써도 횟수 그대로" / "Reusing it on this phone doesn't use another" / "このスマホの音声はもう一度使っても回数そのまま"
 
 ## 3. 링크 규칙
 

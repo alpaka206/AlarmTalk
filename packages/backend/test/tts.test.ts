@@ -1239,10 +1239,10 @@ describe('POST /tts/generate — edge cases', () => {
     ]);
     // 캐시 히트도 **지금 목소리인지** 다시 확인한다(Codex #703 P1) — 그 조회분.
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    // ⚠ **이미 만든 내 음성은 다시 받아도 세지 않는다**(2026-10-26 정책 변경 — 2026-09-07 의 "히트도 한 번" 을 뒤집었다).
-    //   남은 횟수는 지금 값을 읽어 싣는다.
+    // ⚠ **서버에 남은 내 결과를 다시 받는 것도 한 번 센다**(2026-10-27 오너 결정 — 2026-10-26 의 '다시 받기는 세지
+    //   않는다' 를 되돌렸다). 권한 확인 뒤에 센다.
     mockDB.pushResult([]); // 개인 활성 구독 없음 → users.plan 폴백(plus → 30회)
-    mockDB.pushResult([{ used_count: 1 }]); // 이번 달 사용량 읽기
+    mockDB.pushResult([{ used_count: 2, usage_month: '2026-10' }], 1); // 원자적 +1 예약 성공
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -1257,13 +1257,14 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.audio_base64).toBe('Q0g=');
     expect(mockTextToSpeech).not.toHaveBeenCalled();
     expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO messages'))).toBe(false);
-    // 합성도 차감도 없다 — 응답은 지금 남은 횟수를 그대로 싣는다.
-    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toBe(false);
-    expect(body.manual_quota).toEqual({ used: 1, limit: 30, remaining: 29 });
-    expect(body.charged_source).toBe('none');
+    // 합성은 없지만 차감은 한 번이다 — 새 합성과 같은 칸(남은 횟수·정산 수단·사용월)을 싣는다.
+    expect(mockDB.calls.filter((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toHaveLength(1);
+    expect(body.manual_quota).toEqual({ used: 2, limit: 30, remaining: 28 });
+    expect(body.charged_source).toBe('base');
+    expect(body.usage_month).toBe('2026-10');
   });
 
-  it('캐시 히트는 세지 않으므로 뒤에서 실패해도 돌려줄 것이 없다', async () => {
+  it('캐시 히트도 세므로 뒤에서 실패하면 그 한 번을 돌려준다', async () => {
     const objectKey = 'generated-tts/user-1/cached.mp3';
     const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
     mockDB.pushResult([{ plan: 'plus' }]);
@@ -1280,7 +1281,7 @@ describe('POST /tts/generate — edge cases', () => {
     ]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]); // 개인 활성 구독 없음
-    mockDB.pushResult([{ used_count: 1 }]); // 사용량 읽기
+    mockDB.pushResult([{ used_count: 2, usage_month: '2026-10' }], 1); // 원자적 +1 예약 성공
     // 응답 전에 남아 있는 DB 쓰기(LRU 갱신)가 터진 상황.
     mockDB.pushErrorFor('voice_profiles SET last_used_at', new Error('db unavailable'));
 
@@ -1292,8 +1293,10 @@ describe('POST /tts/generate — edge cases', () => {
 
     expect(res.status).toBe(500);
     expect((await res.json()).error_code).toBe('TTS_GENERATION_FAILED');
-    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toBe(false);
-    expect(mockDB.calls.some((c) => c.sql.includes('used_count = used_count - 1'))).toBe(false);
+    expect(mockDB.calls.filter((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toHaveLength(1);
+    // 실패는 환불 — 예약한 바로 그 달로 돌려준다.
+    const refund = mockDB.calls.find((c) => c.sql.includes('used_count = used_count - 1'));
+    expect(refund?.args).toEqual(['user-1', '2026-10']);
   });
 
   it('checks the provider cache key before synthesizing', async () => {
@@ -1761,7 +1764,7 @@ describe('GET /tts/messages — edge cases', () => {
 /*  Edge cases — DELETE /tts/messages/:id                              */
 /* ------------------------------------------------------------------ */
 // 무료 직접 입력(`docs/spec/voice-and-message.md` §8, `docs/spec/ad-rewards.md`) — 무료 + 기본 목소리는 **월 3회 기본분**,
-// 다 쓰면 광고 보상 한 번씩. 이미 만든 내 음성은 세지 않는다. 등록 목소리·번역은 무료에 열지 않는다.
+// 다 쓰면 광고 보상 한 번씩. 서버에 남은 내 결과를 다시 받는 것도 한 번이다(2026-10-27). 등록 목소리·번역은 무료에 열지 않는다.
 describe('POST /tts/generate — 무료 직접 입력(월 3회 · 광고 보상)', () => {
   const SYSTEM_VOICE = { id: V1, status: 'ready', elevenlabs_voice_id: 'el-system', is_system: 1 };
   const objectKey = 'generated-tts/user-1/ad-cached.mp3';
@@ -1785,12 +1788,36 @@ describe('POST /tts/generate — 무료 직접 입력(월 3회 · 광고 보상)
     mockDB.pushResult([SYSTEM_VOICE]);
   }
 
-  it('이미 만든 음성은 기본분이 0 이어도 세지 않고 받는다', async () => {
+  // ⚠ 2026-10-27 — 서버에 남은 내 결과를 다시 받는 것도 한 번이다(그전 #942 는 세지 않았다).
+  it('남은 횟수가 0 이면 이미 만든 음성(캐시 히트)도 429 로 막는다 — 오디오를 주지 않는다', async () => {
     const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
     freeSystemVoiceRequest();
     pushCacheHit();
-    mockDB.pushResult([]); // 구독 없음 → 무료 풀
-    mockDB.pushResult([{ used_count: 3 }]); // 이번 달 3회 다 씀
+    mockDB.pushResultFor('INSERT INTO manual_tts_usage', [], 0); // 이번 달 3회 다 씀
+    mockDB.pushResultFor('UPDATE ad_reward_credits SET consumed_at = datetime', [], 0); // 보상도 없음
+    mockDB.pushResultFor('FROM ad_reward_credits WHERE user_id', [{ credits: 0, granted: 10 }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '일어나' }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error_code).toBe('MANUAL_TTS_QUOTA_EXCEEDED');
+    expect(body.manual_quota).toEqual({ limit: 3, used: 3, remaining: 0 });
+    expect(body.ad_reward).toMatchObject({ credits: 0 });
+    expect(body.audio_base64).toBeUndefined();
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+  });
+
+  it('기본분을 다 썼으면 이미 만든 음성(캐시 히트)도 광고 보상 하나로 받는다', async () => {
+    const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
+    freeSystemVoiceRequest();
+    pushCacheHit();
+    mockDB.pushResultFor('INSERT INTO manual_tts_usage', [], 0); // 3회 다 씀
+    mockDB.pushResultFor('UPDATE ad_reward_credits SET consumed_at = datetime', [{ transaction_id: 'tx-1' }], 1);
 
     const res = await buildApp().request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '일어나' }),
@@ -1801,10 +1828,11 @@ describe('POST /tts/generate — 무료 직접 입력(월 3회 · 광고 보상)
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.cache_hit).toBe(true);
-    expect(body.charged_source).toBe('none');
-    expect(body.manual_quota).toEqual({ used: 3, limit: 3, remaining: 0 });
-    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toBe(false);
-    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE ad_reward_credits'))).toBe(false);
+    expect(body.charged_source).toBe('ad');
+    // 광고 보상은 기본분 달에서 빼지 않았다 — 사용월은 비운다.
+    expect(body.usage_month).toBeNull();
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+    expect(mockDB.calls.some((c) => c.sql.includes('SET consumed_at = NULL'))).toBe(false);
   });
 
   it('새로 만들면 무료 기본분(3)을 먼저 쓰고 보상은 남긴다 — 실패하면 그 월로 돌려준다', async () => {
@@ -1885,6 +1913,9 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResultFor('INSERT INTO manual_tts_requests', [], 0); // 다른 요청이 잡고 있다
+    mockDB.pushResultFor("SET status = 'pending', claimed_at = ?", [], 0); // 끝난 표식이 아니다
+    mockDB.pushResultFor("AND julianday(claimed_at) <= julianday(?)", [], 0); // 버려진 표식도 아니다
+    mockDB.pushResultFor("SET status = 'pending', claimed_at = ?", [], 0);
     mockDB.pushResultFor('SELECT input_hash FROM manual_tts_requests', [{ input_hash: 'x' }]);
 
     const res = await reqWithEnv(
@@ -1898,26 +1929,28 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     expect(mockTextToSpeech).not.toHaveBeenCalled();
   });
 
-  it('끝난 표식을 다시 잡으면 세기 전에 캐시를 다시 본다 — 첫 회차의 결과를 세지 않고 준다', async () => {
-    const objectKey = 'generated-tts/user-1/raced.mp3';
-    const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
+  const RACED_KEY = 'generated-tts/user-1/raced.mp3';
+  const racedHit = {
+    message_id: M1,
+    provider: 'elevenlabs',
+    text: 'hello',
+    audio_url: `r2://${RACED_KEY}`,
+    audio_object_key: RACED_KEY,
+    audio_format: 'mp3',
+  };
+
+  // ⚠ 2026-10-27 — 캐시 히트도 세므로 표식은 **캐시를 보기 전에** 잡는다. 끝난 요청의 재시도(첫 응답을 잃은 재전송)는
+  //   히트로 받되 다시 세지 않는다.
+  it('끝난 표식의 재시도는 캐시 히트를 세지 않고 준다 — 표식은 끝냄으로 남는다', async () => {
+    const r2 = createMockR2Bucket({ [RACED_KEY]: new Uint8Array([67, 72]) });
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [], 0); // 이미 있는 id
+    mockDB.pushResultFor("SET status = 'pending', claimed_at = ?", [{ claimed_at: 'now' }], 1); // 끝난 표식을 잡았다
+    mockDB.pushResultFor('FROM generated_audio_assets ga', [racedHit]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]); // 히트의 '지금 목소리인가' 재확인
-    // 첫 캐시 확인은 미스(첫 회차가 아직 게시 전), 표식을 잡은 뒤의 두 번째 확인은 히트(첫 회차가 끝났다).
-    mockDB.pushResultFor('FROM generated_audio_assets ga', []);
-    mockDB.pushResultFor('SELECT status FROM manual_tts_requests', [{ status: 'done' }]);
-    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [{ claimed_at: 'now' }], 1);
-    mockDB.pushResultFor('FROM generated_audio_assets ga', [
-      {
-        message_id: M1,
-        provider: 'elevenlabs',
-        text: 'hello',
-        audio_url: `r2://${objectKey}`,
-        audio_object_key: objectKey,
-        audio_format: 'mp3',
-      },
-    ]);
+    mockDB.pushResultFor('FROM subscriptions s', []);
+    mockDB.pushResultFor('SELECT used_count FROM manual_tts_usage', [{ used_count: 5 }]);
 
     const res = await buildApp().request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello', request_id: REQ }),
@@ -1929,9 +1962,87 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     const body = await res.json();
     expect(body.cache_hit).toBe(true);
     expect(body.message_id).toBe(M1);
+    expect(body.charged_source).toBe('none');
+    expect(body.manual_quota).toEqual({ used: 5, limit: 30, remaining: 25 });
     expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toBe(false);
     expect(mockDB.calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
     expect(mockTextToSpeech).not.toHaveBeenCalled();
+    // 표식을 잡은 것이 캐시 확인보다 앞이다.
+    const claimAt = mockDB.calls.findIndex((c) => c.sql.includes("SET status = 'pending', claimed_at = ?"));
+    const cacheAt = mockDB.calls.findIndex((c) => c.sql.includes('FROM generated_audio_assets ga'));
+    expect(claimAt).toBeGreaterThanOrEqual(0);
+    expect(claimAt).toBeLessThan(cacheAt);
+  });
+
+  it('처음 보는 id 의 캐시 히트는 한 번 세고 표식을 끝냄으로 남긴다', async () => {
+    const r2 = createMockR2Bucket({ [RACED_KEY]: new Uint8Array([67, 72]) });
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [{ claimed_at: 'now' }], 1);
+    mockDB.pushResultFor('FROM generated_audio_assets ga', [racedHit]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResultFor('FROM subscriptions s', []);
+    mockDB.pushResultFor('INSERT INTO manual_tts_usage', [{ used_count: 6, usage_month: '2026-10' }], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello', request_id: REQ }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cache_hit).toBe(true);
+    expect(body.charged_source).toBe('base');
+    expect(body.usage_month).toBe('2026-10');
+    expect(mockDB.calls.filter((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toHaveLength(1);
+    expect(mockDB.calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
+  });
+
+  it('남은 횟수가 0 이라 캐시 히트를 막으면 표식을 푼다', async () => {
+    const r2 = createMockR2Bucket({ [RACED_KEY]: new Uint8Array([67, 72]) });
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [{ claimed_at: 'now' }], 1);
+    mockDB.pushResultFor('FROM generated_audio_assets ga', [racedHit]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResultFor('FROM subscriptions s', []);
+    mockDB.pushResultFor('INSERT INTO manual_tts_usage', [], 0); // 30회 다 씀
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello', request_id: REQ }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(429);
+    expect((await res.json()).error_code).toBe('MANUAL_TTS_QUOTA_EXCEEDED');
+    expect(mockDB.calls.some((c) => c.sql.includes('DELETE FROM manual_tts_requests'))).toBe(true);
+  });
+
+  it('끝난 표식의 재시도가 실패해도 표식을 지우지 않고 끝냄으로 되돌린다 — 다음 재시도도 세지 않는다', async () => {
+    const r2 = createMockR2Bucket({ [RACED_KEY]: new Uint8Array([67, 72]) });
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [], 0); // 이미 있는 id
+    mockDB.pushResultFor("SET status = 'pending', claimed_at = ?", [{ claimed_at: 'now' }], 1); // 끝난 표식을 잡았다
+    mockDB.pushResultFor('FROM generated_audio_assets ga', [racedHit]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResultFor('FROM subscriptions s', []);
+    mockDB.pushResultFor('SELECT used_count FROM manual_tts_usage', [{ used_count: 5 }]);
+    mockDB.pushErrorFor('voice_profiles SET last_used_at', new Error('db unavailable'));
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello', request_id: REQ }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(500);
+    expect(mockDB.calls.some((c) => c.sql.includes('DELETE FROM manual_tts_requests'))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes("SET status = 'done'"))).toBe(true);
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes('used_count = used_count - 1'))).toBe(false);
   });
 
   it('잡은 요청이 실패하면 표식을 풀고 횟수를 돌려준다', async () => {
@@ -2011,7 +2122,8 @@ describe('GET /tts/manual-quota — 광고 보상 현황', () => {
   });
 });
 
-// 렌더 지문·서비스 재렌더(`docs/spec/tts-render-and-budget.md` §2) — 같은 요청을 서비스가 새 설정으로 다시 구우면 세지 않는다.
+// 렌더 지문·서비스 재렌더(`docs/spec/tts-render-and-budget.md` §2) — 같은 요청을 서비스가 새 설정으로 다시 구워도 한 번 센다
+// (2026-10-27 — 그전 #954 는 세지 않았다). 재렌더 판정은 사용량 장부의 갈래(`manual_rerender`)로만 남는다.
 describe('POST /tts/generate — 렌더 지문과 서비스 재렌더', () => {
   const TEXT = '일어날 시간이야';
 
@@ -2036,14 +2148,14 @@ describe('POST /tts/generate — 렌더 지문과 서비스 재렌더', () => {
     mockDB.pushResult([]); // 캐시 확인 — 미스(설정이 바뀌어 키가 갈렸다)
   }
 
-  it('같은 논리 결과가 옛 설정으로만 남아 있으면 새 설정으로 다시 굽고 세지 않는다', async () => {
+  it('같은 논리 결과가 옛 설정으로만 남아 있으면 새 설정으로 다시 굽고 한 번 센다 — 장부에는 재렌더로 적는다', async () => {
     const r2 = createMockR2Bucket();
     mockTextToSpeech.mockResolvedValue(providerPcm());
     paidVoiceRequest();
     // 옛 설정의 렌더만 있다 — 논리 결과는 있고, 지금 지문의 행은 없다.
     mockDB.pushResultFor('AND logical_key = ?', [{ any_owned: 1, current_owned: 0 }]);
     mockDB.pushResultFor('FROM subscriptions s', []);
-    mockDB.pushResultFor('SELECT used_count FROM manual_tts_usage', [{ used_count: 4 }]);
+    mockDB.pushResultFor('INSERT INTO manual_tts_usage', [{ used_count: 5, usage_month: '2026-10' }], 1);
     pushPublicationVoice();
 
     const res = await buildApp().request(
@@ -2055,10 +2167,11 @@ describe('POST /tts/generate — 렌더 지문과 서비스 재렌더', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.cache_hit).toBe(false);
-    expect(body.charged_source).toBe('none');
-    expect(body.manual_quota).toEqual({ used: 4, limit: 30, remaining: 26 });
+    expect(body.charged_source).toBe('base');
+    expect(body.usage_month).toBe('2026-10');
+    expect(body.manual_quota).toEqual({ used: 5, limit: 30, remaining: 25 });
     expect(mockTextToSpeech).toHaveBeenCalledTimes(1);
-    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toBe(false);
+    expect(mockDB.calls.filter((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toHaveLength(1);
 
     // 원장에 지금 설정의 지문·세대와 논리 결과 키가 적힌다.
     const ledger = mockDB.calls.find((c) => c.sql.includes('INSERT OR IGNORE INTO generated_audio_assets'));
@@ -2081,7 +2194,7 @@ describe('POST /tts/generate — 렌더 지문과 서비스 재렌더', () => {
     expect(usage?.args.slice(1, 3)).toEqual(['manual_rerender', 'success']);
   });
 
-  it('지금 설정으로 만든 행이 이미 있는데 빗나갔으면 서비스 재렌더가 아니다 — 예전처럼 센다', async () => {
+  it('지금 설정으로 만든 행이 이미 있는데 빗나갔으면 서비스 재렌더가 아니다 — 장부에도 새 제작으로 적는다', async () => {
     const r2 = createMockR2Bucket();
     mockTextToSpeech.mockResolvedValue(providerPcm());
     paidVoiceRequest();
@@ -2104,7 +2217,7 @@ describe('POST /tts/generate — 렌더 지문과 서비스 재렌더', () => {
     expect(usage?.args.slice(1, 3)).toEqual(['manual', 'success']);
   });
 
-  it('논리 결과가 없으면(새 문구·새 목소리) 예전처럼 센다', async () => {
+  it('논리 결과가 없으면(새 문구·새 목소리) 센다', async () => {
     const r2 = createMockR2Bucket();
     mockTextToSpeech.mockResolvedValue(providerPcm());
     paidVoiceRequest();
@@ -2143,8 +2256,8 @@ describe('POST /tts/generate — 렌더 지문과 서비스 재렌더', () => {
       },
     ]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ used_count: 1 }]);
+    mockDB.pushResult([]); // 개인 구독 없음
+    mockDB.pushResult([{ used_count: 1, usage_month: '2026-10' }], 1); // 다시 받기도 한 번 — 원자적 +1
 
     const res = await buildApp().request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: TEXT }),

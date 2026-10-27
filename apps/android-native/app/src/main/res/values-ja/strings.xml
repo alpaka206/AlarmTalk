@@ -264,7 +264,7 @@
     <string name="editorp_cheer_vary_hint">最近用意した言葉は少しお休みして、別の応援を用意します。</string>
     <string name="editorp_cheer_pinned_hint">選んだ言葉だけが流れます。</string>
     <string name="editorp_random_manual_title">入力した文面</string>
-    <string name="editor_manual_charge_notice">新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。作成済みの文はもう一度使っても回数を使いません。</string>
+    <string name="editor_manual_charge_notice">新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。このスマホに残っている音声はもう一度使っても回数を使いませんが、スマホにない音声をもう一度受け取ると1回使います。</string>
     <string name="editorp_random_more_contexts">もっと見る（運勢・お薬）</string>
     <string name="editorp_random_fortune_title">占い情報</string>
     <string name="editorp_random_save_button">保存</string>

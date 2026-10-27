@@ -230,7 +230,7 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 목소리 선택 | `voice_selected` | 알람에 쓸 목소리를 **골랐다**(미리 골라 둔 값은 아니다). `is_first`(이 계정 첫 선택)·`prepared`(그 순간 기기에 준비돼 있었나)·`pack_id` | 편집기 |
 | 음성 준비 | `voice_preparation_started` / `_ready` / `_failed` | 범위(`scope`)·언어·`revision`·시작 캐시(`cache_state`)·대상/완료 수·바이트·`duration_ms`·`error_code` | **작업 소유자 한 곳**(§7.3) |
 | 알람 저장 | `alarm_save_attempt` / `alarm_save_blocked` / `alarm_ready` | 저장을 눌렀다 / 요청 전에 막혔다(`reason`) / OS 예약과 오디오 파일이 **둘 다** 갖춰졌다 | 편집기 저장 흐름 |
-| 직접 입력 | `manual_result_reused` | 이미 만든 결과를 다시 썼다(`reuse_location` = `local` 기기 캐시 / `server` 서버 재사용). 차감 없음 | 직접 입력 생성 흐름 |
+| 직접 입력 | `manual_result_reused` | 이미 만든 결과를 다시 썼다(`reuse_location` = `local` 기기 캐시 / `server` 서버 재사용). `local` 은 서버를 타지 않아 차감 없음(`charged_source` `none`). `server` 는 2026-10-27 부터 **한 번 센다** — 서버 응답의 `charged_source`(base/ad, 같은 요청의 재시도면 none)·`usage_month` 를 그대로 싣는다(voice-and-message §8) | 직접 입력 생성 흐름 |
 | | `generation_outcome` | 새 제작의 결과 — `outcome`·`charged_source`(base/ad/none)·`usage_month`(실제 원래 사용월)·`result_id`·`request_id`·`char_count` | 같음 |
 | 광고 | `reward_offer` / `reward_view_started` / `reward_pending` / `reward_granted` / `reward_spent` | 제안을 보였다 / 시청 시작 / 시청이 끝나 서버 확인(SSV) 대기 / 적립 확인(`duration_ms` = 대기) / 보상을 썼다 | 광고 보상 흐름 |
 | 콘텐츠 | `content_selected` | 응원의 고정/다양하게(`content_mode` = `fixed`/`varied`, voice-and-message §5-4). **저장에 성공한** 응원 알람의 선택이다 — 편집기에서 눌러만 보고 취소한 것은 적지 않는다. 고정한 문구 ID 는 싣지 않는다(담을 정해진 칸이 없다) | 알람 저장 성공 한 곳(「직전 선택 유지」와 같은 시점), 저장을 **시작한** 계정으로 |
@@ -258,7 +258,8 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
   ⚠ 서버의 구독 행에는 아직 스토어 무료 체험 구간 표식이 없어 **`trial` 은 찍히지 않고 체험 구독은 `paid` 로 섞인다.**
   체험과 결제는 `store_purchase_verified` 의 `store_offer`(앱이 스토어에서 읽은 조건)로 가른다. 표식이 생기면
   `lib/usage-entitlement.ts` 에 갈래 하나를 더한다. 며칠 밀린 배치는 '받은 시각의 권한' 이다.
-- 제작은 `charged_source` = `base`(월 기본분 — 무료 3·유료 30)/`ad`(광고 보상)/`none`(세지 않음 — 재사용·실패 환불)과 **실제 원래
+- 제작과 서버 재사용은 `charged_source` = `base`(월 기본분 — 무료 3·유료 30)/`ad`(광고 보상)/`none`(세지 않음 — 기기 재사용·같은 요청의
+  재시도·실패 환불)과 **실제 원래
   사용월**(`usage_month` — 서버가 기본분을 차감한 KST 달, `POST /tts/generate` 응답의 `usage_month`. 월 경계를 넘긴 재시도도 처음 달.
   광고 보상은 비운다), `result_id`·`request_id` 를 함께 적어 결과와 요청을 내부에서 잇는다. 두 값 다 서버 응답을 그대로 옮기고 앱이 지어내지
   않는다 — 연결이 끊겨 셌는지 모르면 비운다. 문구 원문은 싣지 않고 `char_count` 만 남긴다.

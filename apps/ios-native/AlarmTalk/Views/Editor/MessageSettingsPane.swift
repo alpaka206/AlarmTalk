@@ -321,7 +321,7 @@ struct MessageSettingsPane: View {
         } message: {
             // 새 음성을 만드는 순간 횟수를 쓴다는 것을 **치기 전에** 말한다(`voice-and-message.md` §8 — 무료 3·플러스 30,
             // 이미 만든 문구는 세지 않는다). 안드로이드 `editor_manual_charge_notice` 와 같은 문장.
-            Text(String(localized: "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이미 만든 문구는 다시 써도 횟수를 쓰지 않아요."))
+            Text(String(localized: "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요."))
         }
         .onChange(of: manualDialogOpen) { _, open in
             // 열 때만 현재 값으로 시드한다. 닫힐 때는 건드리지 않는다 —

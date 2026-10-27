@@ -293,7 +293,8 @@ internal object AlarmSaveAttempts {
 
 /**
  * 직접 입력 '음성 만들기' 의 서버 답을 적는다(§7.1). 서버가 내 기존 결과를 다시 줬으면(`cache_hit`) 재사용(server),
- * 아니면 새 제작(`generation_outcome` success)과 정산 수단(`charged_source`). 광고 보상으로 셌으면 그 보상을 쓴 것이다
+ * 아니면 새 제작(`generation_outcome` success). 둘 다 정산 수단(`charged_source`)·사용월을 서버 답 그대로 싣는다 —
+ * 서버 재사용도 한 번 센다(2026-10-27, `docs/spec/voice-and-message.md` §8). 광고 보상으로 셌으면 그 보상을 쓴 것이다
  * (`reward_spent`). 서버가 말하지 않은 값(옛 서버의 `charged_source`, 사용월)은 지어내지 않고 비운다.
  */
 internal fun recordManualGenerationResult(
@@ -314,11 +315,14 @@ internal fun recordManualGenerationResult(
             ownerUserId = ownerUserId,
             props = UsageEventProps(
                 reuseLocation = UsageEventProps.REUSE_SERVER,
+                chargedSource = response.chargedSource,
+                usageMonth = response.usageMonth,
                 requestId = requestId,
                 resultId = response.messageId,
                 charCount = charCount,
             ),
         )
+        if (response.chargedSource == UsageEventProps.CHARGED_AD) AdRewardAttempts.spent(context, requestId)
         return
     }
     UsageSignals.record(

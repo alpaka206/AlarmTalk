@@ -264,7 +264,7 @@
     <string name="editorp_cheer_vary_hint">Recently prepared lines take a short break, so a different one is set up next.</string>
     <string name="editorp_cheer_pinned_hint">Only the line you pick will play.</string>
     <string name="editorp_random_manual_title">Your message</string>
-    <string name="editor_manual_charge_notice">A new message makes a voice when you save, using 1 of this month\'s creations. Reusing a message you already made doesn\'t count.</string>
+    <string name="editor_manual_charge_notice">A new message makes a voice when you save, using 1 of this month\'s creations. Reusing a voice that\'s still on this phone doesn\'t count, but getting it again when it isn\'t on this phone uses 1.</string>
     <string name="editorp_random_more_contexts">More (fortune, medication)</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>

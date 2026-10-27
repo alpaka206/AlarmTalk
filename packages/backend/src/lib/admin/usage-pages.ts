@@ -184,7 +184,7 @@ function manualPanel(m: UsageMetrics): string {
   </dl>
   ${
     x.charged.length
-      ? `<h3 style="font-size:13px;margin:18px 0 10px;color:var(--text-2)">새로 만든 것의 정산</h3>${hbarList(
+      ? `<h3 style="font-size:13px;margin:18px 0 10px;color:var(--text-2)">서버가 처리한 것의 정산</h3>${hbarList(
           x.charged.map((c) => ({
             label: c.source === 'base' ? '기본 제공분' : c.source === 'ad' ? '광고 보상' : c.source === 'none' ? '차감 없음' : c.source,
             value: c.count,
@@ -193,7 +193,7 @@ function manualPanel(m: UsageMetrics): string {
         )}`
       : ''
   }
-  <p class="note">다시 쓴 것은 차감하지 않아요. 문구 원문은 기록하지 않고 글자 수만 남겨요.</p>
+  <p class="note">기기에서 다시 쓴 것은 차감하지 않고, 서버에서 다시 받은 것은 새로 만든 것처럼 1회로 세요. 문구 원문은 기록하지 않고 글자 수만 남겨요.</p>
 </section>`;
 }
 

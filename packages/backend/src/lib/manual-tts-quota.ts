@@ -131,7 +131,8 @@ export interface ManualTtsReservation {
  *  - 첫 사용(무충돌): used_count=1 삽입 → ok.
  *  - 재사용 & 여유: used_count+1 → ok.
  *  - 재사용 & 한도도달: WHERE 불성립 → 변경 0행 → RETURNING 없음 → ok=false.
- * 캐시 히트는 호출 전에 걸러야 한다(히트는 소비 없음).
+ * 서버가 처리한 직접 입력 요청은 캐시 히트든 새 합성이든 한 번씩 부른다(2026-10-27). 같은 `request_id` 의 재시도는
+ * 부르는 쪽(`routes/tts.ts`)이 걸러 한 번만 센다.
  */
 export async function reserveManualTtsQuota(
   db: DbExecutor,

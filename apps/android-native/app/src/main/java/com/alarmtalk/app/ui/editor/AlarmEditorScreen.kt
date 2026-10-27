@@ -1075,11 +1075,12 @@ internal fun AlarmEditorScreen(
                 // 2) 여기까지 왔다 = **직접 입력**이다(랜덤이 아니거나 버킷으로 안 매핑되는 종류).
                 //    그 문구를 서버에 합성시킨다 — 이 갈래는 월 한도를 차감하는 유료 경로다.
                 //
-                // ⚠ **남은 횟수가 0 이라고 요청 전에 막지 않는다**(2026-10-26 개정, `docs/spec/voice-and-message.md` §8).
-                //    서버에 내 결과가 남아 있으면 세지 않고 다시 받고, 무료는 기본분(3)을 다 쓰면 광고 보상으로 넘어간다 —
-                //    그 판정은 서버만 할 수 있다. 예전에는 여기서 `remaining <= 0` 이면 막아서, 무료가 3회를 쓴 뒤 남은
-                //    광고 보상도 다시 받기도 못 썼다(Codex #942). 막는 것은 서버의 429 `MANUAL_TTS_QUOTA_EXCEEDED` 이고,
-                //    그 응답은 아래 생성 실패 갈래가 같은 알럿으로 말한다. 여기서는 화면 숫자만 새로 받아 둔다.
+                // ⚠ **남은 횟수가 0 이라고 요청 전에 막지 않는다**(`docs/spec/voice-and-message.md` §8). 무료는 기본분(3)을
+                //    다 쓰면 광고 보상으로 넘어가고, 화면의 숫자는 그 사이 다른 기기가 바꿨을 수 있다 — 그 판정은 서버만 할 수
+                //    있다. 예전에는 여기서 `remaining <= 0` 이면 막아서, 무료가 3회를 쓴 뒤 남은 광고 보상을 못 썼다(Codex #942).
+                //    서버에 남은 내 결과를 다시 받는 것도 한 번이라(2026-10-27) 다 썼으면 그것도 서버가 429
+                //    `MANUAL_TTS_QUOTA_EXCEEDED` 로 막고, 그 응답은 아래 생성 실패 갈래가 같은 알럿으로 말한다. 여기서는 화면
+                //    숫자만 새로 받아 둔다. 폰에 있는 결과(위 ① 로컬 확인)는 서버를 부르지 않아 세지 않는다.
                 if (onLoadManualQuota != null) {
                     runCatching { onLoadManualQuota() }.getOrNull()?.let { manualQuota = it }
                 }
@@ -1204,7 +1205,7 @@ internal fun AlarmEditorScreen(
                     var quotaAlertShown = false
                     if (ttsErrorCode == "MANUAL_TTS_QUOTA_EXCEEDED" && freeVoiceTier) {
                         onLoadManualQuota?.let { load -> runCatching { load() }.getOrNull()?.let { manualQuota = it } }
-                        // §1-1 표 — 본인 결과 재사용은 이미 지났다(폰 캐시 → 서버 `cache_hit`). 남은 갈래를 고른다.
+                        // §1-1 표 — 폰의 결과 재사용은 이미 지났다(① 로컬 확인). 서버의 다시 받기도 한 번이라 여기로 온다. 남은 갈래를 고른다.
                         val adsAvailable = RewardedAds.configured && adRewardSessions != null
                         when (AdRewardGate.route(freeVoiceTier, manualQuota?.remaining, manualQuota?.adReward, adsAvailable)) {
                             ManualCreationRoute.OFFER_AD -> {

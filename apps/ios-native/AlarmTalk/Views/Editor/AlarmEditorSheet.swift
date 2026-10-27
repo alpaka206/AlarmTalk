@@ -863,9 +863,10 @@ struct AlarmEditorSheet: View {
         await refreshManualQuotaBeforeGenerate()
     }
 
-    /// 생성 요청 직전에 이번 달 직접 입력 현황을 **새로 받아 둔다**(화면 숫자용). ⚠ **막지 않는다**(2026-10-26 개정,
-    /// `docs/spec/voice-and-message.md` §8) — 서버에 내 결과가 남아 있으면 세지 않고 다시 받고, 그 판정은 서버만 한다.
-    /// 예전에는 `remaining <= 0` 이면 여기서 알럿으로 막아 다시 받기를 못 했다(Codex #942). 막는 것은 서버의 429 다.
+    /// 생성 요청 직전에 이번 달 직접 입력 현황을 **새로 받아 둔다**(화면 숫자용). ⚠ **막지 않는다**(`docs/spec/voice-and-message.md`
+    /// §8) — 무료는 기본분을 다 쓰면 광고 보상으로 넘어가고 숫자는 다른 기기가 바꿨을 수 있어, 그 판정은 서버만 한다. 예전에는
+    /// `remaining <= 0` 이면 여기서 알럿으로 막아 남은 보상을 못 썼다(Codex #942). 서버에 남은 내 결과를 다시 받는 것도
+    /// 한 번이라(2026-10-27) 다 썼으면 그것도 서버의 429 가 막는다. 폰에 있는 결과는 서버를 부르지 않아 세지 않는다.
     func refreshManualQuotaBeforeGenerate() async {
         guard let token = auth.session?.token else { return }
         if let quota = try? await AlarmTalkAPI.shared.manualQuota(token: token) { manualQuota = quota }

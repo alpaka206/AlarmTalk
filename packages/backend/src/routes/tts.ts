@@ -563,7 +563,7 @@ tts.post('/generate', async (c) => {
   // ⚠ **무료도 기본 목소리 직접 입력을 연다 — 월 3회, 다 쓰면 광고 보상**(2026-10-26, `docs/spec/voice-and-message.md`
   //   §8). 예전(2026-10-19)에는 광고 보상이 있을 때만 열었다. 기본 목소리 한정이다 — 등록 목소리는 위에서 그대로 막는다.
   //   세는 순서는 월 기본분 → 광고 보상이고(`reserveManualGeneration`), 둘 다 없으면 429 `MANUAL_TTS_QUOTA_EXCEEDED` 다.
-  //   이미 만든 내 음성(캐시 히트)은 세지 않으므로 둘 다 0 이어도 받는다.
+  //   서버에 남은 내 결과(캐시 히트)를 다시 받는 것도 한 번이다(2026-10-27) — 둘 다 0 이면 히트여도 429 다.
   const freeManualEligible =
     freePlanRestricted &&
     isSystemVoice &&
@@ -642,18 +642,30 @@ tts.post('/generate', async (c) => {
   if (missingTtsConsent) return consentRequired(c, missingTtsConsent);
 
   // 직접 입력(random 아님) = 사용자가 문구를 직접 타이핑한 생성 경로. 여기 닿는 것은 유료이거나 기본 목소리의 무료다.
-  // 세는 것은 **캐시 미스 뒤(합성 직전) 한 자리**다 — 이미 만든 내 음성은 다시 받아도 세지 않는다(2026-10-26 변경).
-  // 셌는데 실패하면 catch 에서 돌려준다.
+  // ⚠ **서버가 처리한 요청은 결과가 무엇이든 한 번 센다**(2026-10-27 오너 결정 — `docs/spec/voice-and-message.md` §8).
+  //   캐시 히트(다시 받기)·새 합성·서비스 재렌더 모두 같다. 예외는 둘뿐이다: 같은 `request_id` 의 재시도(한 번만 센다)와
+  //   실패(catch 에서 돌려준다). 기기 안의 캐시로 다시 쓰는 것은 서버에 오지 않으니 여기서 볼 수 없다.
   const isManualGeneration = !randomRequested && !draftPreviewRequested && Boolean(resolvedUserPk);
   let manualQuotaPoolKey: string | null = null;
   let manualQuotaMonth: string | null = null;
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
-  // 무엇으로 셌나 — 응답의 `charged_source`. 'none' 은 세지 않음(캐시 히트·직접 입력 아님).
+  // 무엇으로 셌나 — 응답의 `charged_source`. 'none' 은 이 응답이 세지 않음(같은 요청의 재시도·직접 입력 아님).
   let chargedSource: 'none' | 'base' | 'ad' = 'none';
   // 광고 보상을 썼으면 그 거래 id — 실패하면 아래 catch 가 돌려준다.
   let adRewardTransactionId: string | null = null;
   // 같은 요청의 재시도·중복 탭 표식(`request_id`) — 잡았으면 끝날 때 풀거나 끝냄으로 적는다.
   let requestClaim: ManualRequestClaim | null = null;
+  // 잡은 표식이 **이미 끝난(셌던) 요청**의 것인가 — 그 재시도는 다시 세지 않고, 실패해도 표식을 지우지 않고 끝냄으로 되돌린다
+  //   (지우면 다음 재시도가 새 요청으로 잡혀 한 번 더 센다).
+  let requestAlreadyCharged = false;
+  /** 잡은 표식을 놓는다 — 셌던 요청의 재시도면 끝냄으로 되돌리고, 아니면 지운다. */
+  const letGoOfRequestClaim = async (): Promise<void> => {
+    if (!requestClaim) return;
+    const claim = requestClaim;
+    requestClaim = null;
+    if (requestAlreadyCharged) await completeManualRequest(db, claim);
+    else await releaseManualRequest(db, claim);
+  };
   /** dev 월 예산에서 잡아 둔 몫 — 끝나면(성공·실패 모두) 놓는다(`holdDevBudget`). */
   let devBudgetHoldId: string | null = null;
   /**
@@ -699,6 +711,14 @@ tts.post('/generate', async (c) => {
       remaining: reservation.remaining,
     };
     return null;
+  };
+  /** 세지 않는 응답(셌던 요청의 재시도)에 싣는 남은 횟수 — 지금 값을 읽는다(소비 없음). */
+  const readCurrentManualQuota = async (): Promise<void> => {
+    const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+      promoOnly: callerPromoOnly,
+    });
+    const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+    manualQuotaResult = { used, limit: pool.limit, remaining: Math.max(0, pool.limit - used) };
   };
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
@@ -1053,7 +1073,8 @@ tts.post('/generate', async (c) => {
           text: userTypedText,
         })
       : null;
-    // 이 요청이 '이미 낸 결과를 새 설정으로 다시 굽는' 것인가(아래 캐시 미스 뒤에 정한다). 참이면 세지 않는다.
+    // 이 요청이 '이미 낸 결과를 새 설정으로 다시 굽는' 것인가(아래 캐시 미스 뒤에 정한다). 사용량 장부의 갈래
+    //   (`manual_rerender`)로만 쓴다 — 2026-10-27 부터 이것도 한 번 센다.
     let serviceRerender = false;
     // 같은 `request_id` 를 다시 잡았는가(재시도) — 사용량 장부의 `retry_count`.
     let retriedRequest = false;
@@ -1110,8 +1131,35 @@ tts.post('/generate', async (c) => {
       activePreviewClaimToken = previewClaimToken;
     }
 
-    // 캐시 히트면 그 응답이다(이미 만든 내 음성 다시 받기 — 세지 않는다). 없으면 null. 같은 요청 표식을 **끝난 표식에서** 다시
-    // 잡았을 때 한 번 더 부른다 — 그 사이 같은 요청의 첫 회차가 끝나 결과가 캐시에 올라왔을 수 있다(Codex #942).
+    // ⚠ **같은 요청 표식은 캐시를 보기 전에 잡는다**(2026-10-27). 캐시 히트도 세므로, 끝난 요청의 재시도(첫 응답을 잃은
+    //   네트워크 재전송)가 히트로 받으면서 한 번 더 세지 않게 하려면 히트보다 먼저 '이 요청은 이미 셌다' 를 알아야 한다.
+    //   재시도·중복 탭이 동시에 와도 한 번만 합성·차감한다(`lib/manual-tts-requests.ts`). 잡은 뒤의 이른 반환은 표식을 놓는다.
+    if (isManualGeneration) {
+      const requestId = parseManualRequestId(body.request_id);
+      if (requestId) {
+        const outcome = await claimManualRequest(db, {
+          userPk,
+          requestId,
+          fingerprint: await manualRequestFingerprint({
+            voiceProfileId: body.voice_profile_id,
+            language: normalizeSynthesisLanguage(body.language),
+            text: userTypedText,
+          }),
+        });
+        if (outcome.kind === 'conflict') {
+          return jsonError(c, 409, 'TTS_REQUEST_ID_CONFLICT', 'The request id was used for different input.');
+        }
+        if (outcome.kind === 'in_progress') {
+          return jsonError(c, 409, 'TTS_REQUEST_IN_PROGRESS', 'The same request is still being generated.');
+        }
+        requestClaim = outcome.claim;
+        retriedRequest = outcome.retried;
+        // 끝난 표식 = 그 요청은 이미 성공해 셌다. 2분 넘게 버려진 표식(워커가 중간에 죽었다)은 셌는지 알 수 없어 새로 센다.
+        requestAlreadyCharged = outcome.reclaimedDone;
+      }
+    }
+
+    // 캐시 히트면 그 응답이다(서버에 남은 내 결과 다시 받기 — 한 번 센다, 셌던 요청의 재시도면 세지 않는다). 없으면 null.
     const serveCachedResult = async (): Promise<Response | null> => {
       for (const { attempt: cacheAttempt, cacheKey } of preparedAttempts) {
         // 시스템 보이스는 (보이스 × 문구)당 단 한 번만 생성되도록 전체 사용자가
@@ -1147,17 +1195,21 @@ tts.post('/generate', async (c) => {
           ) {
             throw new VoiceAuthorizationChangedDuringTtsError();
           }
-          // ⚠ **이미 만든 내 음성은 다시 받아도 세지 않는다**(2026-10-26 정책 변경 — 그전 2026-09-07 결정은 "이 폰에
-          //   없어서 서버를 불렀으면 히트도 한 번" 이었다). 이 캐시는 **그 사람 범위**다(`manualTtsCacheScope` ·
-          //   `anyUser` false) — 남의 결과를 나눠 주지 않는다. 등록 목소리는 위 게이트가 지금 권한을 이미 봤다.
-          //   세는 것은 새로 합성할 때(아래 캐시 미스 뒤) 한 자리뿐이다. 과거 사용량은 돌려주지 않는다.
-          //   응답의 남은 횟수는 지금 값을 읽어 싣는다(소비 없음).
+          // ⚠ **서버에 남은 내 결과를 다시 받는 것도 한 번 센다**(2026-10-27 오너 결정 — 2026-10-26 #942 의 '다시 받기는
+          //   세지 않는다' 를 되돌렸다. 그 앞 2026-09-07 결정과 같다: "이 폰에 없어서 서버를 불렀으면 히트도 한 번").
+          //   세는 자리는 위의 권한 확인 **뒤**다 — 교체로 막힌 히트는 횟수를 태우지 않는다. 남은 횟수가 0 이면 히트여도
+          //   429 `MANUAL_TTS_QUOTA_EXCEEDED` 다(새 합성과 같은 응답). 셌던 요청의 재시도(`requestAlreadyCharged`)는
+          //   세지 않고 지금 남은 횟수만 싣는다. 이 캐시는 **그 사람 범위**다(`manualTtsCacheScope` · `anyUser` false).
           if (isManualGeneration) {
-            const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
-              promoOnly: callerPromoOnly,
-            });
-            const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
-            manualQuotaResult = { used, limit: pool.limit, remaining: Math.max(0, pool.limit - used) };
+            if (requestAlreadyCharged) {
+              await readCurrentManualQuota();
+            } else {
+              const refused = await reserveManualGeneration();
+              if (refused) {
+                await letGoOfRequestClaim();
+                return refused;
+              }
+            }
             // 지문 이전(#139 전)에 만든 행은 논리 결과 키가 비어 있다 — 다시 쓰이는 이 순간 채워, 나중에 설정이 바뀌어
             // 이 키가 빗나가도 '이미 낸 결과' 로 알아보게 한다. 못 채워도 그 행은 예전 그대로라(틀린 값이 남지 않는다)
             // 응답을 막지 않는다.
@@ -1199,6 +1251,15 @@ tts.post('/generate', async (c) => {
               );
             }
           }
+          if (requestClaim) {
+            try {
+              await completeManualRequest(db, requestClaim);
+            } catch (claimErr) {
+              // 결과는 이미 있다 — 표식을 못 닫아도 2분 뒤 버려진 것으로 풀린다. 응답을 막지 않는다.
+              console.error('[tts/generate] request claim complete failed', claimErr);
+            }
+            requestClaim = null;
+          }
           return c.json(
             {
               message_id: cached.messageId,
@@ -1216,9 +1277,10 @@ tts.post('/generate', async (c) => {
               provider: cached.provider,
               cache_key: cacheKey,
               cache_hit: true,
-              // 다시 받기는 세지 않는다 — 지금 남은 횟수를 그대로 싣는다.
+              // 다시 받기도 한 번이다 — 새 합성과 같은 칸을 싣는다(셌던 요청의 재시도면 'none' 과 지금 남은 횟수).
               manual_quota: manualQuotaResult,
-              charged_source: 'none',
+              charged_source: chargedSource,
+              usage_month: manualQuotaMonth,
               random_context: randomRequested ? randomContext : null,
               preview_playback_token: activePreviewClaimToken,
               preview_playback_confirmed: Boolean(vp.previewed_at),
@@ -1250,6 +1312,7 @@ tts.post('/generate', async (c) => {
     if (!providerVoiceId && isEvictedWithoutVoice && evictedProbeVoiceId) {
       providerVoiceId = await recloneIfEvicted();
       if (!providerVoiceId) {
+        await letGoOfRequestClaim();
         return c.json(
           { error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' },
           400,
@@ -1257,6 +1320,7 @@ tts.post('/generate', async (c) => {
       }
       preparedAttempts = await buildPreparedAttempts(providerVoiceId);
       if (preparedAttempts.length === 0) {
+        await letGoOfRequestClaim();
         return c.json(
           { error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' },
           400,
@@ -1264,14 +1328,12 @@ tts.post('/generate', async (c) => {
       }
     }
 
-    // ⚠ **이미 낸 결과인가**(스펙 tts-render-and-budget §2). 캐시 키는 렌더 설정(모델·음량·높이·provider voice·합성 옵션)
-    //   을 담으므로 서비스가 설정을 바꾸거나 LRU 반납 뒤 재등록으로 provider voice 가 바뀌면 같은 요청도 빗나간다. 그 사람의
-    //   같은 논리 결과가 원장에 남아 있으면 새 설정으로 **다시 굽되 세지 않는다.** 문구·목소리(세대)·언어를 바꾼 요청은
-    //   논리 키가 달라 예전 규칙대로 센다. 30일 정리로 결과가 사라졌으면 행이 없어 센다(§8 표).
+    // **이미 낸 결과를 새 설정으로 다시 굽는가**(스펙 tts-render-and-budget §2). 캐시 키는 렌더 설정(모델·음량·높이·provider
+    //   voice·합성 옵션)을 담으므로 서비스가 설정을 바꾸거나 LRU 반납 뒤 재등록으로 provider voice 가 바뀌면 같은 요청도
+    //   빗나간다. 그 사람의 같은 논리 결과가 원장에 남아 있으면 서비스 재렌더다. ⚠ 2026-10-27 부터 **이것도 한 번 센다** —
+    //   이 판정은 사용량 장부의 갈래(`manual_rerender` — 합성 비용이 어디서 왔나)로만 쓰고 차감에는 쓰지 않는다.
     //   칸(#139)이 없는 배포 창에서는 던져 500 이다 — 세기 전이라 잃는 것이 없다(fail-closed).
-    //   ⚠ **지금 설정으로 만든 행이 이미 있으면 서비스 재렌더가 아니다.** 그런데도 빗나갔다면 원인은 설정이 아니라 합성
-    //   글자다(번역처럼 같은 입력에서 다른 글자가 나오는 갈래) — 그건 예전처럼 센다. 안 그러면 같은 요청을 되풀이해
-    //   세지 않는 합성을 끝없이 받을 수 있다.
+    //   지금 설정으로 만든 행이 이미 있으면 재렌더가 아니다(원인은 설정이 아니라 합성 글자다 — 번역 등).
     if (logicalKey) {
       const firstAttempt = preparedAttempts[0]?.attempt;
       const currentFingerprint = firstAttempt
@@ -1281,56 +1343,23 @@ tts.post('/generate', async (c) => {
       serviceRerender = owned.any && !owned.current;
     }
 
-    // dev 월 합성 예산 — 운영이거나 정하지 않았으면 DB 를 부르지 않는다. 세기·표식보다 앞이라 막혀도 잃는 것이 없다.
+    // dev 월 합성 예산 — 운영이거나 정하지 않았으면 DB 를 부르지 않는다. 세기보다 앞이라 막혀도 잃는 것이 없다(표식은 catch 가 놓는다).
     //   몫은 **먼저 잡는다**(코덱스 #954) — 읽기만 하면 겹치는 요청이 같은 남은 몫을 함께 써 상한을 넘겼다.
     const devBudget = await holdDevBudget(db, c.env, speechCharacters(synthesisText));
     if (!devBudget.ok) throw new TtsBudgetExhaustedError();
     devBudgetHoldId = devBudget.holdId;
 
-    // 캐시 미스 확정 후 합성 직전에 직접 입력 한 번을 센다(월 한도 원자적 +1 또는 광고 보상 하나).
-    // 그 전에 같은 요청 표식을 잡는다 — 재시도·중복 탭이 동시에 와도 한 번만 합성·차감한다(`lib/manual-tts-requests.ts`).
+    // 캐시 미스 확정 후 합성 직전에 직접 입력 한 번을 센다(월 한도 원자적 +1 또는 광고 보상 하나). 서비스 재렌더도 같다.
+    //   셌던 요청의 재시도(끝난 표식을 다시 잡았는데 결과가 캐시에 없다 — 그 사이 설정이 바뀌었다)는 세지 않는다.
     if (isManualGeneration) {
-      const requestId = parseManualRequestId(body.request_id);
-      if (requestId) {
-        const outcome = await claimManualRequest(db, {
-          userPk,
-          requestId,
-          fingerprint: await manualRequestFingerprint({
-            voiceProfileId: body.voice_profile_id,
-            language: normalizeSynthesisLanguage(body.language),
-            text: userTypedText,
-          }),
-        });
-        if (outcome.kind === 'conflict') {
-          return jsonError(c, 409, 'TTS_REQUEST_ID_CONFLICT', 'The request id was used for different input.');
+      if (requestAlreadyCharged) {
+        await readCurrentManualQuota();
+      } else {
+        const refused = await reserveManualGeneration();
+        if (refused) {
+          await letGoOfRequestClaim();
+          return refused;
         }
-        if (outcome.kind === 'in_progress') {
-          return jsonError(c, 409, 'TTS_REQUEST_IN_PROGRESS', 'The same request is still being generated.');
-        }
-        requestClaim = outcome.claim;
-        retriedRequest = outcome.retried;
-        if (outcome.reclaimedDone) {
-          const again = await serveCachedResult();
-          if (again) {
-            await completeManualRequest(db, outcome.claim);
-            requestClaim = null;
-            return again;
-          }
-        }
-      }
-      // 서비스가 다시 굽는 것은 세지 않는다 — `charged_source` 는 'none' 그대로다.
-      const refused = serviceRerender ? null : await reserveManualGeneration();
-      if (refused) {
-        if (requestClaim) await releaseManualRequest(db, requestClaim);
-        return refused;
-      }
-      if (serviceRerender) {
-        // 응답의 남은 횟수는 지금 값 그대로다(캐시 히트와 같다 — 소비 없음).
-        const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
-          promoOnly: callerPromoOnly,
-        });
-        const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
-        manualQuotaResult = { used, limit: pool.limit, remaining: Math.max(0, pool.limit - used) };
       }
     }
 
@@ -1540,7 +1569,8 @@ tts.post('/generate', async (c) => {
   } catch (err) {
     if (requestClaim) {
       try {
-        await releaseManualRequest(db, requestClaim);
+        // 셌던 요청의 재시도면 끝냄으로 되돌린다 — 지우면 다음 재시도가 새 요청으로 잡혀 한 번 더 센다.
+        await letGoOfRequestClaim();
       } catch (claimErr) {
         console.error('[tts/generate] request claim release failed', claimErr);
       }

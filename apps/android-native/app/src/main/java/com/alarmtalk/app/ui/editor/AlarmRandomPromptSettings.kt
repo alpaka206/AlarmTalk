@@ -531,7 +531,7 @@ private fun ManualMessageDialog(
     IosAlertDialog(
         title = stringResource(R.string.editor_msg_mode_manual),
         // 새 음성을 만드는 순간 횟수를 쓴다는 것을 **치기 전에** 말한다(`docs/spec/voice-and-message.md` §8 — 무료 3·플러스 30,
-        // 이미 만든 문구는 세지 않는다). 남은 횟수는 문구 목록의 '직접 입력 (2/3)' 이 보여 준다.
+        // 이 폰에 남아 있는 음성은 세지 않고, 서버에서 다시 받으면 1회다). 남은 횟수는 문구 목록의 '직접 입력 (2/3)' 이 보여 준다.
         message = stringResource(R.string.editor_manual_charge_notice),
         onDismiss = onDismiss,
         actions = listOf(
