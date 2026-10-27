@@ -787,6 +787,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         await deps.alarmStore.waitUntilLoadedFromDisk()
         guard deps.alarmStore.hasLoadedFromDisk, let ownerID = deps.auth.session?.user.id else { return }
         _ = await AlarmScheduleReconciler.reconcile(store: deps.alarmStore, alarmKit: deps.alarmKit, ownerUserId: ownerID)
+        // ⚠ **새 예약 손잡이가 디스크에 남은 뒤에 끝낸다**(Codex #972 P1). `schedule` 의 `markScheduled` 는 비동기 저장만
+        //   띄운다 — 곧바로 완료 핸들러를 부르면 iOS 가 그 전에 앱을 멈춰, 다음 실행이 취소된 옛 손잡이를 읽고 새 예약은 관리
+        //   밖으로 떨어진다. 다른 백그라운드 실행(`BackgroundDependencies` 의 교체 확정)과 같은 이유로 동기 저장한다.
+        if !deps.alarmStore.saveNow() {
+            AlarmTalkLog.logger.warning("Background clip reconcile could not flush alarm store")
+        }
     }
 
     /// 앱이 꺼져 있거나 멈춘 동안 **스톡 클립 백그라운드 다운로드**가 끝나면 iOS 가 앱을 (다시) 띄워 이걸 부른다. 같은 이름의
