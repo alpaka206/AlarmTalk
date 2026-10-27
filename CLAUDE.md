@@ -695,7 +695,8 @@ FOREGROUND_SERVICE … (BAL_BLOCK) result code=102`. 그래서 2026-09-09 의 "�
   **그리기 전용 스레드**(`ViewGraphDisplayLink.asyncThread`)에서 갱신하기도 한다. `body` 안에서 표기 없이 쓴
   클로저는 메인 액터를 물려받아 거기서 트랩한다(2026-10-14 1.2.13 iPad — 같은 이슈 IOS-4, 랜딩 일출 씬).
   클로저는 `{ @Sendable ... in` 으로 열고, 그리는 코드는 `View` 밖 타입에 둔다(`SunriseSceneRenderer`).
-- 강제: `scripts/check-bgtask-handler-isolation.py`(CI lint — BGTask 콜백 + `TimelineView`·`Canvas`). 회귀 테스트는 **비격리 테스트
+- **URLSession 델리게이트도 같다**(2026-10-27, iOS 백그라운드 클립 받기 `BackgroundClipDownloader`). background 세션의 콜백은 시스템 큐에서 온다 — 델리게이트 타입을 `@MainActor` 로 두거나 `@preconcurrency` 로 채택하지 말고, 상태는 잠금으로 지킨다.
+- 강제: `scripts/check-bgtask-handler-isolation.py`(CI lint — BGTask 콜백 + `TimelineView`·`Canvas` + URLSession 델리게이트). 회귀 테스트는 **비격리 테스트
   메서드**여야 한다 — `@MainActor` 클래스에 넣으면 이 버그를 구조적으로 못 잡는다
   (`AlarmTalkTests/BackgroundSyncTaskLaunchHandlerTests`).
 

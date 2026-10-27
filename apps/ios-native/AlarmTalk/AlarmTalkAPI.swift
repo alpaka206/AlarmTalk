@@ -451,7 +451,14 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     func getTTSMessageAudio(id: String, token: String) async throws -> TtsMessageAudioResponse {
-        try await request("tts/messages/\(id)/audio", token: token)
+        let request = ttsMessageAudioRequest(id: id, token: token)
+        return try await send(request, token: token)
+    }
+
+    /// `getTTSMessageAudio` 가 보내는 **그 요청**(경로·공통 헤더·Bearer). 앱이 백그라운드로 갈 때 OS 백그라운드
+    /// 다운로드(`BackgroundClipDownloader`)가 같은 요청을 넘긴다 — 헤더를 거기서 다시 베끼지 않는다.
+    func ttsMessageAudioRequest(id: String, token: String) -> URLRequest {
+        baseRequest("tts/messages/\(id)/audio", method: "GET", token: token)
     }
 
     // MARK: 추가 음성팩(`docs/spec/voice-packs.md` §3)
@@ -794,11 +801,29 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return request
     }
 
+    /// [baseRequest] 가 실은 Bearer 토큰을 되읽는다 — 백그라운드 다운로드가 받은 응답의 401 을 **그 요청의 토큰**으로 알린다.
+    static func bearerToken(of request: URLRequest?) -> String? {
+        guard let value = request?.value(forHTTPHeaderField: "Authorization"), value.hasPrefix("Bearer ") else { return nil }
+        return String(value.dropFirst("Bearer ".count)).nilIfBlank
+    }
+
     /// 보내고 응답을 해석한다. JSON·multipart 요청이 **같은 규칙**을 쓴다 — 2xx 디코드,
     /// 401 은 세션 만료 알림, 403 `CONSENT_REQUIRED` 는 동의 화면, 그 밖은 `APIError.server`.
     /// 앱에서 `APIError.server` 를 만드는 곳은 여기 하나다.
     private func send<Response: Decodable>(_ request: URLRequest, token: String?) async throws -> Response {
         let (data, response) = try await session.data(for: request)
+        return try interpret(data: data, response: response, token: token)
+    }
+
+    /// 받은 응답 하나를 `send` 와 **같은 규칙**으로 해석한다(2xx 디코드 · 401 세션 만료 · 403 탈퇴 유예·동의).
+    /// 요청을 이 클래스 밖에서 보낸 경로 — OS 백그라운드 다운로드(`BackgroundClipDownloader`)가 받은 파일 — 도 이걸 쓴다.
+    /// [token] 은 그 요청이 실은 토큰이다(늦게 온 401 이 새 세션을 끊지 않게 — `unauthorizedTokenKey`).
+    func interpret<Response: Decodable>(
+        data: Data,
+        response: URLResponse?,
+        token: String?,
+        as _: Response.Type = Response.self
+    ) throws -> Response {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }

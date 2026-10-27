@@ -772,7 +772,40 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 주기 사이클이 목소리 접근권을 다시 받아야 한다(푸시를 놓쳤을 때의 그물).
             voiceStudio: deps.voiceStudio
         )
+        // ⚠ **백그라운드로 받은 클립을 예약에 반영하는 훅도 launch 에서 꽂는다** — iOS 가 다운로드 완료를 배달하려고 앱을
+        //   다시 띄우면 scene 이 없어 화면의 `.task` 가 돌지 않는다(위 등록·실행기와 같은 이유). 새 재조정 경로를 만들지 않고
+        //   기존 리컨사일러를 부른다 — 캐시를 보고 어긋난 예약만 다시 건다(`docs/spec/voice-and-message.md` 「앱을 닫아도 받는다」).
+        BackgroundClipDownloader.shared.onClipsCached = { @Sendable in
+            await Self.reconcileAfterBackgroundClips()
+        }
         return true
+    }
+
+    @MainActor
+    private static func reconcileAfterBackgroundClips() async {
+        let deps = BackgroundDependencies.shared
+        await deps.alarmStore.waitUntilLoadedFromDisk()
+        guard deps.alarmStore.hasLoadedFromDisk, let ownerID = deps.auth.session?.user.id else { return }
+        _ = await AlarmScheduleReconciler.reconcile(store: deps.alarmStore, alarmKit: deps.alarmKit, ownerUserId: ownerID)
+        // ⚠ **새 예약 손잡이가 디스크에 남은 뒤에 끝낸다**(Codex #972 P1). `schedule` 의 `markScheduled` 는 비동기 저장만
+        //   띄운다 — 곧바로 완료 핸들러를 부르면 iOS 가 그 전에 앱을 멈춰, 다음 실행이 취소된 옛 손잡이를 읽고 새 예약은 관리
+        //   밖으로 떨어진다. 다른 백그라운드 실행(`BackgroundDependencies` 의 교체 확정)과 같은 이유로 동기 저장한다.
+        if !deps.alarmStore.saveNow() {
+            AlarmTalkLog.logger.warning("Background clip reconcile could not flush alarm store")
+        }
+    }
+
+    /// 앱이 꺼져 있거나 멈춘 동안 **스톡 클립 백그라운드 다운로드**가 끝나면 iOS 가 앱을 (다시) 띄워 이걸 부른다. 같은 이름의
+    /// 세션을 다시 만들어 이벤트를 받고, 다 받으면 [completionHandler] 를 메인에서 부른다(`BackgroundClipDownloader`).
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        if !BackgroundClipDownloader.shared.handleEvents(forSessionIdentifier: identifier, completionHandler: completionHandler) {
+            // 우리 세션이 아니다 — 받을 것이 없으니 곧바로 끝났다고 알린다.
+            completionHandler()
+        }
     }
 
     func application(

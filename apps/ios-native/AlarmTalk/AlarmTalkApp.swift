@@ -311,6 +311,8 @@ struct AlarmTalkApp: App {
                     }
                     .task(id: auth.session?.user.id) {
                         stockClipPrefetcher.cancel()
+                        // 앞 계정에 넘겨 둔 백그라운드 다운로드를 버린다(로그아웃·전환·탈퇴). 같은 계정의 콜드 스타트는 그대로 둔다.
+                        BackgroundClipDownloader.shared.accountChanged(to: auth.session?.user.id)
                         // 받은 추가 음성팩 목록도 계정 것이다 — 선다운로드보다 먼저 갈아 끼운다(그 회차의 팩 단계가 이 목록을 본다).
                         // '받기' 는 이 프리페처 회차를 깨운다(`docs/spec/voice-packs.md` §7 — 새 프리페처를 만들지 않는다).
                         VoicePackStore.shared.activate(userID: auth.session?.user.id)
@@ -560,6 +562,10 @@ struct AlarmTalkApp: App {
                 // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
                 // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.
                 Task {
+                    // ⚠ **백그라운드로 넘겨 둔 받기를 먼저 거둔다**(「앱을 닫아도 받는다」). 앞에 있는 동안은 아래 보충
+                    //   (포그라운드 프리페처)이 받는다 — 캐시를 다시 세어 빠진 것만 받으므로 백그라운드에서 이미 받은 것은 건너뛴다.
+                    //   남겨 두면 같은 클립을 두 곳이 받는다.
+                    await BackgroundClipDownloader.shared.cancelAll(forgetBatch: false)
                     guard auth.session != nil else { return }
                     // ⚠ **재바인딩도 여기서 한 번 더 돈다**(2026-09-03).
                     //   예전에는 트리거가 콜드 스타트(`.task(id: stockClipLanguageKey)`)
@@ -620,9 +626,24 @@ struct AlarmTalkApp: App {
             case .background:
                 // 시스템이 task 를 깨울 수 있도록 다음 사이클 재예약.
                 BackgroundSyncTask.scheduleNext()
+                handOffStockClipsToBackground()
             default:
                 break
             }
+        }
+    }
+
+    /// 아직 빠진 스톡 클립을 **OS 백그라운드 다운로드**로 넘긴다 — 앱을 닫아도 iOS 가 이어 받는다
+    /// (`StockClipPrefetcher.handOffToBackground`, 스펙 voice-and-message 「앱을 닫아도 받는다」).
+    /// 넘기는 일(디스크의 매니페스트를 읽고 캐시를 세는 몇백 ms)이 앱이 멈추기 전에 끝나도록 백그라운드 실행 시간을 빌린다.
+    private func handOffStockClipsToBackground() {
+        guard let session = auth.session else { return }
+        let grant = BackgroundExecutionGrant(name: "stock-clip-handoff")
+        let prefetcher = stockClipPrefetcher
+        let owned = voiceStudio.ownedVoiceProfileIDs
+        Task {
+            await prefetcher.handOffToBackground(session: session, ownedVoiceProfileIDs: owned)
+            grant.end()
         }
     }
 
@@ -1185,5 +1206,24 @@ private struct PreferredColorSchemeIfSet: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// `UIApplication.beginBackgroundTask` 한 번 — 끝내는 길(일을 마침·시간 만료)이 둘이라 **한 번만** 끝내게 묶는다.
+/// 시간 만료 핸들러는 UIKit 이 메인 스레드에서 부른다(문서) — 그래서 이 타입은 메인 액터다.
+@MainActor
+private final class BackgroundExecutionGrant {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    init(name: String) {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
     }
 }
