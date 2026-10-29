@@ -213,6 +213,8 @@ final class VoiceStudioViewModel: ObservableObject {
     ///   실패·반쪽이면 창은 닫혀 있어야 하는데, 늦게 끝난 앞 갱신이 창을 다시 열면 다음 진입이
     ///   재시도를 건너뛴다. `SocialFeatureViewModel` 은 `refreshGeneration` 으로 같은 일을 막는다.
     private var entryFreshnessGeneration = 0
+    /// 목록 응답의 순번 — 먼저 떠난 갱신의 답이 늦게 와 새 목록을 덮지 않게 한다(`ListAnswerSequence`).
+    private var profileListAnswers = ListAnswerSequence()
     /// 신선도 창이 보는 지금(진입 번호·시각). 테스트가 바꿔 끼운다.
     var entryRefreshClock: EntryRefreshClock = { (AppEntrySignal.shared.counter.entry, Date()) }
 
@@ -609,6 +611,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
 
         do {
+            let profilesSeq = profileListAnswers.begin()
             async let nextProfiles = api.listVoiceProfiles(token: token)
             // 목록과 함께 시작한다. 뒤에서 시작하면 한도 숫자만 한 왕복 늦게 뜬다.
             // 번호는 요청을 내기 직전에 뽑는다 — 답을 실을 때 이 요청이 아직 가장 나중 것인지 본다([applyDraftQuota]).
@@ -624,6 +627,10 @@ final class VoiceStudioViewModel: ObservableObject {
             // 아래 `catch is CancellationError` 에 걸리지 않고 여기까지 온다. 그대로 진행하면 BGTask 가 "끝났다" 고 통보한 뒤에 목록을 갈아 끼우고
             // `onAuthoritativeRefresh` 가 알람을 강등·재예약한다.
             if Task.isCancelled { return }
+            // ⚠ **먼저 떠난 갱신의 답이 늦게 와 새 목록을 덮지 않게 한다**(2026-10-29). 강제 갱신(`force`)은 진행 중인 갱신과
+            //   겹쳐 돈다 — 이름 바꾸기·삭제 뒤의 강제 갱신보다 앞서 떠난 진입 갱신이 늦게 오면 옛 이름·지운 목소리가 돌아왔다.
+            //   더 나중에 떠난 답이 이미 실렸거나 서버가 확인한 변경을 적은 뒤면 이 답은 버린다(나중 것이 실패했으면 이 답이 실린다).
+            guard profileListAnswers.accept(profilesSeq) else { return }
             // ⚠ **정리가 끝나지 않은 교체 목소리는 아직 고를 수 없다.** 서버 목록은 이미 새
             // 목소리를 주지만, 이 기기의 직접 입력 알람 정리(강등·예약)가 끝나지 않았으면
             // 그 사이 만든 새 알람을 다음 회차가 함께 지운다 — 강등 대상은 프로필 id 로만
@@ -1465,6 +1472,9 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             try await api.deleteVoiceProfile(id: profile.id, token: token, force: force)
             handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
+            // 서버가 지웠다 — 목록에서도 곧바로 뺀다. 뒤따르는 강제 갱신이 실패하거나 앞서 떠난 갱신이 늦게 와도 되살아나지 않는다
+            // (안드로이드는 같은 자리에서 목록을 거른다).
+            applyConfirmedProfileChange { $0.removeAll { $0.id == profile.id } }
             await refresh(session: session, force: true)
             return true
         } catch {
@@ -1931,9 +1941,46 @@ final class VoiceStudioViewModel: ObservableObject {
                 listenerTitle: nil,
                 token: token
             )
+            // 바꾼 이름을 곧바로 적는다 — 뒤따르는 강제 갱신이 실패하거나 앞서 떠난 갱신이 늦게 와도 옛 이름으로 돌아가지 않는다
+            // (안드로이드는 응답의 이름을 그대로 적는다).
+            applyConfirmedProfileChange { list in
+                for index in list.indices where list[index].id == profile.id { list[index].name = trimmed }
+            }
             await refresh(session: session, force: true)
         } catch {
             statusMessage = mapVoiceError(error)
         }
+    }
+
+    /// 서버가 확인해 준 변경을 목록에 직접 적는다 — 그 전에 떠난 갱신의 답(변경 전 목록)은 이제 버린다.
+    private func applyConfirmedProfileChange(_ change: (inout [VoiceProfile]) -> Void) {
+        change(&profiles)
+        change(&authoritativeProfiles)
+        profileListAnswers.supersedeInFlight()
+    }
+}
+
+/// **목록 갱신의 순번**(2026-10-29) — 겹쳐 떠난 갱신들의 답 중, 더 나중에 떠난 답이 이미 실렸거나 서버가 확인한 변경을 목록에
+/// 직접 적은 뒤에는 그 전에 떠난 답을 버린다. 나중 답이 실패해 실리지 않았으면 앞 답은 실린다(아무것도 없는 것보다 낫다).
+struct ListAnswerSequence {
+    private(set) var requested = 0
+    private(set) var applied = 0
+
+    /// 요청을 내기 직전에 번호를 뽑는다.
+    mutating func begin() -> Int {
+        requested &+= 1
+        return requested
+    }
+
+    /// 이 답을 실어도 되는가 — 실으면 그 번호를 적는다.
+    mutating func accept(_ seq: Int) -> Bool {
+        guard seq > applied else { return false }
+        applied = seq
+        return true
+    }
+
+    /// 서버가 확인해 준 변경을 목록에 직접 적었다 — 지금까지 떠난 답은 모두 그보다 낡았다.
+    mutating func supersedeInFlight() {
+        applied = requested
     }
 }

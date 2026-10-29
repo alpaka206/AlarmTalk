@@ -59,8 +59,10 @@ settings:
     # 빌드 13(1.2.15). 목소리 등록 동의·재동의 뒤 동기화·반복 사이 쉼·이용권 안내를 고친다.
     # 빌드 14(1.2.16). 커플·가족 이용권과 딸린 기능을 없앤다(법무 문서 7, 받아 둔 알람은 내 알람으로). ⚠ 강제 업데이트
     # 하한이 된다(`IOS.minSupported` 14) — App Store 게재를 확인한 뒤에만 올린다. 서버가 이 빌드보다 먼저 나가야 한다.
-    MARKETING_VERSION: "1.2.16"
-    CURRENT_PROJECT_VERSION: "14"
+    # 빌드 15(1.3.0). 법무 문서 8 을 싣는다 — 서버(정책 8·7 수락)가 이 빌드보다 먼저 나가야 한다. ⚠ 강제 업데이트 하한이
+    # 된다(`IOS.minSupported` 15) — App Store 게재를 확인한 뒤에만 올린다. 광고 노출은 꺼진 채다.
+    MARKETING_VERSION: "1.3.0"
+    CURRENT_PROJECT_VERSION: "15"
     # DEVELOPMENT_TEAM must be set per-developer via xcconfig or Xcode UI.
     # Leaving empty here so xcodegen does not hard-bake a team ID into the project.
     DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"

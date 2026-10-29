@@ -21,6 +21,7 @@ import {
   AdminPushError,
   CLAIM_STALE_MS,
   STEP_SEND_LIMIT,
+  adPushEnabled,
   cancelPushJob,
   createPushJob,
   isWithinAdHours,
@@ -30,6 +31,7 @@ import {
   sendTestPush,
 } from '../src/lib/admin/push-jobs';
 import { listPushJobs, loadOverview } from '../src/lib/admin/metrics';
+import { renderPush } from '../src/lib/admin/pages';
 import {
   appPresenceMiddleware,
   parseAppVersionHeader,
@@ -39,6 +41,8 @@ import adminRoutes from '../src/routes/admin';
 import { securityHeadersMiddleware } from '../src/middleware/securityHeaders';
 
 const NO_PUSH_ENV = {} as AppEnv['Bindings'];
+/** 광고 알림 스위치를 켠 환경 — 광고 규칙(동의·시간)을 보는 테스트가 쓴다. */
+const AD_PUSH_ENV = { ADMIN_AD_PUSH_ENABLED: 'true' } as AppEnv['Bindings'];
 /** 한국 시각 정오 — 광고 가능 시간. */
 const NOON_KST = Date.parse('2026-10-23T03:00:00.000Z');
 /** 한국 시각 22시 — 광고 불가. */
@@ -230,7 +234,7 @@ describe('발송', () => {
   const copy = parseCopy({ kind: 'notice', title: '업데이트 안내', body: '새 버전이 나왔어요' });
 
   it('같은 문구의 시험 발송 없이는 전체 발송을 만들지 못한다', async () => {
-    await expect(createPushJob(db, copy, parseAudience({}), 6, NOON_KST)).rejects.toMatchObject({
+    await expect(createPushJob(db, NO_PUSH_ENV, copy, parseAudience({}), 6, NOON_KST)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_TEST_REQUIRED',
     });
   });
@@ -239,7 +243,7 @@ describe('발송', () => {
     // 푸시 키가 없는 환경이라 시험 발송은 실패로 기록된다.
     const r = await sendTestPush(db, NO_PUSH_ENV, 'tester@example.com', copy);
     expect(r).toMatchObject({ devices: 1, sent: 0, failed: 1 });
-    await expect(createPushJob(db, copy, parseAudience({}), 6, Date.now())).rejects.toMatchObject({
+    await expect(createPushJob(db, NO_PUSH_ENV, copy, parseAudience({}), 6, Date.now())).rejects.toMatchObject({
       code: 'ADMIN_PUSH_TEST_REQUIRED',
     });
   });
@@ -275,16 +279,16 @@ describe('발송', () => {
   it('광고는 시간 밖이면 만들지 못하고, 만든 뒤 시간이 지나면 걸음이 멈춘다', async () => {
     const ad = parseCopy({ kind: 'ad', title: '할인', body: '이번 주' });
     await passTest(ad);
-    await expect(createPushJob(db, ad, parseAudience({}), 1, NIGHT_KST)).rejects.toMatchObject({
+    await expect(createPushJob(db, AD_PUSH_ENV, ad, parseAudience({}), 1, NIGHT_KST)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_OUTSIDE_AD_HOURS',
     });
-    const id = await createPushJob(db, ad, parseAudience({}), 1, NOON_KST);
+    const id = await createPushJob(db, AD_PUSH_ENV, ad, parseAudience({}), 1, NOON_KST);
     const stored = await db.execute({ sql: `SELECT audience_json FROM admin_push_jobs WHERE id = ?`, args: [id] });
     // 광고는 화면에서 체크를 풀어도 마케팅 동의 조건이 붙어 저장된다.
     expect(JSON.parse(String(stored.rows[0]!.audience_json)).marketingOnly).toBe(true);
-    const paused = await runJobStep(db, NO_PUSH_ENV, id, NIGHT_KST);
+    const paused = await runJobStep(db, AD_PUSH_ENV, id, NIGHT_KST);
     expect(paused).toMatchObject({ status: 'sending', paused: 'outside_ad_hours', sent: 0, failed: 0 });
-    const done = await runJobStep(db, NO_PUSH_ENV, id, NOON_KST);
+    const done = await runJobStep(db, AD_PUSH_ENV, id, NOON_KST);
     // 마케팅 동의자는 u-a 한 명(기기 하나) — 푸시 키가 없어 실패로 센다.
     expect(done).toMatchObject({ status: 'done', sent: 0, failed: 1 });
   });
@@ -306,7 +310,7 @@ describe('발송', () => {
       const audience = parseAudience({ platform: 'android' });
       const expected = (await countAudience(db, audience)).android;
       expect(expected).toBe(4 + extra);
-      const id = await createPushJob(db, copy, audience, expected, NOON_KST);
+      const id = await createPushJob(db, NO_PUSH_ENV, copy, audience, expected, NOON_KST);
       const first = await runJobStep(db, NO_PUSH_ENV, id, NOON_KST);
       expect(first).toMatchObject({ status: 'sending', failed: STEP_SEND_LIMIT });
       const second = await runJobStep(db, NO_PUSH_ENV, id, NOON_KST);
@@ -321,7 +325,7 @@ describe('발송', () => {
 
   it('같은 걸음을 두 번 동시에 밟으면 한쪽만 보낸다', async () => {
     await passTest();
-    const id = await createPushJob(db, copy, parseAudience({}), 6, NOON_KST);
+    const id = await createPushJob(db, NO_PUSH_ENV, copy, parseAudience({}), 6, NOON_KST);
     const [a, b] = await Promise.all([
       runJobStep(db, NO_PUSH_ENV, id, NOON_KST),
       runJobStep(db, NO_PUSH_ENV, id, NOON_KST),
@@ -333,7 +337,7 @@ describe('발송', () => {
 
   it('맡기의 응답이 끊겨도 그 묶음을 빠뜨리지 않는다 — 2분 뒤 같은 구간을 다시 보낸다', async () => {
     await passTest();
-    const id = await createPushJob(db, copy, parseAudience({}), 6, NOON_KST);
+    const id = await createPushJob(db, NO_PUSH_ENV, copy, parseAudience({}), 6, NOON_KST);
     // 맡기 쓰기는 커밋됐는데 응답을 잃은 경우를 흉내 낸다.
     const lossy = {
       execute: async (stmt: Parameters<Client['execute']>[0]) => {
@@ -366,7 +370,7 @@ describe('발송', () => {
     try {
       await passTest();
       const audience = parseAudience({ platform: 'android' });
-      const id = await createPushJob(db, copy, audience, 0, NOON_KST);
+      const id = await createPushJob(db, NO_PUSH_ENV, copy, audience, 0, NOON_KST);
       // 구간 전체(처음부터 마지막 기기까지)를 맡은 채 끊긴 상태를 직접 만든다 — 맡을 때보다 대상이 많아진 경우.
       await run(
         `UPDATE admin_push_jobs SET cursor = 'pt-grow-999', claim_from = '', claim_to = 'pt-grow-999',
@@ -404,7 +408,7 @@ describe('발송', () => {
       const expected = (await countAudience(db, audience));
       const devices = expected.android + expected.ios;
       expect(devices).toBeGreaterThan(0);
-      const id = await createPushJob(db, copy, audience, devices, NOON_KST);
+      const id = await createPushJob(db, NO_PUSH_ENV, copy, audience, devices, NOON_KST);
       await run(
         `UPDATE admin_push_jobs SET cursor = 'pt-zzz', claim_from = '', claim_to = 'pt-zzz',
                 claim_at = ?, claim_finishes = 1 WHERE id = ?`,
@@ -420,21 +424,50 @@ describe('발송', () => {
     }
   });
 
+  // 2026-10-29 오너: 광고는 당장 하지 않는다 — 스위치(`ADMIN_AD_PUSH_ENABLED`)를 켤 때까지 광고 알림은 나가지 않는다.
+  it('광고 알림 스위치가 꺼져 있으면 시험·전체 발송을 만들지 못하고, 보내던 광고는 멈춘다', async () => {
+    const ad = parseCopy({ kind: 'ad', title: '할인 소식', body: '이번 주만' });
+    await expect(sendTestPush(db, NO_PUSH_ENV, 'u-a@example.com', ad, NOON_KST)).rejects.toMatchObject({
+      code: 'ADMIN_PUSH_AD_DISABLED',
+    });
+    await passTest(ad);
+    await expect(createPushJob(db, NO_PUSH_ENV, ad, parseAudience({}), 1, NOON_KST)).rejects.toMatchObject({
+      code: 'ADMIN_PUSH_AD_DISABLED',
+    });
+    // 켜 둔 동안 만든 광고 발송 — 스위치를 끄면 걸음이 멈추고 아무에게도 보내지 않는다.
+    const id = await createPushJob(db, AD_PUSH_ENV, ad, parseAudience({}), 1, NOON_KST);
+    expect(await runJobStep(db, NO_PUSH_ENV, id, NOON_KST)).toMatchObject({ status: 'sending', paused: 'ad_disabled', sent: 0, failed: 0 });
+    await cancelPushJob(db, id);
+    // 서비스 안내는 스위치와 무관하다.
+    expect(adPushEnabled(NO_PUSH_ENV)).toBe(false);
+    expect(adPushEnabled({ ADMIN_AD_PUSH_ENABLED: '1' } as AppEnv['Bindings'])).toBe(true);
+    expect(adPushEnabled({ ADMIN_AD_PUSH_ENABLED: 'yes' } as AppEnv['Bindings'])).toBe(false);
+  });
+
+  it('스위치가 꺼져 있으면 콘솔의 광고 선택을 잠근다', () => {
+    const off = renderPush('n', { jobs: [], testEmail: '', preset: null, adPushEnabled: false });
+    expect(off).toMatch(/id="kind-ad" value="ad" disabled/);
+    expect(off).toContain('광고 알림은 꺼져 있어요');
+    const on = renderPush('n', { jobs: [], testEmail: '', preset: null, adPushEnabled: true });
+    expect(on).not.toMatch(/id="kind-ad" value="ad" disabled/);
+    expect(on).not.toContain('광고 알림은 꺼져 있어요');
+  });
+
   it('광고 시험 발송도 광고 동의자에게만', async () => {
     const ad = parseCopy({ kind: 'ad', title: '할인 안내', body: '이번 주만' });
-    await expect(sendTestPush(db, NO_PUSH_ENV, 'tester@example.com', ad, NOON_KST)).rejects.toMatchObject({
+    await expect(sendTestPush(db, AD_PUSH_ENV, 'tester@example.com', ad, NOON_KST)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT',
     });
-    await expect(sendTestPush(db, NO_PUSH_ENV, 'u-a@example.com', ad, NOON_KST)).resolves.toMatchObject({ devices: 1 });
+    await expect(sendTestPush(db, AD_PUSH_ENV, 'u-a@example.com', ad, NOON_KST)).resolves.toMatchObject({ devices: 1 });
     // 광고 시험도 시간 밖이면 보내지 않는다.
-    await expect(sendTestPush(db, NO_PUSH_ENV, 'u-a@example.com', ad, NIGHT_KST)).rejects.toMatchObject({
+    await expect(sendTestPush(db, AD_PUSH_ENV, 'u-a@example.com', ad, NIGHT_KST)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_OUTSIDE_AD_HOURS',
     });
   });
 
   it('보내는 중인 발송은 새 기록이 많아도 목록에 남는다 — 이어 보내기를 잃지 않게', async () => {
     await passTest();
-    const id = await createPushJob(db, copy, parseAudience({}), 6, NOON_KST);
+    const id = await createPushJob(db, NO_PUSH_ENV, copy, parseAudience({}), 6, NOON_KST);
     for (let i = 0; i < 5; i++) await passTest();
     const jobs = await listPushJobs(db, 3);
     expect(jobs[0]!.id).toBe(id);

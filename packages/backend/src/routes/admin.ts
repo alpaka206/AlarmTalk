@@ -9,6 +9,7 @@ import { loadStoreDownloads } from '../lib/admin/store-downloads';
 import { renderLogin, renderOverview, renderPush, renderUsers } from '../lib/admin/pages';
 import {
   AdminPushError,
+  adPushEnabled,
   cancelPushJob,
   createPushJob,
   effectiveAudience,
@@ -468,7 +469,12 @@ admin.get('/push', async (c) => {
   try {
     const jobs = await listPushJobs(getDB(c.env));
     return html(c, (nonce) =>
-      renderPush(nonce, { jobs, testEmail: test || c.env.ADMIN_TEST_PUSH_EMAIL || '', preset: c.req.query('preset') ?? null }),
+      renderPush(nonce, {
+        jobs,
+        testEmail: test || c.env.ADMIN_TEST_PUSH_EMAIL || '',
+        preset: c.req.query('preset') ?? null,
+        adPushEnabled: adPushEnabled(c.env),
+      }),
     );
   } catch (err) {
     console.error('[admin] push page failed', err);
@@ -528,7 +534,7 @@ admin.post('/push/jobs', async (c) => {
   try {
     const copy = parseCopy(body);
     const estimated = Math.min(Math.max(Math.trunc(Number(body.estimatedTotal) || 0), 0), 1_000_000);
-    const id = await createPushJob(getDB(c.env), copy, parseAudience(body), estimated, Date.now());
+    const id = await createPushJob(getDB(c.env), c.env, copy, parseAudience(body), estimated, Date.now());
     return c.json({ id });
   } catch (err) {
     return pushError(c, err);

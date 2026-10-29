@@ -13,6 +13,8 @@ struct AlarmsListView: View {
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
     @State private var actionMessage: String?
+    /// 알람 스위치는 손을 멈춘 뒤의 마지막 값만 적용한다 — 누르는 동안에는 화면만 바뀐다(`AlarmToggleCoalescer`).
+    @ObservedObject private var toggles = AlarmToggleCoalescer.shared
     /// 날짜가 지난 날짜 알람을 켜려 했다 — 켜지 않고 알럿으로 말한다(스펙 alarm-lifecycle.md §4-4).
     @State private var datedPastAlertShown = false
 
@@ -173,7 +175,7 @@ struct AlarmsListView: View {
             VStack(alignment: .leading, spacing: 16) {
                 ForEach(sortedAlarms) { alarm in
                     AlarmRow(
-                        alarm: alarm,
+                        alarm: displayed(alarm),
                         voiceName: voiceName(for: alarm),
                         selectionMode: selectionMode,
                         selected: selectedAlarmIDs.contains(alarm.id),
@@ -187,7 +189,17 @@ struct AlarmsListView: View {
                         },
                         onTap: { openEditor(.edit(alarm.id)) },
                         onToggleEnabled: { enabled in
-                            Task { await setAlarm(alarm, enabled: enabled) }
+                            let id = alarm.id
+                            toggles.toggle(
+                                id: id,
+                                to: enabled,
+                                current: { store.record(id: id)?.enabled },
+                                // 적용할 때 행을 **다시 읽는다** — 누른 순간의 사본에는 그 사이 적힌 예약 핸들이 없다.
+                                apply: { want in
+                                    guard let fresh = store.record(id: id) else { return }
+                                    await setAlarm(fresh, enabled: want)
+                                }
+                            )
                         },
                         onDelete: {
                             Task { await deleteAlarm(alarm) }
@@ -299,6 +311,14 @@ struct AlarmsListView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(String(localized: "첫 알람 만들기"))
+    }
+
+    /// 행에 그릴 알람 — 스위치를 누른 뒤 아직 적용하지 않았으면 누른 값으로 그린다(`AlarmToggleCoalescer.shown`).
+    private func displayed(_ alarm: LocalAlarmRecord) -> LocalAlarmRecord {
+        guard let shown = toggles.shown[alarm.id], shown != alarm.enabled else { return alarm }
+        var copy = alarm
+        copy.enabled = shown
+        return copy
     }
 
     /// 헤드라인이 셀 '다음 알람' — 켜져 있는 것 중 가장 먼저 울릴 것.

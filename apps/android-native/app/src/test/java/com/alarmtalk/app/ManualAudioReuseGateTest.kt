@@ -259,19 +259,20 @@ class ManualAudioReuseGateTest {
     /**
      * 찾는 동안 잠기는 것은 저장 버튼뿐이다 — 그 사이 시각·문구·목소리를 고치면, 결과는 누른 순간의 값으로 찾은
      * 것인데 저장은 바뀐 상태로 나간다(Codex #879). 누른 순간의 초안을 잡고, 두 결과 모두 **맨 먼저** 그 초안과
-     * 지금 초안을 견줘 다르면 아무것도 하지 않아야 한다(이어 붙이거나 생성을 시작하기 전에).
+     * 지금 초안을 견줘 다르면 이 결과로 잇지 않는다(이어 붙이거나 생성을 시작하기 전에). ⚠ 2026-10-29 부터는 버리기만 하지
+     * 않고 **지금 상태로 저장을 다시 돈다**(오너 "저장을 누르면 바뀐걸로" — `resaveAfterChange`, `EditorResaveAfterChangeWiringTest`).
      */
     @Test
-    fun aLookupResultIsDroppedWhenTheEditorChangedMeanwhile() {
+    fun aLookupResultIsNotUsedWhenTheEditorChangedMeanwhile() {
         val body = withoutLineComments(functionBody(editorSource, "    fun saveEditor()"))
         val captured = body.indexOf("val draftAtTap = editor.toDraft()")
         assertTrue("누른 순간의 초안을 잡지 않는다", captured >= 0)
         assertTrue(captured < body.indexOf("manualAudioReuse.request("))
-        val guard = "if (editor.toDraft() != draftAtTap) return@"
-        val onFound = body.substringAfter("onFound = found@{ reusable ->")
-        assertTrue(onFound.trimStart().startsWith(guard + "found"))
-        val onMissing = body.substringAfter("onMissing = missing@{")
-        assertTrue(onMissing.trimStart().startsWith(guard + "missing"))
+        val guard = Regex("""^if \(editor\.toDraft\(\) != draftAtTap\) \{\s*resaveAfterChange = true\s*return@""")
+        val onFound = body.substringAfter("onFound = found@{ reusable ->").trimStart()
+        assertTrue(guard.containsMatchIn(onFound) && onFound.contains("return@found"))
+        val onMissing = body.substringAfter("onMissing = missing@{").trimStart()
+        assertTrue(guard.containsMatchIn(onMissing) && onMissing.contains("return@missing"))
     }
 
     /** 저장 사유는 화면이 다시 그려질 때마다 계산된다 — 파일을 읽으면 안 된다. */

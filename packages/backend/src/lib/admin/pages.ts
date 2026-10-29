@@ -434,7 +434,7 @@ const RECONSENT_PRESET = {
 
 export function renderPush(
   nonce: string,
-  opts: { jobs: PushJobRow[]; testEmail: string; preset: string | null },
+  opts: { jobs: PushJobRow[]; testEmail: string; preset: string | null; adPushEnabled: boolean },
 ): string {
   const preset = opts.preset === 'reconsent' ? RECONSENT_PRESET : null;
   const history = opts.jobs.length
@@ -468,9 +468,13 @@ export function renderPush(
           <legend>종류</legend>
           <div class="seg" role="radiogroup">
             <input type="radio" name="kind" id="kind-notice" value="notice" checked><label for="kind-notice">서비스 안내</label>
-            <input type="radio" name="kind" id="kind-ad" value="ad"><label for="kind-ad">광고</label>
+            <input type="radio" name="kind" id="kind-ad" value="ad"${opts.adPushEnabled ? '' : ' disabled'}><label for="kind-ad">광고</label>
           </div>
-          <p class="field-help" id="kind-help" style="margin-top:8px">업데이트·재동의·장애 같은 안내예요. 수신 동의와 시간 제한 없이 보낼 수 있어요.</p>
+          <p class="field-help" id="kind-help" style="margin-top:8px">업데이트·재동의·장애 같은 안내예요. 수신 동의와 시간 제한 없이 보낼 수 있어요.</p>${
+            opts.adPushEnabled
+              ? ''
+              : `<p class="field-help" id="ad-disabled-help">광고 알림은 꺼져 있어요(운영 스위치 <code>ADMIN_AD_PUSH_ENABLED</code>). 서비스 안내만 보낼 수 있어요.</p>`
+          }
         </fieldset>
         <div class="field">
           <label class="field-label" for="title"><span>제목</span><span class="muted num" id="title-count">0/${PUSH_TITLE_MAX}</span></label>
@@ -725,6 +729,7 @@ export function renderPush(
         if (s.status === 'done') { finish('다 보냈어요', '성공 ' + s.sent.toLocaleString('ko-KR') + '대, 실패 ' + s.failed.toLocaleString('ko-KR') + '대예요. 실패는 대개 앱을 지운 기기예요.'); return; }
         if (s.status === 'canceled') { finish('발송을 멈췄어요', '그때까지 ' + s.sent.toLocaleString('ko-KR') + '대에 보냈어요.'); return; }
         if (s.paused === 'outside_ad_hours') { finish('광고 가능 시간이 끝났어요', '오전 ' + AD_HOURS[0] + '시가 지나면 발송 기록에서 이어 보낼 수 있어요.'); return; }
+        if (s.paused === 'ad_disabled') { finish('광고 알림이 꺼져 있어요', '운영 스위치를 켜면 발송 기록에서 이어 보낼 수 있어요.'); return; }
         if (s.paused === 'busy') await new Promise((r) => setTimeout(r, 800));
       }
     } catch (x) {
