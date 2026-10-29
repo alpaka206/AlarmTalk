@@ -9,6 +9,7 @@ import com.alarmtalk.app.data.AlarmDatabase
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.bucketTheme
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.data.lockedPaidVoice
 import com.alarmtalk.app.data.encodeBucketClipKeys
@@ -50,11 +51,18 @@ import kotlinx.coroutines.withContext
  * ⚠ 예전에는 서버가 그 사용자의 **서버 알람 사본**이 문 클립까지 힌트로 줬다. 사본을 지운 뒤(2026-10-29)로는 은퇴한
  *   클립만 준다 — 은퇴하지 않은 클립은 목록에 테마와 함께 이미 실려 있어 여기서 찾는다. iOS 짝은
  *   `VoiceStudioViewModel.legacyBucketHints(from:)`.
+ * ⚠ **무료 테마([FreeBucketOrder])만 힌트가 된다 — `greeting` 은 빠진다.** 기본 목소리의 `greeting` 은 목소리 소개
+ *   클립이라 테마가 아니다. 예전에는 서버가 같은 목록(`FREE_BUCKET_CATEGORIES`)으로 걸렀다 — 거르지 않으면 그 클립을 문
+ *   '기본 인사말' 알람이 `greeting` 테마로 다시 묶여 소개 문구로 운다. 카테고리가 아니라 테마로 본다(`cheer_v2` → `cheer`).
  */
 internal fun legacyBucketHintsOf(manifest: com.alarmtalk.app.network.StockClipListResponse): Map<String, String> =
     manifest.clips
-        .filter { com.alarmtalk.app.data.isSystemVoiceId(it.voiceProfileId) && !it.category.isNullOrBlank() }
-        .associate { it.messageId to it.category!! } +
+        .mapNotNull { clip ->
+            clip.bucketTheme
+                ?.takeIf { com.alarmtalk.app.data.isSystemVoiceId(clip.voiceProfileId) && it in FreeBucketOrder }
+                ?.let { theme -> clip.messageId to theme }
+        }
+        .toMap() +
         manifest.legacyBucketHints.associate { hint -> hint.messageId to hint.category }
 
 object StockClipLanguageRebinder {

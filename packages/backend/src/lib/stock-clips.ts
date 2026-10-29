@@ -1427,11 +1427,9 @@ export interface LegacyBucketHint {
  *   목록에서 빠진 은퇴 클립뿐이다.
  *   시스템 스톡은 전역 카탈로그(소유자가 `SYSTEM_VOICE_LIBRARY_USER_ID`)라 남의 개인정보가
  *   아니고, 은퇴한 것만 담으므로 무한정 늘지 않는다(상한도 둔다).
- * ⚠ **`greeting` 은 버킷이 아니다** — 목소리 미리듣기용 자기소개라 알람 테마가 될 수 없고,
- *   서버도 시스템 보이스+greeting 을 `INVALID_BUCKET_ID` 로 거절한다. 힌트로 주면 앱이
- *   그 값을 `bucketId` 에 적고, 그 알람은 저장할 때마다 400 을 맞는다.
- * ⚠ **은퇴 여부를 보지 않는다.** 힌트가 필요한 알람은 정확히 '은퇴한 클립을 물고 있는'
- *   알람이므로, 여기서 `retired_at IS NULL` 을 걸면 아무것도 안 나온다.
+ * ⚠ **`greeting` 은 버킷이 아니다** — 목소리 미리듣기용 자기소개라 알람 테마가 될 수 없다
+ *   (`FREE_BUCKET_CATEGORIES` 로 거른다). 힌트로 주면 앱이 그 값을 `bucketId` 에 적고 그 알람이 소개 문구로 운다.
+ *   앱이 목록에서 만드는 힌트도 같은 이유로 무료 테마만 담는다(`FreeBucketOrder` / `FreeBucket.order`).
  */
 /**
  * `messages.retired_at`(#110)이 이미 있는가. **읽기 경로의 배포 창 방어에만 쓴다.**

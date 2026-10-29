@@ -1168,9 +1168,8 @@ class AlarmRepository(
                 clips = binding?.clips,
                 nowMillis = System.currentTimeMillis(),
             ).copy(
-                // 서버 알람은 이미 P0-1/P0-2(취소·un-share·목소리 삭제) 경로에서 sound-only 로 강등되므로,
-                // 이 로컬 정리는 push 하지 않는다(SYNCED). 뒤에 켜기·끄기가 올리면 기본 목소리 + 비운
-                // 문구·테마를 명시적 null 로 싣는다(`RemoteAlarmMapper.toWriteRequest` 의 `clearsMissingVoiceReferences`).
+                // 서버에는 알람이 없다(2026-10-29, #147) — 이 로컬 정리로 끝난다. 동기화 상태 칸은 더 읽는 곳이 없어
+                // 예전 값(SYNCED)을 그대로 적는다(`AlarmSyncStates`).
                 syncState = AlarmSyncStates.SYNCED,
             )
             if (updated.enabled) alarmScheduler.schedule(updated)

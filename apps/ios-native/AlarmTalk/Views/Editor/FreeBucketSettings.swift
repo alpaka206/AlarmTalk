@@ -38,8 +38,9 @@ enum FreeBucket: String {
     /// 기본값' 이 아니다(CLAUDE.md).
     /// ⚠ **`.preset`(기본 인사말)은 뺀다**(2026-09-02 리뷰). 안드로이드 `FreeBucketOrder`
     /// 와 같은 이유다: 스톡 `greeting` 은 목소리 미리듣기용 **자기소개**라 매일 아침 울릴
-    /// 문구가 아니고(클론의 `preset` 은 생성된 기상 인사라 같은 이름의 다른 것이다),
-    /// 서버도 시스템 보이스 + greeting 을 `INVALID_BUCKET_ID` 로 거절한다.
+    /// 문구가 아니고(클론의 `preset` 은 생성된 기상 인사라 같은 이름의 다른 것이다), 예전에는 서버 알람 쓰기도
+    /// 시스템 보이스 + greeting 을 `INVALID_BUCKET_ID` 로 거절했다. 서버 알람 사본을 지운 뒤(2026-10-29, #147)로는
+    /// **막는 곳이 이 목록뿐이다** — 옛 알람 테마 힌트(`VoiceStudioViewModel.legacyBucketHints(from:)`)도 이걸로 거른다.
     static let order: [FreeBucket] = RandomPromptContext.alarmEditorCases
         .filter { $0 != .preset }
         .compactMap { FreeBucket(rawValue: $0.bucketCategory) }

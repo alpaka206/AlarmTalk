@@ -817,10 +817,14 @@ final class VoiceStudioViewModel: ObservableObject {
     /// ⚠ 예전에는 서버가 그 사용자의 **서버 알람 사본**이 문 클립까지 힌트로 줬다. 사본을 지운 뒤(2026-10-29)로는 은퇴한 클립만
     ///   준다 — 은퇴하지 않은 클립은 목록에 테마와 함께 이미 실려 있어 여기서 찾는다. 안드로이드 짝은
     ///   `sync/StockClipLanguageRebinder.kt` 의 `legacyBucketHintsOf`.
+    /// ⚠ **무료 테마(`FreeBucket.order`)만 힌트가 된다 — `greeting` 은 빠진다.** 기본 목소리의 `greeting` 은 목소리 소개
+    ///   클립이라 테마가 아니다. 예전에는 서버가 같은 목록(`FREE_BUCKET_CATEGORIES`)으로 걸렀다 — 거르지 않으면 그 클립을 문
+    ///   '기본 인사말' 알람이 `greeting` 테마로 다시 묶여 소개 문구로 운다. 카테고리가 아니라 테마로 본다(`cheer_v2` → `cheer`).
     static func legacyBucketHints(from manifest: StockClipListResponse) -> [String: String] {
+        let freeThemes = Set(FreeBucket.order.map(\.rawValue))
         var hints: [String: String] = [:]
         for clip in manifest.clips where isSystemVoiceId(clip.voiceProfileId) {
-            if let category = clip.category.nilIfBlank { hints[clip.messageId] = category }
+            if let theme = clip.bucketTheme.nilIfBlank, freeThemes.contains(theme) { hints[clip.messageId] = theme }
         }
         for hint in manifest.legacyBucketHints ?? [] { hints[hint.messageId] = hint.category }
         return hints

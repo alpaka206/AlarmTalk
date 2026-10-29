@@ -60,6 +60,18 @@ class ServerCopyRemovalTest {
     }
 
     @Test
+    fun `옛 알람 힌트는 무료 테마만 — 기본 목소리의 소개(greeting)는 테마가 아니고, 묶음 카테고리는 테마로 접는다`() {
+        val manifest = StockClipListResponse(
+            clips = listOf(
+                StockClip(messageId = "m-greeting", voiceProfileId = SYSTEM_VOICE, category = "greeting"),
+                StockClip(messageId = "m-cheer-v2", voiceProfileId = SYSTEM_VOICE, category = "cheer_v2", theme = "cheer"),
+                StockClip(messageId = "m-unknown", voiceProfileId = SYSTEM_VOICE, category = "someday"),
+            ),
+        )
+        assertEquals(mapOf("m-cheer-v2" to "cheer"), legacyBucketHintsOf(manifest))
+    }
+
+    @Test
     fun `저장 기록의 문구 종류는 원문이 아니라 종류만이다`() {
         assertEquals("alarm_only", alarm(playMode = AlarmPlayModes.ALARM_ONLY).messageKindForUsage())
         assertEquals("recording", alarm(voiceSource = VoiceSources.LOCAL_AUDIO).messageKindForUsage())
