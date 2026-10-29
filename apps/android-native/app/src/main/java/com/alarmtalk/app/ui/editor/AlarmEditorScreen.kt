@@ -301,6 +301,8 @@ internal fun AlarmEditorScreen(
     lastFreeBucket: String? = null,
     // 마지막에 쓴 직접 입력 문구. 차 있으면 마지막 선택이 직접 입력이었다는 뜻이다.
     lastManualText: String? = null,
+    // 옛 키의 닉네임을 세션에서 못 찾을 때 쓰는 값 — 이 계정의 기본 목소리 알람에 남은 호칭(`legacyNicknameFromAlarms`).
+    legacyNicknameFallback: String? = null,
     // ⚠ 유료 안내 모달의 코드 입력(`onRegisterCode`·`redeemBusy`)은 2026-10-14 에 지웠다 — 되살리지 말 것
     // (선물 코드 폐지, App Store 3.1.1 두 번째 반려 — `PlanGateDialog` 머리말).
     onCancel: () -> Unit,
@@ -881,7 +883,7 @@ internal fun AlarmEditorScreen(
             //   계정 닉네임을 넣었는데 소리가 아니라 **폰 안 재사용 키**에만 들어갔다. 닉네임을 지운 뒤에도 그 키로 저장된 음성을 다시
             //   찾도록 처음 본 닉네임을 얼려 키에만 쓴다(`LegacyNicknameKeyStore`). iOS 는 처음부터 넣지 않았다.
             ?: authSession?.user?.id?.takeIf { isSelectedSystemVoice }?.let { userId ->
-                legacyNicknameKeys.titleFor(userId, authSession?.user?.name)
+                legacyNicknameKeys.titleFor(userId, authSession?.user?.name, legacyNicknameFallback)
             }
     }
 

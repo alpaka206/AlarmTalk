@@ -1459,6 +1459,7 @@ internal fun AlarmTalkApp(
               lastMessageContext = lastMessageContext,
               lastFreeBucket = lastFreeBucket,
               lastManualText = lastManualText,
+              legacyNicknameFallback = remember(alarms) { com.alarmtalk.app.data.legacyNicknameFromAlarms(alarms) },
               // 날짜 알람의 같은 시각 판정 — 이 계정에 보이는 다른 알람(`observeAlarms` 가 이미 소유자로 거른다).
               otherAlarmTimes = alarms.filter { it.id != alarm?.id }.map { it.hour to it.minute }.toSet(),
               onCancel = ::goBackInApp,

@@ -621,6 +621,18 @@ class AuthSessionStore internal constructor(
         val normalizedUser = normalizeUser(user).let { normalized ->
             dynamicPromptSettingsOverride?.let { normalized.copy(dynamicPromptSettings = normalizeDynamicPromptSettings(it)) }
                 ?: normalized
+        }.let { normalized ->
+            // ⚠ **같은 계정의 이름을 빈 값으로 덮지 않는다**(2026-10-29 닉네임 삭제 — 서버는 이제 빈 이름만 준다). 이 기기에 적어 둔
+            //   이름은 옛 직접 입력 캐시 키를 다시 만드는 재료다(`LegacyNicknameKeyStore`). 덮으면 앱을 열 때의 계정 갱신이 편집기보다
+            //   먼저 돌아 얼릴 값이 사라진다(코덱스 #976). 화면에는 쓰지 않는다.
+            if (normalized.name.isNotBlank()) {
+                normalized
+            } else {
+                prefs.getString(KEY_NAME, null)
+                    ?.takeIf { it.isNotBlank() && prefs.getString(KEY_USER_ID, null) == normalized.id }
+                    ?.let { stored -> normalized.copy(name = stored) }
+                    ?: normalized
+            }
         }
         // 저장마다 새 순번 — 내용이 똑같은 응답도 '새 응답' 으로 보이게([AuthSession.accountAnswerSeq]).
         // 읽고 올려 쓰기가 한 덩어리여야 해서 이 함수 전체가 세션 쓰기 락 안이다(재진입 가능).

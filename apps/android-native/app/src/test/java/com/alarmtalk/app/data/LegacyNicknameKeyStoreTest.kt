@@ -33,6 +33,43 @@ class LegacyNicknameKeyStoreTest {
     }
 
     @Test
+    fun 세션의_이름이_이미_비었으면_기본_목소리_알람에_남은_호칭으로_얼린다() {
+        // 옛 앱(1.2.16)은 서버가 빈 이름을 준 뒤로 세션의 이름을 빈 값으로 덮었다 — 닉네임은 알람 행에만 남는다(코덱스 #976).
+        val store = LegacyNicknameKeyStore(context)
+        assertEquals("규원", store.titleFor("u3", "", savedAlarmTitle = "규원"))
+        assertEquals("세션 이름이 있으면 그것이 먼저다", "세션", store.titleFor("u4", "세션", savedAlarmTitle = "알람"))
+    }
+
+    @Test
+    fun 알람에_남은_호칭은_기본_목소리_알람_중_가장_최근에_저장한_것이다() {
+        val clone = "11111111-1111-4111-8111-111111111111"
+        val system = "70000000-0000-4000-9000-000000000102"
+        val alarms = listOf(
+            alarm("a-old", system, "옛 이름", updatedAt = 1L),
+            alarm("a-new", system, " 규원 ", updatedAt = 3L),
+            alarm("a-clone", clone, "엄마", updatedAt = 9L),
+            alarm("a-blank", system, null, updatedAt = 10L),
+        )
+        assertEquals("규원", legacyNicknameFromAlarms(alarms))
+        assertNull(legacyNicknameFromAlarms(alarms.filter { it.voiceProfileId == clone }))
+    }
+
+    private fun alarm(id: String, voiceProfileId: String, title: String?, updatedAt: Long) = AlarmEntity(
+        id = id, label = "", hour = 7, minute = 0, fireAtMillis = 0L, repeatDaysMask = 0, holidayOff = false,
+        snoozeEnabled = true, snoozeMinutes = 5, snoozeRepeatLimit = 3, snoozeCount = 0,
+        vibrationPattern = VibrationPatterns.DEFAULT, playMode = AlarmPlayModes.VOICE_ONLY,
+        defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT, localAudioUri = null, audioCacheKey = null,
+        rawAudioUri = null, voiceSource = VoiceSources.TTS_PROFILE, voiceProfileId = voiceProfileId,
+        voiceListenerTitle = title, voiceText = "일어나", voiceCategory = null, voiceLanguage = null,
+        voiceRandomPrompt = false, voiceRandomContext = null, voiceWeatherCountry = null, voiceWeatherCity = null,
+        voiceFortuneGender = null, voiceFortuneBirthDate = null, voiceFortuneBirthTime = null,
+        dynamicVoicePreparedForFireAtMillis = null, voiceRepeat = true, voiceVolumePercent = 100, ttsMessageId = null,
+        remoteAlarmId = null, lastSyncedAtMillis = null, syncState = "local_only", origin = "local_owned",
+        alarmVolumePercent = 100, alarmSoundUri = null, alarmSoundLabel = null, enabled = true, state = "scheduled",
+        createdAtMillis = 0L, updatedAtMillis = updatedAt,
+    )
+
+    @Test
     fun 닉네임이_없는_계정은_빈_값으로_얼어_키에_아무것도_넣지_않는다() {
         val store = LegacyNicknameKeyStore(context)
         assertNull(store.titleFor("u2", ""))

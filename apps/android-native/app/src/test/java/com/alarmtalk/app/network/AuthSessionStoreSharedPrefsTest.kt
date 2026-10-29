@@ -55,6 +55,21 @@ class AuthSessionStoreSharedPrefsTest {
         user = AuthUser(id = userId, email = "$userId@example.test"),
     )
 
+    /**
+     * **서버가 빈 이름을 줘도 같은 계정의 이름은 남긴다**(2026-10-29 닉네임 삭제, 코덱스 #976) — 옛 직접 입력 캐시 키를 다시 만드는
+     * 재료다(`LegacyNicknameKeyStore`). 앱을 열 때의 계정 갱신이 편집기보다 먼저 돈다.
+     */
+    @Test
+    fun aBlankNameFromTheServerKeepsTheStoredNameOfTheSameAccountOnly() {
+        val prefs = plainPrefs("auth-shared-test").also { it.edit().clear().commit() }
+        val store = AuthSessionStore(prefs)
+        store.save(session("user-a").let { it.copy(user = it.user.copy(name = "규원")) })
+
+        assertEquals("규원", store.save(session("user-a")).user.name)
+        assertEquals("규원", store.read()?.user?.name)
+        assertEquals("다른 계정에는 옮기지 않는다", "", store.save(session("user-b")).user.name)
+    }
+
     @Test
     fun aStoreHearsSessionsSavedThroughAnotherStoreOverTheSamePrefs() = runBlocking {
         val shared = plainPrefs("auth-shared-test")
