@@ -162,5 +162,6 @@ private final class MeFailingAPI: AuthAPIProviding, @unchecked Sendable {
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
         throw APIError.invalidResponse
     }
+    func listConsents(token: String) async throws -> ConsentListResponse { throw APIError.invalidResponse }
     func logout(token: String) async throws { throw APIError.invalidResponse }
 }

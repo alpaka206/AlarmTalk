@@ -14,6 +14,7 @@ protocol AuthAPIProviding: AnyObject, Sendable {
     func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse
     func consentStatus(token: String) async throws -> ConsentStatusResponse
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse
+    func listConsents(token: String) async throws -> ConsentListResponse
     func logout(token: String) async throws
 }
 
@@ -533,8 +534,15 @@ final class AuthViewModel: ObservableObject {
     /// "코드 + 새 비밀번호" 입력 단계를 노출한다. Android `MainViewModel.passwordResetCodeSentTo`.
     @Published var passwordResetCodeSentTo: String?
     /// 설정 화면의 마케팅(광고성 정보 수신) 동의 토글 상태. `loadMarketingConsent` 로 채운다.
-    /// Android `MainViewModel.marketingConsentAgreed`.
-    @Published var marketingConsentAgreed = false
+    /// **nil = 아직 서버에서 못 읽음** — 그동안 스위치는 비활성이다. false 로 시작하면 동의한 사람에게
+    /// '꺼짐' 을 그리고 눌리기까지 한다. Android `MainViewModel.marketingConsentAgreed`.
+    @Published private(set) var marketingConsentAgreed: Bool?
+    /// 마케팅 동의 쓰기가 도는 중 — 그동안 스위치를 잠근다. **화면이 아니라 뷰모델이 든다**: 화면 상태는
+    /// 나갔다 들어오면 새로 만들어져, 앞 쓰기가 도는 중에 또 보낸 쓰기와 겹쳐 서버에 늦게 닿은 쪽이 이긴다.
+    @Published private(set) var marketingConsentWriteInFlight = false
+    /// 마케팅 동의 조회 세대. 토글·계정 정리가 올려, 그 전에 떠난 조회의 답이 방금 누른 값을 덮지 못하게 한다.
+    /// Android `MainViewModel.marketingConsentLoadGeneration`.
+    private var marketingConsentGeneration = 0
     /// 마케팅 동의 상태 로드가 실패했는지. true 면 UI 가 재시도 안내를 노출할 수 있다.
     /// Android `MainViewModel.marketingConsentLoadFailed`.
     @Published private(set) var marketingConsentLoadFailed = false
@@ -1983,14 +1991,19 @@ final class AuthViewModel: ObservableObject {
     /// 실패해도 앱을 막지 않고 `marketingConsentLoadFailed` 로만 표시한다.
     /// Android `MainViewModel.loadMarketingConsent`.
     func loadMarketingConsent() async {
-        guard let token else { return }
+        guard let token, let ownerUserID = session?.user.id else { return }
+        // 쓰는 동안에는 읽지 않는다 — 그 쓰기의 결과가 곧 최신값이고, 쓰기보다 먼저 서버에 닿은 조회의 답이
+        // 뒤늦게 오면 방금 누른 값을 덮는다.
+        guard !marketingConsentWriteInFlight else { return }
+        let generation = marketingConsentGeneration
         marketingConsentLoadFailed = false
         do {
-            // listConsents 는 AuthAPIProviding 프로토콜 밖이므로(테스트 mock 불필요)
-            // 공유 인스턴스로 직접 호출한다.
-            let response = try await AlarmTalkAPI.shared.listConsents(token: token)
+            let response = try await api.listConsents(token: token)
+            // 기다리는 사이 토글했거나 계정이 바뀌었으면 이 답은 낡았다.
+            guard session?.user.id == ownerUserID, generation == marketingConsentGeneration else { return }
             marketingConsentAgreed = response.consents.first { $0.consentType == "marketing" }?.agreed ?? false
         } catch {
+            guard session?.user.id == ownerUserID, generation == marketingConsentGeneration else { return }
             marketingConsentLoadFailed = true
         }
     }
@@ -1998,13 +2011,21 @@ final class AuthViewModel: ObservableObject {
     /// 설정의 '광고성 정보 수신' 토글 변경. marketing 동의를 현재 정책 버전으로 재기록한다
     /// (누적 저장, 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 직전 값으로
     /// 되돌린다. Android `MainViewModel.updateMarketingConsent`.
+    ///
+    /// 안드로이드는 쓰는 동안에도 스위치를 누르게 두고 마지막 값을 이어 보낸다(`marketingConsentAfterWrite`).
+    /// 여기서는 쓰는 동안 스위치를 잠가 쓰기가 한 번에 하나뿐이다 — 그래서 직전 값은 언제나 서버가 확인해 준 값이다.
     func updateMarketingConsent(_ agreed: Bool) async {
-        guard let token else {
+        guard let token, let ownerUserID = session?.user.id else {
             statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
+        guard !marketingConsentWriteInFlight else { return }
         let previous = marketingConsentAgreed
+        // 토글로 정한 값이 우선이다 — 떠 있던 조회의 답이 덮지 못하게 세대를 올린다.
+        marketingConsentGeneration &+= 1
+        let generation = marketingConsentGeneration
         marketingConsentAgreed = agreed
+        marketingConsentWriteInFlight = true
         do {
             _ = try await api.recordConsents(
                 RecordConsentsRequest(consents: [
@@ -2012,9 +2033,14 @@ final class AuthViewModel: ObservableObject {
                 ]),
                 token: token
             )
+            // 기다리는 사이 계정이 바뀌었으면 화면은 새 계정의 것이다 — 건드리지 않는다(잠금은 계정 정리가 푼다).
+            guard session?.user.id == ownerUserID, generation == marketingConsentGeneration else { return }
+            marketingConsentWriteInFlight = false
             // ⚠ **성공 토스트를 되살리지 말 것**(안드로이드와 같은 조치, 2026-08-11).
             // 스위치가 이미 결과를 보여준다 — 실패만 알린다(아래 catch).
         } catch {
+            guard session?.user.id == ownerUserID, generation == marketingConsentGeneration else { return }
+            marketingConsentWriteInFlight = false
             marketingConsentAgreed = previous
             if handleConsentVersionMismatch(error) { return }
             failStatus(userFacingErrorMessage(error, fallback: String(localized: "마케팅 수신 설정을 변경하지 못했어요")))
@@ -2384,7 +2410,10 @@ final class AuthViewModel: ObservableObject {
         // 사용자 범위 상태 초기화 — 계정 전환 시 옛 사용자 값이 새지 않게 한다.
         // Android `clearUserScopedRemoteState` 와 동등.
         passwordResetCodeSentTo = nil
-        marketingConsentAgreed = false
+        marketingConsentAgreed = nil
+        // 떠 있던 조회·쓰기의 답은 앞 계정의 것이다 — 세대를 올려 버리고, 쓰기 잠금도 푼다.
+        marketingConsentGeneration &+= 1
+        marketingConsentWriteInFlight = false
         marketingConsentLoadFailed = false
         statusMessage = message
         lastNetworkError = nil

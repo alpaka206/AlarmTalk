@@ -1607,6 +1607,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         marketingConsentAgreed = null
         marketingConsentLoadGeneration++
         marketingConsentWriteInFlight = false
+        // 앞 계정에서 쓰는 중에 누른 값이 남으면 다음 계정의 첫 쓰기가 끝날 때 그 계정으로 나간다.
+        pendingMarketingConsent = null
         marketingConsentLoadFailed = false
     }
 

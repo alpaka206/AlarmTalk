@@ -169,6 +169,27 @@
   8판 앱 게재·옛 앱 차단 뒤에 오너·법무가 정한다(`docs/legal/README.md` 「버전 8」).
   ⚠ 재동의를 요구하는 개정(최소 버전을 올릴 때)도 같은 순서로 나눠 낸다 — ① 서버가 새 버전도 받게 하되 최소 버전은 그대로 둔다 ② 새 문서를 실은 앱을 게재하고 `minSupported` 로 옛 앱을 막는다 ③ 그 뒤에 최소 버전을 올리고 앞 버전을 목록에서 지운다. 앱을 먼저 내면 옛 서버가 새 버전을 409 로 막고, ②보다 먼저 최소 버전을 올리면 옛 앱이 재동의를 제출할 수 없다. ①의 앞 버전 수락은 ③에서 올린 최소 버전을 채우지 못하므로 재동의가 새어 나가지 않는다.
 
+## 광고성 정보 수신 토글 — 스위치는 **서버가 가진 값**으로 끝난다
+
+동의 내역 화면(더보기 > 약관 및 동의)의 마케팅 스위치는 켜고 끌 때마다 `POST /user/consents` 로 marketing 한 행을
+쌓는다(최신 행이 지금 상태 — `created_at DESC, rowid DESC`). 관리자 콘솔의 광고 알림이 이 값으로 받는 사람을 고르므로
+(`lib/admin/audience.ts`), **스위치는 꺼져 보이는데 서버는 켜져 있으면 끈 줄 아는 사람에게 광고가 간다.**
+
+- **쓰기는 한 번에 하나다.** 안드로이드는 쓰는 동안에도 스위치를 누르게 두고(비활성으로 그리면 색이 두 단계로 바뀐다),
+  그 사이 누른 값은 **마지막 것 하나만** 남겨 지금 쓰기가 끝난 뒤 이어서 보낸다. iOS 는 쓰는 동안 스위치를 잠근다 —
+  잠금은 **뷰모델이** 든다(화면 상태는 나갔다 들어오면 새로 만들어져 겹쳐 보내게 된다).
+- ⚠ **실패하면 '서버가 가진 값' 으로 되돌린다 — 화면 값이 아니다.** 이어 보낼 때 화면은 이미 낙관적으로 바뀌어 있다.
+  예전 안드로이드는 그 화면 값을 되돌릴 값으로 잡아, 켬(첫 저장 성공) → 끔(이어 보낸 저장 실패) 이면 서버는 켜진 채
+  스위치만 꺼졌다(2026-10-29 외부 제보, 1.2.16 까지). 이어 보낼지·무엇을 그릴지는 판정 하나가 정한다(구현 지도).
+- 이어 보낼 값이 이미 서버 값과 같으면 보내지 않고, 앞 쓰기가 실패했어도 알리지 않는다 — 사용자가 마지막에 고른 값이
+  서버에 있다. 서버 값과 다르면 앞 쓰기가 실패했어도 마지막 값을 보낸다.
+- 성공한 값은 이어 보내기 **전에** 캐시(`MarketingConsentCache`)에 적는다 — 이어 보낸 쓰기가 실패해도 캐시가 서버를 가리킨다.
+- **쓰는 동안에는 조회하지 않고, 토글 전에 떠난 조회의 답은 버린다**(세대). 그 답은 방금 누른 값보다 낡았다.
+- 값을 모르는 동안(첫 조회 전)은 스위치를 비활성으로 둔다 — 동의한 사람에게 '꺼짐' 을 그리지 않는다. 안드로이드는 이 기기의
+  직전 확인값(`MarketingConsentCache`)으로 먼저 채운다.
+- 계정이 바뀌면 값·쓰기 잠금·이어 보낼 값을 모두 비우고, 떠 있던 조회·쓰기의 답은 버린다 — 앞 계정에서 누른 값이 다음
+  계정으로 나가지 않게.
+
 ## 동의 화면이 보여 주는 문서는 **번들본**이다
 
 ⚠ **동의 화면에서 웹 문서를 띄우지 말 것.** 동의를 기록할 때 함께 보내는
@@ -222,6 +243,8 @@
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 403 뒤 목록·겹친 조회 실패 | `refreshConsentCollectAfterGate`·`applyConsentStatusFailure` (`MainViewModelAuthActions`), `consentGatePendingUserId` (`MainViewModel`) | `handleConsentRequired` → `checkConsentStatus`, `consentGatePendingUserID` (`AuthViewModel`) — `AuthViewModelTests` | `GET /user/consents/status` |
 | 동의 뒤 막혔던 알람 전송 다시 돌기 | `submitConsents` → `syncNow`(내 알람 전송. 예전 자리 `RemoteAlarmSyncScheduler.runOnce` 는 받은 알람 pull 이었다 — 그 워커는 이제 계정 확인뿐) | `consentSubmitGeneration` → `remoteSync.runFullSync` (`AlarmTalkApp`) | — |
+| 광고성 정보 수신 — 이어 보내기·되돌릴 값 | `marketingConsentAfterWrite` (`ui/main/MarketingConsentWrites.kt`) ← `sendMarketingConsent` (`MainViewModelAuthActions`) — `MarketingConsentWritesTest` | 쓰는 동안 잠금 `marketingConsentWriteInFlight` (`AuthViewModel`) — `AuthViewModelTests` | `POST /user/consents` |
+| 광고성 정보 수신 — 낡은 조회 버리기 | `marketingConsentLoadGeneration` (`MainViewModel`), 쓰는 동안 조회 안 함 (`loadMarketingConsent`) | `marketingConsentGeneration` (`AuthViewModel`), 같음 | `GET /user/consents` |
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `POST /user/consents` 의 `ACCEPTED_POLICY_VERSIONS`(목록 밖은 409, 받으면 그 버전으로 기록) — 게시 중 최신은 `CURRENT_POLICY_VERSION` |
 | 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |
 | 번들을 못 읽을 때 — **동의 차단** | `legalDocumentsReadable` → `UpdateRequiredScreen` (`AlarmTalkApp.kt`) | `bundledLegalDocumentsReadable` → `UpdateRequiredView` (`RootView`) | — |
