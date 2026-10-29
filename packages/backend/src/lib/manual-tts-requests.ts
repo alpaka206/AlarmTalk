@@ -42,7 +42,7 @@ export async function manualRequestFingerprint(parts: {
 export type ClaimOutcome =
   /**
    * 잡았다. `reclaimedDone` = **끝난 표식을 다시 잡았다** — 그 요청은 이미 성공해 셌다. 부른 쪽은 다시 세지 않고 결과를
-   * 준다(캐시에 없으면 세지 않고 다시 만든다).
+   * 준다. 캐시에 없으면 서비스가 설정을 바꿔 다시 굽는 경우만 세지 않고, 결과가 지워진 것이면 새로 센다(`routes/tts.ts`).
    */
   | {
       kind: 'claimed';

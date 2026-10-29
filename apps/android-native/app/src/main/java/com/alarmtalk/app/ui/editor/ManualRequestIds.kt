@@ -9,6 +9,9 @@ import java.util.UUID
  * 서버가 두 번 합성·차감하지 않고 409 `TTS_REQUEST_IN_PROGRESS` 로 기다리게 하거나, 끝난 결과를 세지 않고 준다. 입력이 바뀌면
  * 새 id 다(같은 id 에 다른 입력은 서버가 409 `TTS_REQUEST_ID_CONFLICT` 로 거절한다). 성공하면 잊는다 — 다음 만들기는 새
  * 요청이다. iOS 짝은 `VoiceStudioViewModel` 의 `manualRequestID`.
+ *
+ * ⚠ **편집기보다 오래 산다** — `MainViewModel.manualRequestIds` 하나를 쓴다. 만드는 중에 편집기를 나가면 응답을 못 받아도
+ * 서버는 끝내고 센다. 편집기마다 새로 만들면 다시 들어와 같은 문구로 저장할 때 새 id 라 한 번 더 센다.
  */
 internal class ManualRequestIds {
     private var key: String? = null

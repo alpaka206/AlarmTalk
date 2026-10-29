@@ -1230,6 +1230,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var duplicateAlarmPrompt by mutableStateOf<DuplicateAlarmPrompt?>(null)
         internal set
 
+    /**
+     * 직접 입력 '음성 만들기' 의 같은 요청 id([ManualRequestIds]). **편집기가 아니라 여기 둔다** — 만드는 중에 편집기를
+     * 나가면 응답을 못 받아도 서버는 끝내고 센다. 편집기마다 새로 만들면 다시 들어와 같은 문구로 저장할 때 새 id 라
+     * 서버의 결과를 다시 받기로 한 번 더 센다(`docs/spec/voice-and-message.md` §8 「같은 요청」). iOS 는 처음부터
+     * `VoiceStudioViewModel` 이 든다.
+     */
+    internal val manualRequestIds = ManualRequestIds()
+
     // 날짜 알람이 저장·켜기에서 막힌 이유(지난 시각·같은 시각). null 이면 닫힘(`docs/spec/alarm-lifecycle.md` §4).
     var datedAlarmNotice by mutableStateOf<DatedAlarmNotice?>(null)
         internal set
@@ -1610,6 +1618,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 앞 계정에서 쓰는 중에 누른 값이 남으면 다음 계정의 첫 쓰기가 끝날 때 그 계정으로 나간다.
         pendingMarketingConsent = null
         marketingConsentLoadFailed = false
+        manualRequestIds.completed()
+        // 같은 시각 알람 교체 확인도 앞 계정의 것이다. 떠 있는 채로 계정을 떠난 뒤 '교체' 를 누르면 주인 없는 알람이
+        // 로그인 화면 뒤에서 켜진 채 예약된다(`docs/spec/alarm-lifecycle.md` §1-1 — 종료 중에는 아무도 예약하지 못한다).
+        duplicateAlarmPrompt = null
     }
 
     fun setThemeMode(mode: ThemeMode) {

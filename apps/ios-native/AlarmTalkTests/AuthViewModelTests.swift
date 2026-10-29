@@ -951,6 +951,18 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(vm.consentUnsupported)
     }
 
+    /// 떠 있던 민감 동의 시트는 로그아웃과 함께 내린다 — 다음 계정이 자기가 부르지 않은 시트를 보면 안 된다.
+    func test_signOut_떠_있던_민감_동의_시트를_내린다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        _ = vm.requestSensitiveConsent(types: ["voice_biometric"], registeringVoice: true)
+        XCTAssertNotNil(vm.pendingSensitiveConsent)
+
+        vm.signOut(revokeOnServer: false)
+
+        XCTAssertNil(vm.pendingSensitiveConsent)
+    }
+
     /// 받을 것이 없으면 막지 않는다 — 호출자가 그대로 진행한다.
     func test_requestSensitiveConsent_받을_것이_없으면_막지_않는다() {
         let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())

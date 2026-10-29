@@ -655,8 +655,9 @@ tts.post('/generate', async (c) => {
   let adRewardTransactionId: string | null = null;
   // 같은 요청의 재시도·중복 탭 표식(`request_id`) — 잡았으면 끝날 때 풀거나 끝냄으로 적는다.
   let requestClaim: ManualRequestClaim | null = null;
-  // 잡은 표식이 **이미 끝난(셌던) 요청**의 것인가 — 그 재시도는 다시 세지 않고, 실패해도 표식을 지우지 않고 끝냄으로 되돌린다
-  //   (지우면 다음 재시도가 새 요청으로 잡혀 한 번 더 센다).
+  // 잡은 표식이 **이미 끝난(셌던) 요청**의 것인가 — 그 재시도는 결과가 캐시에 있거나 서비스가 다시 굽는 것이면 다시 세지 않고
+  //   (결과를 지운 뒤의 재시도는 센다 — 아래 '합성 직전에 센다'), 실패해도 표식을 지우지 않고 끝냄으로 되돌린다(지우면 다음
+  //   재시도가 새 요청으로 잡혀 한 번 더 센다).
   let requestAlreadyCharged = false;
   /** 잡은 표식을 놓는다 — 셌던 요청의 재시도면 끝냄으로 되돌리고, 아니면 지운다. */
   const letGoOfRequestClaim = async (): Promise<void> => {
@@ -1350,9 +1351,12 @@ tts.post('/generate', async (c) => {
     devBudgetHoldId = devBudget.holdId;
 
     // 캐시 미스 확정 후 합성 직전에 직접 입력 한 번을 센다(월 한도 원자적 +1 또는 광고 보상 하나). 서비스 재렌더도 같다.
-    //   셌던 요청의 재시도(끝난 표식을 다시 잡았는데 결과가 캐시에 없다 — 그 사이 설정이 바뀌었다)는 세지 않는다.
+    //   셌던 요청의 재시도(끝난 표식을 다시 잡았는데 결과가 캐시에 없다)는 **그 사이 서비스가 설정을 바꿔 다시 굽는 경우만**
+    //   세지 않는다. ⚠ 결과가 지워져서(그 결과로 만든 알람을 지웠다) 없는 것은 재시도가 아니다 — 앱은 성공하면 id 를 잊으므로
+    //   정상 앱은 여기 오지 않는다. 이것까지 세지 않으면 같은 id 로 '만들기 → 알람 지우기' 를 되풀이해 합성을 공짜로 계속
+    //   시킬 수 있다(합성 키는 dev·prod 공용이고 한도가 있다).
     if (isManualGeneration) {
-      if (requestAlreadyCharged) {
+      if (requestAlreadyCharged && serviceRerender) {
         await readCurrentManualQuota();
       } else {
         const refused = await reserveManualGeneration();
@@ -1567,15 +1571,9 @@ tts.post('/generate', async (c) => {
 
     throw lastError;
   } catch (err) {
-    if (requestClaim) {
-      try {
-        // 셌던 요청의 재시도면 끝냄으로 되돌린다 — 지우면 다음 재시도가 새 요청으로 잡혀 한 번 더 센다.
-        await letGoOfRequestClaim();
-      } catch (claimErr) {
-        console.error('[tts/generate] request claim release failed', claimErr);
-      }
-    }
     // 쿼터를 예약했는데 합성이 끝내 실패했으면 카운터를 되돌린다(실패는 소비 안 함).
+    // ⚠ **표식은 돌려준 뒤에 놓는다**(아래). 먼저 놓으면 그 사이 닿은 같은 id 의 재시도가 새 요청으로 잡혀, 아직 안 돌려준
+    //   횟수에서 세인다 — 마지막 횟수였으면 429 를 받거나 기본분 대신 광고 보상을 쓴다.
     // 예약이 증가시킨 바로 그 월로 환불(월 경계를 넘겨 실패해도 정확히 복구).
     if (manualQuotaPoolKey && manualQuotaMonth) {
       try {
@@ -1589,6 +1587,14 @@ tts.post('/generate', async (c) => {
         await refundAdRewardCredit(db, adRewardTransactionId);
       } catch (refundErr) {
         console.error('[tts/generate] ad reward refund failed', refundErr);
+      }
+    }
+    if (requestClaim) {
+      try {
+        // 셌던 요청의 재시도면 끝냄으로 되돌린다 — 지우면 다음 재시도가 새 요청으로 잡혀 한 번 더 센다.
+        await letGoOfRequestClaim();
+      } catch (claimErr) {
+        console.error('[tts/generate] request claim release failed', claimErr);
       }
     }
     if (previewClaimed) {

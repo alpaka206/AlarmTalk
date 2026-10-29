@@ -22,7 +22,9 @@ import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.apiErrorMessage
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -1289,59 +1291,64 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
         .filter { it.isSystem != true }
         .map { it.id }
         .filter { it.isNotBlank() }
-    val result = runCatching {
-        api.recordConsents(
-            authorization,
-            com.alarmtalk.app.network.RecordConsentsRequest(
-                consents = listOf(
-                    com.alarmtalk.app.network.ConsentItemRequest(
-                        type = "voice_biometric",
-                        agreed = false,
-                        version = cachedPolicyVersion(),
+    // ⚠ **보낸 철회는 화면을 떠나도 끝까지 처리한다.** 이 함수는 동의 내역 화면의 코루틴에서 돈다 — 응답을 기다리는 사이
+    //   화면을 나가면 그 코루틴이 취소되고, `runCatching` 이 취소를 실패로 받아 '철회에 실패했어요' 를 띄우며 아래 로컬 강등을
+    //   건너뛰었다. 서버는 이미 지웠을 수 있다 — 그러면 철회한 목소리가 이 기기에서 계속 운다(위 KDoc). 보내는 순간부터는 끝까지 간다.
+    return withContext(NonCancellable) {
+        val result = runCatching {
+            api.recordConsents(
+                authorization,
+                com.alarmtalk.app.network.RecordConsentsRequest(
+                    consents = listOf(
+                        com.alarmtalk.app.network.ConsentItemRequest(
+                            type = "voice_biometric",
+                            agreed = false,
+                            version = cachedPolicyVersion(),
+                        ),
                     ),
+                    documentVersion = bundledPolicyVersion,
                 ),
-                documentVersion = bundledPolicyVersion,
-            ),
+            )
+        }
+        result.fold(
+            onSuccess = {
+                val app = getApplication<android.app.Application>()
+                // 1) 서버가 지웠다고 확인해 준 것부터 **세션 가드보다 먼저** 로컬에서 끊는다.
+                //    응답이 오는 사이 자동 401 이 세션을 비웠을 수 있는데, 그 경로는 로컬 알람
+                //    예약을 일부러 그대로 둔다(알람 전달이 인증 상태에 묶이면 안 되므로).
+                //    여기서 안 끊으면 서버에선 이미 지워진 목소리가 그 기기에서 계속 울린다
+                //    (Codex #660). 대상은 이 계정 자신의 목소리라 새 세션에 아무 영향이 없다.
+                //    타깃 강등이라 소셜 목록 신선도 가드에도 막히지 않는다.
+                for (voiceId in revokedVoiceIds) {
+                    runCatching { repository.degradeAlarmsUsingVoiceProfile(voiceId) }
+                        .onFailure { error ->
+                            AlarmTalkLog.reportError("Failed to degrade alarms after consent withdrawal", error)
+                        }
+                }
+                // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
+                if (authSession?.user?.id != userId) return@fold true
+                if ("voice_biometric" !in sensitiveConsentMissing) {
+                    sensitiveConsentMissing = sensitiveConsentMissing + "voice_biometric"
+                }
+                voiceProfiles = voiceProfiles.filter { it.isSystem == true }
+                // 3) 폴백 — 실패해도 위에서 이미 발사 경로는 끊겼다.
+                loadVoiceProfiles()
+                com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(app)
+                message = app.getString(R.string.msg_voice_consent_withdrawn)
+                true
+            },
+            onFailure = { error ->
+                AlarmTalkLog.reportError("Failed to withdraw voice biometric consent", error)
+                // 실패는 알릴 대상이 이 계정 화면뿐이라, 세션이 바뀌었으면 조용히 끝낸다.
+                if (authSession?.user?.id != userId) return@fold false
+                message = userFacingError(
+                    error,
+                    getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
+                )
+                false
+            },
         )
     }
-    return result.fold(
-        onSuccess = {
-            val app = getApplication<android.app.Application>()
-            // 1) 서버가 지웠다고 확인해 준 것부터 **세션 가드보다 먼저** 로컬에서 끊는다.
-            //    응답이 오는 사이 자동 401 이 세션을 비웠을 수 있는데, 그 경로는 로컬 알람
-            //    예약을 일부러 그대로 둔다(알람 전달이 인증 상태에 묶이면 안 되므로).
-            //    여기서 안 끊으면 서버에선 이미 지워진 목소리가 그 기기에서 계속 울린다
-            //    (Codex #660). 대상은 이 계정 자신의 목소리라 새 세션에 아무 영향이 없다.
-            //    타깃 강등이라 소셜 목록 신선도 가드에도 막히지 않는다.
-            for (voiceId in revokedVoiceIds) {
-                runCatching { repository.degradeAlarmsUsingVoiceProfile(voiceId) }
-                    .onFailure { error ->
-                        AlarmTalkLog.reportError("Failed to degrade alarms after consent withdrawal", error)
-                    }
-            }
-            // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
-            if (authSession?.user?.id != userId) return@fold true
-            if ("voice_biometric" !in sensitiveConsentMissing) {
-                sensitiveConsentMissing = sensitiveConsentMissing + "voice_biometric"
-            }
-            voiceProfiles = voiceProfiles.filter { it.isSystem == true }
-            // 3) 폴백 — 실패해도 위에서 이미 발사 경로는 끊겼다.
-            loadVoiceProfiles()
-            com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(app)
-            message = app.getString(R.string.msg_voice_consent_withdrawn)
-            true
-        },
-        onFailure = { error ->
-            AlarmTalkLog.reportError("Failed to withdraw voice biometric consent", error)
-            // 실패는 알릴 대상이 이 계정 화면뿐이라, 세션이 바뀌었으면 조용히 끝낸다.
-            if (authSession?.user?.id != userId) return@fold false
-            message = userFacingError(
-                error,
-                getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
-            )
-            false
-        },
-    )
 }
 
 internal fun MainViewModel.syncNow() {

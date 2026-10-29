@@ -2395,6 +2395,9 @@ final class AuthViewModel: ObservableObject {
         consentOptional = []
         consentPrechecked = []
         consentSensitiveMissing = []
+        // 떠 있던 민감 동의 시트도 앞 계정의 것이다 — 남기면 다음 계정이 게이트를 지나는 순간 자기가 부르지 않은 시트를
+        // 보고, 이미 준 동의를 또 기록한다(안드로이드 `clearUserScopedRemoteState` 의 `pendingSensitiveConsent`).
+        pendingSensitiveConsent = nil
         consentIsReconsent = false
         consentStatusChecked = false
         // 계정 응답의 진입 기록도 계정별이다 — 앞 계정의 응답으로 새 계정의 종료 안내를
