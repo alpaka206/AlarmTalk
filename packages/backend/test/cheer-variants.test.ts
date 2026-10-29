@@ -313,6 +313,52 @@ describe('클론은 응원을 고른 것만 보충한다', () => {
     await db.execute({ sql: `DELETE FROM stock_content_releases WHERE content_set = 'cheer_v2'`, args: [] });
     expect(await requestCloneContentSupplement(db, { voiceProfileId: CLONE, ownerUserId: USER, theme: 'cheer' })).toBe('not_released');
   });
+
+  // ⚠ 2026-10-29 — 안드로이드 동기화는 켜고 끌 때마다 테마·목소리를 그대로 보낸다. 그 PATCH 가 실패로 접힌 보충을 다시 열면
+  //   켜고 끄기마다 유료 합성을 다섯 번씩 다시 시도한다. 고른 것이 그대로인 수정은 보충을 요청하지 않는다.
+  it('켜고 끄기만 한 수정은 접힌 보충을 다시 열지 않고, 테마를 새로 고른 수정은 연다', async () => {
+    // 앞 테스트들이 바꿔 둔 상태를 되돌린다 — 공개된 보충 묶음이 있고, 이 클론은 아직 덜 구웠다.
+    await db.execute({ sql: `INSERT OR IGNORE INTO stock_content_releases (content_set) VALUES ('cheer_v2')`, args: [] });
+    await db.execute({ sql: `DELETE FROM messages WHERE voice_profile_id = ? AND category = 'cheer_v2'`, args: [CLONE] });
+    const app = buildApp();
+    const created = await app.request(
+      '/alarm',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ time: '06:40', bucket_id: 'weather', voice_profile_id: CLONE }),
+      },
+      ENV,
+    );
+    expect(created.status).toBe(201);
+    const id = ((await created.json()) as { alarm: { id: string } }).alarm.id;
+    const fold = () =>
+      db.execute({
+        sql: `UPDATE voice_prerender_queue SET status = 'done', supplement = 0, attempts = 0, claimed_at = NULL, claim_token = NULL
+              WHERE voice_profile_id = ?`,
+        args: [CLONE],
+      });
+    const queue = async () =>
+      (await db.execute({ sql: 'SELECT status, supplement FROM voice_prerender_queue WHERE voice_profile_id = ?', args: [CLONE] }))
+        .rows[0];
+    const patch = (fields: Record<string, unknown>) =>
+      app.request(
+        `/alarm/${id}`,
+        { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(fields) },
+        ENV,
+      );
+
+    // 날씨 → 응원으로 새로 고른다 — 보충이 열린다.
+    await fold();
+    expect((await patch({ bucket_id: 'cheer', voice_profile_id: CLONE })).status).toBe(200);
+    expect(await queue()).toMatchObject({ status: 'pending', supplement: 1 });
+
+    // 그 보충이 다섯 번 실패해 접혔다. 켜고 끄기(테마·목소리를 그대로 실어 보낸다)는 다시 열지 않는다.
+    await fold();
+    expect((await patch({ is_active: false, bucket_id: 'cheer', voice_profile_id: CLONE })).status).toBe(200);
+    expect((await patch({ is_active: true, bucket_id: 'cheer', voice_profile_id: CLONE })).status).toBe(200);
+    expect(await queue()).toMatchObject({ status: 'done', supplement: 0 });
+  });
 });
 
 describe('비용 dry-run — 합성하지 않는다', () => {

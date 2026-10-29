@@ -194,12 +194,13 @@ private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
     // 조회 중 계정이 바뀌면 A 의 구독이 B 의 화면·스냅샷에 실렸다.
     val ticket = accessTicket() ?: return
     billingRefreshing = true
+    val answerSeq = billingAnswers.begin()
     viewModelScope.launch {
         try {
             runCatching {
                 api.getSubscription(authorization)
             }.onSuccess { subscription ->
-                applySubscriptionResponse(ticket, subscription)
+                applySubscriptionResponse(ticket, subscription, answerSeq)
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to load billing", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_billing_info_load_failed))
@@ -215,8 +216,16 @@ private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
  * 조회 중 A→B 전환이면 **A 의 구독이 B 의 스냅샷과 화면에** 실렸다.
  * 문이 거절하면 화면 상태도 건드리지 않는다.
  */
-private fun MainViewModel.applySubscriptionResponse(ticket: AccessTicket, subscription: BillingSubscriptionResponse) {
+private fun MainViewModel.applySubscriptionResponse(
+    ticket: AccessTicket,
+    subscription: BillingSubscriptionResponse,
+    answerSeq: Int,
+) {
+    // ⚠ **앞서 떠난 조회의 답이 늦게 와 새 상태를 덮지 않게 한다**(2026-10-29). 결제 탭 진입 조회가 느린 사이 해지하면, 해지 뒤
+    //   재조회('언제 끝나요')가 먼저 실리고 늦게 온 진입 조회가 '이용 중'·해지 버튼으로 되돌렸다. 더 나중에 떠난 답이 실렸으면 버린다.
+    if (!billingAnswers.isCurrent(answerSeq)) return
     if (saveSubscriptionSnapshot(ticket, subscription) != EntitlementWrite.Applied) return
+    billingAnswers.markApplied(answerSeq)
     subscriptionResponse = subscription
     subscriptionAnsweredThisRun = true
     // 받았던 알람의 2단계는 이용권 답을 기다린다 — 목록·매니페스트보다 늦게 오면 여기서 다시 본다.
@@ -237,6 +246,7 @@ private suspend fun MainViewModel.refreshBillingAfterMutation(
     /** 뮤테이션을 **시작할 때** 뜬 표. 문이 계정·세대를 함께 본다. */
     ticket: AccessTicket?,
 ) {
+    val answerSeq = billingAnswers.begin()
     runCatching {
         api.getSubscription(authorization)
     }.onSuccess { subscription ->
@@ -244,7 +254,7 @@ private suspend fun MainViewModel.refreshBillingAfterMutation(
             Log.i(TAG, "Dropping billing snapshot after $reason: no session ticket")
             return@onSuccess
         }
-        applySubscriptionResponse(ticket, subscription)
+        applySubscriptionResponse(ticket, subscription, answerSeq)
     }.onFailure { error ->
         Log.w(TAG, "Failed to refresh billing after $reason", error)
     }

@@ -1238,6 +1238,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     internal val manualRequestIds = ManualRequestIds()
 
+    /** 구독 조회(`GET /billing/subscription`)의 답 순번 — 앞서 떠난 조회의 늦은 답이 새 상태를 덮지 않게(`applySubscriptionResponse`). */
+    internal val billingAnswers = AnswerSequence()
+
     // 날짜 알람이 저장·켜기에서 막힌 이유(지난 시각·같은 시각). null 이면 닫힘(`docs/spec/alarm-lifecycle.md` §4).
     var datedAlarmNotice by mutableStateOf<DatedAlarmNotice?>(null)
         internal set

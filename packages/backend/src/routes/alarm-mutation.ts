@@ -729,12 +729,20 @@ alarmMutation.patch('/:id', async (c) => {
           FROM alarms WHERE id = ?`,
     args: [id],
   });
-  await requestCheerSupplementAfterSave(db, {
-    ownerUserId: (c.get('userIdPK') as string | undefined) || (c.get('userId') as string),
-    bucketId: effectiveBucketId,
-    voiceProfileId: effectiveVoiceFields.voice_profile_id,
-    hasPersonalVoice: creatorHasPaidVoice && !!resolvedUserPk,
-  });
+  // ⚠ **보충은 테마나 목소리를 새로 고른 수정에서만 요청한다**(2026-10-29). 안드로이드 동기화는 켜고 끌 때마다 테마·목소리를
+  //   그대로 보낸다 — 가르지 않으면 실패로 접힌 보충(`markPrerenderFailed`)을 켜고 끄기마다 다시 열어(시도 0) 유료 합성을 다섯 번씩
+  //   다시 시도한다. 고른 것이 그대로면 그 저장 때 이미 요청했다. POST 는 언제나 요청한다.
+  const cheerChoiceChanged =
+    effectiveBucketId !== (current.bucket_id ?? null) ||
+    (effectiveVoiceFields.voice_profile_id ?? null) !== (current.voice_profile_id ?? null);
+  if (cheerChoiceChanged) {
+    await requestCheerSupplementAfterSave(db, {
+      ownerUserId: (c.get('userIdPK') as string | undefined) || (c.get('userId') as string),
+      bucketId: effectiveBucketId,
+      voiceProfileId: effectiveVoiceFields.voice_profile_id,
+      hasPersonalVoice: creatorHasPaidVoice && !!resolvedUserPk,
+    });
+  }
 
   return c.json({
     success: true,
