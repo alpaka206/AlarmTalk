@@ -31,7 +31,8 @@ export interface Overview {
   active: { d1: number; d7: number; d30: number; tracked: number };
   devices: { android: number; ios: number; any: number };
   versions: Array<{ platform: 'android' | 'ios'; version: number; users: number }>;
-  alarms: { total: number; active: number; usersWithActive: number };
+  /** 알람이 울린 사람 — 사용 기록의 울림·해제·다시 알림(iOS 는 울림 순간을 못 봐 해제·다시 알림만 보인다). `rangD7` 은 안드로이드의 울림 횟수다. */
+  rings: { usersD7: number; usersD30: number; rangD7: number };
   alarmThemes: Array<{ theme: string; total: number; active: number }>;
   ringsByDay: DayPoint[];
   eventTotals: Array<{ type: string; count: number }>;
@@ -123,11 +124,15 @@ export async function loadOverview(db: Client, range: RangeDays, nowMs: number =
             GROUP BY platform, app_version ORDER BY platform, app_version DESC`,
       args: [],
     },
-    // 5 알람
+    // 5 알람이 울린 사람 — ⚠ **켜진 알람 수가 아니다**(2026-10-29 오너: 사람마다 켜 두는 수가 달라 쓰임을 말하지 못한다).
+    //   실제로 울린 것을 센다. iOS 는 AlarmKit 이 울려 울림 순간을 못 보므로(`usage-events.md` §2) 해제·다시 알림을 함께 센다.
     {
-      sql: `SELECT COUNT(*) AS total, COALESCE(SUM(is_active), 0) AS active,
-                   COUNT(DISTINCT CASE WHEN is_active = 1 THEN user_id END) AS users_active
-            FROM alarms`,
+      sql: `SELECT COUNT(DISTINCT CASE WHEN julianday(occurred_at) >= julianday('now') - 7 THEN user_id END) AS users_d7,
+                   COUNT(DISTINCT user_id) AS users_d30,
+                   COALESCE(SUM(CASE WHEN type = 'alarm_rang' AND julianday(occurred_at) >= julianday('now') - 7 THEN 1 ELSE 0 END), 0) AS rang_d7
+            FROM usage_events
+            WHERE type IN ('alarm_rang', 'alarm_dismissed', 'alarm_snoozed')
+              AND julianday(occurred_at) >= julianday('now') - 30`,
       args: [],
     },
     // 6 테마
@@ -236,7 +241,7 @@ export async function loadOverview(db: Client, range: RangeDays, nowMs: number =
       version: num(x.app_version),
       users: num(x.n),
     })),
-    alarms: { total: num(row(5).total), active: num(row(5).active), usersWithActive: num(row(5).users_active) },
+    rings: { usersD7: num(row(5).users_d7), usersD30: num(row(5).users_d30), rangD7: num(row(5).rang_d7) },
     alarmThemes: rows(6).map((x) => ({ theme: String(x.theme ?? ''), total: num(x.total), active: num(x.active) })),
     ringsByDay: fillDays(dayMap(7), range, nowMs),
     eventTotals: rows(8).map((x) => ({ type: String(x.type), count: num(x.n) })),
@@ -275,7 +280,8 @@ export interface UserRow {
   ios: number | null;
   lastSeenAt: string | null;
   devices: number;
-  activeAlarms: number;
+  /** 최근 30일 울림·해제·다시 알림 기록 수(켜진 알람 수 대신 — 위 `rings`). */
+  recentRings: number;
   reconsentNeeded: boolean;
 }
 
@@ -297,7 +303,9 @@ export async function searchUsers(db: Client, query: string): Promise<UserRow[]>
                  (SELECT app_version FROM user_app_presence p WHERE p.user_id = u.id AND p.platform = 'ios') AS ios,
                  (SELECT MAX(last_seen_at) FROM user_app_presence p WHERE p.user_id = u.id) AS last_seen,
                  (SELECT COUNT(*) FROM push_tokens t WHERE t.user_id = u.id) AS devices,
-                 (SELECT COUNT(*) FROM alarms a WHERE a.is_active = 1 AND a.user_id IN (u.id, COALESCE(u.google_id, u.id))) AS active_alarms
+                 (SELECT COUNT(*) FROM usage_events e
+                   WHERE e.user_id = u.id AND e.type IN ('alarm_rang', 'alarm_dismissed', 'alarm_snoozed')
+                     AND julianday(e.occurred_at) >= julianday('now') - 30) AS recent_rings
           FROM users u
           ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
           ORDER BY u.created_at DESC
@@ -334,7 +342,7 @@ export async function searchUsers(db: Client, query: string): Promise<UserRow[]>
       ios: x.ios == null ? null : num(x.ios),
       lastSeenAt: x.last_seen == null ? null : String(x.last_seen),
       devices: num(x.devices),
-      activeAlarms: num(x.active_alarms),
+      recentRings: num(x.recent_rings),
       reconsentNeeded: missingConsentTypesFrom(latest, GENERAL_REQUIRED_CONSENTS).length > 0,
     };
   });

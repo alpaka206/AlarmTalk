@@ -273,9 +273,9 @@ export function renderOverview(nonce: string, o: Overview, nowMs: number, store:
     <p class="tile-foot muted" style="font-size:12px">${escapeHtml(trackedNote)}</p>
   </section>
   <section class="panel tile reveal" style="--d:3" aria-labelledby="k-alarms">
-    <h2 id="k-alarms" class="label">켜진 알람</h2>
-    <span class="tile-value">${fmtNum(o.alarms.active)}<span class="muted" style="font-size:16px;font-weight:500"> 개</span></span>
-    <p class="meta"><span><b>${fmtNum(o.alarms.usersWithActive)}</b>명이 사용 중</span><span>전체 <b>${fmtNum(o.alarms.total)}</b></span></p>
+    <h2 id="k-alarms" class="label">알람이 울린 사람 (7일)</h2>
+    <span class="tile-value">${fmtNum(o.rings.usersD7)}<span class="muted" style="font-size:16px;font-weight:500"> 명</span></span>
+    <p class="meta"><span>30일 <b>${fmtNum(o.rings.usersD30)}</b>명</span><span>울림 <b>${fmtNum(o.rings.rangD7)}</b>회 (안드로이드)</span></p>
   </section>
   <section class="panel tile reveal" style="--d:4" aria-labelledby="k-plus">
     <h2 id="k-plus" class="label">플러스 이용</h2>
@@ -384,7 +384,7 @@ export function renderUsers(nonce: string, query: string, users: UserRow[], nowM
   <td class="tnum">${builds.length ? builds.map((b) => escapeHtml(b)).join('<br>') : '<span class="muted">기록 없음</span>'}</td>
   <td class="tnum">${escapeHtml(fmtAgo(u.lastSeenAt, nowMs))}</td>
   <td class="num">${fmtNum(u.devices)}</td>
-  <td class="num">${fmtNum(u.activeAlarms)}</td>
+  <td class="num">${fmtNum(u.recentRings)}</td>
   <td>${u.plan === 'plus' ? badge('플러스', 'neutral') : '<span class="muted">무료</span>'}</td>
   <td>${states || '<span class="muted">정상</span>'}</td>
   <td>${
@@ -398,7 +398,7 @@ export function renderUsers(nonce: string, query: string, users: UserRow[], nowM
   const table = users.length
     ? `<div class="table-wrap"><table>
   <thead><tr><th scope="col">가입일</th><th scope="col">계정</th><th scope="col">앱 빌드</th><th scope="col">마지막 접속</th>
-  <th scope="col" class="num">알림 기기</th><th scope="col" class="num">켜진 알람</th><th scope="col">플랜</th><th scope="col">상태</th><th scope="col"><span class="sr-only">동작</span></th></tr></thead>
+  <th scope="col" class="num">알림 기기</th><th scope="col" class="num">울림 (30일)</th><th scope="col">플랜</th><th scope="col">상태</th><th scope="col"><span class="sr-only">동작</span></th></tr></thead>
   <tbody>${rows}</tbody></table></div>`
     : emptyState(
         query ? '찾는 사용자가 없어요' : '아직 가입자가 없어요',
@@ -515,7 +515,7 @@ export function renderPush(
         <fieldset>
           <legend>조건</legend>
           <label class="check"><input type="checkbox" name="reconsentOnly"${preset ? ' checked' : ''}><span>재동의가 필요한 사람만<br><span class="field-help">필수 동의가 모자라 서버가 요청을 막고 있는 사람이에요.</span></span></label>
-          <label class="check"><input type="checkbox" name="activeAlarmOnly"><span>켜진 알람이 있는 사람만</span></label>
+          <label class="check"><input type="checkbox" name="recentRingOnly"><span>최근 7일 알람이 울린 사람만</span></label>
           <label class="check" id="marketing-row"><input type="checkbox" name="marketingOnly"><span>광고성 정보 수신 동의자만<br><span class="field-help">광고를 고르면 언제나 이 조건이 붙어요.</span></span></label>
         </fieldset>
       </div>
@@ -595,10 +595,10 @@ export function renderPush(
   const values = () => {
     const fd = new FormData(form);
     const o = Object.fromEntries(fd.entries());
-    ['includeUnknownVersion', 'reconsentOnly', 'activeAlarmOnly', 'marketingOnly'].forEach((k) => { o[k] = fd.has(k); });
+    ['includeUnknownVersion', 'reconsentOnly', 'recentRingOnly', 'marketingOnly'].forEach((k) => { o[k] = fd.has(k); });
     return o;
   };
-  const AUDIENCE_KEYS = ['kind', 'platform', 'androidBelow', 'iosBelow', 'includeUnknownVersion', 'reconsentOnly', 'activeAlarmOnly', 'marketingOnly'];
+  const AUDIENCE_KEYS = ['kind', 'platform', 'androidBelow', 'iosBelow', 'includeUnknownVersion', 'reconsentOnly', 'recentRingOnly', 'marketingOnly'];
   const audienceKey = (v) => JSON.stringify(AUDIENCE_KEYS.map((k) => v[k] ?? null));
   const copyKey = (v) => [v.kind, String(v.title || '').trim(), String(v.body || '').trim()].join('\\u0000');
 
