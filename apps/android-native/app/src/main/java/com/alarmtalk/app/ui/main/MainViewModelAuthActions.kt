@@ -201,14 +201,12 @@ internal fun MainViewModel.confirmEmailVerification(email: String, code: String)
 internal fun MainViewModel.register(
     email: String,
     password: String,
-    name: String,
     emailVerificationCode: String,
 ) {
     if (authBusy) return
     val normalizedEmail = email.trim().lowercase()
-    val trimmedName = name.trim()
     val trimmedCode = emailVerificationCode.trim()
-    if (normalizedEmail.isBlank() || password.isBlank() || trimmedName.isBlank() || trimmedCode.isBlank()) {
+    if (normalizedEmail.isBlank() || password.isBlank() || trimmedCode.isBlank()) {
         registerError = getApplication<android.app.Application>().getString(R.string.msg_register_all_fields_required)
         return
     }
@@ -225,7 +223,6 @@ internal fun MainViewModel.register(
                 RegisterRequest(
                     email = normalizedEmail,
                     password = password,
-                    name = trimmedName,
                     emailVerificationCode = trimmedCode,
                 ),
             )
@@ -629,37 +626,6 @@ internal fun MainViewModel.onAccountLeftInBackground(left: com.alarmtalk.app.cor
         val session = authSession ?: return@launch
         if (session.user.id != left.userId || session.token != left.clearedToken) return@launch
         leaveAccountForPendingDeletion(session)
-    }
-}
-
-internal fun MainViewModel.updateNickname(name: String) {
-    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
-    val trimmed = name.trim()
-    if (trimmed.isEmpty() || trimmed.length > 30) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_nickname_length_invalid)
-        return
-    }
-    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
-    val startGeneration = authSessionStore.sessionGeneration()
-    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
-    viewModelScope.launch {
-        authBusy = true
-        runCatching {
-            api.updateProfile(authorization, com.alarmtalk.app.network.UpdateProfileRequest(name = trimmed))
-        }.onSuccess {
-            // 바꾼 칸(이름)만 **지금 세션** 위에 — 요청 전의 `session` 사본을 되쓰면 그 사이 `/auth/me` 가 적은
-            // plan·프로모·받은 시각을 되돌린다([saveProfileEdit]).
-            saveProfileEdit(session.user.id, startGeneration) { it.copy(name = trimmed) }?.let { saved ->
-                authSession = saved
-                // 확인 조회 — 저장 전에 떠나 옛 이름을 읽은 `/auth/me` 가 늦게 와도 바로잡는다([saveProfileEdit]).
-                refreshAppSession(rollToken = false)
-            }
-            dismissEditNickname()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to update nickname", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_nickname_change_failed))
-        }
-        authBusy = false
     }
 }
 

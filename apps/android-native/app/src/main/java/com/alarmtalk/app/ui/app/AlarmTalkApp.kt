@@ -993,15 +993,6 @@ internal fun AlarmTalkApp(
         )
     }
 
-    if (viewModel.nicknameEditDialogOpen) {
-        NicknameEditDialog(
-            initial = authSession?.user?.name.orEmpty(),
-            busy = authBusy,
-            onDismiss = viewModel::dismissEditNickname,
-            onConfirm = viewModel::updateNickname,
-        )
-    }
-
     if (viewModel.deleteAccountConfirmOpen) {
         DeleteAccountConfirmDialog(
             busy = authBusy,
@@ -1657,7 +1648,6 @@ internal fun AlarmTalkApp(
                       contentPadding = padding,
                       authSession = authSession,
                       onBack = ::goBackInApp,
-                      onEditNickname = viewModel::requestEditNickname,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onOpenConsentHistory = { navController.navigate(AppRoute.ConsentHistory) },
                       onOpenOssLicenses = { navController.navigate(AppRoute.OssLicenses) },

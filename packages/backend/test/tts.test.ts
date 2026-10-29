@@ -1045,6 +1045,30 @@ describe('POST /tts/generate — edge cases', () => {
     expect(JSON.stringify(body)).not.toContain('ElevenLabs quota exceeded');
   });
 
+  // 2026-10-29 오너 "직접 입력은 적은 대로만 말해야" — 호칭은 프리셋·등록 미리듣기에만 붙는다. 앱이 호칭을 실어 보내도
+  //   직접 입력 문구는 그대로 합성한다(`presetTextWithListenerTitle` 은 그 두 갈래에서만 부른다).
+  it('직접 입력은 적은 문구 그대로 합성한다 — 실어 보낸 호칭을 붙이지 않는다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1', listener_title: '아들' }]);
+    mockDB.pushResult([]); // cache lookup (miss)
+    pushManualQuotaFlow();
+    mockTextToSpeech.mockResolvedValue(providerPcm());
+    pushPublicationVoice();
+    mockDB.pushResult([], 1); // INSERT messages
+    mockDB.pushResult([], 1); // INSERT message_library
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '회의 자료 챙겨', listener_title: '규원' }),
+    );
+
+    expect(res.status).toBe(201);
+    const spoken = String(mockTextToSpeech.mock.calls[0]?.[1] ?? '');
+    expect(spoken).toContain('회의 자료 챙겨');
+    expect(spoken).not.toContain('규원');
+    expect(spoken).not.toContain('아들');
+  });
+
   it('ElevenLabs가 비-Error를 throw해도 detail 은 안정 코드(K1)', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);

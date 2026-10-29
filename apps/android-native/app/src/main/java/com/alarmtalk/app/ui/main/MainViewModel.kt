@@ -851,9 +851,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var themeMode by mutableStateOf(loadInitialThemeMode(themePrefs))
         internal set
 
-    var nicknameEditDialogOpen by mutableStateOf(false)
-        internal set
-
     var deleteAccountConfirmOpen by mutableStateOf(false)
         internal set
 
@@ -1632,17 +1629,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         themePrefs.edit().putString("mode", mode.name).apply()
     }
 
-    fun requestEditNickname() {
-        if (authSession == null) {
-            message = getApplication<android.app.Application>().getString(R.string.r3misc_login_required_generic)
-            return
-        }
-        nicknameEditDialogOpen = true
-    }
-
-    fun dismissEditNickname() {
-        nicknameEditDialogOpen = false
-    }
 
     fun requestDeleteAccount() {
         if (authSession == null) {

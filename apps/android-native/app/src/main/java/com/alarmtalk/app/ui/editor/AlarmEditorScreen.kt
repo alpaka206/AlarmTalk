@@ -394,6 +394,7 @@ internal fun AlarmEditorScreen(
         ?: appVoiceLanguage
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
+    val legacyNicknameKeys = remember(appContext) { com.alarmtalk.app.data.LegacyNicknameKeyStore(appContext) }
     val dynamicPromptPreferenceStore = remember(appContext) { DynamicPromptPreferenceStore(appContext) }
     // 계정별 값이다 — 계정이 바뀌면 다시 읽는다(앞 사람의 사주를 물려받지 않게).
     val promptOwnerUserId = authSession?.user?.id
@@ -876,8 +877,12 @@ internal fun AlarmEditorScreen(
                 profileId = profileId,
                 voiceProfiles = voiceProfiles,
             ).trimmedOrNull()
-            // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다.
-            ?: authSession?.user?.name?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
+            // ⚠ 기본(시스템) 목소리는 호칭이 없다 — 서버는 직접 입력 문구에 호칭을 붙이지 않는다(적은 그대로 말한다). 예전에는 여기서
+            //   계정 닉네임을 넣었는데 소리가 아니라 **폰 안 재사용 키**에만 들어갔다. 닉네임을 지운 뒤에도 그 키로 저장된 음성을 다시
+            //   찾도록 처음 본 닉네임을 얼려 키에만 쓴다(`LegacyNicknameKeyStore`). iOS 는 처음부터 넣지 않았다.
+            ?: authSession?.user?.id?.takeIf { isSelectedSystemVoice }?.let { userId ->
+                legacyNicknameKeys.titleFor(userId, authSession?.user?.name)
+            }
     }
 
     /** 저장이 막힌 이유를 알럿으로 말한다 — 저장 버튼과 저장 흐름이 같은 표를 쓴다([saveBlockAlertStrings]). */

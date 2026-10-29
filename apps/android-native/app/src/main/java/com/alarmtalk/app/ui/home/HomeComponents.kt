@@ -168,7 +168,8 @@ internal fun MenuTabPanel(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
-                        text = authSession?.user?.name?.takeIf { it.isNotBlank() }
+                        // 닉네임은 없앴다(2026-10-29) — 로그인한 계정의 이메일을 보인다. iOS 더보기 머리도 같다.
+                        text = authSession?.user?.email?.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.hs_profile_content_desc),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
@@ -363,79 +364,6 @@ internal fun themeModeIcon(mode: ThemeMode): ImageVector = when (mode) {
     ThemeMode.Dark -> Icons.Outlined.DarkMode
 }
 
-@Composable
-internal fun NicknameEditDialog(
-    initial: String,
-    busy: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    var value by remember { mutableStateOf(initial) }
-    val trimmedValue = value.trim()
-    // 상한을 넘겨 치려 했는지 — 값은 30자에서 잘리므로 값만 봐서는 알 수 없다.
-    var tooLong by remember { mutableStateOf(false) }
-    val canSave = !busy && trimmedValue.isNotEmpty() && trimmedValue != initial
-
-    // 공용 알럿을 그대로 쓴다 — 입력이 있다고 별도 모달을 두지 않는다([IosAlertDialog]).
-    // 액션이 둘이라 가로로 놓이고(로그아웃 알럿과 같은 모양), 닫기가 액션으로 들어가므로
-    // 제목줄의 X 는 없앤다.
-    IosAlertDialog(
-        title = stringResource(R.string.hs_nickname_dialog_title),
-        message = null,
-        onDismiss = { if (!busy) onDismiss() },
-        actions = listOf(
-            IosAlertAction(
-                label = stringResource(R.string.r3dlg_modal_dialog_close),
-                enabled = !busy,
-                onClick = onDismiss,
-            ),
-            IosAlertAction(
-                label = if (busy) {
-                    stringResource(R.string.hs_nickname_saving)
-                } else {
-                    stringResource(R.string.hs_nickname_save)
-                },
-                emphasized = true,
-                enabled = canSave,
-                onClick = { onConfirm(value) },
-            ),
-        ),
-    ) {
-        // 라벨을 두지 않는다 — 제목이 이미 "닉네임 수정" 이라 같은 말을 두 번 하는 셈이다.
-        // 비었을 때 무엇을 넣는 자리인지는 placeholder 가 알려 준다.
-        IosAlertField(
-            value = value,
-            onValueChange = { raw ->
-                val cleaned = sanitizeDisplayName(raw)
-                // 30자 **정확히** 일 때는 플래그를 건드리지 않는다. 잘라서 돌려준 값을
-                // IME 가 그대로 되돌려 보내면(길이 30) 방금 켠 경고가 곧바로 꺼진다.
-                // 넘겨 치면 켜고, 지워서 여유가 생기면 끈다.
-                if (cleaned.length > DisplayNameMaxLength) {
-                    tooLong = true
-                } else if (cleaned.length < DisplayNameMaxLength) {
-                    tooLong = false
-                }
-                value = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
-            },
-            placeholder = stringResource(R.string.hs_nickname_field_placeholder),
-            enabled = !busy,
-        )
-        // 항상 켜져 있는 카운터(7/30)는 상한을 넘기 전까진 알려 줄 게 없다.
-        // 넘었을 때만, 무엇을 하면 되는지 말한다.
-        if (tooLong) {
-            Text(
-                text = stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength),
-                style = IosAlertType.Message,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp),
-            )
-        }
-    }
-}
-
-// 로그아웃 확인과 같은 iOS 알럿 스타일(IosAlertDialog)로 통일 — 확인형 모달은 전부 이 계열.
 @Composable
 internal fun DeleteAccountConfirmDialog(
     busy: Boolean,

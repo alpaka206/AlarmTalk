@@ -879,10 +879,10 @@ struct VerifyEmailCodeResponse: Decodable, Equatable {
     var verified: Bool?
 }
 
+/// 닉네임은 받지 않는다(2026-10-29 — 서버는 옛 앱이 보낸 이름만 받아 둔다). 안드로이드 `RegisterRequest` 와 같다.
 struct EmailRegisterRequest: Encodable {
     var email: String
     var password: String
-    var name: String
     var emailVerificationCode: String
 }
 

@@ -649,6 +649,23 @@ describe('POST /auth/register', () => {
     expect(insertCall?.args[0]).toBe(body.user.id);
   });
 
+  // 2026-10-29 닉네임 삭제 — 1.3 앱은 이름 없이 가입한다. 옛 앱이 읽는 칸이라 응답에는 빈 문자열로 싣고, 저장도 빈 문자열이다
+  //   (NULL 이면 옛 안드로이드가 응답의 이름 칸을 못 받아 설정 화면에서 멈춘다).
+  it('이름 없이 가입한다 — 이름 칸은 빈 문자열로 저장·응답한다', async () => {
+    await pushValidEmailVerification('noname@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const { name: _omitted, ...withoutName } = registerBody('noname@test.com');
+
+    const res = await buildApp().request(jsonReq('POST', '/auth/register', withoutName), undefined, ENV);
+
+    expect(res.status).toBe(201);
+    expect((await res.json()).user.name).toBe('');
+    const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
+    expect(insertCall?.args[3]).toBe('');
+  });
+
   // 가입은 같은 코드를 **한 번 더** 판정한다 — 인증 확인만 고치면 인증은 통과하고 가입에서 막힌다.
   it('아라비아-인도 숫자로 친 코드로도 가입한다(인증 확인과 같은 스키마)', async () => {
     await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
@@ -876,9 +893,10 @@ describe('POST /auth/google', () => {
     const body = await res.json();
     expect(body.token).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
     // users.id 는 서버 생성 UUID 다 — 더 이상 구글 sub 을 PK 로 쓰지 않는다.
+    // 구글이 준 이름은 받지 않는다(2026-10-29 닉네임 삭제) — 옛 앱이 읽는 칸이라 빈 문자열로 싣는다.
     expect(body.user).toMatchObject({
       email: 'user@gmail.com',
-      name: 'Google User',
+      name: '',
       plan: 'free',
     });
     expect(body.user.id).toMatch(/^[0-9a-f-]{36}$/);
@@ -944,7 +962,7 @@ describe('POST /auth/google', () => {
     ]);
   });
 
-  it('저장된 이름이 없으면 구글 이름으로 채운다', async () => {
+  it('구글이 준 이름은 받지 않는다 — 저장된 이름이 없으면 빈 채로 둔다', async () => {
     const googlePayload = {
       sub: 'google-user-3',
       email: 'noname@gmail.com',
@@ -979,11 +997,11 @@ describe('POST /auth/google', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.user.name).toBe('Google Name');
-    expect(mockDB.calls[1]?.args?.[2]).toBe('Google Name');
+    expect(body.user.name).toBe('');
+    expect(mockDB.calls[1]?.args?.[2]).toBeNull();
   });
 
-  it('옛 스키마로 저장된 이름도 규칙을 통과시킨다', async () => {
+  it('옛 스키마로 저장된 이름도 규칙을 통과시킨다 — 남는 게 없으면 빈 채로 둔다(구글 이름으로 채우지 않는다)', async () => {
     // 가입이 max(64)·trim 없음이던 시절 행에는 공백뿐인 이름·보이지 않는 문자·64자가
     // 남아 있다. '저장된 이름이 이긴다' 를 그대로 적용하면 이 문으로 다시 실려 나간다.
     const googlePayload = {
@@ -1021,8 +1039,8 @@ describe('POST /auth/google', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     // 남는 게 없으면 구글 이름으로 고쳐 준다.
-    expect(body.user.name).toBe('Google Name');
-    expect(mockDB.calls[1]?.args?.[2]).toBe('Google Name');
+    expect(body.user.name).toBe('');
+    expect(mockDB.calls[1]?.args?.[2]).toBeNull();
   });
 
   it('저장된 이름이 규칙을 넘기면 다듬어서 쓴다', async () => {
@@ -1064,7 +1082,7 @@ describe('POST /auth/google', () => {
     expect(mockDB.calls[1]?.args?.[2]).toBe('가'.repeat(30));
   });
 
-  it('구글이 준 이름도 우리 규칙(길이·보이지 않는 문자)을 통과시킨다', async () => {
+  it('새 구글 계정도 구글이 준 이름을 저장하지 않는다', async () => {
     // 외부에서 온 값이라고 검증을 건너뛰면, 앱·PATCH 경로에만 있는 규칙이 이 문으로 샌다.
     const googlePayload = {
       sub: 'google-user-4',
@@ -1092,8 +1110,7 @@ describe('POST /auth/google', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.user.name).not.toContain('​');
-    expect(body.user.name.length).toBe(30);
+    expect(body.user.name).toBe('');
   });
 
   it('Google 검증 실패 시 401을 반환한다', async () => {

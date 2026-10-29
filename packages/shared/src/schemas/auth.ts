@@ -208,7 +208,9 @@ export const RegisterRequestSchema = z.object({
   email: EmailSchema,
   password: PasswordSchema,
   email_verification_code: EmailVerificationCodeSchema,
-  name: DisplayNameSchema,
+  // ⚠ **닉네임은 받지 않는다**(2026-10-29 오너 — 혼자 쓰는 앱이라 부를 이름이 필요 없다). 1.3 앱은 보내지 않고, 옛 앱(1.2.16)이
+  //   보내는 값만 형식을 거쳐 받아 둔다 — 강제 업데이트 뒤 `users.name` 칸과 함께 지운다.
+  name: DisplayNameSchema.optional(),
 });
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 

@@ -546,7 +546,8 @@ auth.post('/register', async (c) => {
     await db.execute({
       sql: `INSERT INTO users (id, email, google_id, password_hash, name)
             VALUES (?, ?, NULL, ?, ?)`,
-      args: [id, normalizedEmail, passwordHash, name],
+      // 1.3 앱은 이름을 보내지 않는다 — 빈 문자열로 둔다(NULL 이면 옛 안드로이드가 응답의 이름 칸을 못 받아 설정에서 멈춘다).
+      args: [id, normalizedEmail, passwordHash, name ?? ''],
     });
 
     await consumeEmailVerificationCodes(db, normalizedEmail, EMAIL_VERIFICATION_PURPOSE_REGISTER);
@@ -554,7 +555,7 @@ auth.post('/register', async (c) => {
     // 신규 가입자는 token_epoch 가 항상 0 이지만(방금 INSERT), 폐기 로직과 일관되게
     // 명시적으로 박아 둔다.
     const token = await signAppJwt(
-      { sub: id, email: normalizedEmail, name, epoch: 0 },
+      { sub: id, email: normalizedEmail, name: name || undefined, epoch: 0 },
       c.env.JWT_SECRET,
     );
 
@@ -568,7 +569,8 @@ auth.post('/register', async (c) => {
         user: {
           id,
           email: normalizedEmail,
-          name,
+          // 옛 앱은 이 칸을 문자열로 읽는다 — 1.3 앱이 이름 없이 가입해도 빈 문자열로 싣는다.
+          name: name ?? '',
           plan: computedUserPlan('free' as const, promo),
           // 방금 만든 계정이라 구독 행이 없다 — 끝나면 종료 전환 대상이다.
           personal_promo: personalPromoField('free', promo, { hasActiveSubscriptionRow: false }),
@@ -742,9 +744,9 @@ auth.post('/google', async (c) => {
     const google = await verifyGoogleIdToken(parsed.data.id_token, c.env.GOOGLE_CLIENT_ID);
     const googleId = google.sub;
     const email = (google.email || `${googleId}@google.local`).toLowerCase().trim();
-    // 구글이 준 이름도 **외부 입력**이다. 우리 규칙을 통과시키고 상한으로 자른다 —
-    // 검증 없이 받으면 앱·PATCH 경로에만 있는 30자·보이지 않는 문자 규칙이 이 문으로 새 나간다.
-    const name = clampDisplayName(google.name ?? '');
+    // ⚠ **구글이 준 이름은 받지 않는다**(2026-10-29 닉네임 삭제 — 처리방침 수집 항목에서도 뺐다). 이미 저장된 이름만 옛 앱을
+    //   위해 그대로 둔다(강제 업데이트 뒤 칸째 지운다).
+    const name = '';
 
     const existing = await db.execute({
       sql: `SELECT id, google_id, email, name, ${planWithGrantSql('users')} AS plan, token_epoch,
@@ -808,7 +810,7 @@ auth.post('/google', async (c) => {
       await db.execute({
         sql: `INSERT INTO users (id, google_id, email, name)
               VALUES (?, ?, ?, ?)`,
-        args: [userId, googleId, email, name || null],
+        args: [userId, googleId, email, name],
       });
     }
 
@@ -938,8 +940,8 @@ auth.post('/apple', async (c) => {
     );
     const appleId = apple.sub;
     const email = (apple.email || `${appleId}@apple.local`).toLowerCase().trim();
-    // 애플이 준 이름도 **외부 입력**이다(구글과 동일 규약 — CLAUDE.md 「입력 규칙은 한 곳에서만」).
-    const name = clampDisplayName(parsed.data.full_name ?? '');
+    // ⚠ **애플이 준 이름은 받지 않는다**(2026-10-29 닉네임 삭제 — 1.3 앱은 보내지도 않는다). 이미 저장된 이름만 옛 앱을 위해 둔다.
+    const name = '';
 
     const existing = await db.execute({
       sql: `SELECT id, apple_id, email, name, ${planWithGrantSql('users')} AS plan, token_epoch,
@@ -1003,7 +1005,7 @@ auth.post('/apple', async (c) => {
       await db.execute({
         sql: `INSERT INTO users (id, apple_id, email, name)
               VALUES (?, ?, ?, ?)`,
-        args: [userId, appleId, email, name || null],
+        args: [userId, appleId, email, name],
       });
     }
 

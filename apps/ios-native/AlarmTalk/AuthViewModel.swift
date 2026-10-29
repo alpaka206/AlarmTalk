@@ -29,7 +29,7 @@ extension AlarmTalkAPI: AuthAPIProviding {}
 protocol EmailCodeAPIProviding: AnyObject, Sendable {
     func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse
     func verifyEmailCode(email: String, code: String) async throws -> VerifyEmailCodeResponse
-    func register(email: String, password: String, name: String, verificationCode: String) async throws -> AuthSession
+    func register(email: String, password: String, verificationCode: String) async throws -> AuthSession
     func requestPasswordReset(email: String) async throws -> RequestEmailVerificationResponse
     func confirmPasswordReset(email: String, code: String, password: String) async throws -> PasswordResetConfirmResponse
 }
@@ -71,7 +71,7 @@ final class AuthViewModel: ObservableObject {
     /// `statusMessage` 는 로그인·비밀번호 재설정 화면만 그린다 — 로그인한 뒤의 실패를 거기에만 적으면 아무도 못 보고, 사용자는
     /// 된 줄 안다(마케팅을 끈 줄 아는데 서버는 켜진 채 등). 같은 동작을 다시 시작하면 지운다.
     enum SignedInAction: Equatable {
-        case profile, accountDeletion, consent, sensitiveConsent, marketing, withdrawal
+        case accountDeletion, consent, sensitiveConsent, marketing, withdrawal
     }
 
     struct SignedInActionError: Equatable {
@@ -220,14 +220,13 @@ final class AuthViewModel: ObservableObject {
     func registerWithEmail(
         email: String,
         password: String,
-        name: String,
         verificationCode: String
     ) async {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         await serializeAuthServerMutation { [weak self] in
-            await self?.performRegisterWithEmail(email: email, password: password, name: name, verificationCode: verificationCode)
+            await self?.performRegisterWithEmail(email: email, password: password, verificationCode: verificationCode)
         }
     }
 
@@ -765,14 +764,14 @@ final class AuthViewModel: ObservableObject {
             return
         }
 
-        let displayName = credential.fullName.flatMap(Self.displayName)
+        // 이름은 보내지 않는다(2026-10-29 닉네임 삭제 — 애플이 처음 한 번 주는 이름도 받지 않는다).
         // 탈퇴 시 애플 연결 해제에 쓸 authorization code. 매 로그인마다 새로 오고
         // 5분·1회용이라 그대로 흘려보낸다.
         let authorizationCode = credential.authorizationCode
             .flatMap { String(data: $0, encoding: .utf8) }
         await loginWithApple(
             idToken: idToken,
-            name: displayName,
+            name: nil,
             email: credential.email,
             rawNonce: rawNonce,
             authorizationCode: authorizationCode,
@@ -944,7 +943,6 @@ final class AuthViewModel: ObservableObject {
     private func performRegisterWithEmail(
         email: String,
         password: String,
-        name: String,
         verificationCode: String
     ) async {
 
@@ -955,7 +953,6 @@ final class AuthViewModel: ObservableObject {
             let nextSession = try await emailCodeAPI.register(
                 email: email,
                 password: password,
-                name: name,
                 verificationCode: verificationCode
             )
             // 가입 응답이 곧 서버 값이다 — 가입 경로는 `/auth/me` 를 따로 부르지 않는다.
@@ -1549,8 +1546,8 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    /// 계정 설정(지역·사주)을 올린다. 닉네임은 2026-10-29 에 없앴다 — 이 요청은 이름을 싣지 않는다.
     func updateProfile(
-        name: String? = nil,
         dynamicPromptSettings: DynamicPromptSettings? = nil
     ) async {
         guard let token else {
@@ -1562,7 +1559,6 @@ final class AuthViewModel: ObservableObject {
             if dynamicPromptSettings != nil { promptSettingsRetryPending = true }
             return
         }
-        if name != nil { clearActionError(.profile) }
         isBusy = true
         defer {
             isBusy = false
@@ -1578,7 +1574,7 @@ final class AuthViewModel: ObservableObject {
         do {
             let response = try await api.updateProfile(
                 UpdateProfileRequest(
-                    name: name,
+                    name: nil,
                     dynamicPromptSettings: dynamicPromptSettings
                 ),
                 token: token
@@ -1593,11 +1589,9 @@ final class AuthViewModel: ObservableObject {
             guard sessionRevision == requestSessionRevision else { return }
             // ⚠ **바꾼 칸만, 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05 — 안드로이드 `saveProfileEdit` 와 같은 규칙).
             //   요청 전에 잡은 사본을 저장하면 그 사이 반영된 plan·프로모(결제 전 조회·세션 밖 `/auth/me`)와 다른 칸을
-            //   되돌린다 — 프로필 저장은 plan 답이 아니다. 이름도 곧바로 적는다: 확인 조회(`refreshUser`)가
-            //   실패해도 방금 저장한 값이 보이게(예전에는 확인 조회만 기다려, 실패하면 저장된 이름이 옛 이름으로 보였다).
+            //   되돌린다 — 프로필 저장은 plan 답이 아니다.
             if let current = session, current.user.id == requestUserID {
                 var updated = current
-                if let name { updated.user.name = name.trimmingCharacters(in: .whitespacesAndNewlines) }
                 if let dynamicPromptSettings {
                     // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 올리기 **전의**
                     // 설정을 읽었을 수 있다 — 그 응답이 아래 확인 조회보다 늦게 오면 옛 설정으로 세션을 되돌리고, 표시가
@@ -1616,9 +1610,7 @@ final class AuthViewModel: ObservableObject {
         } catch {
             // 끝난 세션의 실패를 새 세션에 띄우지 않는다(위 `requestSessionRevision`).
             guard sessionRevision == requestSessionRevision else { return }
-            let message = userFacingErrorMessage(error, fallback: String(localized: "프로필을 저장하지 못했어요"))
-            // 닉네임을 바꾼 저장만 닉네임 행에 남긴다 — 계정 설정(지역·사주)만 올린 것은 그 행과 무관하다.
-            if name != nil { failAction(.profile, message) } else { failStatus(message) }
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "프로필을 저장하지 못했어요")))
         }
     }
 
@@ -2460,9 +2452,6 @@ final class AuthViewModel: ObservableObject {
         lastNetworkError = nil
     }
 
-    private static func displayName(from components: PersonNameComponents) -> String? {
-        PersonNameComponentsFormatter().string(from: components).nilIfBlank
-    }
 
 
     // MARK: - Testing support

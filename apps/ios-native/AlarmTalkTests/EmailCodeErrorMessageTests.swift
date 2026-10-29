@@ -262,7 +262,7 @@ final class EmailCodeErrorMessageTests: XCTestCase {
         let before = model.emailCodeFieldClearTick
 
         await model.registerWithEmail(
-            email: "new@example.test", password: "abcd1234", name: "새 사용자", verificationCode: "123456"
+            email: "new@example.test", password: "abcd1234", verificationCode: "123456"
         )
 
         XCTAssertEqual(model.emailCodeError, "인증 코드가 만료됐어요. 다시 받아 주세요.")
@@ -278,7 +278,7 @@ final class EmailCodeErrorMessageTests: XCTestCase {
 
         api.registerError = APIError.server(status: 500, message: "boom", errorCode: nil)
         await model.registerWithEmail(
-            email: "new@example.test", password: "abcd1234", name: "새 사용자", verificationCode: "123456"
+            email: "new@example.test", password: "abcd1234", verificationCode: "123456"
         )
         // 자리는 인증 확인의 실패와 같은 인라인 자리다 — 하단 상태 줄은 키패드 뒤에 놓일 수 있다.
         XCTAssertEqual(model.emailCodeError, registerFallback)
@@ -288,7 +288,7 @@ final class EmailCodeErrorMessageTests: XCTestCase {
         // 표에 있는 코드는 가입에서도 표의 문장이다(예전에는 전부 "회원가입에 실패했어요" 였다).
         api.registerError = refusal(429, "RATE_LIMITED")
         await model.registerWithEmail(
-            email: "new@example.test", password: "abcd1234", name: "새 사용자", verificationCode: "123456"
+            email: "new@example.test", password: "abcd1234", verificationCode: "123456"
         )
         XCTAssertEqual(model.emailCodeError, APIErrorMessages.message(for: "RATE_LIMITED"))
         XCTAssertEqual(model.emailCodeFieldClearTick, before)
@@ -360,7 +360,7 @@ final class EmailCodeErrorMessageTests: XCTestCase {
         _ = await model.verifyEmailCode(email: "new@example.test", code: "123456")
         api.registerError = refusal(400, "AUTH_EMAIL_CODE_EXPIRED")
         await model.registerWithEmail(
-            email: "new@example.test", password: "abcd1234", name: "새 사용자", verificationCode: "123456"
+            email: "new@example.test", password: "abcd1234", verificationCode: "123456"
         )
         api.resetRequestError = sendFailed
         await model.requestPasswordReset(email: "old@example.test")
@@ -484,7 +484,7 @@ private final class StubEmailCodeAPI: EmailCodeAPIProviding, @unchecked Sendable
         return VerifyEmailCodeResponse(success: true)
     }
 
-    func register(email: String, password: String, name: String, verificationCode: String) async throws -> AuthSession {
+    func register(email: String, password: String, verificationCode: String) async throws -> AuthSession {
         throw registerError
     }
 

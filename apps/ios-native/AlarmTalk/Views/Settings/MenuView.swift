@@ -131,7 +131,8 @@ struct MenuView: View {
     }
 
     private var displayName: String {
-        auth.session?.user.name.nilIfBlank ?? auth.session?.user.email ?? String(localized: "내 계정")
+        // 닉네임은 없앴다(2026-10-29) — 로그인한 계정의 이메일을 보인다(안드로이드 더보기 머리도 같다).
+        auth.session?.user.email.nilIfBlank ?? String(localized: "내 계정")
     }
 
     private var currentThemeMode: AlarmTalkThemeMode {

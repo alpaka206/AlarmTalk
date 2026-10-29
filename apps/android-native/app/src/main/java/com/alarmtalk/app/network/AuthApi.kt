@@ -150,10 +150,10 @@ data class LoginRequest(
     val password: String,
 )
 
+// 닉네임은 받지 않는다(2026-10-29 오너 — 혼자 쓰는 앱이라 부를 이름이 필요 없다). 서버는 옛 앱이 보낸 이름만 받아 둔다.
 data class RegisterRequest(
     val email: String,
     val password: String,
-    val name: String,
     @SerializedName("email_verification_code") val emailVerificationCode: String,
 )
 
