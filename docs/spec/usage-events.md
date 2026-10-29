@@ -7,7 +7,7 @@
 
 | 종류 | 언제 |
 | --- | --- |
-| `alarm_created` / `alarm_updated` / `alarm_deleted` | 알람을 만들·고칠·지울 때 |
+| `alarm_created` / `alarm_updated` / `alarm_deleted` | 알람을 만들·고칠·지울 때. 만들고 고칠 때는 `detail` 에 **문구 종류**를 싣는다(아래, 2026-10-29) |
 | `alarm_rang` | 실제로 울린 순간 |
 | `alarm_dismissed` / `alarm_snoozed` | 알람이 **실제로 끝났을 때** / **실제로 미뤄졌을 때**. ⚠ '다시 알림' 을 눌러도 미뤄지지 않는 갈래가 둘이다 — 행이 사라진 경합(`detail = "snooze_denied"`)과 **재무장 실패**(`detail = "snooze_failed"`, iOS)다. (2026-09-09 전에는 '한도 도달·비활성' 이 여기 있었다. 그 설정을 없앴으므로 **정상 조작으로는 더 이상 닿지 않는다** — `snooze_denied` 가 늘면 그건 한도가 아니라 경합이다.) 둘 다 `alarm_snoozed` 가 아니라 `alarm_dismissed` 로 적는다. **누른 사실은 그 `detail` 이 나른다** — 눌렀는데 막힌 횟수는 한도를 조정할 유일한 근거라 버리지 않는다. ⚠ 안드로이드의 `snooze_failed` 는 뜻이 달라 `alarm_snoozed` 에 붙는다(§2) |
 | `manual_message_attached` | 직접 입력 문구가 알람에 붙었다 = 그 오디오가 이 기기에서 **사용중** |
@@ -22,6 +22,25 @@
 `"snooze_denied"` / `"snooze_failed"`. 앞의 둘은 **사용자가 '끄기' 를 누르지 않은 유일한
 해제**라 오탐 가능성이 있다 — 가방·플립커버가 알람을 끄고 있는지 확인할 유일한 장치이므로
 지우지 말 것(`docs/spec/alarm-ringing.md` §2).
+
+**알람 저장의 문구 종류(`alarm_created`·`alarm_updated` 의 `detail`)**(2026-10-29): 관리자 콘솔의 '알람 문구 종류 (30일)'
+([admin-console.md](admin-console.md))가 이것을 센다 — 서버 알람 사본을 지운 뒤 그 표가 볼 곳이 이 기록뿐이다
+([alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」). 저장한 행으로 정하고, **위에서부터 먼저 맞는 것 하나**다:
+
+| `detail` | 언제 |
+| --- | --- |
+| `alarm_only` | 재생 방식이 '알람'(알람음) |
+| `recording` | 직접 녹음(목소리 출처가 로컬 음원) |
+| 테마 id 그대로(`cheer`·`weather`·`fortune`·`medication`·`wake` …) | 테마(`bucketId`)가 붙어 있다 |
+| 생성형 문구 종류 그대로(`voiceRandomContext` — 비면 `preset`) | 테마 없이 랜덤 문구 |
+| `manual` | 그 밖(직접 입력) |
+
+- **원문이 아니라 종류만이다**(아래 「개인 텍스트를 담지 않는다」). `alarm_deleted` 에는 싣지 않는다. 1.3 앞 앱은 싣지 않는다(비어 있다).
+- ⚠ **8판이 고지한 값이다**(처리방침 1.2 「8판에 동의한 뒤」 목록 — 7판 본문은 "사건 시각과 식별자만"). 서버는 그 전 동의자의
+  기록을 1판 모양으로 줄일 때 이 값을 비운다(`routes/events.ts` 의 `V2_DETAIL_TYPES` — 해제 사유처럼 1판부터 있던 `detail` 은
+  그대로). 앱은 동의 버전을 보지 않고 늘 싣는다 — 가르는 것은 서버 한 곳이다(§7.5).
+- 두 앱이 같은 판정이다 — 안드로이드 `AlarmEntity.messageKindForUsage`, iOS `LocalAlarmRecord.messageKindForUsage`. 한쪽만
+  고치면 같은 알람이 두 앱에서 다른 종류로 세진다.
 
 ⚠ **식별자를 못 붙여도 사건은 적는다.** 식별자는 전부 nullable 이다 — 잠금화면에서 콜드
 부팅된 iOS 는 알람 기록을 아직 못 읽어 알람 id 를 모를 수 있는데, **못 찾은 것은 안 누른
@@ -186,7 +205,7 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
 - 알람을 **지우거나 고쳐서** 그 오디오를 참조하는 알람이 이 기기에 하나도 안 남았을 때
   `manual_message_released` 를 남긴다. 같은 캐시 키를 다른 알람이 아직 쓰면 여전히 사용중이다.
   - ⚠ **파일 삭제 여부와는 다르다.** 지울 때는 파일도 사라지지만, **고쳐서 놓아 준
-    오디오는 지우지 않는다** — 30일 sweep 에 맡긴다. 그 사이 같은 문구를 다시 고르면
+    오디오는 지우지 않는다** — 기기의 30일 sweep 에 맡긴다. 그 사이 같은 문구를 다시 고르면
     서버 호출도 월 한도 차감도 없이 재사용되기 때문이다(`docs/spec/voice-and-message.md` §8).
     그러니 언젠가 `in_use = 0` 을 보고 정리하는 것을 만들 때, **오디오가 기기에서
     사라졌다고 가정하지 말 것.**
@@ -194,7 +213,8 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
     한쪽의 참조 카운트 0 이 계정 전체를 0 으로 만든다 — 위의 시각 비교는 **순서만** 정하지
     두 기기의 상태를 합치지 못한다(합치려면 기기 식별자가 필요한데, 그건 새로 수집하는
     개인정보라 처리방침·릴리스와 묶인다). 그래서 **`in_use = 0` 을 삭제의 근거로 단독으로
-    쓰지 말 것.** 지우는 문은 목소리 삭제 하나다(`docs/product/manual-message-reuse-plan.md` §1-4).
+    쓰지 말 것.** 지우는 문은 목소리 삭제 하나다(`docs/product/manual-message-reuse-plan.md` §1-4). 서버도 그렇다 —
+    직접 입력 음성은 기한 없이 두고 그 목소리를 지울 때·탈퇴할 때만 지운다(2026-10-29, [voice-and-message.md](voice-and-message.md) §11).
   - ⚠ **문구가 그대로면 적지 않는다.** 오디오만 다시 만든 경우까지 해제로 적으면, 해제와
     붙임이 같은 시각에 찍혀 순서가 뒤집히고(정렬 키가 시각 하나뿐이다) 아래 비교가 늦게
     온 해제를 받아들여 **붙어 있는 문구가 비사용중으로** 뒤집힌다.
@@ -328,6 +348,7 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 울림 기록 | `alarm/RingingService.kt` 의 `startRinging` — 언제나 | `AlarmKitViewModel.swift` 의 `.alerting` 진입(표는 `ObservedRingMarkerStore.beginObservation` 으로 **동기로** 뽑고, 울림이 **적힌 뒤** 콜백이 `commit`), 관찰자가 못 봤으면 `Shared/AlarmIntents.swift` 의 `recordRingIfObserverMissedIt` | — |
 | 울림 중복 판정 | — (울림 서비스가 그 자리에서 적어 갈림길이 없다) | `ObservedRingMarkerStore.swift` 의 `beginObservation`·`commit`·`consume`·`staleAfter`(디스크 표시 = 벽시계)·`lateMarkWindow`(메모리 = 단조 시계 `monotonicNow`) | — (사건 `id` 가 달라 `INSERT OR IGNORE` 로는 안 걸린다) |
 | 알람 생성·수정·삭제 | `data/AlarmRepository.kt` 의 `recordAlarmEvent` | `Views/Editor/AlarmEditorSheet.swift` 의 `recordSaveUsageEvent`, `AlarmKitViewModel.deleteLocalAlarm` | — |
+| 알람 저장의 문구 종류(`detail` — 만들고 고칠 때만 · 원문 없음) | `recordAlarmEvent` ← `AlarmEntity.messageKindForUsage`(`data/AlarmRepository.kt`) — 회귀 `ServerCopyRemovalTest` | `recordSaveUsageEvent` ← `LocalAlarmRecord.messageKindForUsage` | 8판 전 동의자는 비운다 `routes/events.ts` 의 `toV1`(`V2_DETAIL_TYPES`) — `usage-events.test.ts` · 집계 `lib/admin/metrics.ts` 의 `loadOverview` · 라벨 `lib/admin/pages.ts` 의 `THEME_LABELS` — `admin-console.test.ts` |
 | 사용중/비사용중 | 붙임 `recordAlarmEvent` / 놓음 `deleteAlarmLocked`·`updateAlarm`(`manualMessageReleasedByEdit`) | 붙임·놓음 모두 `AlarmEditorSheet.recordSaveUsageEvent`, 삭제는 `AlarmKitViewModel.deleteLocalAlarm` | `message_library.in_use` |
 | 해제 | `alarm/RingingService.kt` 의 `dismiss` — Intent 의 알람 id 로 **무조건** 적는다 | `Shared/AlarmIntents.swift` 의 `StopAlarmIntent` — **누른 자리**에서 적고(`handleAlarmStopped` 는 알람을 지우거나 끌 때도 불린다) **조회에 매달지 않는다**(콜드 부팅에서는 기록을 못 찾는다) | — |
 | 다시 울림 | `alarm/RingingService.kt` 의 `snooze` — `repository.snooze` 의 **결과를 보고** 적는다(null 이면 해제 + `SNOOZE_DENIED_DETAIL`, 던지면 결과를 몰라 미룸 + `SNOOZE_FAILED_DETAIL` 이고 알람은 끝내지 않는다) | `Shared/AlarmIntents.swift` 의 `SnoozeAlarmIntent` — `.deny` 면 해제 + `"snooze_denied"`, 아니면 `AlarmAppContext.rearmCountdown` 이 **돌아온 뒤에** 미룸으로 적고, 던지면 stop + 해제 + `"snooze_failed"` | — |
@@ -348,10 +369,10 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 음성 준비(작업 소유자 한 곳) | 기본 목소리 전체 `sync/StockClipPrefetchWorker.kt` 의 `runWork`, 목소리 하나 `ui/main/MainViewModelVoiceActions.kt` 의 `cacheVoiceClips` | `StockClipPrefetcher.start` 의 `PreparationReport`(`recordStartIfNeeded`·`recordEnd`) | — |
 | 저장 시도·막힘·준비 완료 | `data/UsageSignals.kt` 의 `AlarmSaveAttempts` ← `ui/editor/AlarmEditorScreen.kt`(`onSave`·`showSaveBlockAlert`·`saveEditor`), 준비 완료는 `MainViewModelAlarmActions.recordAlarmReadyIfReady` → `AlarmRepository.isReadyToRing`(`AlarmScheduler.isScheduled` + 파일) | `AlarmEditorSheet.saveFlow` 의 `beginSaveAttempt`·`recordSaveBlocked`, `finishScheduling` 의 `recordAlarmReadyIfComplete` | — |
 | 직접 입력 재사용·생성 결과 | 기기 `AlarmEditorScreen.kt` 의 `manualAudioReuse` `onFound`, 서버·결과 `UsageSignals.recordManualGenerationResult`(실패는 `startGeneration` 의 `onFailure`) | 기기 `VoiceStudioViewModel.recordManualLocalReuse`, 서버·결과 `recordManualGenerationAnswer`·`recordManualGenerationFailure` | `routes/tts.ts` 응답의 `cache_hit`·`charged_source`·`usage_month` |
-| 광고 보상 | `data/UsageSignals.kt` 의 `AdRewardAttempts` ← 편집기 플랜 게이트·`AlarmEditorScreen.watchRewardedAd`(지급은 서버 적립을 확인했을 때만) | — (광고 보상 흐름 없음, 종류만) | — |
+| 광고 보상 | `data/UsageSignals.kt` 의 `AdRewardAttempts` ← 편집기 플랜 게이트·`AlarmEditorScreen.watchRewardedAd`(지급은 서버 적립을 확인했을 때만) | `UsageEventQueue.swift` 의 `AdRewardAttempts` ← `AlarmEditorSheet` 의 광고 제안(`offered`, surface `editor_gate`)·`watchRewardedAd`(`viewStarted` 는 광고가 실제로 뜨는 순간, `pending`, `granted` 는 이 화면이 서버 적립을 확인했을 때만), 사용은 `VoiceStudioViewModel.recordManualGenerationAnswer`(응답의 `charged_source` 가 `ad` 면 `spent`). 2026-10-29 전 iOS 는 흐름이 있는데도 다섯 종류를 하나도 적지 않아 관리자 광고 퍼널이 iOS 를 0 으로 셌다 | — |
 | 응원 고정/다양하게(`content_selected`) — 저장 성공 때만 | `data/UsageSignals.kt` 의 `contentSelectionProps`·`recordContentSelected` ← `ui/main/MainViewModelAlarmActions.kt` 의 `createAlarm`·`updateAlarm` `onSuccess`(계정은 시작할 때 잡은 `ownerUserId`) — 회귀 `ContentSignalsTest`·`ContentSignalWiringTest` | `CheerVariety.contentSelectionProps(for:)` ← `AlarmEditorSheet.finishScheduling` 의 성공 끝(`userID: ownerID`) — 회귀 `ContentSignalsTests` | — |
 | 팩 목소리 사용(`pack_selected`) — 저장 성공 때만, `pack_id` 하나 | `data/UsageSignals.kt` 의 `packSelectionProps`·`recordPackSelected` ← 같은 `onSuccess`(`recordContentSelected` 옆, `ownerUserId`) — 회귀 `ContentSignalsTest`·`ContentSignalWiringTest` | `VoicePacks.packSelectionProps(for:held:)` ← `AlarmEditorSheet.finishScheduling` 의 `contentSelected` 옆(`userID: ownerID`) — 회귀 `ContentSignalsTests` | — |
-| 결제 화면·구매 확인·플랜 변경 | `ui/alarms/AlarmListScreen.kt`(이용권 탭)·편집기 플랜 게이트, `MainViewModelBillingActions.recordStorePurchaseVerified`(`store_offer` 는 `PlayBillingManager.launchPurchase` 가 고른 오퍼), `MainViewModelAuthActions.refreshAppSessionNow` | `BillingPanel` 의 `.onAppear`, `SubscriptionManager.purchase` → `recordPurchaseVerified`(`transaction.offer`), `AuthViewModel.persistSession` → `recordPlanChangeIfNeeded` | — |
+| 결제 화면·구매 확인·플랜 변경 | `ui/alarms/AlarmListScreen.kt`(이용권 탭)·편집기 플랜 게이트, `MainViewModelBillingActions.recordStorePurchaseVerified`(`store_offer` 는 `PlayBillingManager.launchPurchase` 가 고른 오퍼), `MainViewModelAuthActions.refreshAppSessionNow` | `BillingPanel` 의 `.onAppear` · 편집기 플랜 게이트(`AlarmEditorSheet` 의 `voiceGateAlert` 가 결제 액션을 내보일 때, 무료만 — surface `editor_gate`, 2026-10-29 전에는 이용권 탭에서만 적었다), `SubscriptionManager.purchase` → `recordPurchaseVerified`(`transaction.offer`), `AuthViewModel.persistSession` → `recordPlanChangeIfNeeded` | — |
 | 2판 열 | — | — | 마이그레이션 #142(`usage-events-v2-fields`), `routes/events.ts` 의 `PROP_COLUMNS` — `usage-events.test.ts` 「2판」 |
 | 권한 출처(서버가 찍음) | — | — | `lib/usage-entitlement.ts` 의 `loadEntitlementSource` — `admin-usage-metrics.test.ts` 「권한 출처」 |
 | 고지 전이면 1판으로 줄이거나 버림 | — (2xx 라 큐를 비운다) | 같음 | `lib/consent.ts` 의 `USAGE_EVENT_DETAIL_MIN_PRIVACY_VERSION`·`usageEventDetailConsentSince` → `routes/events.ts` 의 `toV1` — `consent.test.ts`·`usage-events.test.ts` |

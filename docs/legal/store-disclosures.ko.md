@@ -18,7 +18,7 @@
 
 수집 여부는 "예"로 신고하는 것이 안전합니다.
 
-- Personal info: 이메일, 이름/닉네임, 사용자 ID
+- Personal info: 이메일, 사용자 ID(이름·닉네임은 2026-10-29 부터 받지 않는다)
 - Personal info (기타): 성별, 생년월일·출생 시각 — 운세 문구 기능 사용 시에만 수집(동적 문구 생성용, Google Vertex 미국으로 전송)
 - Audio files / Voice (민감정보·생체정보): 녹음/업로드 음성, 음성 클론(생체) 데이터, 생성 음성. Play Data safety의 "Audio > Voice or sound recordings"로 신고하고, 음성 클론이 생체정보임을 앱 내 별도 동의로 고지
 - App activity: 알람 생성/수정/삭제, 음성 생성
@@ -44,7 +44,9 @@
   Device or other IDs(Android 광고 ID), Approximate location(IP 기반), App interactions(광고 노출·클릭), Diagnostics 를 처리하고,
   목적에 Advertising or marketing·Fraud prevention 이 붙는다. 그때는 위 줄("광고 네트워크에 제공하지 않는다")이 더 이상 참이 아니다.
   앱 매니페스트의 `AD_ID` 제거 줄을 지우는 것도 그 회차다. 광고를 켜기 전(지금)의 신고는 위 그대로다.
-- 처리방침 8판에서 늘어난 App activity: 음성 준비 시간·용량, 알람 저장 과정, 결제 화면·구매 확인 결과, 기능 사용 여부(사용 기록 2판).
+- 처리방침 8판에서 늘어난 App activity: 음성 준비 시간·용량, 알람 저장 과정과 고른 문구 종류, 결제 화면·구매 확인 결과, 기능 사용 여부(사용 기록 2판).
+- 처리방침 8판에서 줄어든 것: **알람 설정은 서버에 두지 않는다**(2026-10-29, 1.2). 실제 Play Data safety·App Privacy 양식에 알람 설정(시각·반복·제목 등)을
+  수집으로 적은 항목이 있으면 1.3 게재와 함께 지운다 — 오너가 스토어 콘솔에서 한다. 사용 기록의 알람 생성·수정·삭제 시각(App activity)은 계속 수집한다.
 - ⚠️ ElevenLabs 처리 조건은 실제 적용 계약·정책·DPA·보관 설정에 맞춰 Google Play Data safety의 audio/user content 항목과 앱 내 음성 동의 화면에 반영해야 합니다.
 - ⚠️ 동적 알람 문구·번역 사용 시 알람 문구와 운세 입력값(성별·생년월일·출생 시각)이 Google Cloud Vertex AI(미국)로 전송됩니다. Personal info(생년월일 등) 및 User content(알람 문구)의 국외 처리/공유 항목에 반영하고, 앱 내에 국외 이전 별도 동의(`overseas_transfer`)를 고지해야 합니다.
 - ⚠️ 음성 클론은 생체정보 처리에 해당하므로, 앱 내 별도 동의(`voice_biometric`)가 서버에서 강제됩니다. Data safety의 audio/voice 항목과 in-app 동의가 이를 일치하게 반영해야 합니다.

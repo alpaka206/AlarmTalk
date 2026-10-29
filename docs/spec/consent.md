@@ -131,9 +131,10 @@
     겹친 조회가 더 최신이라도 **성공 응답을 적용하기 전에는** 403 대기를 끝내지 않는다. 최신 조회가 실패하면
     그 조회가 가입 필수 목록으로 게이트를 연다. 일반 동의 제출 성공·계정 종료는 대기를 무효화한다.
     민감 동의만 제출했다면 일반 동의 조회를 다시 이어 간다.
-  - **동의를 마치면 막혔던 동기화를 곧바로 다시 돈다.** 게이트가 떠 있던 동안의 알람 전송은 403 을 받고 '동의 대기' 로
-    조용히 접힌다. 다시 걸지 않으면 그 사이 저장한 알람이 다음 회차까지 서버에 오르지 않는다. (2026-10-20 전에는 받은
-    가족 알람 pull 이 이 규칙의 주된 이유였다.)
+  - (2026-10-29 까지는 **동의를 마치면 막혔던 알람 전송을 곧바로 다시 돌았다** — 게이트가 떠 있던 동안의 전송은 403 을 받고
+    '동의 대기' 로 조용히 접혔고, 다시 걸지 않으면 그 사이 저장한 알람이 다음 회차까지 서버에 오르지 않았다. 2026-10-20
+    전에는 받은 가족 알람 pull 이 주된 이유였다. 서버 알람 사본을 지워 알람을 올리지 않으므로 그 재시도도 지웠다 —
+    [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」.)
 - **예외는 둘뿐이고 둘 다 서버가 만든다.**
   1. `CONSENT_MIN_POLICY_VERSION` 상향 — **그 유형의 동의 내용이 실제로 바뀐 경우만**.
      문서 버전이 올랐다는 이유로 올리지 않는다(바로 아래 불릿).
@@ -175,9 +176,10 @@
 쌓는다(최신 행이 지금 상태 — `created_at DESC, rowid DESC`). 관리자 콘솔의 광고 알림이 이 값으로 받는 사람을 고르므로
 (`lib/admin/audience.ts`), **스위치는 꺼져 보이는데 서버는 켜져 있으면 끈 줄 아는 사람에게 광고가 간다.**
 
-- **쓰기는 한 번에 하나다.** 안드로이드는 쓰는 동안에도 스위치를 누르게 두고(비활성으로 그리면 색이 두 단계로 바뀐다),
-  그 사이 누른 값은 **마지막 것 하나만** 남겨 지금 쓰기가 끝난 뒤 이어서 보낸다. iOS 는 쓰는 동안 스위치를 잠근다 —
-  잠금은 **뷰모델이** 든다(화면 상태는 나갔다 들어오면 새로 만들어져 겹쳐 보내게 된다).
+- **쓰기는 한 번에 하나다.** 두 앱 모두 쓰는 동안에도 스위치를 누르게 두고(비활성으로 그리면 색이 두 단계로 바뀐다),
+  그 사이 누른 값은 화면에 곧바로 그리되 **마지막 것 하나만** 남겨 지금 쓰기가 끝난 뒤 이어서 보낸다. 쓰는 중이라는 표시와
+  남긴 값은 **뷰모델이** 든다(화면 상태는 나갔다 들어오면 새로 만들어져 겹쳐 보내게 된다). (2026-10-29 전 iOS 는 쓰는 동안
+  스위치를 잠갔다 — 두 앱 비교에서 안드로이드에 맞췄다.)
 - ⚠ **실패하면 '서버가 가진 값' 으로 되돌린다 — 화면 값이 아니다.** 이어 보낼 때 화면은 이미 낙관적으로 바뀌어 있다.
   예전 안드로이드는 그 화면 값을 되돌릴 값으로 잡아, 켬(첫 저장 성공) → 끔(이어 보낸 저장 실패) 이면 서버는 켜진 채
   스위치만 꺼졌다(2026-10-29 외부 제보, 1.2.16 까지). 이어 보낼지·무엇을 그릴지는 판정 하나가 정한다(구현 지도).
@@ -185,8 +187,8 @@
   서버에 있다. 서버 값과 다르면 앞 쓰기가 실패했어도 마지막 값을 보낸다.
 - 성공한 값은 이어 보내기 **전에** 캐시(`MarketingConsentCache`)에 적는다 — 이어 보낸 쓰기가 실패해도 캐시가 서버를 가리킨다.
 - **쓰는 동안에는 조회하지 않고, 토글 전에 떠난 조회의 답은 버린다**(세대). 그 답은 방금 누른 값보다 낡았다.
-- 값을 모르는 동안(첫 조회 전)은 스위치를 비활성으로 둔다 — 동의한 사람에게 '꺼짐' 을 그리지 않는다. 안드로이드는 이 기기의
-  직전 확인값(`MarketingConsentCache`)으로 먼저 채운다.
+- 값을 모르는 동안(첫 조회 전)은 스위치를 비활성으로 둔다 — 동의한 사람에게 '꺼짐' 을 그리지 않는다. 두 앱 모두 이 기기의
+  **계정별** 직전 확인값(`MarketingConsentCache` — 다른 계정이면 모름)으로 먼저 채운다(iOS 는 2026-10-29 부터).
 - 계정이 바뀌면 값·쓰기 잠금·이어 보낼 값을 모두 비우고, 떠 있던 조회·쓰기의 답은 버린다 — 앞 계정에서 누른 값이 다음
   계정으로 나가지 않게.
 - **실패는 그 스위치 아래 빨간 글자로 남긴다**(iOS, 2026-10-29 오너 — 알림을 띄우지 않는다). 예전 iOS 는 로그인한 동안의
@@ -246,8 +248,9 @@
 | 등록 입구 권리 확인 | `VoiceProfileManagementPanel.registrationConsentOpen` → `showCreateForm` | 같은 패널의 `registrationConsentOpen` → `route = .clone` | 별도 동의 유형을 기록하지 않음 |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 403 뒤 목록·겹친 조회 실패 | `refreshConsentCollectAfterGate`·`applyConsentStatusFailure` (`MainViewModelAuthActions`), `consentGatePendingUserId` (`MainViewModel`) | `handleConsentRequired` → `checkConsentStatus`, `consentGatePendingUserID` (`AuthViewModel`) — `AuthViewModelTests` | `GET /user/consents/status` |
-| 동의 뒤 막혔던 알람 전송 다시 돌기 | `submitConsents` → `syncNow`(내 알람 전송. 예전 자리 `RemoteAlarmSyncScheduler.runOnce` 는 받은 알람 pull 이었다 — 그 워커는 이제 계정 확인뿐) | `consentSubmitGeneration` → `remoteSync.runFullSync` (`AlarmTalkApp`) | — |
-| 광고성 정보 수신 — 이어 보내기·되돌릴 값 | `marketingConsentAfterWrite` (`ui/main/MarketingConsentWrites.kt`) ← `sendMarketingConsent` (`MainViewModelAuthActions`) — `MarketingConsentWritesTest` | 쓰는 동안 잠금 `marketingConsentWriteInFlight` (`AuthViewModel`) — `AuthViewModelTests` | `POST /user/consents` |
+| 동의 뒤 막혔던 알람 전송 다시 돌기 — **없다**(2026-10-29, 알람을 올리지 않는다. 옛 자리 안드로이드 `submitConsents` 의 알람 전송·iOS `consentSubmitGeneration` 을 지웠다) | — | — | — |
+| 광고성 정보 수신 — 이어 보내기·되돌릴 값 | `marketingConsentAfterWrite` (`ui/main/MarketingConsentWrites.kt`) ← `sendMarketingConsent` (`MainViewModelAuthActions`) — `MarketingConsentWritesTest` | `MarketingConsentNext.after` (`MarketingConsentWrites.swift`) ← `AuthViewModel.updateMarketingConsent`·`sendMarketingConsent`(쓰는 중 누른 값 `pendingMarketingConsent`, 계정 정리가 비운다) — `MarketingConsentWritesTests`·`AuthViewModelTests` | `POST /user/consents` |
+| 광고성 정보 수신 — 계정별 직전 확인값으로 먼저 그리기 | `data/MarketingConsentCache.kt` | `MarketingConsentCache` (`MarketingConsentWrites.swift`) ← `AuthViewModel.loadMarketingConsent`(값을 모를 때 먼저 읽고, 조회가 성공하면 적는다)·`sendMarketingConsent`(쓰기가 성공하면 이어 보내기 **전에** 적는다) | — |
 | 광고성 정보 수신 — 낡은 조회 버리기 | `marketingConsentLoadGeneration` (`MainViewModel`), 쓰는 동안 조회 안 함 (`loadMarketingConsent`) | `marketingConsentGeneration` (`AuthViewModel`), 같음 | `GET /user/consents` |
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `POST /user/consents` 의 `ACCEPTED_POLICY_VERSIONS`(목록 밖은 409, 받으면 그 버전으로 기록) — 게시 중 최신은 `CURRENT_POLICY_VERSION` |
 | 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |

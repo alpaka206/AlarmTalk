@@ -64,7 +64,7 @@
 | [gates-and-overlays.md](gates-and-overlays.md) | 차단 게이트와 1회성 오버레이의 순서 |
 | [session-and-auth.md](session-and-auth.md) | 로그인 유지 — 한 번 하면 다시 안 한다, 백그라운드 갱신 · 푸시 등록(스스로 낫는다, 설정 오류로 지우지 않는다) · 이메일 인증 코드(가입·비밀번호 재설정 — 가장 새 코드만, 틀린 5번, 거절된 숫자는 칸에 남기지 않는다) |
 | [billing-lifecycle.md](billing-lifecycle.md) | 구독 해지·만료 — 스토어가 권위, 못 물으면 안 바꾼다 · 목소리를 못 쓰게 되면 기본 목소리(미나) · 업데이트 전에 받아 둔 가족 알람은 내 알람으로 |
-| [alarm-lifecycle.md](alarm-lifecycle.md) | 알람의 생애 — 행과 예약은 다른 겹, 서버 행은 사본, 계정을 떠날 때, 내 알람 전송(겹친 요청은 차례로), 공휴일 국가 = 지역의 나라(바뀌면 공휴일off 다시 잡기) |
+| [alarm-lifecycle.md](alarm-lifecycle.md) | 알람의 생애 — 행과 예약은 다른 겹, 서버에는 알람이 없다(2026-10-29 사본 삭제 — 옛 앱의 올리기는 저장 없이 되돌려 준다), 계정을 떠날 때, 공휴일 국가 = 지역의 나라(바뀌면 공휴일off 다시 잡기) |
 | [usage-events.md](usage-events.md) | 사용 기록 — 오프라인에 쌓고 모아 보내기, 울릴 때 네트워크 금지, 보관 1년 |
 | [error-codes.md](error-codes.md) | 에러 코드 — 목록은 하나, 코드는 바꾸지 않는다, 기록은 전부·경보는 골라서, 앱의 묶음 키(코드 + 호출 자리) |
 | [localization.md](localization.md) | 앱 화면 번역 — 같은 화면의 용어, 저장값과 표시 문구, 오류·언어 변경 |

@@ -32,9 +32,10 @@ v1.3 지시서 12.4(2026-10-26). 기본 목소리 4종 밖의 목소리를 **권
 (`70000000-0000-4000-9100-` 로 시작하는 UUID — 기본 목소리 `…-9000-` 와 다른 대역)를 따로 둔다. 그 결과:
 
 - `POST /tts/generate`·목소리 등록·사전렌더는 그 id 를 모른다 — 직접 입력 합성은 구조적으로 불가능하다(404).
-- 앱은 **서버 알람 사본에 팩 목소리·팩 클립 id 를 싣지 않는다.** 그 알람은 `voice_profile_id`·`message_id` 를 비우고
-  `mode = 'sound-only'` 로, 테마(`bucket_id`)만 보낸다(`clears_missing_voice_references = true`). 서버 행은 사본이고
-  pull·복구가 없으므로(`alarm-lifecycle.md`) 잃는 것이 없다.
+- 팩 알람은 **기기에만 있다** — 서버에는 알람이 없다(2026-10-29, [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이
+  없다」). (그 전에는 서버 알람 사본에 팩 목소리·팩 클립 id 를 싣지 않으려고 그 알람을 `voice_profile_id`·`message_id` 를 비운
+  `mode = 'sound-only'` 로, 테마(`bucket_id`)만 보냈다 — `clears_missing_voice_references = true`. 사용 기록의 식별자와
+  `pack_selected` 의 `pack_id` 는 그와 별개다 — [usage-events.md](usage-events.md).)
 - 플러스 판정·목소리 접근권 대조(`VoiceAccessSyncWorker` 등)는 팩 목소리를 **보지 않는다** — 목록(`GET /voice`)에
   없다는 이유로 팩 알람을 '접근권 상실' 로 강등하면 안 된다.
 
@@ -249,7 +250,7 @@ draft ──검수 요청──▶ review ──게시──▶ published ──
 | 기한 뒤 미나로 대체·지우기 | — | `data/AlarmRepository.kt` 의 `degradeAlarmsUsingVoicePack` | `VoicePackStore.retireExpired`·`remove` → `VoiceStudioViewModel.degradeVoicePackAlarms` |
 | 접근권 대조에서 팩 제외 | — | `AlarmRepository.degradeAlarmsWithInaccessibleVoice` | `VoiceStudioViewModel.reconcileInaccessibleVoiceAlarms` |
 | 무료로 쓴다 | — | `data/SystemVoices.kt` 의 `usesFreeSystemVoiceAlarm` | `VoicePacks.swift` 의 `isFreeFixedVoiceID`(`PaidVoiceGate.usesFreeSystemVoice`·`LocalAlarmRecord.isPaidVoiceForDowngrade`·`isStockVoiceClip`) |
-| 서버 사본에 팩 id 를 싣지 않는다 | — | `network/RemoteAlarmMapper.kt` | `RemoteAlarmMapper.swift` |
+| 팩 알람은 서버에 올라가지 않는다(서버에는 알람이 없다 — 2026-10-29 전에는 사본에서 팩 id 를 뺐다) | — | — | — |
 | 목소리 탭 '추가 팩'·팩 상세 | — | `ui/voices/VoicePackSection.kt` | `Views/Voices/VoicePackSection.swift` |
 | 받는 중으로 되돌리기·지운 팩 되살리지 않기 | — | `data/VoicePacks.kt` 의 `HeldVoicePack.fromDetail`, `sync/StockClipPrefetchWorker.kt` 의 `refreshDetailIfNeeded`·`downloadPack` | `VoicePacks.held(from:previous:)`, `VoicePackStore.adoptRevisedDetail`·`finishDownload` |
 | 개정에서 빠진 옛 클립 파일 지우기(알람이 안 쓸 때만) | — | `sync/StockClipPrefetchWorker.kt` 의 `refreshDetailIfNeeded` → `releaseUnusedAudio` | `VoicePackStore.adoptRevisedDetail` → `releaseUnreferencedClips` |

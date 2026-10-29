@@ -10,10 +10,11 @@
 ⚠ **둘을 같은 것으로 다루면 사고가 난다.** 예약만 끊으면 화면은 켜졌다고 말하는데 안
 울리고, 행만 지우면 OS 예약이 남아 **없는 알람이 운다.**
 
-**서버 행은 이 둘 중 어느 것도 아니다.** 기기가 올린 내 알람의 **사본**이고, 앱은 그것을
-다시 받아오지 않는다(남이 보낸 알람을 받아오던 pull 은 2026-10-20 커플·가족 이용권과 함께
-지웠다). 서버는 그 사본을 음원 보관(`audio-retention`)과 목소리 철회 판정에 쓸 뿐이다. 그러니 "서버에 있는 알람" 을 원본이나 백업으로 읽지 말 것 —
-**알람의 원본은 언제나 기기다.** 새 기기·재설치는 빈 상태로 시작한다.
+**서버에는 알람이 없다**(2026-10-29, 마이그레이션 #147 — 오너 "서버 사본은 필요 없다"). 알람의 원본은 언제나 기기였고,
+서버 표는 기기가 올린 내 알람의 **사본**이었다 — 앱은 그것을 다시 받아오지 않았다(남이 보낸 알람을 받아오던 pull 은
+2026-10-20 커플·가족 이용권과 함께 지웠다). 서버가 그 사본을 읽던 자리(음원 보관·목소리 철회·응원 보충·스톡 정리·관리자
+표)는 같은 배포에서 모두 다른 근거로 옮기고 표를 지웠다(아래 「서버에는 알람이 없다」). **알람은 기기에만 있다** — 새
+기기·재설치는 빈 상태로 시작한다.
 
 업데이트 전에 받아 둔 가족 알람은 업데이트 직후 이 기기의 **내 알람**으로 바뀐다 — 규칙은
 [billing-lifecycle.md](billing-lifecycle.md) 「받은 알람은 내 알람으로 바뀐다」.
@@ -35,15 +36,19 @@
 
 떠나는 계정이 누구인지 모르면(`nil`) 켜진 것을 전부 끈다 — 근거가 없을 때는 안 울리는 쪽이 안전하다. 소유자 미기록(옛 행)은 떠나는 계정 것으로 본다.
 
-⚠ **탈퇴가 서버에서 하는 일도 서버 행의 성격에 맞춘다**. 서버 알람 행은 원본이 아니라
-사본이라, 탈퇴 시에는 내가 만든 행을 지운다(`account-deletion.ts`). 남겨 두면
-`audio-retention` 이 그 음원을 영구 참조로 오인한다.
+탈퇴가 서버에서 지울 알람 행은 없다(2026-10-29 — 사본이 있던 동안은 내가 만든 행을 지웠다. 남겨 두면
+`audio-retention` 이 그 음원을 영구 참조로 오인했다).
 
 목소리가 사라질 때 알람에서 걷어내는 판정은 **목소리 하나**로 한다: 그 목소리를 쓰던
-알람만 목소리를 잃는다. 파기 대상은 **생체정보**이지 기상 시각이 아니다. 탈퇴·목소리
-삭제·플랜 강등이 **같은 함수**를 부른다(`lib/voice-revocation.ts`) — 같은 사건이므로 결과도
-같아야 한다. 탈퇴에서는 그 철회가 **구독 취소보다 먼저** 돈다([session-and-auth.md](session-and-auth.md)
-「탈퇴 파기」).
+알람만 목소리를 잃는다(기본 목소리로 — [billing-lifecycle.md](billing-lifecycle.md) 「목소리를 잃은 알람」). 파기 대상은
+**생체정보**이지 기상 시각이 아니다. **걷어내는 것은 기기다 — 서버는 깨울 계정만 정한다.** 탈퇴·목소리 삭제·플랜 강등이
+**같은 함수**를 부르고(`lib/voice-revocation.ts` 의 `revokeDeletedVoices` — 같은 사건이므로 결과도 같아야 한다), 그 함수가
+목소리 주인과 **그 목소리로 만든 문구의 주인**(`messages.voice_profile_id`)을 골라 커밋 뒤 계정 단위 `voice_access_revoked`
+를 보낸다. 각 기기가 접근권을 다시 확인해 자기 알람을 내린다(안드로이드 `VoiceAccessSyncWorker`, iOS
+`onAuthoritativeRefresh`). 곧 사라지는 계정(탈퇴하는 그 사람)은 깨우지 않는다.
+⚠ 문구 행을 지우기 **전에** 불러야 그 주인을 찾는다. 탈퇴에서는 그 철회가 **구독 취소보다 먼저** 돈다
+([session-and-auth.md](session-and-auth.md) 「탈퇴 파기」). (2026-10-29 전에는 이 함수가 서버 알람 사본의 행도
+`sound-only` 로 내리고, 그 행의 주인을 깨울 계정으로 찾았다.)
 
 ⚠ **단, "임자를 모른다" 와 "확인에 실패했다" 는 다르다**(2026-08-19 Codex #699 P1).
 안드로이드는 소유권을 확정한 **뒤에 행을 다시 읽어** 판정하는데, 그 읽기가 실패하면
@@ -100,10 +105,9 @@
 
 `ownerUserId == null || ownerUserId == 현재 계정` 인 것만 보이고, 그것만 다시 건다.
 
-**서버 전송은 현재 계정 소유 행만 허용한다.** 일괄·단건 전송 모두 후보 선택과 실제 요청
-직전에 같은 소유자 규칙을 확인한다. 소유자 미기록 로컬 행은 저장소 로드 완료 후,
-다른 계정의 자동 만료 표시나 미완료 로그아웃이 없을 때만 현재 계정에 귀속해 디스크에
-남긴 뒤 전송한다. 귀속이 불확실한 행과 다른 계정의 행은 보존하고 전송을 미룬다.
+(2026-10-29 전에는 **서버 전송**도 현재 계정 소유 행만 허용했다 — 후보 선택과 요청 직전에 같은 소유자 규칙을 확인하고,
+소유자 미기록 로컬 행은 로드 완료 뒤 다른 계정의 자동 만료 표시나 미완료 로그아웃이 없을 때만 현재 계정에 귀속해
+보냈다. 알람을 서버로 올리지 않게 되어 그 전송째 지웠다 — 아래 「서버에는 알람이 없다」.)
 
 로컬 저장소의 첫 로드가 끝나기 전 빈 배열은 **실제 빈 목록이 아니다.** 알람 화면은 이때
 "알람이 없어요"를 그리지 않고 로드 완료를 기다린다. 네트워크를 기다리는 규칙이 아니라
@@ -136,45 +140,54 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
   **감추기만 할 뿐** 예약은 그대로다 — A 의 알람이 울리는데 B 는 볼 수도 끌 수도 없다.
   행(`enabled`)은 건드리지 않는다: A 의 의도는 A 것이고, A 가 돌아오면 되살아나야 한다.
 
-### 본인 알람 서버 생성의 재전송
+### 서버에는 알람이 없다 — 옛 앱의 올리기는 저장 없이 되돌려 준다 (2026-10-29)
 
-양 앱은 본인 알람 POST에 영속적인 로컬 UUID를 `client_alarm_id`로 보낸다. 서버는 계정 PK와
-이 UUID를 함께 사용해 같은 서버 ID를 결정하고, 기존 행 확인과 생성을 쓰기 트랜잭션 안에서
-처리한다. 응답 유실·앱 재실행 뒤에도 같은 로컬 알람의 재시도는 서버 행을 늘리지 않는다.
-계정이 다르면 같은 로컬 UUID도 다른 서버 ID다. 구형 클라의 필드 없는 요청은 기존 생성 규칙을 따른다.
+마이그레이션 #147(`drop-alarms`)이 서버 알람 표를 지웠다(`DROP TABLE IF EXISTS alarms` — 그 표를 가리키는 외래 키·트리거는
+없다). 1.3 두 앱은 알람을 올리지 않는다 — 안드로이드 `syncNow`·`AlarmSyncService`·`RemoteAlarmApi`·`RemoteAlarmMapper`, iOS
+`RemoteAlarmSyncViewModel`·`RemoteAlarmPushSync`·`RemoteAlarmMapper`·알람 API 메서드를 지웠다. 알람 탭에 들어오면 두 앱 모두
+**이용권만** 다시 받는다(안드로이드 `refreshBilling`, iOS `socialFeatures.refreshOnEntry` — [plan-gates.md](plan-gates.md) §4).
 
-이미 생성된 행이면 서버는 내용을 되덮지 않고 `creation_replayed = true`와 **같은 ID**를
-반환한다. 그때 응답 본문은 저장된 행이 아니라 **요청의 에코**다(`alarm-mutation.ts` 가
-`...body` 위에 `id`·`creation_replayed` 와 서버가 정한 몇 필드만 얹는다) — 앱은 본문을 행으로
-믿지 말고 `id`·`creation_replayed` 만 읽어(`AlarmSyncService.createAndReconcile` /
-`AlarmTalkAPI.createAlarm`), 그 ID에 현재 로컬 스냅샷을 PATCH한 뒤 동기화 완료로 기록한다.
-응답 유실 이후의 로컬 편집도 이 과정에서 반영한다.
+**옛 앱(1.2.16)은 그대로 올린다** — 알람을 저장·켜고 끄고·지울 때마다 `POST/PATCH/DELETE /alarm`. 서버
+(`routes/alarm-mutation.ts`)는 **형식만 예전처럼 보고 아무것도 저장하지 않는다** — DB 를 부르지 않는다.
 
-최초 생성에도 로컬의 켜짐 상태(`is_active`)를 그대로 저장한다. 꺼진 알람을 처음 동기화한다고
-서버 사본을 켜면 안 된다. **두 앱 모두 이 필드를 보낸다** — 스토어 구버전도 `RemoteAlarmMapper`
-가 `enabled` 를 `is_active` 로 실어 보낸다(안드로이드 `isActive = alarm.enabled`, iOS
-`isActive: local.enabled`). 안 보내는 호출(직접 API)만 켜짐이 기본값이다. 응답 ID는 요청의
-임의 필드가 아니라 실제 저장한 서버 ID여야 한다.
+| 요청 | 답 |
+| --- | --- |
+| `POST /alarm` | `time` 이 없으면 400 `REQUIRED_FIELDS_MISSING`, `client_alarm_id` 가 UUID 가 아니면 400 `INVALID_ALARM_ID`, 칸 검사(`validateAlarmFields` — `INVALID_TARGET_DATE`·`INVALID_CHEER_SETTING`·`INVALID_BUCKET_ID` 등)에 걸리면 그 400, `target_user_id` 가 호출자가 아닌 계정이면 403 `NOT_CONNECTED`. 통과하면 201 `{ alarm }` — 받은 값 그대로에 서버 id 를 얹는다(`target_user_id` 는 싣지 않는다) |
+| `PATCH /alarm/:id` | id 형식이 틀리면 400 `INVALID_ALARM_ID`, 칸 검사의 400. 통과하면 200 `{ success, alarm: { …받은 값, id } }` |
+| `DELETE /alarm/:id` | id 형식이 틀리면 400 `INVALID_ALARM_ID`. 통과하면 200 `{ success: true }` |
+
+- 서버 id 는 예전 사본의 규칙 그대로다 — `client_alarm_id` 가 있으면 계정 PK 와 함께 정한 같은 id(`ownAlarmIdentity` — 옛 앱이
+  다시 보내도 갈라지지 않고, 계정이 다르면 다른 id 다)와 `creation_replayed: false`, 없으면 무작위 id.
+- ⚠ **라우트를 지우지 말 것.** 404 를 주면 옛 앱은 올리기를 실패로 보고 계속 다시 보낸다. 그 앱이 응답에서 반드시 읽는 것은
+  `alarm.id` 하나다(나머지는 선택값으로 읽는다). **1.3 강제 업데이트(`lib/app-version.ts` 의 `minSupported`) 뒤에 파일째 지운다.**
+- DB 를 보지 않으므로 배포 → 마이그레이션 창에도 그대로다 — 새 코드에 지운 표를 부르는 문장이 없다(`CLAUDE.md` 「배포가
+  마이그레이션보다 먼저 돈다」).
+- 저장하지 않으니 **볼 것도 없다.** 알람 쓰기의 소유권 게이트(`messageBelongsToCaller`·`voiceProfileBelongsToCaller` — 이제
+  오디오 라우트 `GET /tts/messages/:id/audio` 가 유일한 판정이다), 유료 목소리 403, 시스템 목소리 + `greeting` 400, 응원 보충
+  신호, `ALARM_NOT_FOUND`·`ALARM_DELETE_FAILED`·`NO_UPDATE_FIELDS`([error-codes.md](error-codes.md) §2)가 함께 없어졌다.
+- 앱의 동기 칸(안드로이드 `AlarmEntity.syncState`·`remoteAlarmId`·`lastSyncedAtMillis` — `AlarmSyncStates`, iOS
+  `LocalAlarmRecord` 의 같은 칸)은 디스크 형식을 그대로 두려고 남겼다. **아무도 읽지 않는다** — 저장 경로가 적는 값은 뜻이 없다.
+
+사본을 읽던 자리는 이렇게 옮겼다:
+
+| 사본이 하던 일 | 지금 |
+| --- | --- |
+| 직접 입력 음원 보관 — 서버 알람이 그 문구를 쓰는 동안 30일 정리에서 남겼다 | 직접 입력 음성은 기한 없이 두고 그 목소리를 지울 때·탈퇴할 때만 지운다([voice-and-message.md](voice-and-message.md) §11) |
+| 목소리 철회 — 그 목소리를 쓰던 알람 행을 내리고 그 주인을 깨웠다 | 계정 단위 `voice_access_revoked` — 목소리 주인과 그 목소리로 만든 문구의 주인. 기기가 자기 알람을 내린다(§1-1) |
+| 제자리 교체 — 그 목소리의 직접 입력 알람 행을 내렸다 | 기기가 내린다(등록 기기는 `replaced: true`, 다른 기기는 `voice_access_revoked` scope `custom_messages`). 옛 목소리의 직접 입력 음원은 교체 트랜잭션이 그 자리에서 지운다([voice-and-message.md](voice-and-message.md) §4-1) |
+| 응원 보충 — 알람 POST·PATCH 가 요청했다 | 앱이 저장 뒤 `POST /voice/:id/content-supplement` 로 알린다([voice-and-message.md](voice-and-message.md) §5-4) |
+| 스톡 클립 삭제 — 그 클립을 문 알람 행을 `sound-only` 로 내렸다 · 은퇴 힌트에 '내 서버 알람이 문 클립' 도 실었다 | 기기가 매니페스트에서 빠진 것을 보고 다시 묶는다 · 서버 힌트는 은퇴한 시스템 프리셋만, 나머지는 앱이 매니페스트 클립 목록에서 찾는다([voice-and-message.md](voice-and-message.md) §5-3) |
+| 관리자 '켜진 알람의 문구 테마' | 사용 기록의 문구 종류(`alarm_created`·`alarm_updated` 의 `detail` — [usage-events.md](usage-events.md) §1, [admin-console.md](admin-console.md)) |
+| 탈퇴·이용권 정리의 `DELETE FROM alarms` | 지울 행이 없다 |
+
+(2026-10-29 전 — 사본이 있던 동안의 규칙, 기록으로 남긴다: 본인 알람 POST 는 영속 로컬 UUID 를 `client_alarm_id` 로 보내
+응답 유실·재실행 뒤의 재전송이 서버 행을 늘리지 않았고(이미 있으면 `creation_replayed = true` 와 같은 id — 앱은 그 id 에 지금
+스냅샷을 PATCH 했다), 최초 생성에도 켜짐(`is_active`)을 그대로 실었다. 겹친 일괄 push 는 호출별로 차례를 기다렸고(`isBusy` 는
+버리는 조건이 아니었다), 전송 성공은 요청한 스냅샷이 그대로일 때만 완료로 적었다. 지금 남은 것은 위 id 규칙 하나다.)
 
 서버는 남에게 보내는 알람을 더는 만들지 않는다(2026-10-20). `POST /alarm` 의 `target_user_id` 가
-호출자가 아닌 계정을 가리키면(비어 있지 않은 문자열) 403 `NOT_CONNECTED` 이고, 그 밖의 값은 무시하고
-내 알람으로 만든다 — 옛 앱 호환이다([plan-gates.md](plan-gates.md) 「커플·가족 이용권 — 폐지」).
-
-### 내 알람 전송 — 겹친 요청은 차례로, 전송 중 편집은 지킨다
-
-(2026-10-20 가족 알람 스펙을 지우며 여기로 옮겼다.)
-
-별도 인스턴스의 전경·백그라운드 **일괄 push 는 호출별로 기다린다**. 앞 회차의 오류·취소가 대기 요청을
-지우지 않으며, 차례가 온 호출은 최신 로컬 후보와 세션으로 자기 회차를 수행한다. 아직 전송하지 않은 호출에
-성공/0건을 반환하지 않는다. iOS 의 전체 동기화 진입점(`RemoteAlarmSyncViewModel.runFullSync`)도 요청을
-순서대로 기다린다 — `isBusy` 는 진행 상태 표시이지 요청을 버리는 조건이 아니다. 앞 회차의 실패·취소 뒤에도
-대기 호출은 자기 회차를 실행하며, 취소된 호출은 새 회차 없이 차례를 넘긴다.
-
-전송 성공 표시는 **요청한 로컬 스냅샷이 그대로일 때만** 완료로 바꾼다. 네트워크 대기 중 편집된 행은 최신
-내용·편집 시각과 재전송 상태를 보존한다. 생성 응답의 서버 ID는 편집 여부와 관계없이 저장해 다음 회차가
-PATCH로 이어지게 한다. 성공 응답을 받은 뒤에는 작업 취소를 전파하기 전에 이 연결을 디스크에 기록한다. 저장
-실패는 성공으로 처리하지 않는다. 실패 후 pending 예약 취소 재처리 역시 저장소 로드가 끝나지 않았으면
-보류한다 — OS 예약만 지우고 디스크의 핸들이 남는 부분 처리를 하지 않는다(1-3).
+호출자가 아닌 계정을 가리키면(비어 있지 않은 문자열) 403 `NOT_CONNECTED` 이고, 그 밖의 값은 무시한다(응답에도
+싣지 않는다) — 옛 앱 호환이다([plan-gates.md](plan-gates.md) 「커플·가족 이용권 — 폐지」).
 
 ### 1-3. 취소에 실패하면 **손잡이를 남기고, 반드시 다시 시도한다** (iOS)
 
@@ -203,7 +216,7 @@ PATCH로 이어지게 한다. 성공 응답을 받은 뒤에는 작업 취소를
 동시에 들 수 없다. 앱 시작·전경 복귀에서 재예약보다 **먼저** 돈다.
 
 **취소 재처리도 디스크 로드 뒤에만 한다.** 로드 전에는 OS 예약을 취소하거나 pending
-목록에서 완료 처리하지 않는다. 전송 실패 뒤 정리도 같은 조건을 따른다.
+목록에서 완료 처리하지 않는다. 백그라운드 회차처럼 로드 전에 들어오는 정리도 같은 조건을 따른다.
 빈 임시 목록으로 처리하면 디스크에 남은 행의 핸들을 비울 수 없어, 나중에 로드된 행이
 죽은 핸들을 들고 재예약 대상에서 빠진다. 로드가 끝난 다음 재처리가 OS와 로컬 행을 함께 정리한다.
 
@@ -263,7 +276,7 @@ PATCH로 이어지게 한다. 성공 응답을 받은 뒤에는 작업 취소를
 | --- | --- | --- |
 | 만료된 1회성 알람을 되살릴 수 없다 | **쓴다**(끄고 함께) | 시각을 고쳐야 한다 — 문구가 정확히 그 말이다. 안드로이드 `reschedulePendingAlarms` 의 `else` 갈래 / iOS `prepareForScheduleRecovery` 의 `else` 갈래에서 **직접** 기록한다(`markFailed` 를 거치지 않으므로 아래 가드에 막히지 않는다) |
 | 켜기를 시도했다 실패해서 **되돌려 껐다** | **쓰지 않는다** | 그 자리에서 이미 알렸다. 낙인만 남는다 |
-| 서버 동기화 실패 | **쓰지 않는다** | 다음 회차가 재시도한다 — 사용자가 할 일이 없다 |
+| 서버 동기화 실패(2026-10-29 에 알람 올리기를 지워 더는 생기지 않는다) | **쓰지 않는다** | 다음 회차가 재시도했다 — 사용자가 할 일이 없었다 |
 | 무료 강등으로 알람음이 됐다 | **쓰지 않는다** | 알람은 정상 작동 중이다(1회성 모달이 알린다) |
 
 ⚠ **꺼진 알람에 낙인을 남기면 영영 지워지지 않는다.** 재예약 sweep 는 **켜진 알람만**
@@ -340,15 +353,15 @@ PATCH로 이어지게 한다. 성공 응답을 받은 뒤에는 작업 취소를
 
 | 값 | 어디 | 뜻 |
 | --- | --- | --- |
-| `targetDate` / 서버 `target_date` | 행 · 서버 사본 | `YYYY-MM-DD`. 있으면 날짜 알람이다 |
-| `targetTimezone` / 서버 `timezone` | 행 · 서버 사본 | IANA 이름. **저장하는 순간 사용자가 화면에서 확인한 시간대**(그때의 기기 시간대)로 고정한다. 날짜 알람이면 서버 `timezone` 은 기기 현재 시간대가 아니라 이 값이다 |
+| `targetDate` / 옛 앱 API `target_date` | 행 | `YYYY-MM-DD`. 있으면 날짜 알람이다 |
+| `targetTimezone` / 옛 앱 API `timezone` | 행 | IANA 이름. **저장하는 순간 사용자가 화면에서 확인한 시간대**(그때의 기기 시간대)로 고정한다. (2026-10-29 전에는 서버 사본의 `timezone` 에도 기기 현재 시간대가 아니라 이 값을 실었다) |
 | 발사 시각 | 행의 `fireAtMillis` | `targetDate` 의 시:분을 `targetTimezone` 으로 읽은 **절대 시각**. 스누즈 중이면 스누즈 마감 |
 | OS 예약 손잡이 | 앱 로컬만 | 안드로이드는 알람 id(`PendingIntent` 요청 코드가 id 의 해시), iOS 는 `alarmKitID` |
 | 발생 회차 | 앱 로컬만 | 날짜 알람은 회차가 **하나**다 — `targetDate` 가 곧 회차다. 스누즈는 같은 회차다 |
 
 - **반복 요일과 배타적이다.** 날짜가 있으면 `repeatDaysMask = 0`, `holidayOff = false` 다. 요일을 하나라도 고르면
   날짜가 지워진다(반대도 같다).
-- OS 손잡이·회차는 서버에 올리지 않는다 — 서버 행은 사본이다(맨 위 표).
+- 위 값은 전부 기기에만 있다 — 서버에는 알람이 없다(맨 위, 2026-10-29).
 - 옛 저장값(Room 행·iOS JSON)은 날짜 필드가 없어 `null` 로 읽힌다 — 지금까지의 알람은 전부 날짜 없는 알람이다.
 - **직전 선택으로 이어받지 않는다.** 새 알람은 언제나 날짜 없이 열린다. 날짜는 그 알람 하나의 값이다.
 
@@ -416,20 +429,22 @@ PATCH로 이어지게 한다. 성공 응답을 받은 뒤에는 작업 취소를
 - **말 다듬기(문구 모델로 짧게 고치기)는 아직 없다(후속).** 친 문장을 그대로 만든다. 넣을 때 지킬 것: 숫자·시각·
   이름을 바꾸지 않는다, 원문으로 되돌릴 수 있다, 다듬은 문장으로 만든 음성이 지금 보이는 문장과 같은지 확인한다.
 - **날짜가 지났다는 이유로 파일을 지우지 않는다.** 끝난 날짜 알람도 행이 남아 있으므로 참조로 센다 — 안드로이드
-  `countByAudioCacheKey`, iOS 캐시 참조, 서버 `audio-retention` 의 알람 가드가 모두 **행** 을 본다. 그래서 스누즈
-  중인 회차의 파일도 남는다. 파일은 기존 규칙대로 알람을 지울 때(참조 0), 탈퇴, 30일 미사용 정리로만 사라진다.
+  `countByAudioCacheKey`, iOS 캐시 참조가 모두 **행** 을 본다. 그래서 스누즈 중인 회차의 파일도 남는다. 기기의 파일은 기존
+  규칙대로 알람을 지울 때(참조 0), 탈퇴, 30일 미사용 정리로만 사라진다. 서버의 직접 입력 음성은 알람을 보지 않는다 — 그
+  목소리를 지울 때까지 둔다([voice-and-message.md](voice-and-message.md) §11, 2026-10-29. 그 전에는 서버 `audio-retention`
+  의 알람 가드가 사본 행을 봤다).
 
 ### 4-7. 서버 · 옛 앱
 
-- `alarms.target_date`(마이그레이션 #140). 받는 값은 생략(그대로) · `null`(날짜 없음) · `YYYY-MM-DD`(실제 있는 날짜).
-  날짜가 있으면 `timezone` 이 유효한 IANA 이름이어야 하고 반복 요일이 비어 있어야 한다 — 어기면 400
-  `INVALID_TARGET_DATE`. **지난 날짜는 거절하지 않는다** — 끝난 날짜 알람의 끄기·켜기도 사본으로 올라온다.
-- 반복 요일을 실어 보낸 PATCH 가 `target_date` 를 싣지 않았으면 날짜를 지운다 — 보낸 기기에서는 반복 알람이다.
-- 새 컬럼을 읽고 쓰는 경로(POST 의 INSERT, PATCH 의 조회·응답)는 **fail-closed** 다. 배포와 마이그레이션 사이의
-  창에서는 500 이고 앱의 동기화가 다음 회차에 다시 보낸다(`CLAUDE.md` 「배포가 마이그레이션보다 먼저 돈다」).
-- **옛 앱 판정: 지금은 필요 없다.** 서버가 알람 행을 앱으로 내려 보내는 길이 없다(pull 은 2026-10-20 에 지웠다 —
-  맨 위). 옛 앱은 날짜 알람을 만들 수도 받을 수도 없고, `target_date` 를 싣지 않는 옛 앱의 PATCH 는 그 값을
-  건드리지 않는다. ⚠ **알람 행을 내려 보내는 길을 다시 만들면** 날짜 알람(`target_date` 있음)은 날짜를 아는 빌드
+- **서버에는 날짜 알람도 없다**(2026-10-29 — `alarms.target_date`(#140)는 표와 함께 지워졌다). 날짜 알람을 만드는 1.3 앱은
+  알람을 올리지 않는다.
+- 옛 앱의 올리기(§1 「서버에는 알람이 없다」)는 형식만 그대로 본다: `target_date` 는 생략 · `null`(날짜 없음) ·
+  `YYYY-MM-DD`(실제 있는 날짜). 날짜가 있으면 `timezone` 이 유효한 IANA 이름이어야 하고 반복 요일이 비어 있어야 한다 — 어기면
+  400 `INVALID_TARGET_DATE`. **지난 날짜는 거절하지 않는다.** 통과하면 받은 날짜를 그대로 되돌려 준다(`POST` 는 없으면 `null`).
+- (2026-10-29 전: 사본이 날짜를 왕복 보존했고, 반복 요일을 실어 보낸 PATCH 가 `target_date` 를 싣지 않으면 날짜를 지웠고,
+  새 컬럼을 읽고 쓰는 경로는 fail-closed 였다.)
+- **옛 앱 판정: 필요 없다.** 서버가 알람을 앱으로 내려 보내는 길이 없다(pull 은 2026-10-20 에, 사본은 2026-10-29 에 지웠다 —
+  맨 위). ⚠ **알람을 서버에 다시 두거나 내려 보내는 길을 다시 만들면** 날짜 알람(`target_date` 있음)은 날짜를 아는 빌드
   (`X-App-Version` 기준)에만 내려 보낸다 — 모르는 앱은 그 행을 '매일 그 시각의 1회성' 으로 읽는다.
 
 ### 4-8. 검증 — 미검증
@@ -558,22 +573,21 @@ OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
-| 본인 알람 생성 재전송·초기 켜짐 상태 | `alarm-mutation.ts`·`ownAlarmIdentity`·`creation_replayed` | `RemoteAlarmMapper`·`AlarmSyncService.createAndReconcile` | `RemoteAlarmMapper`·`AlarmTalkAPI.createAlarm` |
+| 서버에는 알람이 없다 — 표 삭제 · 지운 표를 부르는 SQL 없음(2026-10-29) | `lib/migrations.ts` #147 `drop-alarms` · 회귀 `test/insert-columns-exist.test.ts` 「소스의 SQL 이 마이그레이션이 지운 표를 부르지 않는다」 | 올리기 경로 없음 — 회귀 `ServerCopyRemovalTest`(「알람을 서버로 올리는 길이 없다」) · 동기 칸 `data/AlarmConstants.kt` 의 `AlarmSyncStates`(읽는 곳 없음) | 올리기 경로 없음 · 동기 칸 `LocalAlarmStore.nextLocalSyncState`(읽는 곳 없음) |
+| 옛 앱의 올리기 — 저장 없이 되돌려 준다(형식 400 · 같은 기기 id 면 같은 서버 id · DB 를 부르지 않는다) | `routes/alarm-mutation.ts`(`POST /`·`PATCH /:id`·`DELETE /:id`) · `lib/alarm-identity.ts` 의 `ownAlarmIdentity` · 칸 검사 `routes/alarm-helpers.ts` 의 `validateAlarmFields` — 회귀 `test/alarm-compat.test.ts` | 보내지 않는다(1.3) | 보내지 않는다(1.3) |
 | 남을 가리키는 `target_user_id` 는 403 `NOT_CONNECTED`, 그 밖은 무시 | `routes/alarm-mutation.ts` 의 `POST /` | 보내지 않는다 | 보내지 않는다 |
-| 전송 중 편집 보존·생성 성공 뒤 취소 | 기존 POST 생성·PATCH 수정 | `AlarmSyncService`의 `NonCancellable` → `AlarmDao.setSyncStateIfUnchanged`·`markRemoteIdKeepDirty` | 일괄/단건 push → `LocalAlarmStore.markRemote(snapshot:)` → `saveNow` 후 취소 확인 |
-| 앞 일괄 push 취소 뒤에도 대기 요청 실행 | — | 기존 `AlarmSyncService` 동기화 | `RemoteAlarmPushSync.runOnce` → 타입 공용 `AsyncSerialGate`; `RemoteAlarmPushQueueTests` |
-| 전체 동기화 진입점도 차례로(`isBusy` 는 버리는 조건이 아니다) | — | — | `RemoteAlarmSyncViewModel.runFullSync` 의 `AsyncSerialGate` |
+| 알람 탭 진입 = 이용권만 다시 받기(알람 올리기 없음) | — | `ui/app/AlarmTalkApp.kt` 의 탭 효과 `NativeTab.Alarms` → `refreshBilling` | `MainTabsView.refreshForSelectedTab` 의 `.alarms` → `socialFeatures.refreshOnEntry` |
 | 한국 음력 공휴일 폴백 | 서버 공휴일 동기화는 기존 경로 유지 | `IcuLunarConverter`의 ICU dangi | `KoreanLunarHolidayEngine.seoulLunar`의 ICU dangi |
 | 공휴일 국가 = 지역의 나라(설정의 '공휴일 달력' 행 없음) | — | 고를 때 `WeatherRegionHolidaySync.onRegionSaved`(설정 `SettingsScreen`·편집기 `AlarmEditorScreen`), 받을 때 `adoptAccountPromptSettings` → `WeatherRegionHolidaySync.onAccountRegionReceived`(`data/WeatherRegionSettings.kt`) ← `MainViewModel.onAccountPromptSettingsReceived` ← `AlarmTalkApp` 의 `LaunchedEffect` — 회귀 `WeatherRegionPickerTest`·`AccountPromptSettingsAdoptionTest` | 고를 때 `HolidayStore.adoptCountry(ofWeatherRegion:)` ← `SettingsView`·`AlarmEditorSheet.syncOwnPromptPreferences`, 받을 때 `DynamicPromptPreferences.adoptAccount` 가 `.accepted` 면 `HolidayStore.adoptCountry(ofAccountWeatherRegion:userID:)`(판정 `countryForAccountRegion`) ← `AlarmTalkApp` 의 계정 설정 관찰 — 회귀 `WeatherRegionCatalogTests`·`AccountPromptSettingsAdoptionTests`·`EditorPromptPreferenceUpdateTests` |
 | 나라(달력)가 바뀌면 공휴일off 반복 알람 다시 잡기(멱등 · 앱 시작마다 한 번 · 스누즈·울림·일회성 제외 · 수정 시각 그대로) | — | `HolidayCountryPreferenceStore.countryCode` 수집(`MainViewModel` init) → `AlarmRepository.refreshHolidayOffAlarms`(`ensureHolidaysSynced` 먼저, `reschedulePendingAlarmsLocked` 의 `recomputeHolidayOff`) — 회귀 `HolidayCountryRescheduleTest` | 달력 표지 `HolidayStore.holidayCalendarMarker`(`:pending`) → `HolidayOffRescheduler.runIfNeeded` → `AlarmKitViewModel.recoverScheduledAlarms(forceHolidayOffRecompute: true)` → `LocalAlarmStore.recomputeHolidayOffFireTime`(바뀐 게 없거나 스누즈·울림이면 건너뜀, 수정 시각 그대로) ← `AlarmTalkApp` 의 `holidayOffRescheduleKey` — 회귀 `HolidayOffReschedulerTests` |
 | 1-1 계정 떠날 때 끄기 | — | `data/AlarmRepository.detachAlarmsOnSignOut` | `AlarmKitViewModel.stopAllScheduledAlarms(store:ownerUserId:)` ← `AuthViewModel.onLeaveAccountStopAlarms` |
-| 1-1 탈퇴는 내 행을 지운다 | `lib/account-deletion.ts` 의 `DELETE FROM alarms WHERE user_id IN (…)` | — | — |
-| 1-1 목소리가 사라질 때 걷어내기 | `lib/voice-revocation.ts` 의 `revokeDeletedVoices`(탈퇴·목소리 삭제·플랜 강등 공용) | `VoiceAccessSyncWorker` | `PushNotificationCoordinator.onAuthoritativeRefresh` |
+| 1-1 탈퇴가 지울 서버 알람 행이 없다(#147 — 예전 `DELETE FROM alarms` 를 지웠다) | `lib/account-deletion.ts` 의 `purgeUserAccount` | — | — |
+| 1-1 목소리가 사라질 때 걷어내기 — 서버는 깨울 계정만(목소리 주인 + 그 목소리로 만든 문구의 주인, 떠나는 계정 제외), 알람은 기기가 내린다 | `lib/voice-revocation.ts` 의 `revokeDeletedVoices`(탈퇴·목소리 삭제·플랜 강등 공용 — `downgradedAlarms` 는 언제나 빈 목록) → `lib/fcm.ts` 의 `notifyDowngradedAlarms`(계정 단위 `voice_access_revoked`) · 회귀 `test/account-purge-residue.test.ts` 「철회 신호는 A 의 목소리로 문구를 만든 B 가 받고…」 | `VoiceAccessSyncWorker` | `PushNotificationCoordinator.onAuthoritativeRefresh` |
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
-| 1-2 서버 전송 소유자 필터·레거시 귀속 | — | `AlarmRepository.settlePendingAlarmOwnership` → `AlarmSyncService.isOutboundSyncCandidate` | 일괄·단건 push → `LocalAlarmStore.isOutboundSyncCandidate`·`outboundSyncRecord` |
+| 1-2 서버 전송 소유자 필터 — **없다**(2026-10-29, 알람을 올리지 않는다. 레거시 귀속 `settlePendingAlarmOwnership` 은 로그인·로그아웃 정리와 예약 직전에 그대로 돈다) | — | — | — |
 | 1-2 첫 로드 전 빈 상태 숨김 | — | `MainViewModel.alarmsLoaded` | `LocalAlarmStore.hasLoadedFromDisk` + `AlarmsListView` |
-| 1-3 로드 전 취소 재처리 보류 | — | — | `AlarmKitViewModel.retryPendingCancellations` 진입 가드(전송 실패 후 정리 포함) |
+| 1-3 로드 전 취소 재처리 보류 | — | — | `AlarmKitViewModel.retryPendingCancellations` 진입 가드(백그라운드 회차 `BackgroundSyncTask.runAndSchedule` 포함) |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` · `AlarmScheduleReconciler.reconcile(…ownerUserId:)` · `WeatherVariantRefreshService.refreshDue(token:ownerUserId:)` |
 | 실행 중 들어온 재예약도 순서대로 처리 | — | — | `AlarmScheduleReconciler` → `AsyncSerialGate`, `VoiceStudioViewModel.scheduleReconcileRevision` → `AlarmTalkApp` 완료 후 플래그 해제 |
 | 1-4 예약 길목의 소유자 게이트 | — | (해당 없음 — 예약이 동기라 창이 없다) | `AlarmKitViewModel.mayScheduleRecord` (`schedule` 의 진입·복귀 두 자리) |
@@ -591,13 +605,13 @@ OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체
 | 1-4 예약 중 계정 변경 | — | (해당 없음 — 발화 시 Room 을 다시 읽는다) | `AlarmKitViewModel.accountEpoch` |
 | iOS 소리 지문 | — | (해당 없음) | `AlarmScheduleReconciler.scheduledFingerprint` |
 | iOS 언어 재예약은 AlarmKit 대기 상태만(행 상태가 늦는 창) | — | (해당 없음 — 울릴 때 표시를 만든다) | `AlarmScheduleReconciler.reconcile` 의 `readIdleHandles` ← `AlarmKitViewModel.idleScheduledHandles` — 회귀 `AlarmKitLocalizationTests` |
-| 4 날짜 알람 저장값·왕복 | `alarms.target_date`(#140), `alarm-helpers.ts` 의 `validateAlarmFields`(`INVALID_TARGET_DATE`) · `alarm-mutation.ts`(반복 요일만 오면 날짜 지움) · shared `isAlarmTargetDate` | `AlarmEntity.targetDate`·`targetTimezone`(Room 30→31 `MIGRATION_30_31`) → `RemoteAlarmMapper.toWriteRequest`(`target_date`·`timezone`) | `LocalAlarmRecord.targetDate`·`targetTimezone`(옛 JSON 은 `decodeIfPresent` 로 nil) → `RemoteAlarmMapper.toRemoteRequest`(`timezone` = 확인한 시간대) → `RemoteAlarmWriteRequest.targetDate`(nil 도 `null`) · 형식 검증 `LocalAlarmStore.validateDraft`(`invalidTargetDate`) |
+| 4 날짜 알람 저장값(기기에만 — 옛 앱 올리기의 `target_date` 는 형식만 보고 되돌려 준다) | `alarm-helpers.ts` 의 `validateAlarmFields`(`INVALID_TARGET_DATE`) · shared `isAlarmTargetDate` · `alarms.target_date`(#140)는 #147 이 표와 함께 지웠다 | `AlarmEntity.targetDate`·`targetTimezone`(Room 30→31 `MIGRATION_30_31`) | `LocalAlarmRecord.targetDate`·`targetTimezone`(옛 JSON 은 `decodeIfPresent` 로 nil) · 형식 검증 `LocalAlarmStore.validateDraft`(`invalidTargetDate`) |
 | 4-2 고정 시각(시간대 변경에도) | — | `AlarmTimeCalculator.datedFireAtMillis` ← `AlarmRepository.fireAtFor`(저장·켜기·복구 sweep) | `DatedAlarmTime.fireAtMillis` ← `LocalAlarmRecord.datedFireAtMillis` · 예약 `AlarmKitViewModel.scheduleKind(for:)` == `.fixed` → `makeSchedule` · 반복 갈래와 분리 `LocalAlarmRecord.isRecurring`(`markStopped`·`prepareForScheduleRecovery`·`AlarmAppContext.handleAlarmStopped`) |
 | 4-2 다른 시간대 표시 | — | `ui/editor/AlarmEditorControls.kt` 의 `datedTimezoneNote` | `DatedAlarmTime.timezoneNote` ← `LocalAlarmRecord.datedTimezoneNote`(`AlarmRow`) · `AlarmEditorSheet.datedTimezoneNote` |
 | 4-3 지난 시각·같은 시각 막기(교체 없음) | — | `SaveBlockReason.DATED_TIME_PASSED`·`DATED_TIME_CONFLICT`(`editorSaveBlockReason`) · 그물 `AlarmRepository` 의 `DatedAlarmPastException`·`findReplaceableConflict` | `AlarmEditorSheet.datedSaveBlockAlert`(`saveFlow` 가 음성 생성 전에 부른다) · 경합 그물: `conflictingAlarms` 갈래가 날짜 알람이면 교체를 묻지 않고 같은 알럿 |
 | 목록 스위치 — iOS 는 멈춘 뒤 마지막 값만, 알람마다 한 번에 하나(§2 iOS) | — | `AlarmRepository.setEnabled`(`restoreMutex` — 누른 순서대로) | `AlarmToggleCoalescer`(`AlarmsListView` 의 `toggles`, 적용 때 행 다시 읽기) · 회귀 `AlarmToggleCoalescerTests` |
 | 4-4 지난 날짜는 켜지 않는다 · 해제하면 꺼진 채 남는다 | — | `AlarmRepository.setEnabled`(`DatedAlarmPastException`) · `dismiss` 의 일회성 갈래 | `AlarmsListView.setAlarm`(알럿) → 그물 `LocalAlarmStore.setEnabled`(false) · 정지 `LocalAlarmStore.markStopped` 의 `isRecurring` · 지난 날짜는 `AlarmKitViewModel.schedule` 첫머리가 낙인 없이 거절 |
 | 4-5 새 예약 먼저 · 실패면 옛 예약 | — | `AlarmRepository.updateAlarm` 의 `scheduleKeepingPrevious` | 기존 교체 흐름 그대로(`AlarmEditorSheet.finishScheduling` — 실패면 기존 행 복원, 옛 손잡이는 성공 뒤 취소) |
-| 4 회귀 테스트 | `test/alarm-target-date.test.ts` · shared `test/alarm.test.ts` | `data/DatedAlarmRepositoryTest`(고정 시각·지난 시각·교체 없음·시간대 변경·해제·켜기) · `RemoteAlarmMapperTest`(`target_date` null·값) · `DatedAlarmEditorTest` | `DatedAlarmTests` |
+| 4 회귀 테스트 | `test/alarm-target-date.test.ts`(옛 앱 올리기의 형식·되돌려 주기) · shared `test/alarm.test.ts` | `data/DatedAlarmRepositoryTest`(고정 시각·지난 시각·교체 없음·시간대 변경·해제·켜기) · `DatedAlarmEditorTest` | `DatedAlarmTests` |
 | 4-6 입력 200자 상한 | shared `MANUAL_TTS_TEXT_MAX_LENGTH` ← `routes/tts.ts` | — | — |
 | 회귀 테스트 | — | — | `AlarmTalkTests/InaccessibleVoiceReconcileTests.swift`(`LeaveAccountAlarmTests`) |

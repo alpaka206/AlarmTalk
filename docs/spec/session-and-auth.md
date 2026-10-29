@@ -208,7 +208,9 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
   「백그라운드 갱신」)과 이 떠나기. 받은 plan 은 다른 `/auth/me` 경로처럼 판정 스냅샷에 적고
   ([billing-lifecycle.md](billing-lifecycle.md) 「유료 판정」), 토큰은 90일 판정을 지날 때만 저장한다(위 「토큰이 굴러도…」).
   이 변경 전 빌드의 워커는 여전히 `GET /alarm` 을 부른다 — 서버는 그 라우트를 인증 라우터 뒤의 빈 응답으로 남겨 같은
-  403 이 그대로 닿게 한다([plan-gates.md](plan-gates.md) 「커플·가족 이용권 — 폐지」).
+  403 이 그대로 닿게 했다([plan-gates.md](plan-gates.md) 「커플·가족 이용권 — 폐지」). 그 빈 응답은 2026-10-26 강제 업데이트로
+  그 빌드를 막은 뒤 지웠다(없는 경로 — 404 `NOT_FOUND`). 서버의 알람 표 자체도 2026-10-29 에 지웠다
+  ([alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」).
 - **탈퇴 신청은 그 계정의 다른 기기에 무음 신호 `account_deletion_requested` 를 보낸다**(`sendAccountDeletionRequestedPush`
   — 지우기 전에 읽어 둔 토큰으로, 커밋 뒤 `waitUntil`). 기기는 서버에 다음 요청을 보낼 때까지 세션이 끊긴 줄 모르고
   그 사이 화면은 로그인된 채 알람이 운다 — 이 신호가 그 창을 줄인다. 앱은 **신호만 믿고 떠나지 않는다**(그 사이 철회됐을
@@ -497,13 +499,13 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | Apple 서명 키 교체 | `lib/apple-oauth.ts` `verifyAppleIdToken`·공유 JWKS 재조회 | — | 기존 로그인 응답 소비 |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로(첫 진입만 — `refreshAppSessionNow` 의 `rollToken`·`sessionTokenToSave`) | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
-| 화면 효과의 세션 키 = 계정 + 세대(토큰 아님) | — | `network/AuthSessionStore.kt` `SessionEffectKey`·`sessionEffectKey` → `AlarmTalkApp` 의 세션 효과·탭 스로틀 | `MainTabsView.tabRefreshThrottleKey`(탭 + 계정 — 재로그인은 `MainTabsView` 가 새로 만들어져 표가 비워진다) · 목소리·더보기 탭은 `EntryRefreshFreshness`(계정 + 앱 진입) |
+| 화면 효과의 세션 키 = 계정 + 세대(토큰 아님) | — | `network/AuthSessionStore.kt` `SessionEffectKey`·`sessionEffectKey` → `AlarmTalkApp` 의 세션 효과·탭 스로틀 | 알람·목소리·더보기 탭 모두 `EntryRefreshFreshness`(계정 + 앱 진입). 알람 탭 동기화 스로틀의 키 `MainTabsView.tabRefreshThrottleKey`(탭 + 계정)는 2026-10-29 알람 올리기와 함께 지웠다 |
 | 프리페치 워커는 만료가 가까울 때만 토큰 저장 | — | `sync/StockClipPrefetchWorker.kt` `workerRolledTokenToSave` | — |
 | 자동 정합화 뒤 갱신은 토큰을 굴리지 않음 | — | `MainViewModelBillingActions.kt` `purchaseConfirmRollsToken` | — |
 | 백그라운드 갱신 | — | `sync/RemoteAlarmSyncWorker.renewSessionTokenIfNeeded` | `BackgroundSyncTask.renewSessionTokenIfNeeded` |
-| 안드로이드 주기 워커의 계정 확인(받은 알람 pull 자리 — 유예 403 이면 떠난다 · plan 은 판정 스냅샷에 · 토큰은 90일 판정 뒤에만 저장) | `routes/auth.ts` 의 `GET /me`(유예면 끊긴 토큰에도 403) · 옛 앱용 `GET /alarm` 빈 응답은 인증 라우터 뒤(`routes/alarm-query.ts`) | `sync/RemoteAlarmSyncWorker.kt` → `syncWorkerOutcome` → `endWorkerSession` | (해당 없음 — 어느 요청의 403 이든 통신 계층이 알린다: `AlarmTalkAPI.accountPendingDeletionNotification`) |
+| 안드로이드 주기 워커의 계정 확인(받은 알람 pull 자리 — 유예 403 이면 떠난다 · plan 은 판정 스냅샷에 · 토큰은 90일 판정 뒤에만 저장) | `routes/auth.ts` 의 `GET /me`(유예면 끊긴 토큰에도 403) · 옛 앱용 `GET /alarm` 빈 응답(`routes/alarm-query.ts`)은 2026-10-26 강제 업데이트 뒤 지웠다(404 `NOT_FOUND`) | `sync/RemoteAlarmSyncWorker.kt` → `syncWorkerOutcome` → `endWorkerSession` | (해당 없음 — 어느 요청의 403 이든 통신 계층이 알린다: `AlarmTalkAPI.accountPendingDeletionNotification`) |
 | 저장·메모리 세션 수렴 | — | `MainViewModel`의 세션 저장소 관찰 | `AuthViewModel.absorbStoredSession`·`handleUnauthorized` |
-| 전경 push의 첫 인증 실패 중단 | — | `AlarmSyncService.syncWithBackend` | `RemoteAlarmPushSync.runOnce` |
+| 전경 push의 첫 인증 실패 중단 — **없다**(2026-10-29 알람 올리기를 지웠다. 401 은 통신 계층이 한 곳에서 받는다 — 아래 「401 중앙 처리」) | — | — | — |
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration`·`saveSessionIfAlive` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
 | 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·프로모·받은 시각·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서) |
 | 다시 로그인하면 탈퇴 철회 · 신청은 모든 기기 세션·푸시 등록을 끊는다 · 유예 세션은 끝난 세션 · 파기 직전 재확인 | `lib/account-deletion.ts` 의 `cancelPendingDeletionOnSignIn` ← `routes/auth.ts` 의 `/login`·`/google`·`/apple` · `routes/user.ts` 의 `POST /me/deletion`(`token_epoch + 1`·`push_tokens` 삭제, 한 트랜잭션) · `lib/fcm.ts` 의 `sendAccountDeletionRequestedPush`(신청 커밋 뒤) · `index.ts` 파기 트랜잭션의 재확인(유예 + 기한)·커밋 뒤 애플 연결 해제 · `middleware/auth.ts`·`/auth/me` 는 유예면 끊긴 토큰에도 403 · 회귀 `test/sign-in-cancels-deletion.test.ts`·`test/scheduled-purge-isolation.test.ts`·`test/auth-pending-deletion.test.ts` | `ui/main/MainViewModelAuthActions.kt` 의 `checkAccountStatus` → `leaveAccountForPendingDeletion`(알람까지 끄는 떠나기) · 워커 `sync/SyncWorkerFailure.kt` 의 `endWorkerSession` → `leaveAccountAfterPendingDeletion`(백그라운드판) · `fcm/AlarmTalkMessagingService.kt` 의 `account_deletion_requested` → `RemoteAlarmSyncScheduler.runOnce`(→ `RemoteAlarmSyncWorker` 의 계정 확인 `GET /auth/me`) · 유예 화면 없음 | `AuthViewModel.refreshUser` → `leaveAccountForPendingDeletion` · 탈퇴 신청 뒤 `onServerRemovedPushRegistration`(기기 쪽 등록 기록만, 등록과 같은 줄 — `invalidateRegistration`) · `PushNotificationCoordinator` 의 `accountDeletionRequested` → `refreshUser` · 회귀 `PushRegistrationRecoveryTests`(`test_invalidationQueuesBehindAnInFlightRegistration`·`test_accountDeletionRequestedSignalAsksTheServerAgain`) · `RootView` 에 유예 게이트 없음 |

@@ -208,6 +208,8 @@ AdMob 은 200 이 아니면 다시 부른다(공식 재전송은 짧다 — 1초
   서버 거절은 그 코드의 문구(공용 표 — `AD_REWARD_MONTHLY_LIMIT`·`AD_REWARD_SESSION_OPEN`·`AD_REWARD_SESSION_INVALID`·
   `AD_REWARD_UNAVAILABLE`), 중도 닫기는 아무 말도 하지 않는다.
 - 광고를 봤다고 문장을 자동으로 만들지 않는다. 보상은 사용자가 다시 저장할 때 한 번 쓴다.
+- 문구 목록의 '직접 입력' 줄은 이번 달 남은 횟수를 `(남은/월)` 로 말하고, 무료가 기본분을 다 썼는데 광고 보상이 남았으면
+  `(광고 보상 n번)` 으로 말한다 — `(0/3)` 이면 막힌 것처럼 읽힌다. 두 앱 같다(iOS 는 2026-10-29 두 앱 비교에서 맞췄다).
 - 편집기에 들어올 때마다 현황을 다시 읽는다 — 앱을 껐다 켜도 정산 대기를 다시 본다(재조회).
 - **광고 단위가 없는 빌드는 광고 제안 자체를 숨긴다**(SDK 도 시작하지 않는다). iOS 는 Release 에서 Google 시험용 ID 도 없는
   것으로 본다(`AdMobConfig.resolve`). 시험용 단위는 dev(안드로이드)·DEBUG(iOS) 기본값에만 있다.
@@ -308,6 +310,8 @@ AdMob 은 200 이 아니면 다시 부른다(공식 재전송은 짧다 — 1초
 | 현황 내려주기(`ad_reward`) | `GET /tts/manual-quota` → `adRewardView`(무료만) | `ManualQuotaResponse.adReward` | `ManualQuotaResponse.adReward` |
 | §1-1 표 | — | `AdRewardGate.route`·`canOfferAd` | `AdRewardGate.route`·`canOfferAd` |
 | 429 뒤의 갈래(광고 제안·확인 중·다음 제공일) | 429 본문의 `ad_reward` | `AlarmEditorScreen` 의 생성 실패 갈래 → `PlanGateDialog`(`rewardedAdAction`·`adOfferGate`) | `AlarmEditorSheet.handleManualQuotaRefusal` → `VoicePlanGateAlert`(`offersRewardedAd`) |
+| '직접 입력' 줄의 남은 횟수·광고 보상 표기 | `GET /tts/manual-quota` 의 `remaining`·`limit`·`ad_reward.credits` | `ui/editor/AlarmRandomPromptSettings.kt`(`editorp_random_manual_ad_credits`) | `MessageSettingsPane` 의 `manualAdCredits` ← `AlarmEditorSheet`(`manualQuota?.adReward?.credits`) |
+| 광고 보상 단계의 사용 기록(`reward_offer` ~ `reward_spent`) | — | `data/UsageSignals.kt` 의 `AdRewardAttempts` | `UsageEventQueue.swift` 의 `AdRewardAttempts`(2026-10-29 — 그 전 iOS 는 적지 않았다) — 규칙은 [usage-events.md](usage-events.md) §7.1 |
 | 광고 한 번의 순서 | — | `ads/RewardedAdFlow.kt` `watch` ← `AlarmEditorScreen.watchRewardedAd` | `Ads/RewardedAdFlow.swift` `watch` ← `AlarmEditorSheet.watchRewardedAd` |
 | 광고 불러오기·SSV 옵션(계정 PK·승인 id)·표시 | — | `ads/RewardedAds.kt` `load`·`show` | `Ads/RewardedAds.swift` `load`·`show` |
 | 동의(UMP) 먼저·광고 개인정보 설정 | — | `RewardedAds.gatherConsent`·`privacyOptionsRequired` → `ConsentHistoryScreen` 의 '광고' 카드 | `RewardedAds.gatherConsent`·`privacyOptionsRequired` → `ConsentHistoryView.adsSection` |
