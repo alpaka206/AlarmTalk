@@ -1345,12 +1345,6 @@ internal fun AlarmEditorScreen(
     LaunchedEffect(saving) {
         if (saving) focusManager.clearFocus()
     }
-    LaunchedEffect(resaveAfterChange, busy) {
-        if (resaveAfterChange && !busy) {
-            resaveAfterChange = false
-            saveEditor()
-        }
-    }
 
     val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -1624,6 +1618,17 @@ internal fun AlarmEditorScreen(
                 // 빈 문구 — 등록 목소리면 '빈 직접 입력', 스톡 클립 목소리면 클립 과도기.
                 else -> emptyMessageBlockReason(editor, usesStockClips)
             }
+        }
+    }
+
+    // 다시 저장도 **누르는 순간과 같은 검사**를 지난다(2026-10-29 두 앱 비교). 바꾼 사이 날짜 알람의 시각이 지났거나, 테마를
+    // 날씨로 바꿨는데 지역이 없으면 누를 때처럼 이유를 말한다 — 예전에는 `saveEditor()` 를 곧바로 불러 그 검사를 건너뛰었다.
+    // 선언 순서 때문에 여기 둔다(사유 판정이 위에 있어야 본다 — 저장 버튼의 `onSave` 주석).
+    LaunchedEffect(resaveAfterChange, busy) {
+        if (resaveAfterChange && !busy) {
+            resaveAfterChange = false
+            val reason = datedSaveBlockReason(editor, otherAlarmTimes) ?: editorSaveBlockReason
+            if (reason == null) saveEditor() else showSaveBlockAlert(reason)
         }
     }
 

@@ -361,6 +361,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         AlarmTalkLog.startCrashReporting()
+        // 앱을 켜 둔 동안 온 알림도 배너로 보인다(아래 `willPresent`). 시스템은 델리게이트가 없으면 전경 알림을 버린다.
+        UNUserNotificationCenter.current().delegate = self
         // ⚠ **BGTask 핸들러는 launch 가 끝나기 전에 등록돼 있어야 한다.**
         // 뷰의 `.task` 에서 하면 이 콜백이 반환한 뒤라 늦고, 시스템이 백그라운드
         // 새로고침으로 앱을 깨운 경우에는 scene 이 안 붙어 아예 안 돌 수도 있다
@@ -829,5 +831,23 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         guard let coordinator = Self.coordinator else { return .noData }
         let changed = await coordinator.handle(userInfo: userInfo)
         return changed ? .newData : .noData
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+
+extension PushAppDelegate: UNUserNotificationCenterDelegate {
+    /// **앱을 켜 둔 동안 온 알림도 보인다**(2026-10-29 두 앱 비교). 델리게이트가 없으면 iOS 는 전경 알림을 조용히 버린다 — 결제
+    /// 보류(`billing_hold`)·운영 안내가 앱을 쓰는 중에 오면 아무 데도 안 떴다. 안드로이드는 전경에서도 알림을 올린다
+    /// (`fcm/AlarmTalkMessagingService.kt`). 무음 푸시(`plan_changed` 등)는 이 콜백을 부르지 않는다.
+    ///
+    /// ⚠ **`nonisolated` 로 둔다.** 시스템이 고른 큐에서 부를 수 있다 — 메인 액터를 물려받으면 진입 검사가 트랩한다
+    /// (CLAUDE.md 「시스템이 큐를 정하는 콜백에 메인 액터 클로저를 넘기지 않는다」). 상태를 건드리지 않고 곧바로 답한다.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
     }
 }

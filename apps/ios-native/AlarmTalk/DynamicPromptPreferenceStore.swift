@@ -95,6 +95,25 @@ struct DynamicPromptPreferenceStore {
         }
     }
 
+    /// **테마(버킷)로 저장된 알람**의 직전 선택을 적는다 — 안드로이드 `MainViewModel.rememberMessageChoiceUsed` 의 버킷 갈래 짝.
+    ///
+    /// ⚠ **테마만 적고 끝내지 말 것**(2026-10-29 두 앱 비교). 예전 iOS 는 테마만 적었다. 그러면 (1) 유료 클론은 문구 종류
+    /// 다섯이 **전부** 테마로 저장되므로 종류가 영영 기록되지 않아 새 클론 알람이 낡은 종류로 열렸고, (2) 직접 입력을 한 번
+    /// 저장한 뒤에는 테마 저장이 그 기록을 지우지 못해 새 알람이 매번 그 옛 문구로 열렸다. 종류를 적으면 직접 입력 기록이
+    /// 지워진다(`saveLastMessageContext`) — 마지막 선택은 하나다.
+    func saveBucketChoice(userID: String?, bucket: String, voiceProfileID: String?, randomContext: String?) {
+        if isFreeFixedVoiceID(voiceProfileID) {
+            // 기본 목소리·추가 팩: 고른 것이 테마 그 자체다 — 테마와 그 종류를 함께 적는다.
+            saveLastFreeBucket(userID: userID, bucket: bucket)
+            if let context = RandomPromptContext.forBucket(bucket)?.rawValue {
+                saveLastMessageContext(userID: userID, context: context)
+            }
+        } else if let context = randomContext.nilIfBlank ?? RandomPromptContext.forBucket(bucket)?.rawValue {
+            // 클론의 사전렌더 테마: 고른 것은 **문구 종류**이고 테마는 그 결과다 — 테마로는 적지 않는다.
+            saveLastMessageContext(userID: userID, context: context)
+        }
+    }
+
     // MARK: 세션 정리
 
     /// 명시적 로그아웃·탈퇴에서만 부른다.

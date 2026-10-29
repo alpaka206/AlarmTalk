@@ -744,10 +744,12 @@ struct VoiceCloneUploadFlow: View {
 
     @ViewBuilder
     private var statusSection: some View {
+        // 이 창의 문장은 전부 '안 됐다' 는 이유다(이름 없음·녹음 없음·동의 기록 실패·서버 거절) — 빨간 글자다. 안드로이드
+        // 등록 창의 `localMessage` 와 같은 색이다.
         if let message = voice.statusMessage, !message.isEmpty {
             Text(message)
                 .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
+                .foregroundStyle(AlarmTalkTheme.error)
                 .padding(.horizontal, 4)
         }
     }

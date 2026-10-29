@@ -188,7 +188,15 @@ internal fun MainViewModel.preloadBilling() {
 // read-only 새로고침은 billingRefreshing 만 올린다 — billingBusy 를 쓰면 패널 진입
 // 직후 구매 버튼이 네트워크 호출이 끝날 때까지 비활성화되는 문제가 있었다.
 private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
-    if (billingRefreshing || billingBusy) return
+    // ⚠ **도는 조회가 있으면 버리지 않고 끝난 뒤 한 번 더 받는다**(2026-10-29 두 앱 비교). 서버가 플랜을 바꾸고 보낸
+    //   `plan_changed` 가 바꾸기 전에 떠난 조회와 겹치면, 예전에는 이 요청이 버려지고 그 조회의 옛 답이 남았다(만료된 구독이
+    //   화면에 유료로 남는다). 결제가 도는 동안(`billingBusy`)은 예전처럼 버린다 — 결제 확인·해지는 끝나며 구독을 다시
+    //   받는다(`refreshBillingAfterMutation`).
+    if (billingRefreshing) {
+        billingRefreshQueued = true
+        return
+    }
+    if (billingBusy) return
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_billing_info)) ?: return
     // ⚠ **표는 요청 전에**(2026-09-02). 예전에는 이 경로에 소유자 가드가 아예 없어,
     // 조회 중 계정이 바뀌면 A 의 구독이 B 의 화면·스냅샷에 실렸다.
@@ -207,6 +215,10 @@ private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
             }
         } finally {
             billingRefreshing = false
+            if (billingRefreshQueued) {
+                billingRefreshQueued = false
+                refreshBillingData(showMessage = false)
+            }
         }
     }
 }

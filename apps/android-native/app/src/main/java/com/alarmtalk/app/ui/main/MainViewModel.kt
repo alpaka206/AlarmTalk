@@ -523,6 +523,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     /**
+     * **로그인한 동안 실패한 동작** — 그 동작이 있는 자리에 빨간 글자로 이유를 그린다(2026-10-29 오너: 알림이 아니라 빨간 글자).
+     * 예전에는 상단 스낵바(`message`)로만 말해, 탈퇴 확인 창·민감 동의 시트처럼 **자기 창**을 연 채 실패하면 그 창의 어두운
+     * 막 아래에 깔려 보이지 않았다. iOS `AuthViewModel.actionError` 짝. 같은 동작을 다시 시작하거나 그 창을 닫으면 지운다.
+     */
+    var signedInActionError by mutableStateOf<SignedInActionError?>(null)
+        private set
+
+    fun actionErrorFor(action: SignedInAction): String? =
+        signedInActionError?.takeIf { it.action == action }?.message
+
+    fun clearActionError(action: SignedInAction) {
+        if (signedInActionError?.action == action) signedInActionError = null
+    }
+
+    internal fun failAction(action: SignedInAction, text: String) {
+        signedInActionError = SignedInActionError(action, text)
+    }
+
+    /**
      * 지금 회차가 도는 동안 sync 요청이 또 들어왔는가. 겹쳐 돌리면 서버에 같은 알람이 두 개
      * 생기지만(`syncNow` 주석), 그렇다고 버리면 앞 회차가 목록을 스냅샷한 뒤 저장된 알람이
      * 다음 트리거까지 안 올라간다. 그래서 표시만 남기고 회차가 끝난 뒤 한 번 더 돈다.
@@ -834,6 +853,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 구독 상태는 AccessSnapshotStore 캐시로 이미 알고 있다.
     var billingRefreshing by mutableStateOf(false)
         internal set
+    /** 조회가 도는 사이 들어온 조회 요청 — 끝나면 한 번 더 받는다(`refreshBillingData`). */
+    internal var billingRefreshQueued = false
 
     var subscriptionResponse by mutableStateOf<BillingSubscriptionResponse?>(initialAccessSnapshot.subscriptionResponse)
         internal set
@@ -1618,6 +1639,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 앞 계정에서 쓰는 중에 누른 값이 남으면 다음 계정의 첫 쓰기가 끝날 때 그 계정으로 나간다.
         pendingMarketingConsent = null
         marketingConsentLoadFailed = false
+        // 앞 계정에서 실패한 동작의 이유를 다음 계정 화면에 남기지 않는다.
+        signedInActionError = null
         manualRequestIds.completed()
         // 같은 시각 알람 교체 확인도 앞 계정의 것이다. 떠 있는 채로 계정을 떠난 뒤 '교체' 를 누르면 주인 없는 알람이
         // 로그인 화면 뒤에서 켜진 채 예약된다(`docs/spec/alarm-lifecycle.md` §1-1 — 종료 중에는 아무도 예약하지 못한다).
@@ -1640,6 +1663,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissDeleteAccount() {
         deleteAccountConfirmOpen = false
+        clearActionError(SignedInAction.ACCOUNT_DELETION)
     }
 
     init {
@@ -1775,3 +1799,8 @@ data class PrerenderDriveState(
         return if (downloading) 0.5f + frac * 0.5f else frac * 0.5f
     }
 }
+
+/** 로그인한 동안 그 자리에서 실패를 말하는 동작들([MainViewModel.signedInActionError]). iOS `AuthViewModel.SignedInAction` 짝. */
+enum class SignedInAction { ACCOUNT_DELETION, CONSENT, SENSITIVE_CONSENT, MARKETING, WITHDRAWAL }
+
+data class SignedInActionError(val action: SignedInAction, val message: String)

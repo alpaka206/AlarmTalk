@@ -369,6 +369,8 @@ internal fun DeleteAccountConfirmDialog(
     busy: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    // 신청이 안 됐다는 이유 — 창 안에 빨간 글자로 그린다. 스낵바는 이 창의 어두운 막 아래에 깔린다(2026-10-29).
+    errorText: String? = null,
 ) {
     // iOS 표준 구성: 질문 한 문장만 제목(17sp), 나머지 안내는 작은 설명(13sp)으로 —
     // 세 문장을 전부 제목 타이포로 키우면 알럿이 과해 보인다(문장별 줄바꿈은 설명에 유지).
@@ -390,6 +392,15 @@ internal fun DeleteAccountConfirmDialog(
                 onClick = onConfirm,
             ),
         ),
+        content = errorText?.let { text ->
+            {
+                Text(
+                    text = text,
+                    style = IosAlertType.Message,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
     )
 }
 

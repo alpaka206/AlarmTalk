@@ -238,7 +238,7 @@ describe('POST /auth/email-code', () => {
   });
 
   it('이미 소셜로 가입된 이메일은 409 AUTH_EMAIL_SOCIAL(+provider)로 안내한다', async () => {
-    mockDB.pushResult([{ password_hash: null }]); // 비번 없음 → google 소셜
+    mockDB.pushResult([{ password_hash: null, google_id: 'g-1', apple_id: null }]); // 비번 없음 → google 소셜
 
     const app = buildApp();
     const res = await app.request(
@@ -253,6 +253,22 @@ describe('POST /auth/email-code', () => {
     expect(body.provider).toBe('google');
     const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
     expect(insertCall).toBeUndefined();
+  });
+
+  it('애플로만 가입된 이메일은 provider apple 로 답한다 — 구글로 안내하지 않는다', async () => {
+    mockDB.pushResult([{ password_hash: null, google_id: null, apple_id: 'a-1' }]);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'apple@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_EMAIL_SOCIAL');
+    expect(body.provider).toBe('apple');
   });
 
   it('쿨다운 내 재요청은 새 코드를 보내지 않고 동일 응답을 반환한다', async () => {

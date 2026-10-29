@@ -96,12 +96,18 @@ extension AlarmEditorSheet {
     /// ⚠ **날짜 알람은 같은 시각 알람을 교체하지 않는다** — 반복 알람의 '교체할까요?' 흐름(`confirmReplaceDuplicate`)을
     /// 타지 않고 여기서 끝낸다. 대상은 기존 '한 시각에 알람 하나' 판정(`conflictingAlarms`)과 같다.
     func datedSaveBlockAlert(nowMillis: Int64) -> ValidationAlertContent? {
+        datedSaveBlock(nowMillis: nowMillis)?.alert
+    }
+
+    /// 막는 알럿과 **그 사유**(`alarm_save_blocked` 의 `reason` — 안드로이드 `SaveBlockReason` 이름을 소문자로). 누르는 순간의
+    /// 판정은 사유도 기록한다(안드로이드 `datedSaveBlockReason` 짝 — 예전 iOS 는 이 두 갈래를 기록하지 않았다).
+    func datedSaveBlock(nowMillis: Int64) -> (alert: ValidationAlertContent, reason: String)? {
         guard draft.isDated else { return nil }
         if draft.datedTimeHasPassed(nowMillis: nowMillis) {
-            return ValidationAlertContent(
+            return (ValidationAlertContent(
                 title: String(localized: "이미 지난 시각이에요"),
                 message: String(localized: "날짜나 시각을 다시 골라 주세요.")
-            )
+            ), "dated_time_passed")
         }
         let conflicts = store.conflictingAlarms(
             hour: draft.hour,
@@ -110,10 +116,10 @@ extension AlarmEditorSheet {
             ownerUserId: auth.session?.user.id
         )
         if !conflicts.isEmpty {
-            return ValidationAlertContent(
+            return (ValidationAlertContent(
                 title: String(localized: "같은 시각에 다른 알람이 있어요"),
                 message: String(localized: "날짜 알람은 다른 알람을 바꾸지 않아요. 다른 시각을 골라 주세요.")
-            )
+            ), "dated_time_conflict")
         }
         return nil
     }

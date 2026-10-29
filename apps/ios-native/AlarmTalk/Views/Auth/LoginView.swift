@@ -116,6 +116,14 @@ struct LoginView: View {
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(AuthSceneColors.textDim)
 
+                    // 가입에서 이미 가입된 이메일이라 로그인으로 넘어온 경우 — 왜 화면이 바뀌었는지 여기서 말한다
+                    // (안드로이드 `ui/auth/AuthScreen.kt` 의 `authNotice` 자리).
+                    if mode == .login, let notice = auth.authNotice {
+                        Text(notice)
+                            .font(theme.typography.bodyMedium)
+                            .foregroundStyle(AuthSceneColors.accent)
+                    }
+
                     emailField
 
                     if mode == .register {
@@ -198,9 +206,15 @@ struct LoginView: View {
         // 가입 쪽 인라인 오류도 함께 지운다 — 안드로이드의 그 자리도 `registerError` 를 지운다. 남기면
         // 다시 들어온 가입 화면의 '이메일 인증' 버튼 아래에 앞 회차의 문장이 붙어 있다(코드 줄은
         // `handleModeChange` 가 닫는다).
-        .onChange(of: mode) { _, _ in
+        .onChange(of: mode) { _, next in
             auth.clearLoginError()
             auth.clearEmailCodeError()
+            // 로그인으로 넘어온 이유는 로그인에 남기고, 가입으로 돌아가면 지운다(안드로이드도 같다).
+            if next == .register { auth.clearAuthNotice() }
+        }
+        // 이미 가입된 이메일 — 입력한 이메일은 그대로 둔 채 로그인으로 돌린다(`AuthViewModel.authNotice`).
+        .onChange(of: auth.redirectToLoginTick) { _, _ in
+            handleModeChange(.login)
         }
         // 코드 칸을 비우라는 신호 — 서버가 코드를 거절했거나 다시 받기가 성공했다
         // (`AuthViewModel.emailCodeFieldClearTick`, 스펙 session-and-auth 「이메일 인증 코드」).

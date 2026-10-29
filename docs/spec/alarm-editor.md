@@ -219,6 +219,11 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   (취소하면 서버가 이미 센 생성을 잃고 다시 눌러야 했다).
 - **초안이 뷰모델로 넘어간 뒤(마지막 저장)에는 편집기 입력을 막는다** — 그때 바꾼 것은 저장되지 않은 채 편집기만
   닫힌다(날씨 알람은 조건을 푸느라 몇 초 걸린다). 입력 중이던 칸도 닫는다.
+- **iOS 도 같다**(2026-10-29 두 앱 비교). `AlarmEditorSheet.saveFlow` 가 누른 순간의 입력(`EditorSaveInputs` — 초안 +
+  목소리·문구·테마·날씨·운세·녹음)을 잡아 두고, 음원을 준비한 뒤 알람 행을 만들기 직전에 지금 값과 견준다. 다르면 지금
+  값으로 한 번 더 돈다 — 목소리·문구 쪽이 바뀌었으면 준비한 음원을 버리고, 시각·요일만 바뀌었으면 음원은 그대로 쓰고 시각만
+  다시 잰다. 다시 도는 것은 두 번까지이고, 행을 만든 뒤(날씨 조회·AlarmKit 예약)에는 편집을 막는다(`committingSave`). 예전
+  iOS 는 누른 순간의 목소리·문구로 만든 음원을 그대로 저장했고, 날짜 알람은 옛 시각으로 예약됐다.
 - **오프라인 판정(`OFFLINE_NEW_MESSAGE`)도 그 확인으로 한다** — §8 의 ②. 저장 사유를 세는 자리는 더 이상
   파일을 읽지 않는다. 예전에는 오프라인 + 직접 입력이면 화면이 다시 그려질 때마다 같은 파일을 읽었다.
   그래서 이 알럿은 이제 저장 흐름 안에서, 권한 확인 **뒤에** 뜬다 — 문구와 판정식(직접 입력 +
@@ -260,7 +265,8 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `AmPmWheelColumn` |
 | 재생 방식 세그먼트 | `ui/editor/AlarmEditorControls.kt` 의 `EditorSegmentedSelector` | `Views/Editor/VoicePlayModePicker.swift` |
 | '알람' → '목소리' 전환(TTS 갈래 + 직전 선택 잇기) | `AlarmEditorScreen` 의 `applyAlarmOutput` → `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly` | `Views/Editor/AlarmEditorSheet+AlarmModeSection.swift` 의 재생 방식 `.onChange` → `AlarmEditorSheet.adoptLastMessageChoiceIfUnset` |
-| 쓸 수 없는 목소리 — 배너 없음, 저장 시 알럿 | `ui/editor/AlarmEditorScreen.kt` 의 `editorSaveBlockReason`(`SaveBlockReason.VOICE_UNAVAILABLE`) | `AlarmEditDraft.selectedVoiceUnusable` → `AlarmEditorSheet.saveFlow` 첫머리(`editorSaveBlocked` 는 이 갈래로 버튼을 죽이지 않는다) |
+| 쓸 수 없는 목소리 — 배너 없음, 저장 시 알럿 | `ui/editor/AlarmEditorScreen.kt` 의 `editorSaveBlockReason`(`SaveBlockReason.VOICE_UNAVAILABLE`) | `AlarmEditDraft.selectedVoiceUnusable` → `AlarmEditorSheet.saveFlow` 첫머리 |
+| 저장할 수 없는 사유 — 버튼은 끄지 않고 누르면 알럿(녹음·목소리·지역·운세 정보·문구 준비 중) | `ui/editor/AlarmEditorScreen.kt` 의 `editorSaveBlockReason` → `saveBlockAlertStrings` | `AlarmEditorSheet.editorSaveBlockReason` → `saveFlow` 의 알럿 · 문구 `AlarmEditDraft.swift` 의 `EditorSaveBlockReason`(iOS 는 2026-10-29 까지 이 사유로 버튼을 회색으로 껐다) |
 | 저장 버튼의 로컬 확인 — IO 에서 · 찾는 동안은 '저장 중'(두 번째 탭은 버림) · 오프라인 판정도 그 확인으로(§6) | `ui/editor/ManualAudioReuseGate.kt` 의 `ManualAudioReuseGate`(`request` · `inFlight` — 편집기의 `busy` 가 함께 본다) ← `AlarmEditorScreen` 의 `saveEditor`(찾으면 `submitDraft`, 못 찾으면 오프라인 알럿 또는 `startGeneration`) · 찾기 `data/AlarmAudioStore.kt` 의 `findReusableTtsAudio` · 알럿 문자열 `saveBlockAlertStrings`(저장 버튼과 저장 흐름이 함께 쓴다) | — |
 | 세부 설정 행 순서(알람음 → 진동) | `ui/editor/AlarmSettingsCard.kt` 의 `AlarmSettingsCard` | 알람음 행 하나(`AlarmEditorSheet.detailSettingsSection`) |
 | 진동 값 = 서버 계약(18종 — 서버 `packages/backend/src/routes/alarm-helpers.ts` 의 `VIBRATION_PATTERNS`, 세 목록 비교 `scripts/check-vibration-patterns.py`) | `data/AlarmConstants.kt` 의 `VibrationPatterns.all` → `network/RemoteAlarmMapper.kt` 의 `toWriteRequest`(그대로 보낸다) | `AlarmEnums.swift` 의 `VibrationPattern`(18종 — 화면은 없다) ← `LocalAlarmRecord.vibrationPatternEnum`(모르는 값은 `.default`) → `AlarmEditorSheet` 저장이 `rawValue` 로 적는다 |

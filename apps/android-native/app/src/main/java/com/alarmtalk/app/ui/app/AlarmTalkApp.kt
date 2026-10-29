@@ -996,6 +996,7 @@ internal fun AlarmTalkApp(
     if (viewModel.deleteAccountConfirmOpen) {
         DeleteAccountConfirmDialog(
             busy = authBusy,
+            errorText = viewModel.actionErrorFor(SignedInAction.ACCOUNT_DELETION),
             onDismiss = viewModel::dismissDeleteAccount,
             onConfirm = ::deleteAccount,
         )
@@ -1083,7 +1084,11 @@ internal fun AlarmTalkApp(
             // 국외 이전만 빠진 등록에서 TTS 카피가 떠 사용자를 속인다(Codex #660).
             registeringVoice = request.resumeVoiceDrafts != null,
             onAgree = viewModel::submitVoiceConsents,
-            onDismiss = { viewModel.pendingSensitiveConsent = null },
+            errorText = viewModel.actionErrorFor(SignedInAction.SENSITIVE_CONSENT),
+            onDismiss = {
+                viewModel.pendingSensitiveConsent = null
+                viewModel.clearActionError(SignedInAction.SENSITIVE_CONSENT)
+            },
         )
     }
 
@@ -1306,6 +1311,7 @@ internal fun AlarmTalkApp(
               optional = viewModel.consentOptional,
               prechecked = viewModel.consentPrechecked,
               onAgree = { agreedOptional -> viewModel.submitConsents(agreedOptional) },
+              errorText = viewModel.actionErrorFor(SignedInAction.CONSENT),
           )
           return@Scaffold
       }
@@ -1673,6 +1679,8 @@ internal fun AlarmTalkApp(
                       onLoadMarketingConsent = viewModel::loadMarketingConsent,
                       onChangeMarketingConsent = viewModel::updateMarketingConsent,
                       onWithdrawVoiceBiometric = viewModel::withdrawVoiceBiometricConsent,
+                      withdrawError = viewModel.actionErrorFor(SignedInAction.WITHDRAWAL),
+                      marketingError = viewModel.actionErrorFor(SignedInAction.MARKETING),
                   )
               }
               composable(AppRoute.LegalDoc) { entry ->

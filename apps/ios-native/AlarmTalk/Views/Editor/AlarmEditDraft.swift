@@ -578,3 +578,40 @@ struct AlarmEditDraft: Equatable {
     }
 }
 
+/// 편집기가 **누르는 순간** 저장을 막는 사유 — 버튼은 끄지 않고 알럿으로 말한다(`AlarmEditorSheet.editorSaveBlockReason`).
+/// 안드로이드 `ui/editor/AlarmEditorScreen.kt` 의 `SaveBlockReason` 짝이고, 문구는 그 `saveBlockAlertStrings` 와 같다.
+/// 같은 표에 없는 사유(정리 중·사용 불가·빈 직접 입력·날짜)는 `saveFlow` 첫머리가 따로 말한다.
+enum EditorSaveBlockReason: Equatable {
+    case recordingMissing, voiceMissing, weatherLocationMissing, fortuneInfoMissing, messagePreparing
+
+    var alertTitle: String {
+        switch self {
+        case .recordingMissing: return String(localized: "녹음이 필요해요")
+        case .voiceMissing: return String(localized: "목소리를 골라주세요")
+        case .weatherLocationMissing: return String(localized: "지역이 없어요")
+        case .fortuneInfoMissing: return String(localized: "운세 정보가 없어요")
+        case .messagePreparing: return String(localized: "문구를 준비하고 있어요")
+        }
+    }
+
+    var alertMessage: String {
+        switch self {
+        case .recordingMissing: return String(localized: "먼저 목소리를 녹음하거나 파일을 골라 주세요.")
+        case .voiceMissing: return String(localized: "알람을 읽어 줄 목소리를 먼저 골라 주세요.")
+        case .weatherLocationMissing: return String(localized: "날씨 문구를 쓰려면 지역이 필요해요. 문구 화면에서 지역을 골라 주세요.")
+        case .fortuneInfoMissing: return String(localized: "운세 문구를 쓰려면 성별과 생년월일, 태어난 시간이 필요해요. 문구 화면에서 입력해 주세요.")
+        case .messagePreparing: return String(localized: "목소리 파일을 아직 받는 중이에요. 잠시 뒤에 다시 저장해 주세요.")
+        }
+    }
+
+    /// `alarm_save_blocked` 의 `reason` — 안드로이드 `SaveBlockReason` 이름을 소문자로.
+    var usageReason: String {
+        switch self {
+        case .recordingMissing: return "recording_missing"
+        case .voiceMissing: return "voice_missing"
+        case .weatherLocationMissing: return "weather_location_missing"
+        case .fortuneInfoMissing: return "fortune_info_missing"
+        case .messagePreparing: return "message_preparing"
+        }
+    }
+}

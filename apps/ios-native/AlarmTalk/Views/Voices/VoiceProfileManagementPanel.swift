@@ -107,10 +107,12 @@ struct VoiceProfileManagementPanel: View {
         // 남은 개수는 '내 목소리' 섹션 헤더의 '생성 가능 n/m회'가 말하고, 슬롯이 가득 차면
         // 추가 버튼을 누를 때 안내 모달이 뜬다. 진행바는 상시로 자리만 차지했다.
         VStack(alignment: .leading, spacing: 16) {
+            // 이 탭에서 한 일(이름 변경·삭제·다시 시도·미리듣기)이 안 됐다는 이유 — 빨간 글자다(2026-10-29 오너: 실패는
+            // 알림이 아니라 그 자리 빨간 글자). 안내가 아니라 실패만 오도록, 탭에 들어올 때 다른 화면이 남긴 문장은 지운다(아래 `onAppear`).
             if let message = voice.statusMessage {
                 Text(message)
                     .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                    .foregroundStyle(AlarmTalkTheme.error)
                     .padding(.horizontal, 4)
             }
 
@@ -128,6 +130,10 @@ struct VoiceProfileManagementPanel: View {
                 VoicePackSection()
             }
         }
+        // ⚠ **다른 화면이 남긴 문장을 이 탭에 띄우지 않는다**(2026-10-29 두 앱 비교). `statusMessage` 는 편집기도 쓴다 —
+        //   직접 입력 알람을 저장하고 이 탭에 오면 "새 음성을 생성하고 로컬에 저장했어요." 가 맨 위에 남아 있었다. 안드로이드는
+        //   동작마다 한 번 띄우고 사라진다.
+        .onAppear { voice.statusMessage = nil }
         // ⚠ **자격을 잃으면 열려 있던 액션도 닫는다**(2026-09-01 리뷰). 목록에서 걷어내는
         // 것만으로는 부족하다 — 이미 떠 있는 액션시트·이름변경·**삭제 확인**은 그대로
         // 살아 있어, 유예 동안 숨겨야 할 목소리를 그 창에서 영구 삭제할 수 있다.
@@ -583,8 +589,9 @@ struct VoiceProfileManagementPanel: View {
         defer { retryingSpeechStyleIDs.remove(profile.id) }
         do {
             _ = try await AlarmTalkAPI.shared.retryVoiceSpeechStyle(id: profile.id, token: token)
-            // 상태는 서버가 다시 계산하므로 목록을 새로 읽어 실패 행이 사라지게 한다.
-            await voice.refresh(session: auth.session)
+            // 상태는 서버가 다시 계산하므로 목록을 새로 읽어 실패 행이 사라지게 한다. `force` — 진행 중인 갱신에 막혀
+            // 건너뛰면 실패 행이 그대로 남는다(2026-10-29 두 앱 비교, 안드로이드는 그 자리 상태를 곧바로 고친다).
+            await voice.refresh(session: auth.session, force: true)
         } catch {
             voice.statusMessage = String(localized: "말투 분석을 다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요.")
         }

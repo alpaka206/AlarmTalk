@@ -51,6 +51,7 @@ internal object SnackbarSeverities {
         R.string.msg_verification_code_send_failed,
         R.string.msg_register_email_taken,
         R.string.msg_register_email_social_google,
+        R.string.msg_register_email_social_apple,
         R.string.msg_verification_code_mismatch,
         R.string.msg_register_failed,
         R.string.msg_password_reset_failed,

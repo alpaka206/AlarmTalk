@@ -253,18 +253,20 @@ async function shouldSkipEmailCodeSend(
   return withinCooldown && stillValid && belowCap;
 }
 
-type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' };
+type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' | 'apple' };
 
 // 가입 시도 이메일이 이미 존재하면 그 가입 방식을 분류한다(중복 가입 차단·로그인 유도용).
 //   - password_hash 가 있으면 이메일/비밀번호 계정 → AUTH_EMAIL_TAKEN(로그인 유도)
-//   - 없으면 소셜 계정 → AUTH_EMAIL_SOCIAL (Android 전용이라 provider 는 google 뿐)
+//   - 없으면 소셜 계정 → AUTH_EMAIL_SOCIAL + provider. 구글 연결이 있으면 google, 애플만 있으면 apple.
+//     ⚠ 예전에는 언제나 google 이었다(안드로이드 전용 시절) — 애플로 가입한 사람이 안드로이드에서 같은 이메일로
+//     가입하면 "구글로 가입된 이메일이에요" 를 들었다(2026-10-29 두 앱 비교).
 // 주의(의도된 트레이드오프): 이 분기는 "이 이메일이 가입돼 있는가"를 노출하므로 계정 열거
 // (account enumeration)가 가능해진다. 제품 요구(중복 이메일이면 회원가입을 막고 로그인으로
 // 안내)를 위해 의도적으로 노출하며, /api/auth/* 의 authRateLimitMiddleware 로 무차별 조회를
 // 제한한다. (로그인 라우트는 기존대로 generic 응답을 유지해 비밀번호 추측 표면은 넓히지 않는다.)
 async function classifyExistingAccount(db: Client, email: string): Promise<ExistingAccount | null> {
   const result = await db.execute({
-    sql: 'SELECT password_hash FROM users WHERE email = ? LIMIT 1',
+    sql: 'SELECT password_hash, google_id, apple_id FROM users WHERE email = ? LIMIT 1',
     args: [email],
   });
   if (result.rows.length === 0) return null;
@@ -273,7 +275,9 @@ async function classifyExistingAccount(db: Client, email: string): Promise<Exist
   if (passwordHash != null && String(passwordHash).length > 0) {
     return { kind: 'password' };
   }
-  return { kind: 'social', provider: 'google' };
+  const hasGoogle = row.google_id != null && String(row.google_id).length > 0;
+  const hasApple = row.apple_id != null && String(row.apple_id).length > 0;
+  return { kind: 'social', provider: hasApple && !hasGoogle ? 'apple' : 'google' };
 }
 
 function existingAccountConflict(account: ExistingAccount) {

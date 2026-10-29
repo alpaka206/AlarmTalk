@@ -75,6 +75,11 @@ struct AlarmEditorSheet: View {
     @State var datedPickerOpen = false
     @State var datedPickerDate = Date()
     @State var isWorking = false
+    /// 저장이 **확정 단계**에 들어섰다(음원 준비가 끝나 알람 행을 만들고 날씨 조회·예약을 기다리는 중) — 이때는 편집을 막는다.
+    /// 그 뒤에 바꾼 것은 반영할 자리가 없어 말없이 사라진다. 안드로이드 `AlarmEditorScreen` 의 `if (saving)` 덮개 짝.
+    @State var committingSave = false
+    /// 이번 회차가 **입력이 바뀌어 물러났다** — `saveFlow` 가 지금 값으로 한 번 더 돈다(`EditorSaveInputs`).
+    @State var saveRestartRequested = false
     /// 지금 저장 시도의 id — `alarm_save_attempt`·`alarm_save_blocked`·`alarm_ready` 가 같은 값을 쓴다
     /// (`docs/spec/usage-events.md` §7.1). 같은 시각 교체 확인을 거쳐 `finishScheduling` 으로 다시 들어와도 잇는다.
     @State var saveAttemptID: String?
@@ -252,6 +257,12 @@ struct AlarmEditorSheet: View {
                 .padding(.bottom, 20)
             }
             .scrollDismissesKeyboard(.interactively)
+            // 확정 단계에서는 편집을 받지 않는다 — 바꿔도 저장에 들어갈 자리가 없다(`committingSave`).
+            .overlay {
+                if committingSave {
+                    Color.clear.contentShape(Rectangle())
+                }
+            }
 
 
             // 키보드가 올라와도 이 바는 제자리다(2026-08-11 요청) — 아래 `VStack` 의
@@ -261,7 +272,8 @@ struct AlarmEditorSheet: View {
                 saveTitle: saveButtonTitle,
                 saving: isWorking || voiceStudio.isBusy,
                 savingLabel: voiceStudio.isBusy ? "음성 만드는 중…" : "저장 중…",
-                saveEnabled: !editorSaveBlocked,
+                // 저장할 수 없는 사유로는 끄지 않는다 — 누르면 이유를 말한다(`editorSaveBlockReason`).
+                saveEnabled: true,
                 onCancel: onClose,
                 onSave: { Task { await saveFlow() } }
             )
@@ -373,7 +385,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    // ⚠ **여기에 상태 문구를 다시 넣지 말 것**(위 `editorSaveBlocked` 주석).
+    // ⚠ **여기에 상태 문구를 다시 넣지 말 것**(위 `editorSaveBlockReason` 주석).
     // 이 슬롯(`saveBlockedNotice`)은 사유 한 줄이 계속 갈아치워지는 자리였고, 그 사유들은
     // 전부 값이 사는 자리(문구 행·녹음 카드)나 저장을 누를 때의 알럿이 더 정확히 말한다.
     // 생성 실패는 `showSaveFailureAlert` 로 간다.
@@ -977,9 +989,10 @@ struct AlarmEditorSheet: View {
         return formatter
     }()
 
-    /// 저장이 막혔는가. ⚠ **사유 문구는 두지 않는다**(2026-08-18 변경. 그전에는 편집기
-    /// 본문 아래에 한 줄씩 떴다 — `saveBlockedNotice`). 안드로이드가 같은 날 같은 이유로
-    /// `editorSaveBlocked` 로 바꿨고, iOS 도 맞춘다.
+    /// 저장을 막을 사유. ⚠ **버튼을 죽이지 않는다**(2026-10-29 두 앱 비교 — CLAUDE.md 「잠그는 것은 '저장 중' 일 때뿐이다」).
+    /// 예전 iOS 는 이 값으로 저장 버튼을 회색으로 꺼서, 누를 수도 없고 이유도 듣지 못했다(기록도 남지 않았다). 지금은 버튼을
+    /// 언제나 살려 두고, 누르면 `saveFlow` 가 이 사유를 알럿으로 말한다(안드로이드 `SaveBlockReason`·`saveBlockAlertStrings` 짝).
+    /// ⚠ **본문 아래 사유 문구는 두지 않는다**(2026-08-18 변경. 그전에는 편집기 본문 아래에 한 줄씩 떴다 — `saveBlockedNotice`).
     ///
     /// 이유를 말하는 자리는 **그 값이 사는 곳**이다. 갈래마다 짝이 있다:
     ///  - 플랜 잠금·사용 불가 목소리 → **버튼을 죽이지 않는다**(2026-09-29). 편집기의
@@ -1003,11 +1016,11 @@ struct AlarmEditorSheet: View {
     /// 중요: 단일 저장 버튼이 캐시 미스 시 직접 생성하므로(saveFlow), "아직 생성 안 됨" 은
     /// 막을 사유가 아니다. 정말로 만족 불가능한 상태만 막는다. 신규 랜덤 문구 한-탭 생성
     /// 경로(randomPrompt=true, preset)는 false 여야 저장이 활성화돼 탭 시 생성이 돈다.
-    var editorSaveBlocked: Bool {
-        if draft.playMode == .alarmOnly { return false }
+    var editorSaveBlockReason: EditorSaveBlockReason? {
+        if draft.playMode == .alarmOnly { return nil }
         // ⚠ **쓸 수 없는 목소리로는 버튼을 죽이지 않는다**(2026-09-29). 누르면 `saveFlow`
         // 첫머리가 알럿으로 이유를 말한다 — 그 사유를 말하던 배너가 이제 없다.
-        if selectedVoiceUnusable { return false }
+        if selectedVoiceUnusable { return nil }
 
         // ⚠ **무료 플랜의 유료 목소리 알람은 저장 전에 막는다.**
         // iOS 에는 이 게이트가 **아예 없어서**, 무료 사용자가 녹음 알람을 저장할 수 있었고
@@ -1019,12 +1032,12 @@ struct AlarmEditorSheet: View {
         // 서버 `alarm-mutation.ts` 의 `usesOnlySystemStockVoice` 도 같은 선을 긋는다.
         // 무료 플랜에서 목소리를 고른 경우는 위 `selectedVoiceUnusable` 가 먼저 잡는다 —
         // 여기 남는 것은 로그아웃과 목소리를 아직 안 고른 경우다.
-        if planAccess != .paid, !usesFreeSystemVoiceSelection { return true }
+        if planAccess != .paid, !usesFreeSystemVoiceSelection { return .voiceMissing }
 
         if voiceSourceMode == .localAudio {
             // 말하는 자리: `RecordingCard` 자체가 CTA 다.
             let hasNewSource = localRecorder.latestRecordingURL != nil
-            return !(hasNewSource || existingLocalAudioLabel != nil)
+            return (hasNewSource || existingLocalAudioLabel != nil) ? nil : .recordingMissing
         }
 
         // tts_profile 분기. 테마를 골랐으면 곧바로 저장 가능 — 음원은 저장이 받는다
@@ -1041,11 +1054,12 @@ struct AlarmEditorSheet: View {
             //     봐도 충분했다. 문구 목록을 합치면서 이 갈래가 열렸다.
             //     안드로이드 `AlarmEditorScreen` 의 `SaveBlockReason.FORTUNE_INFO_MISSING` 짝.)
             // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
-            return bucketNeedsMissingInput(bucket)
+            guard bucketNeedsMissingInput(bucket) else { return nil }
+            return bucket == .fortune ? .fortuneInfoMissing : .weatherLocationMissing
         }
 
         // 말하는 자리: 목소리 행("고르기") + 목록이 비면 '목소리 탭에서 만들기'.
-        guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return true }
+        guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return .voiceMissing }
         // 선택된 목소리가 더 이상 alarm 선택 대상이 아니면(삭제/미준비 등) 사용 불가.
         // 단, 기존 알람의 음원이 그대로 재사용 가능한 경우엔 막지 않는다(아래 생성 경로가 흡수).
         // 그 갈래(정리 중이 아닌 사용 불가)는 위 `selectedVoiceUnusable` 가 먼저 잡아 버튼을
@@ -1058,15 +1072,18 @@ struct AlarmEditorSheet: View {
         // ⚠ **정리 중으로는 버튼을 죽이지 않는다**(Codex #703 P1 — CLAUDE.md 「잠그는 것은
         // '저장 중' 일 때뿐이다」). 곧 풀리는 상태라 죽은 버튼은 고장으로 읽힌다 —
         // 누를 수 있게 두고 **누르면 이유를 말한다**(`saveFlow` 첫머리).
-        if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return true }
+        if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return .voiceMissing }
         // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
-        if voiceStudio.randomPrompt { return !randomPromptSettingsComplete }
+        if voiceStudio.randomPrompt {
+            guard !randomPromptSettingsComplete else { return nil }
+            return activePromptContext.usesFortune && !fortuneInfoReady ? .fortuneInfoMissing : .weatherLocationMissing
+        }
         // ⚠ **빈 직접 입력으로는 버튼을 죽이지 않는다**(2026-09-29, CLAUDE.md 「잠그는 것은
         // '저장 중' 일 때뿐이다」). 누르면 `saveFlow` 첫머리가 **서버를 부르기 전에** 알럿으로
         // 이유를 말한다(`manualTextMissing` — 안드로이드 `SaveBlockReason.MANUAL_TEXT_MISSING`).
-        if manualTextMissing { return false }
+        if manualTextMissing { return nil }
         // 스톡 클립 목소리의 빈 문구는 테마가 붙기 전 과도기다.
-        return voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .messagePreparing : nil
     }
 
     /// 고른 목소리를 지금 쓸 수 없어 저장을 막아야 하는가(버튼은 살려 둔다).
@@ -1123,7 +1140,7 @@ struct AlarmEditorSheet: View {
     }
 
     /// 사주가 갖춰졌는가. ⚠ **판정은 여기 한 곳이다** — 스톡 클립 '운세' 게이트
-    /// (`editorSaveBlocked`)와 라이브 경로가 같은 답을 내야 한다. 안드로이드
+    /// (`editorSaveBlockReason`)와 라이브 경로가 같은 답을 내야 한다. 안드로이드
     /// `AlarmEditorScreen.fortuneInfoReady()` 의 짝.
     var fortuneInfoReady: Bool { voiceStudio.hasFortuneInfo }
 
@@ -1140,7 +1157,7 @@ struct AlarmEditorSheet: View {
         return voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID)
     }
 
-    /// editorSaveBlocked 전용 — 현재 선택으로 기존 알람의 TTS 음원을 그대로 재사용할 수
+    /// editorSaveBlockReason 전용 — 현재 선택으로 기존 알람의 TTS 음원을 그대로 재사용할 수
     /// 있는지. saveFlow 와 같은 방식으로 다음 발화 시각을 계산해 넘긴다(랜덤 문구일 때만 의미).
     private var reuseExistingTtsForCurrentSelection: Bool {
         let fireAt = draftFireAtMillis(now: Int64(Date().timeIntervalSince1970 * 1000))
@@ -1378,6 +1395,43 @@ struct AlarmEditorSheet: View {
     }
 
     /// 저장을 눌렀다 — 새 시도를 연다(`alarm_save_attempt`).
+    /// 저장에 들어가는 편집 입력 — 저장을 누른 뒤 이것이 바뀌었는지로 다시 저장할지 정한다(`saveFlow`).
+    struct EditorSaveInputs: Equatable {
+        /// 음원을 정하는 값. 이것이 바뀌면 준비한 음원을 버린다.
+        struct Voice: Equatable {
+            var source: VoiceSource
+            var profileID: String?
+            var text: String
+            var language: String
+            var randomPrompt: Bool
+            var randomContext: String
+            var bucket: FreeBucket?
+            var weather: [String]
+            var fortune: [String]
+            var recordingURL: URL?
+        }
+        var draft: AlarmEditDraft
+        var voice: Voice
+    }
+
+    var currentSaveInputs: EditorSaveInputs {
+        EditorSaveInputs(
+            draft: draft,
+            voice: .init(
+                source: voiceSourceMode,
+                profileID: voiceStudio.selectedProfileID,
+                text: voiceStudio.ttsText,
+                language: voiceStudio.ttsLanguage,
+                randomPrompt: voiceStudio.randomPrompt,
+                randomContext: voiceStudio.randomContext,
+                bucket: selectedBucketDraft,
+                weather: [voiceStudio.weatherCountry, voiceStudio.weatherCity],
+                fortune: [voiceStudio.fortuneGender, voiceStudio.fortuneBirthDate, voiceStudio.fortuneBirthTime],
+                recordingURL: localRecorder.latestRecordingURL
+            )
+        )
+    }
+
     func beginSaveAttempt() {
         let attemptID = UsageEventContract.newAttemptID()
         saveAttemptID = attemptID
@@ -1496,7 +1550,7 @@ struct AlarmEditorSheet: View {
 
     /// 이 테마가 **아직 없는 입력**을 요구하는가(날씨=지역, 운세=사주).
     ///
-    /// 저장 게이트(`editorSaveBlocked` 의 테마 갈래)도 이 함수 하나를 부른다 — 둘이
+    /// 저장 게이트(`editorSaveBlockReason` 의 테마 갈래)도 이 함수 하나를 부른다 — 둘이
     /// 갈라지면 고를 수는 있는데 저장은 막히는 상태가 생긴다.
     /// 안드로이드 `AlarmEditorScreen.kt` 의 `firstUsable` 과 같은 규칙.
     func bucketNeedsMissingInput(_ bucket: FreeBucket) -> Bool {
@@ -1535,7 +1589,7 @@ struct AlarmEditorSheet: View {
         let remembered = pendingFreeBucket.flatMap { bucket -> FreeBucket? in
             guard buckets.contains(bucket) else { return nil }
             // ⚠ 날씨(지역)뿐 아니라 **운세(사주)도** 값이 없으면 잇지 않는다 —
-            //   둘 다 없으면 저장이 막힌다(`editorSaveBlocked`).
+            //   둘 다 없으면 저장이 막힌다(`editorSaveBlockReason`).
             return bucketNeedsMissingInput(bucket) ? nil : bucket
         }
 
@@ -1544,7 +1598,7 @@ struct AlarmEditorSheet: View {
         // **"불러오는 중이에요" 에서 영영 벗어나지 못했다.** 사용자는 고른 적이 없을 뿐
         // 무언가 잘못한 게 아니다. 안드로이드도 `?: buckets.firstOrNull()` 로 항상 붙인다.
         // ⚠ **한 번도 고른 적 없을 때 조건형 테마를 집지 말 것**(첫 알람 함정).
-        //   목록 첫 값은 날씨인데 지역이 없으면 `editorSaveBlocked` 가 저장을 막는다 —
+        //   목록 첫 값은 날씨인데 지역이 없으면 `editorSaveBlockReason` 가 저장을 막는다 —
         //   계정을 막 만든 사람의 **첫 알람이 저장되지 않는다.**
         //   '기본 인사말' 은 기본 목소리에 줄 수 없으므로(`docs/spec/voice-and-message.md` §2)
         //   추가 입력이 필요 없는 첫 테마를 집는다. 안드로이드 `firstUsable` 과 같은 규칙.
@@ -2491,13 +2545,27 @@ struct AlarmEditorSheet: View {
 
     // MARK: - Save flow
 
+    /// 저장 버튼. **누른 뒤 음성을 찾거나 만드는 사이 바꾼 것은 그 값으로 다시 저장한다**(2026-10-29 두 앱 비교 — 안드로이드
+    /// `AlarmEditorScreen` 의 `resaveAfterChange` 짝, 오너: "저장을 누르면 바뀐 걸로 되어야"). 예전 iOS 는 누른 순간의 목소리·문구로
+    /// 만든 음원을 그대로 저장했고, 시각을 바꾸면 날짜 알람이 옛 시각으로 예약됐다. 다시 도는 것은 두 번까지다 — 그 뒤에는 지금
+    /// 값으로 확정하고, 확정 단계부터는 편집을 막는다(`committingSave`).
     func saveFlow() async {
         guard !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
         beginSaveAttempt()
+        var pass = 0
+        repeat {
+            pass += 1
+            saveRestartRequested = false
+            await saveFlowPass(allowRestart: pass < 3)
+        } while saveRestartRequested
+    }
 
-        // ⚠ **정리 중인 목소리는 여기서 막는다**(버튼은 살려 둔다 — 위 `editorSaveBlocked`
+    private func saveFlowPass(allowRestart: Bool) async {
+        defer { committingSave = false }
+
+        // ⚠ **정리 중인 목소리는 여기서 막는다**(버튼은 살려 둔다 — 위 `editorSaveBlockReason`
         // 주석). 지금 저장하면 뒤이은 정리가 그 알람을 되돌릴 수 없이 벗긴다.
         if let profileID = (voiceStudio.selectedProfileID).nilIfBlank,
            draft.playMode != .alarmOnly,
@@ -2511,7 +2579,7 @@ struct AlarmEditorSheet: View {
             recordSaveBlocked("voice_settling")
             return
         }
-        // ⚠ **쓸 수 없는 목소리는 여기서 막는다**(버튼은 살려 둔다 — `editorSaveBlocked` 주석).
+        // ⚠ **쓸 수 없는 목소리는 여기서 막는다**(버튼은 살려 둔다 — `editorSaveBlockReason` 주석).
         // 편집기의 '삭제된 목소리' 배너를 2026-09-29 에 걷어냈으므로 이 알럿이 유일한
         // 설명이다. 문구는 안드로이드 `editor_block_voice_title`·`editor_block_voice_unavailable_message`.
         if selectedVoiceUnusable {
@@ -2524,7 +2592,7 @@ struct AlarmEditorSheet: View {
         }
         // ⚠ **빈 직접 입력은 여기서 막는다 — 권한 확인·한도 조회·생성 요청보다 먼저다.**
         // 만들 문장이 없으니 서버를 부를 이유가 없고, 불러서 실패를 기다리면 사용자는 한도가
-        // 깎였는지부터 걱정한다. 버튼은 살려 두고 이유를 말한다(`editorSaveBlocked` 주석).
+        // 깎였는지부터 걱정한다. 버튼은 살려 두고 이유를 말한다(`editorSaveBlockReason` 주석).
         // 추가 음성팩 목소리로는 직접 입력 문구를 만들지 않는다(서버가 그 목소리를 모른다 — `docs/spec/voice-packs.md` §1).
         if draft.playMode != .alarmOnly,
            voiceSourceMode == .ttsProfile,
@@ -2544,6 +2612,11 @@ struct AlarmEditorSheet: View {
             recordSaveBlocked("manual_text_missing")
             return
         }
+        if let reason = editorSaveBlockReason {
+            validationAlert = ValidationAlertContent(title: reason.alertTitle, message: reason.alertMessage)
+            recordSaveBlocked(reason.usageReason)
+            return
+        }
         let errors = draft.validate()
         if let first = errors.first {
             validationAlert = ValidationAlertContent(
@@ -2555,8 +2628,9 @@ struct AlarmEditorSheet: View {
         }
         // 날짜 알람: 지난 시각·같은 시각 알람은 **누르는 순간** 다시 재 막는다 — 음성을 만들기 전이다
         // (스펙 alarm-lifecycle.md §4-3). 교체 흐름을 타지 않는다.
-        if let datedBlock = datedSaveBlockAlert(nowMillis: Int64(Date().timeIntervalSince1970 * 1000)) {
-            validationAlert = datedBlock
+        if let datedBlock = datedSaveBlock(nowMillis: Int64(Date().timeIntervalSince1970 * 1000)) {
+            validationAlert = datedBlock.alert
+            recordSaveBlocked(datedBlock.reason)
             return
         }
 
@@ -2590,6 +2664,8 @@ struct AlarmEditorSheet: View {
         // 무료 등급은 음성을 쓰되 시스템 보이스 + preset 으로 강제. 저장 직전에도
         // 4-값 잠금을 재확인해 사용자 조작/레이스로 빠져나간 경우를 막는다.
         coerceFreeVoiceTierConstraints()
+        // 강제(위)를 거친 뒤의 값이 기준이다 — 강제가 바꾼 것을 '사용자가 바꿨다' 로 읽으면 같은 음성을 두 번 만든다.
+        let inputsAtStart = currentSaveInputs
 
         let existing = editingAlarm
 
@@ -2737,6 +2813,17 @@ struct AlarmEditorSheet: View {
         } else {
             cachedLocalAudio = nil
         }
+
+        // ⚠ **음원을 기다리는 사이 바뀌었으면 지금 값으로 다시 돈다.** 목소리·문구가 바뀌었으면 준비한 음원도 버린다 — 누른 순간의
+        //   값으로 만든 것이다. 시각·요일만 바뀌었으면 음원은 그대로 쓰고 시각만 다시 잰다. 여기서 확정까지는 기다림이 없어
+        //   확인과 확정 사이에 틈이 없다.
+        let inputsNow = currentSaveInputs
+        if allowRestart, inputsNow != inputsAtStart {
+            if inputsNow.voice != inputsAtStart.voice { voiceStudio.preparedAlarm = nil }
+            saveRestartRequested = true
+            return
+        }
+        committingSave = true
 
         // playMode 가 음성을 포함하면, voiceStudio 의 prepared 결과를 record 의
         // 음원/프로필 필드에 합쳐 둔다.
@@ -3099,8 +3186,14 @@ struct AlarmEditorSheet: View {
         // `voiceRandomPrompt = false` 로 저장되는데, 그것만 보고 else 로 떨어뜨리면
         // **서버 스톡 클립의 문장**이 '내가 친 직접 입력 문구' 로 기억된다. 그러면 다음
         // 새 알람이 직접 입력으로 열리고 테마 선택은 매번 초기화된다.
+        // 테마로 저장해도 문구 종류를 같이 적는다(`DynamicPromptPreferenceStore.saveBucketChoice`).
         if let bucket = selectedFreeBucketCategory(for: record) {
-            promptStore.saveLastFreeBucket(userID: userID, bucket: bucket)
+            promptStore.saveBucketChoice(
+                userID: userID,
+                bucket: bucket,
+                voiceProfileID: record.voiceProfileId,
+                randomContext: record.voiceRandomContext
+            )
             return
         }
 

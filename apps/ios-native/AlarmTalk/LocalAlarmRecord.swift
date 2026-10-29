@@ -292,6 +292,16 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
                 return formatter.string(from: date)
             }
         }
+        // ⚠ **꺼진 알람은 저장된 시각이 아니라 다시 계산한 다음 울림을 말한다**(2026-10-29 두 앱 비교 — 안드로이드
+        //   `ui/components/ControlsAndPermissions.kt` 의 `AlarmRow` 짝). 끄거나 한 번 울고 꺼진 알람은 `fireAtMillis` 를 그대로
+        //   둔다 — 그 값을 읽으면 어제 울린 일회성·지난주에 끈 반복 알람이 지난 날짜를 보였다. 켜진 알람은 실제 예약값이다.
+        if !enabled,
+           let next = try? nextFireAtMillis(
+               nowMillis: Int64(Date().timeIntervalSince1970 * 1000),
+               isHoliday: { LocalHolidayCalendar.isHoliday($0) }
+           ) {
+            return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(next) / 1000.0))
+        }
         return formatter.string(from: nextFireDate)
     }
 
