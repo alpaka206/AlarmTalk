@@ -304,6 +304,9 @@ internal fun AlarmEditorScreen(
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    // 직접 입력 '음성 만들기' 의 같은 요청 id — 같은 입력의 재시도는 같은 값이다. 편집기보다 오래 살아야 해서 뷰모델이 든다
+    // (`MainViewModel.manualRequestIds`).
+    manualRequestIds: ManualRequestIds,
     onLoadManualQuota: (suspend () -> ManualQuotaResponse?)? = null,
     // 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3). 없으면(미리보기·로그아웃) 광고를 권하지 않는다.
     adRewardSessions: com.alarmtalk.app.ads.AdRewardSessionClient? = null,
@@ -397,8 +400,6 @@ internal fun AlarmEditorScreen(
     val editorListState = rememberLazyListState()
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
-    // 직접 입력 '음성 만들기' 의 같은 요청 id — 같은 입력의 재시도는 같은 값이다(`ManualRequestIds`).
-    val manualRequestIds = remember { ManualRequestIds() }
     var audioMessage by remember { mutableStateOf<String?>(null) }
     // ⚠ **저장이 막힌 이유는 알럿으로 말한다**(2026-08-24) — 저장 차단·월 한도·광고 보상이 이 하나를 쓴다.
     // 예전에는 `audioMessage` 에 넣었는데, 그 문구를 그리는 곳이 `VoiceAudioCard` 안이라

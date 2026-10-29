@@ -951,6 +951,18 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(vm.consentUnsupported)
     }
 
+    /// 떠 있던 민감 동의 시트는 로그아웃과 함께 내린다 — 다음 계정이 자기가 부르지 않은 시트를 보면 안 된다.
+    func test_signOut_떠_있던_민감_동의_시트를_내린다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        _ = vm.requestSensitiveConsent(types: ["voice_biometric"], registeringVoice: true)
+        XCTAssertNotNil(vm.pendingSensitiveConsent)
+
+        vm.signOut(revokeOnServer: false)
+
+        XCTAssertNil(vm.pendingSensitiveConsent)
+    }
+
     /// 받을 것이 없으면 막지 않는다 — 호출자가 그대로 진행한다.
     func test_requestSensitiveConsent_받을_것이_없으면_막지_않는다() {
         let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
@@ -2058,6 +2070,102 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(vm.needsConsent)
     }
 
+    // MARK: - 광고성 정보 수신 토글 (`docs/spec/consent.md` 「광고성 정보 수신 토글」)
+
+    private func marketingConsents(_ agreed: Bool) -> ConsentListResponse {
+        ConsentListResponse(consents: [
+            ConsentRecord(consentType: "marketing", policyVersion: "8", agreed: agreed, agreedAt: nil),
+        ])
+    }
+
+    /// 읽기 전에는 **모른다** — false 로 시작하면 동의한 사람에게 '꺼짐' 을 그리고 눌리기까지 한다.
+    func test_marketingConsent_읽기_전에는_모른다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        XCTAssertNil(vm.marketingConsentAgreed)
+    }
+
+    /// 다시 들어온 화면의 조회가 떠 있는 동안 켰다 — 그 조회의 늦은 답(켜기 전의 서버 값)이 스위치를 되돌리면
+    /// 서버는 켬인데 스위치는 끔이다.
+    func test_marketingConsent_토글_전에_떠난_조회의_답은_켠_값을_덮지_않는다() async {
+        let api = MockAuthAPI()
+        let reloadSent = expectation(description: "다시 들어온 화면의 조회 전송")
+        let held = HeldMeResponses(arrivals: [2: reloadSent])
+        let stale = marketingConsents(false)
+        api.listConsentsResponder = { call in
+            if call == 2 { await held.hold(call) }
+            return stale
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.loadMarketingConsent()
+        XCTAssertEqual(vm.marketingConsentAgreed, false)
+
+        let reload = Task { await vm.loadMarketingConsent() }
+        await fulfillment(of: [reloadSent], timeout: 3)
+        await vm.updateMarketingConsent(true)
+        held.release(2)
+        await reload.value
+
+        XCTAssertEqual(api.recordConsentsCallCount, 1)
+        XCTAssertEqual(vm.marketingConsentAgreed, true, "서버는 켬을 받았다 — 늦게 온 조회가 끔으로 되돌리면 안 된다")
+    }
+
+    /// 쓰기는 한 번에 하나다. 화면을 나갔다 들어오면 화면 상태는 새로 만들어지므로, 잠금이 화면에 있으면 앞 쓰기가
+    /// 도는 중에 또 보내 서버에 늦게 닿은 쪽이 이긴다. 그 사이의 진입 조회도 쓰기 결과보다 낡았다.
+    func test_marketingConsent_쓰는_동안에는_다시_보내지도_조회하지도_않는다() async {
+        let api = MockAuthAPI()
+        api.listConsentsResult = .success(marketingConsents(false))
+        let writeSent = expectation(description: "쓰기 전송")
+        let held = HeldMeResponses(arrivals: [1: writeSent])
+        api.recordConsentsResponder = { call in
+            if call == 1 { await held.hold(call) }
+            return RecordConsentsResponse(success: true, recorded: 1)
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.loadMarketingConsent()
+
+        let write = Task { await vm.updateMarketingConsent(true) }
+        await fulfillment(of: [writeSent], timeout: 3)
+        XCTAssertTrue(vm.marketingConsentWriteInFlight)
+        await vm.updateMarketingConsent(false)
+        await vm.loadMarketingConsent()
+
+        XCTAssertEqual(api.recordConsentsCallCount, 1, "앞 쓰기가 끝나기 전에 겹쳐 보내지 않는다")
+        XCTAssertEqual(api.listConsentsCallCount, 1, "쓰는 동안에는 조회하지 않는다")
+        held.release(1)
+        await write.value
+        XCTAssertFalse(vm.marketingConsentWriteInFlight)
+        XCTAssertEqual(vm.marketingConsentAgreed, true)
+    }
+
+    /// 쓰는 사이 계정이 바뀌었다 — 앞 계정 쓰기의 실패가 '직전 값' 으로 되돌리면 그 값이 다음 계정 화면에 남는다.
+    func test_marketingConsent_계정이_바뀌면_앞_계정_쓰기의_답을_버린다() async {
+        let api = MockAuthAPI()
+        api.listConsentsResult = .success(marketingConsents(false))
+        let writeSent = expectation(description: "쓰기 전송")
+        let held = HeldMeResponses(arrivals: [1: writeSent])
+        api.recordConsentsResponder = { call in
+            if call == 1 { await held.hold(call) }
+            throw APIError.invalidResponse
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.loadMarketingConsent()
+
+        let write = Task { await vm.updateMarketingConsent(true) }
+        await fulfillment(of: [writeSent], timeout: 3)
+        vm.signOut(revokeOnServer: false)
+        XCTAssertFalse(vm.marketingConsentWriteInFlight, "계정 정리가 잠금을 푼다")
+        held.release(1)
+        await write.value
+
+        XCTAssertNil(vm.marketingConsentAgreed)
+        XCTAssertNil(vm.statusMessage, "떠난 계정의 실패를 알리지 않는다")
+    }
+
 }
 
 // MARK: - Mocks
@@ -2179,9 +2287,28 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         }
     }
 
+    /// 있으면 `recordConsentsResult` 대신 **호출마다** 답을 정한다 — 인자는 몇 번째 호출(1부터). 쓰기를 붙들어 두고
+    /// 그 사이에 일어나는 일(조회·계정 정리)을 흉내 낼 때 쓴다(`HeldMeResponses`).
+    var recordConsentsResponder: (@MainActor @Sendable (_ call: Int) async throws -> RecordConsentsResponse)?
+    var listConsentsResult: Result<ConsentListResponse, Error> = .success(ConsentListResponse(consents: []))
+    /// 있으면 `listConsentsResult` 대신 호출마다 답을 정한다 — 인자는 몇 번째 호출(1부터).
+    var listConsentsResponder: (@MainActor @Sendable (_ call: Int) async throws -> ConsentListResponse)?
+    private(set) var listConsentsCallCount = 0
+
+    func listConsents(token: String) async throws -> ConsentListResponse {
+        listConsentsCallCount += 1
+        if let listConsentsResponder {
+            return try await listConsentsResponder(listConsentsCallCount)
+        }
+        return try listConsentsResult.get()
+    }
+
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
         recordConsentsCallCount += 1
         lastRecordConsentsRequest = requestBody
+        if let recordConsentsResponder {
+            return try await recordConsentsResponder(recordConsentsCallCount)
+        }
         switch recordConsentsResult {
         case .success(let response):
             return response

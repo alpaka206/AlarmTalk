@@ -2060,6 +2060,63 @@ describe('POST /tts/generate — 같은 요청(request_id)', () => {
     expect(res.status).toBeGreaterThanOrEqual(500);
     expect(mockDB.calls.some((c) => c.sql.includes('DELETE FROM manual_tts_requests'))).toBe(true);
     expect(mockDB.calls.some((c) => c.sql.includes('used_count = used_count - 1'))).toBe(true);
+    // 돌려준 뒤에 표식을 놓는다 — 먼저 놓으면 그 사이 닿은 재시도가 아직 안 돌려준 횟수에서 세인다.
+    const refundAt = mockDB.calls.findIndex((c) => c.sql.includes('used_count = used_count - 1'));
+    const releaseAt = mockDB.calls.findIndex((c) => c.sql.includes('DELETE FROM manual_tts_requests'));
+    expect(refundAt).toBeLessThan(releaseAt);
+  });
+
+  /** 끝난 표식을 다시 잡았는데 캐시에 결과가 없다 — 합성까지 간다. */
+  function pushReclaimedDoneMiss() {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResultFor('INSERT INTO manual_tts_requests', [], 0); // 이미 있는 id
+    mockDB.pushResultFor("SET status = 'pending', claimed_at = ?", [{ claimed_at: 'now' }], 1); // 끝난 표식을 잡았다
+    mockDB.pushResultFor('FROM generated_audio_assets ga', []); // 캐시 미스
+    mockDB.pushResultFor("SET status = 'done'", [], 1);
+  }
+
+  // ⚠ 2026-10-29 — 결과를 지운 뒤(그 알람을 지웠다) 같은 id 로 다시 만드는 것은 재시도가 아니다. 정상 앱은 성공하면 id 를
+  //   잊어 여기 오지 않는다. 세지 않으면 '만들기 → 알람 지우기' 를 되풀이해 합성을 공짜로 계속 시킬 수 있었다.
+  it('끝난 표식의 재시도라도 결과가 지워져 없으면 한 번 센다', async () => {
+    pushReclaimedDoneMiss();
+    pushManualQuotaFlow();
+    mockTextToSpeech.mockResolvedValue(providerPcm());
+    pushPublicationVoice();
+    mockDB.pushResult([], 1); // INSERT messages
+    mockDB.pushResult([], 1); // INSERT message_library
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello', request_id: REQ }),
+    );
+
+    expect(res.status).toBe(201);
+    expect((await res.json()).charged_source).toBe('base');
+    expect(mockDB.calls.filter((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toHaveLength(1);
+    expect(mockTextToSpeech).toHaveBeenCalled();
+  });
+
+  it('끝난 표식의 재시도가 서비스 재렌더(설정이 바뀌어 다시 굽는다)면 세지 않는다', async () => {
+    pushReclaimedDoneMiss();
+    // 같은 논리 결과는 있는데 지금 설정으로 만든 것은 없다 = 서비스가 설정을 바꿨다.
+    mockDB.pushResultFor('AS any_owned', [{ any_owned: 1, current_owned: 0 }]);
+    mockDB.pushResult([]); // 개인 활성 구독 조회 — 없음
+    mockDB.pushResult([{ used_count: 5 }]); // 지금 사용량 읽기(증가 없음)
+    mockTextToSpeech.mockResolvedValue(providerPcm());
+    pushPublicationVoice();
+    mockDB.pushResult([], 1); // INSERT messages
+    mockDB.pushResult([], 1); // INSERT message_library
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello', request_id: REQ }),
+    );
+
+    expect(res.status).toBe(201);
+    expect((await res.json()).charged_source).toBe('none');
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage'))).toBe(false);
+    expect(mockTextToSpeech).toHaveBeenCalled();
   });
 });
 

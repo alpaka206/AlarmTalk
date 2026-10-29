@@ -23,7 +23,6 @@ struct ConsentHistoryView: View {
     @State private var reloadTick = 0
     @State private var withdrawConfirmOpen = false
     @State private var withdrawBusy = false
-    @State private var marketingBusy = false
     /// 광고 개인정보 선택(UMP)을 다시 열 자리가 필요한가 — 규정 지역에서만(안드로이드 `ConsentHistoryScreen` 의 '광고' 카드).
     @State private var adPrivacyOptionsRequired = false
 
@@ -114,16 +113,13 @@ struct ConsentHistoryView: View {
             // 이 법적 정보 화면으로 통합했다(안드로이드와 같은 위치).
             ConsentToggleRow(
                 label: "광고성 정보 수신 동의",
-                agreed: auth.marketingConsentLoadFailed ? nil : auth.marketingConsentAgreed,
-                busy: marketingBusy,
+                agreed: auth.marketingConsentAgreed,
+                // 잠금은 뷰모델이 든다 — 이 화면을 나갔다 들어와도 앞 쓰기가 끝나기 전에는 다시 보내지 않는다.
+                busy: auth.marketingConsentWriteInFlight,
                 loadFailed: auth.marketingConsentLoadFailed,
                 onRetry: { Task { await auth.loadMarketingConsent() } },
                 onChange: { next in
-                    Task {
-                        marketingBusy = true
-                        await auth.updateMarketingConsent(next)
-                        marketingBusy = false
-                    }
+                    Task { await auth.updateMarketingConsent(next) }
                 }
             )
         }
