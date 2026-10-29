@@ -136,6 +136,12 @@ export interface Env {
    * 세션의 SSV 정산과 위 광고 단위 허용 목록은 그대로다(`lib/ad-reward-sessions.ts` `adRewardViewingEnabled`).
    */
   ADMOB_REWARDED_ADS_ENABLED?: string;
+  /**
+   * **관리자 콘솔 광고 알림 스위치**(`true`/`1` 이면 켜짐, 그 밖은 꺼짐 — fail-closed). 꺼져 있으면 광고 알림의 시험 발송·
+   * 전체 발송을 만들 수 없고, 보내던 광고 발송도 걸음이 멈춘다(`lib/admin/push-jobs.ts` `adPushEnabled`). 서비스 안내는
+   * 이 스위치와 무관하다. 2026-10-29 오너: 광고는 당장 하지 않는다 — 켤 때까지 비워 둔다.
+   */
+  ADMIN_AD_PUSH_ENABLED?: string;
   INIT_DB_SECRET?: string;
   BILLING_STUB_ENABLED?: string;
   SENTRY_DSN?: string;

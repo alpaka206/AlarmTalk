@@ -55,6 +55,7 @@ type PushEnv = Pick<
   | 'APPLE_TEAM_ID'
   | 'APPLE_BUNDLE_ID'
   | 'ENVIRONMENT'
+  | 'ADMIN_AD_PUSH_ENABLED'
 >;
 
 export interface PushCopy {
@@ -67,6 +68,7 @@ export class AdminPushError extends Error {
   constructor(
     readonly code: Extract<
       ErrorCode,
+      | 'ADMIN_PUSH_AD_DISABLED'
       | 'ADMIN_PUSH_COPY_INVALID'
       | 'ADMIN_PUSH_TEST_REQUIRED'
       | 'ADMIN_PUSH_OUTSIDE_AD_HOURS'
@@ -122,6 +124,22 @@ export function parseCopy(raw: Record<string, unknown>): PushCopy {
 export function renderCopy(copy: PushCopy): { title: string; body: string } {
   if (copy.kind !== 'ad') return { title: copy.title, body: copy.body };
   return { title: `${AD_TITLE_PREFIX}${copy.title}`, body: `${copy.body}\n${AD_OPT_OUT_FOOTER}` };
+}
+
+/**
+ * **광고 알림을 보낼 수 있는가**(운영 스위치 `ADMIN_AD_PUSH_ENABLED`, 기본 꺼짐). 꺼져 있으면 광고의 시험 발송·전체 발송을
+ * 만들지 못하고, 보내던 광고 발송은 걸음이 멈춘다(`paused: 'ad_disabled'` — 켜면 발송 기록에서 이어 보낸다).
+ */
+export function adPushEnabled(env: Pick<Env, 'ADMIN_AD_PUSH_ENABLED'>): boolean {
+  const flag = (env.ADMIN_AD_PUSH_ENABLED ?? '').trim().toLowerCase();
+  return flag === 'true' || flag === '1';
+}
+
+/** 광고인데 스위치가 꺼져 있으면 막는다 — 시험 발송과 전체 발송이 같은 문장을 쓴다. */
+export function assertAdPushAllowed(env: Pick<Env, 'ADMIN_AD_PUSH_ENABLED'>, kind: PushKind): void {
+  if (kind === 'ad' && !adPushEnabled(env)) {
+    throw new AdminPushError('ADMIN_PUSH_AD_DISABLED', '광고 알림은 지금 꺼져 있어요. 서비스 안내만 보낼 수 있어요.');
+  }
 }
 
 export function kstHour(nowMs: number): number {
@@ -185,6 +203,7 @@ export async function sendTestPush(
   copy: PushCopy,
   nowMs: number = Date.now(),
 ): Promise<{ jobId: string; sent: number; failed: number; devices: number }> {
+  assertAdPushAllowed(env, copy.kind);
   // 시험이어도 광고는 광고다 — 시간 제한도 전체 발송과 같다.
   if (copy.kind === 'ad' && !isWithinAdHours(nowMs)) {
     throw new AdminPushError('ADMIN_PUSH_OUTSIDE_AD_HOURS', '광고 알림은 오전 8시부터 오후 9시 전까지만 보낼 수 있어요.');
@@ -249,11 +268,13 @@ export async function hasRecentPassingTest(db: Client, copy: PushCopy, nowMs: nu
 /** 전체 발송 기록을 만든다. 실제 발송은 `runJobStep` 이 한 걸음씩 한다. */
 export async function createPushJob(
   db: Client,
+  env: Pick<Env, 'ADMIN_AD_PUSH_ENABLED'>,
   copy: PushCopy,
   audience: Audience,
   estimatedTotal: number,
   nowMs: number,
 ): Promise<string> {
+  assertAdPushAllowed(env, copy.kind);
   if (copy.kind === 'ad' && !isWithinAdHours(nowMs)) {
     throw new AdminPushError('ADMIN_PUSH_OUTSIDE_AD_HOURS', '광고 알림은 오전 8시부터 오후 9시 전까지만 보낼 수 있어요.');
   }
@@ -279,7 +300,7 @@ export interface JobState {
   failed: number;
   estimatedTotal: number;
   /** 이번 걸음이 쉬었다면 그 이유. */
-  paused?: 'outside_ad_hours' | 'busy';
+  paused?: 'outside_ad_hours' | 'ad_disabled' | 'busy';
 }
 
 function jobStateFrom(row: Record<string, unknown>): JobState {
@@ -323,6 +344,8 @@ export async function runJobStep(db: Client, env: PushEnv, jobId: string, nowMs:
     title: String(row.title),
     body: String(row.body),
   };
+  // 스위치를 끄면 보내던 광고도 멈춘다 — 켜면 발송 기록에서 이어 보낸다.
+  if (copy.kind === 'ad' && !adPushEnabled(env)) return { ...state, paused: 'ad_disabled' };
   if (copy.kind === 'ad' && !isWithinAdHours(nowMs)) return { ...state, paused: 'outside_ad_hours' };
 
   let audience: Audience;

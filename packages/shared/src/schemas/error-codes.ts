@@ -268,6 +268,8 @@ export const ERROR_CODES = [
   /** draft 가 아니라 클립·공개 정보를 못 바꾸거나, 지금 상태에서 할 수 없는 전이다. */
   'ADMIN_VOICE_PACK_LOCKED',
   'ADMIN_VOICE_PACK_NOT_FOUND',
+  /** 광고 알림 스위치(`ADMIN_AD_PUSH_ENABLED`)가 꺼져 있는데 광고 알림을 보내려 했다. */
+  'ADMIN_PUSH_AD_DISABLED',
   'ADMIN_PUSH_COPY_INVALID',
   'ADMIN_PUSH_FAILED',
   'ADMIN_PUSH_JOB_NOT_FOUND',
