@@ -42,6 +42,8 @@ struct ConsentView: View {
     let isReconsent: Bool
     /// **이미 동의해 둔** 유형 — 초기 체크 상태로 쓴다(서버 `prechecked`).
     var prechecked: [String] = []
+    /// 직전 제출이 실패한 이유 — 버튼 바로 위에 빨간 글자로 그린다(`AuthViewModel.actionErrorMessage`).
+    var errorMessage: String? = nil
     /// 사용자가 실제로 체크한 **선택** 유형만 넘긴다.
     let onAgree: (_ agreedOptional: Set<String>) -> Void
     let onOpenTerms: () -> Void
@@ -158,6 +160,12 @@ struct ConsentView: View {
                 }
             }
 
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(AlarmTalkTheme.error)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Button {
                 // 화면에서 실제로 체크한 '선택' 유형만 넘긴다.
                 onAgree(checked.intersection(optionalTypes))

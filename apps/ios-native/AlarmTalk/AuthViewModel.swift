@@ -67,6 +67,35 @@ final class AuthViewModel: ObservableObject {
     /// 뜨면 뭔가 잘못된 줄 안다. 안드로이드는 `AuthErrorText`/`AuthNoticeText` 로 나눈다.
     @Published private(set) var statusIsError = false
 
+    /// 로그인한 동안 실패한 동작 — 그 동작이 있는 자리에 **빨간 글자로** 이유를 그린다(2026-10-29 오너: 알림을 띄우지 않는다).
+    /// `statusMessage` 는 로그인·비밀번호 재설정 화면만 그린다 — 로그인한 뒤의 실패를 거기에만 적으면 아무도 못 보고, 사용자는
+    /// 된 줄 안다(마케팅을 끈 줄 아는데 서버는 켜진 채 등). 같은 동작을 다시 시작하면 지운다.
+    enum SignedInAction: Equatable {
+        case profile, accountDeletion, consent, sensitiveConsent, marketing, withdrawal
+    }
+
+    struct SignedInActionError: Equatable {
+        let action: SignedInAction
+        let message: String
+    }
+
+    @Published private(set) var actionError: SignedInActionError?
+
+    /// 그 동작의 마지막 실패 이유. 없으면 nil.
+    func actionErrorMessage(for action: SignedInAction) -> String? {
+        actionError?.action == action ? actionError?.message : nil
+    }
+
+    /// 그 동작의 실패 표시를 내린다 — 다시 시작하거나 그 자리를 닫을 때.
+    func clearActionError(_ action: SignedInAction) {
+        if actionError?.action == action { actionError = nil }
+    }
+
+    private func failAction(_ action: SignedInAction, _ message: String?) {
+        failStatus(message)
+        actionError = message.map { SignedInActionError(action: action, message: $0) }
+    }
+
     /// 오류 메시지를 세운다. `statusMessage` 에 직접 대입하면 안내로 처리된다.
     func failStatus(_ message: String?) {
         statusMessage = message
@@ -1533,6 +1562,7 @@ final class AuthViewModel: ObservableObject {
             if dynamicPromptSettings != nil { promptSettingsRetryPending = true }
             return
         }
+        if name != nil { clearActionError(.profile) }
         isBusy = true
         defer {
             isBusy = false
@@ -1586,7 +1616,9 @@ final class AuthViewModel: ObservableObject {
         } catch {
             // 끝난 세션의 실패를 새 세션에 띄우지 않는다(위 `requestSessionRevision`).
             guard sessionRevision == requestSessionRevision else { return }
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "프로필을 저장하지 못했어요")))
+            let message = userFacingErrorMessage(error, fallback: String(localized: "프로필을 저장하지 못했어요"))
+            // 닉네임을 바꾼 저장만 닉네임 행에 남긴다 — 계정 설정(지역·사주)만 올린 것은 그 행과 무관하다.
+            if name != nil { failAction(.profile, message) } else { failStatus(message) }
         }
     }
 
@@ -1617,6 +1649,7 @@ final class AuthViewModel: ObservableObject {
             return
         }
         guard !isBusy else { return }
+        clearActionError(.accountDeletion)
         isBusy = true
         defer { isBusy = false }
 
@@ -1645,7 +1678,7 @@ final class AuthViewModel: ObservableObject {
                 await leaveAccountForPendingDeletion(token: token)
                 return
             }
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴 신청에 실패했어요")))
+            failAction(.accountDeletion, userFacingErrorMessage(error, fallback: String(localized: "회원 탈퇴 신청에 실패했어요")))
         }
     }
 
@@ -1896,6 +1929,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
+        clearActionError(.consent)
         guard !isBusy else { return }
         // 이 요청을 시작한 계정. 응답이 오는 사이 401 로 세션이 끊기고 다른 계정이 로그인해도
         // 이 continuation 은 살아 있다 — 앞 계정의 성공으로 뒤 계정의 동의 상태를 비우면
@@ -1941,7 +1975,7 @@ final class AuthViewModel: ObservableObject {
             consentSubmitGeneration &+= 1
         } catch {
             if handleConsentVersionMismatch(error) { return }
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
+            failAction(.consent, userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
         }
     }
 
@@ -1955,6 +1989,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = String(localized: "로그인이 필요해요.")
             return false
         }
+        clearActionError(.sensitiveConsent)
         let ownerUserID = session?.user.id
         let recordable = types.filter { Self.knownConsentTypes.contains($0) }
         guard !recordable.isEmpty else {
@@ -1979,7 +2014,7 @@ final class AuthViewModel: ObservableObject {
             return true
         } catch {
             if handleConsentVersionMismatch(error) { return false }
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
+            failAction(.sensitiveConsent, userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
             return false
         }
     }
@@ -2020,6 +2055,7 @@ final class AuthViewModel: ObservableObject {
             return
         }
         guard !marketingConsentWriteInFlight else { return }
+        clearActionError(.marketing)
         let previous = marketingConsentAgreed
         // 토글로 정한 값이 우선이다 — 떠 있던 조회의 답이 덮지 못하게 세대를 올린다.
         marketingConsentGeneration &+= 1
@@ -2043,7 +2079,7 @@ final class AuthViewModel: ObservableObject {
             marketingConsentWriteInFlight = false
             marketingConsentAgreed = previous
             if handleConsentVersionMismatch(error) { return }
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "마케팅 수신 설정을 변경하지 못했어요")))
+            failAction(.marketing, userFacingErrorMessage(error, fallback: String(localized: "마케팅 수신 설정을 변경하지 못했어요")))
         }
     }
 
@@ -2068,6 +2104,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = String(localized: "로그인이 필요해요.")
             return false
         }
+        clearActionError(.withdrawal)
         let userID = session?.user.id
 
         let revokedVoiceIDs: [String]
@@ -2076,7 +2113,7 @@ final class AuthViewModel: ObservableObject {
             // 시스템(기본) 목소리는 내 생체정보가 아니라 철회와 무관하다.
             revokedVoiceIDs = profiles.filter { $0.isSystem != true }.map(\.id).filter { !$0.isEmpty }
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
+            failAction(.withdrawal, userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
             return false
         }
 
@@ -2089,7 +2126,7 @@ final class AuthViewModel: ObservableObject {
             )
         } catch {
             if handleConsentVersionMismatch(error) { return false }
-            failStatus(userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
+            failAction(.withdrawal, userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
             return false
         }
 
@@ -2398,6 +2435,7 @@ final class AuthViewModel: ObservableObject {
         // 떠 있던 민감 동의 시트도 앞 계정의 것이다 — 남기면 다음 계정이 게이트를 지나는 순간 자기가 부르지 않은 시트를
         // 보고, 이미 준 동의를 또 기록한다(안드로이드 `clearUserScopedRemoteState` 의 `pendingSensitiveConsent`).
         pendingSensitiveConsent = nil
+        actionError = nil
         consentIsReconsent = false
         consentStatusChecked = false
         // 계정 응답의 진입 기록도 계정별이다 — 앞 계정의 응답으로 새 계정의 종료 안내를

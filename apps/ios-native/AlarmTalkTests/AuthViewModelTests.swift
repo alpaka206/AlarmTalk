@@ -2141,6 +2141,43 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.marketingConsentAgreed, true)
     }
 
+    /// 로그인한 동안의 실패는 **그 동작의 자리에** 남는다(2026-10-29 오너 — 알림이 아니라 빨간 글자). `statusMessage` 는 로그인
+    /// 화면만 그려서, 예전에는 스위치만 되돌아가고 이유는 어디에도 안 보였다.
+    func test_로그인_중_실패는_그_동작의_자리에_남고_다시_누르면_지운다() async {
+        let api = MockAuthAPI()
+        api.listConsentsResult = .success(marketingConsents(false))
+        api.recordConsentsResult = .failure(APIError.invalidResponse)
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.loadMarketingConsent()
+
+        await vm.updateMarketingConsent(true)
+        XCTAssertNotNil(vm.actionErrorMessage(for: .marketing))
+        XCTAssertNil(vm.actionErrorMessage(for: .withdrawal), "다른 동작의 자리에는 그리지 않는다")
+        XCTAssertEqual(vm.marketingConsentAgreed, false)
+
+        api.recordConsentsResult = .success(RecordConsentsResponse(success: true, recorded: 1))
+        await vm.updateMarketingConsent(true)
+        XCTAssertNil(vm.actionErrorMessage(for: .marketing), "다시 누르면 지운다")
+
+        api.recordConsentsResult = .failure(APIError.invalidResponse)
+        await vm.updateMarketingConsent(false)
+        XCTAssertNotNil(vm.actionErrorMessage(for: .marketing))
+        vm.signOut(revokeOnServer: false)
+        XCTAssertNil(vm.actionError, "계정을 떠나면 앞 계정의 실패 표시도 내린다")
+    }
+
+    func test_닉네임_저장_실패는_닉네임_자리에_남는다() async {
+        let api = MockAuthAPI()
+        api.updateProfileResult = .failure(APIError.invalidResponse)
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.updateProfile(name: "새 이름")
+
+        XCTAssertNotNil(vm.actionErrorMessage(for: .profile))
+    }
+
     /// 쓰는 사이 계정이 바뀌었다 — 앞 계정 쓰기의 실패가 '직전 값' 으로 되돌리면 그 값이 다음 계정 화면에 남는다.
     func test_marketingConsent_계정이_바뀌면_앞_계정_쓰기의_답을_버린다() async {
         let api = MockAuthAPI()

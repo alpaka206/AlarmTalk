@@ -122,6 +122,7 @@ struct RootView: View {
                     optional: auth.consentOptional,
                     isReconsent: auth.consentIsReconsent,
                     prechecked: auth.consentPrechecked,
+                    errorMessage: auth.actionErrorMessage(for: .consent),
                     onAgree: { agreedOptional in
                         Task { await auth.submitConsents(agreedOptional: agreedOptional) }
                     },
@@ -261,7 +262,11 @@ struct RootView: View {
                         types: request.types,
                         registeringVoice: request.registeringVoice,
                         onAgree: { Task { await auth.submitSensitiveConsents(types: request.types) } },
-                        onDismiss: { auth.pendingSensitiveConsent = nil }
+                        onDismiss: {
+                            auth.clearActionError(.sensitiveConsent)
+                            auth.pendingSensitiveConsent = nil
+                        },
+                        errorMessage: auth.actionErrorMessage(for: .sensitiveConsent)
                     )
                 }
             }

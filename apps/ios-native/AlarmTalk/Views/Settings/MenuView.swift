@@ -68,6 +68,15 @@ struct MenuView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // 탈퇴 신청 실패 — 알럿은 이미 닫혔으니 그 행 아래에 빨간 글자로 남긴다(다시 신청하면 지운다).
+                if let message = auth.actionErrorMessage(for: .accountDeletion) {
+                    Text(message)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.error)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                }
             }
             .settingsCard(title: nil)
 

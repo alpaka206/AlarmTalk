@@ -108,6 +108,7 @@ struct ConsentHistoryView: View {
                 // 아니라 단방향 '철회' 액션이다(켜지지 않는 스위치는 버그로 보인다).
                 onWithdraw: withdrawBusy ? nil : { withdrawConfirmOpen = true }
             )
+            if let message = auth.actionErrorMessage(for: .withdrawal) { inlineError(message) }
             Divider().overlay(theme.palette.outlineVariant)
             // 읽기 전용 이력이 아니라 실제로 켜고 끄는 토글 — 설정에 있던 마케팅 카드를
             // 이 법적 정보 화면으로 통합했다(안드로이드와 같은 위치).
@@ -122,7 +123,19 @@ struct ConsentHistoryView: View {
                     Task { await auth.updateMarketingConsent(next) }
                 }
             )
+            // 실패는 알림이 아니라 그 스위치 아래 빨간 글자로 남긴다 — 화면을 나갔다 와도 보인다(다시 누르면 지운다).
+            if let message = auth.actionErrorMessage(for: .marketing) { inlineError(message) }
         }
+    }
+
+    /// 실패한 동작의 이유 — 그 행 바로 아래에 빨간 글자로(2026-10-29 오너).
+    private func inlineError(_ message: String) -> some View {
+        Text(message)
+            .font(theme.typography.bodySmall)
+            .foregroundStyle(theme.palette.error)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
     }
 
     private var adsSection: some View {

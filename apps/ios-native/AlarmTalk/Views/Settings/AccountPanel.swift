@@ -47,6 +47,15 @@ struct AccountPanel: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // 닉네임 저장 실패 — 알럿은 이미 닫혔으니 그 행 아래에 빨간 글자로 남긴다(다시 저장하면 지운다).
+            if let message = auth.actionErrorMessage(for: .profile) {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(AlarmTalkTheme.error)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+            }
             Divider()
             Button {
                 // ⚠ **즉시 로그아웃하지 않는다.** 누르는 순간 나가지면 잘못 눌렀을 때
