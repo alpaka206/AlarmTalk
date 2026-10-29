@@ -176,7 +176,7 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 | 목소리 철회 — 그 목소리를 쓰던 알람 행을 내리고 그 주인을 깨웠다 | 계정 단위 `voice_access_revoked` — 목소리 주인과 그 목소리로 만든 문구의 주인. 기기가 자기 알람을 내린다(§1-1) |
 | 제자리 교체 — 그 목소리의 직접 입력 알람 행을 내렸다 | 기기가 내린다(등록 기기는 `replaced: true`, 다른 기기는 `voice_access_revoked` scope `custom_messages`). 옛 목소리의 직접 입력 음원은 교체 트랜잭션이 그 자리에서 지운다([voice-and-message.md](voice-and-message.md) §4-1) |
 | 응원 보충 — 알람 POST·PATCH 가 요청했다 | 앱이 저장 뒤 `POST /voice/:id/content-supplement` 로 알린다([voice-and-message.md](voice-and-message.md) §5-4) |
-| 스톡 클립 삭제 — 그 클립을 문 알람 행을 `sound-only` 로 내렸다 · 은퇴 힌트에 '내 서버 알람이 문 클립' 도 실었다 | 기기가 매니페스트에서 빠진 것을 보고 다시 묶는다 · 서버 힌트는 은퇴한 시스템 프리셋만, 나머지는 앱이 매니페스트 클립 목록에서 찾는다([voice-and-message.md](voice-and-message.md) §5-3) |
+| 스톡 클립 삭제 — 그 클립을 문 알람 행을 `sound-only` 로 내렸다 · 은퇴 힌트에 '내 서버 알람이 문 클립' 도 실었다 | 기기가 매니페스트에서 빠진 것을 보고 다시 묶는다 · 서버 힌트는 기본 목소리 무료 테마 프리셋 전부(지금 것은 옛 앱용 — 1.3 강제 업데이트 뒤 뺀다), 1.3 앱은 매니페스트 클립 목록에서도 찾는다([voice-and-message.md](voice-and-message.md) §5-3) |
 | 관리자 '켜진 알람의 문구 테마' | 사용 기록의 문구 종류(`alarm_created`·`alarm_updated` 의 `detail` — [usage-events.md](usage-events.md) §1, [admin-console.md](admin-console.md)) |
 | 탈퇴·이용권 정리의 `DELETE FROM alarms` | 지울 행이 없다 |
 

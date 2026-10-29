@@ -1421,12 +1421,13 @@ export interface LegacyBucketHint {
  * 무엇으로 갈아탈지는 **서버가 이미 안다** — 그 알람이 문 message 의 `category` 다.
  * 앱에 다시 물을 필요가 없어서 매니페스트에 실어 보낸다.
  *
- * ⚠ **은퇴한 시스템 스톡 프리셋만 준다**(2026-10-29 — 서버 알람 사본을 지웠다, #147). 예전에는 그 사용자의 서버 알람이
- *   문 클립도 함께 줬지만, 은퇴하지 않은 클립은 매니페스트의 클립 목록에 이미 테마와 함께 실려 있어 앱이 거기서 찾는다
- *   (안드로이드 `StockClipPrefetchWorker`, iOS `VoiceStudioViewModel` 의 힌트 합치기). 힌트가 꼭 서버에서 와야 하는 것은
- *   목록에서 빠진 은퇴 클립뿐이다.
- *   시스템 스톡은 전역 카탈로그(소유자가 `SYSTEM_VOICE_LIBRARY_USER_ID`)라 남의 개인정보가
- *   아니고, 은퇴한 것만 담으므로 무한정 늘지 않는다(상한도 둔다).
+ * **기본 목소리의 무료 테마 프리셋을 준다 — 지금 것(①)과 은퇴한 것(②)**(2026-10-29 — 서버 알람 사본을 지웠다, #147).
+ *   예전 ①은 그 사용자의 서버 알람이 문 클립이었다. 사본이 없으니 누가 무엇을 무는지 모른다 — 그래서 ①이 고를 수 있던 전부를
+ *   준다. ⚠ **① 을 빼지 말 것 — 옛 앱(1.2.16)은 힌트를 이 칸에서만 읽는다**(코덱스 #977). 1.3 앱은 매니페스트의 클립 목록에서
+ *   스스로 만들어 합치므로(안드로이드 `legacyBucketHintsOf`, iOS `VoiceStudioViewModel.legacyBucketHints(from:)`) ①은 1.3 강제
+ *   업데이트(`lib/app-version.ts` 의 `minSupported`) 뒤에 지운다. 서버에서만 올 수 있는 것은 목록에서 빠진 ②뿐이다.
+ *   시스템 스톡은 전역 카탈로그(소유자가 `SYSTEM_VOICE_LIBRARY_USER_ID`)라 남의 개인정보가 아니다. ①은 목록 크기를 넘지
+ *   않고, ②는 상한을 둔다.
  * ⚠ **`greeting` 은 버킷이 아니다** — 목소리 미리듣기용 자기소개라 알람 테마가 될 수 없다
  *   (`FREE_BUCKET_CATEGORIES` 로 거른다). 힌트로 주면 앱이 그 값을 `bucketId` 에 적고 그 알람이 소개 문구로 운다.
  *   앱이 목록에서 만드는 힌트도 같은 이유로 무료 테마만 담는다(`FreeBucketOrder` / `FreeBucket.order`).
@@ -1512,21 +1513,27 @@ export async function findLegacyBucketHints(db: Client): Promise<LegacyBucketHin
   //   조금 전에 보낸 것과 **글자 그대로 같기** 때문이다(#110 은 행을 표시만 하고 새로 만들지
   //   않는다). 재바인더가 다음 회차의 `liveKeys` 로 갈아탄다 — 그게 원래 설계다.
   //   이 동등성을 **쓰기 경로나 과다 목록에 안전하지 않은 소비자에 기대지 말 것.**
-  // 컬럼이 없으면(배포 창) 은퇴한 행도 없다 — 줄 힌트가 없다.
-  if (!(await messagesRetiredColumnReady(db))) return [];
-  const result = await db.execute({
-    sql: `SELECT m.id AS message_id, m.category AS category, m.language AS language
+  const systemPresets = `SELECT m.id AS message_id, m.category AS category, m.language AS language
             FROM messages m
             JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-           WHERE m.retired_at IS NOT NULL
-             AND COALESCE(m.is_preset, 0) = 1
+           WHERE COALESCE(m.is_preset, 0) = 1
              AND COALESCE(vp.is_system, 0) = 1
-             AND m.category IN (${placeholders})
-           ORDER BY m.retired_at DESC
-           LIMIT ?`,
-    args: [...categories, RETIRED_HINT_LIMIT],
+             AND m.category IN (${placeholders})`;
+  // ① 지금 쓰는 것(옛 앱용 — 위 머리말). 컬럼이 없으면(배포 창) 전부가 지금 것이다.
+  const active = await db.execute({
+    sql: `${systemPresets} ${await retiredIsNullClause(db)} ORDER BY m.category, m.language, m.id`,
+    args: categories,
   });
-  return result.rows.map((row) => ({
+  // ② 은퇴한 것 — 최근 것부터 상한까지. 컬럼이 없으면(배포 창) 은퇴한 행도 없다.
+  const retired = (await messagesRetiredColumnReady(db))
+    ? (
+        await db.execute({
+          sql: `${systemPresets} AND m.retired_at IS NOT NULL ORDER BY m.retired_at DESC LIMIT ?`,
+          args: [...categories, RETIRED_HINT_LIMIT],
+        })
+      ).rows
+    : [];
+  return [...active.rows, ...retired].map((row) => ({
     messageId: String(row.message_id),
     category: String(row.category),
     language: String(row.language ?? 'ko'),

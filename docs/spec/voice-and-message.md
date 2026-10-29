@@ -2172,11 +2172,14 @@ iOS `selectedBucketDraft`).
 | 배포 직후 공백 | 기본 목소리 클립이 0개가 된다(게시는 뒤에 온다 — 위 ⑤) |
 
 **버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트**(매니페스트의 `legacy_bucket_hints` — 서버 `findLegacyBucketHints`)는
-2026-10-29 부터 **은퇴한 시스템 스톡 프리셋만** 싣는다. 예전에는 그 사용자의 서버 알람 사본이 문 클립도 실었다 — 사본을 지운
-뒤로는, 은퇴하지 않은 클립은 매니페스트의 클립 목록에 테마(`category`)와 함께 이미 있으므로 **앱이 거기서 힌트를 만들어 서버
-힌트와 합친다**(서버 힌트가 이긴다 — 안드로이드 `legacyBucketHintsOf`, iOS `VoiceStudioViewModel.legacyBucketHints(from:)`).
-서버에서 와야 하는 힌트는 목록에서 빠진 은퇴 클립뿐이다. `retired_at` 이 없는 배포 창(#110 전)에는 빈 목록이다 — 매니페스트를
-500 으로 만들지 않는다.
+2026-10-29 부터 **기본 목소리의 무료 테마 프리셋 전부 — 지금 것(①)과 은퇴한 것(②)** 을 싣는다. 예전 ①은 그 사용자의 서버 알람
+사본이 문 클립이었다 — 사본이 없으니 누가 무엇을 무는지 모르고, 그래서 ①이 고를 수 있던 전부를 준다. 1.3 앱은 은퇴하지 않은
+클립을 매니페스트의 클립 목록(테마와 함께 실려 있다)에서 **스스로 힌트로 만들어 서버 힌트와 합친다**(서버 힌트가 이긴다 — 안드로이드
+`legacyBucketHintsOf`, iOS `VoiceStudioViewModel.legacyBucketHints(from:)`).
+⚠ **① 을 빼지 말 것 — 옛 앱(1.2.16)은 힌트를 서버 칸에서만 읽는다**(코덱스 #977). 빼면 그 앱의 버킷 없는 옛 알람이 언어를 바꿔도
+다시 묶이지 않는다. ①은 1.3 강제 업데이트(`minSupported`) 뒤에 지운다 — 그때부터 서버에서만 올 수 있는 것은 목록에서 빠진 ②뿐이다.
+②는 최근에 은퇴한 것부터 상한(400)까지다. `retired_at` 이 없는 배포 창(#110 전)에는 전부가 ①이다 — 매니페스트를 500 으로 만들지
+않는다.
 ⚠ **앱이 만드는 힌트도 무료 테마만 담는다 — 기본 목소리의 `greeting` 은 빠진다**(안드로이드 `FreeBucketOrder`, iOS
 `FreeBucket.order`). 그 클립은 목소리 소개라 테마가 아니다 — 서버 힌트는 같은 이유로 `FREE_BUCKET_CATEGORIES` 로 걸렀다. 거르지
 않으면 그 클립을 문 '기본 인사말' 알람이 `greeting` 테마로 다시 묶여 소개 문구로 운다. 클립은 카테고리가 아니라 테마로 본다
@@ -2888,7 +2891,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 대사 교체 = 은퇴 | — | — | `messages.retired_at` (마이그레이션 #110) |
 | 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips`(`retiredIsNullClause`) · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 의 `GET /:id/prerender-status`(진행률)와 `POST /:id/prerender/advance`(게시 개수) (**일곱 곳** = `retired_at IS NULL` 가드 전부) |
 | 은퇴해도 그대로 두는 것 | — | — | `is_preset` = 읽기 인가(`/tts/messages/:id/audio`) · TTL 면제(`audio-retention.ts`). (쓰기 인가 `messageBelongsToCaller` 는 2026-10-29 서버 알람 사본과 함께 지웠다) |
-| 버킷 없는 옛 알람의 테마 힌트 — 서버는 은퇴한 시스템 프리셋만 · 앱이 매니페스트 클립 목록의 기본 목소리 클립으로 채운다(서버 힌트가 이긴다 · 무료 테마만, `greeting` 제외)(§5-3) | `sync/StockClipLanguageRebinder.kt` 의 `legacyBucketHintsOf` ← `StockClipPrefetchWorker`(재바인딩·정리가 같은 힌트) — 회귀 `ServerCopyRemovalTest` | `VoiceStudioViewModel.legacyBucketHints(from:)` ← `adoptStockClipManifest` | `lib/stock-clips.ts` 의 `findLegacyBucketHints`(사용자 인자 없음 · `retired_at` 이 없으면 빈 목록) ← `GET /tts/stock-clips` — 회귀 `legacy-bucket-hints.test.ts` |
+| 버킷 없는 옛 알람의 테마 힌트 — 서버는 기본 목소리 무료 테마 프리셋(지금 것은 옛 앱용 — 1.3 강제 업데이트 뒤 뺀다 · 은퇴한 것) · 앱이 매니페스트 클립 목록의 기본 목소리 클립으로 채운다(서버 힌트가 이긴다 · 무료 테마만, `greeting` 제외)(§5-3) | `sync/StockClipLanguageRebinder.kt` 의 `legacyBucketHintsOf` ← `StockClipPrefetchWorker`(재바인딩·정리가 같은 힌트) — 회귀 `ServerCopyRemovalTest` | `VoiceStudioViewModel.legacyBucketHints(from:)` ← `adoptStockClipManifest` | `lib/stock-clips.ts` 의 `findLegacyBucketHints`(사용자 인자 없음 · `retired_at` 이 없으면 빈 목록) ← `GET /tts/stock-clips` — 회귀 `legacy-bucket-hints.test.ts` |
 | 스톡 클립 삭제는 알람을 건드리지 않는다(서버에 알람이 없다 — 기기가 매니페스트에서 빠진 것을 보고 다시 묶는다) | — | — | `lib/stock-clips.ts` 의 `deleteStockClips`(2026-10-29 전에는 문 알람 행을 `sound-only` 로 내렸다) |
 | 스톡 게시 | — | — | `scripts/prerender-stock-preview.ts` → `scripts/publish-stock-clips.ts`. cron(`index.ts` 의 `scheduled`)의 **시스템 드레인은 꺼져 있다** — 클론 드레인만 산다 |
 | 소리만 바꾸는 회차 = 제자리 교체(은퇴 아님) | 매니페스트 `audio_url` 이 바뀌면 다시 받는다(`StockClipPrefetchWorker` 의 낡음 판정) | `VoiceStudioViewModel.refreshChangedCachedStockClips` | 시스템: `scripts/publish-stock-clips.ts` 의 교체 갈래 → `replaceStockClipInPlace`(`lib/stock-clip-replace.ts`, 회귀 `stock-clip-replace.test.ts`) · 문구 함수 `systemStockTexts`(`lib/stock-clips.ts`) · 클론: 마이그레이션 #124(회귀 `migrations-v4-turbo-requeue.test.ts`) → `generateStockClip` 의 교체 갈래 · 새 등록 먼저 `claimPendingPrerenderVoices`(`ORDER BY refresh_existing`) |

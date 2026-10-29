@@ -842,9 +842,9 @@ struct AlarmEditorSheet: View {
                 await RewardedAds.shared.load(ssvUserID: userID, ssvCustomData: customData)
             },
             show: { handle in
-                // 시청 시작은 광고가 **실제로 뜨는 순간**이다(`AdRewardAttempts.viewStarted`).
-                AdRewardAttempts.viewStarted(userID: userID)
-                return await RewardedAds.shared.show(handle)
+                // 시청 시작은 광고가 **실제로 뜨는 순간**이다(`AdRewardAttempts.viewStarted`) — 띄우기 전에 적으면 표시 실패도
+                // 시청으로 세진다(코덱스 #977). 안드로이드 `RewardedAds.show` 의 `onShown` 과 같다.
+                await RewardedAds.shared.show(handle) { AdRewardAttempts.viewStarted(userID: userID) }
             },
             errorCode: { ($0 as? APIError)?.serverErrorCode }
         )
