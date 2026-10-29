@@ -180,8 +180,11 @@ android {
         //   받아 둔 알람은 업데이트하며 내 알람으로 바뀐다(Room 28). ⚠ 이 빌드는 **강제 업데이트 하한**이 된다 — 옛 빌드는
         //   없앤 이용권과 코드 입력을 계속 보인다. 하한(`app-version.ts` 의 Android `minSupported` 36)은 **Play 게재를
         //   확인한 뒤** 올린다. 서버(정책 7·6 수락)가 이 빌드보다 먼저 나가야 한다. 광고 SDK 가 처음 실리는 빌드다.
-        versionCode = 36
-        versionName = "1.2.16"
+        // 37 = 1.3.0. 법무 문서 8 을 싣는다(번들) — 서버(정책 8·7 수락)가 이 빌드보다 먼저 나가야 한다. Room 28→31(응원 칸·
+        //   사용 기록 2판·날짜 지정 알람). ⚠ 이 빌드는 **강제 업데이트 하한**이 된다(`app-version.ts` 의 Android `minSupported` 37)
+        //   — **Play 게재를 확인한 뒤에만** 올린다. 광고 노출은 꺼진 채다(운영 광고 단위 없음·서버 스위치 꺼짐).
+        versionCode = 37
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "com.alarmtalk.app.AlarmTalkTestRunner"
 
