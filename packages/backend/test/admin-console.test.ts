@@ -83,12 +83,10 @@ async function seedPeople() {
     ['u-e', 'pending_deletion'],
     ['u-f', 'active'],
   ] as const) {
-    await run(`INSERT INTO users (id, email, name, plan, deletion_status) VALUES (?, ?, ?, 'free', ?)`, [
+    await run(`INSERT INTO users (id, email, plan, deletion_status) VALUES (?, ?, 'free', ?)`, [
       id,
       `${id}@example.com`,
-      id,
-      status,
-    ]);
+      status,]);
   }
   await run(`UPDATE users SET email = 'Tester@Example.com' WHERE id = 'u-c'`);
   const tokens: Array<[string, string, string]> = [
@@ -266,7 +264,7 @@ describe('발송', () => {
     await expect(sendTestPush(db, NO_PUSH_ENV, 'nobody@example.com', copy)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND',
     });
-    await run(`INSERT OR IGNORE INTO users (id, email, name, plan) VALUES ('u-none', 'none@example.com', 'n', 'free')`);
+    await run(`INSERT OR IGNORE INTO users (id, email, plan) VALUES ('u-none', 'none@example.com', 'free')`);
     await fullConsent('u-none'); // 기기만 없는 사람 — 개요의 재동의 숫자를 흔들지 않게
     await expect(sendTestPush(db, NO_PUSH_ENV, 'none@example.com', copy)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE',
@@ -303,7 +301,7 @@ describe('발송', () => {
     const extra = STEP_SEND_LIMIT + 5;
     for (let i = 0; i < extra; i++) {
       const id = `u-bulk-${String(i).padStart(3, '0')}`;
-      await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`, [id, `${id}@example.com`, id]);
+      await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, 'free')`, [id, `${id}@example.com`]);
       await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`, [
         `pt-bulk-${String(i).padStart(3, '0')}`,
         id,
@@ -365,7 +363,7 @@ describe('발송', () => {
     const extra = STEP_SEND_LIMIT + 5;
     for (let i = 0; i < extra; i++) {
       const id = `u-grow-${String(i).padStart(3, '0')}`;
-      await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`, [id, `${id}@example.com`, id]);
+      await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, 'free')`, [id, `${id}@example.com`]);
       await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`, [
         `pt-grow-${String(i).padStart(3, '0')}`,
         id,
@@ -399,7 +397,7 @@ describe('발송', () => {
     const ahead = 130;
     for (let i = 0; i < ahead; i++) {
       const id = `u-ahead-${String(i).padStart(3, '0')}`;
-      await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`, [id, `${id}@example.com`, id]);
+      await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, 'free')`, [id, `${id}@example.com`]);
       await fullConsent(id);
       await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`, [
         `pt-0ahead-${String(i).padStart(3, '0')}`,
@@ -568,7 +566,7 @@ describe('화면', () => {
   });
 
   it('동의 행이 하나도 없는 사람도 재동의 필요로 센다 — 서버는 그 사람도 막는다', async () => {
-    await run(`INSERT INTO users (id, email, name, plan) VALUES ('u-zero', 'zero@example.com', 'zero', 'free')`);
+    await run(`INSERT INTO users (id, email, plan) VALUES ('u-zero', 'zero@example.com', 'free')`);
     try {
       expect((await loadOverview(db, 30)).consent.reconsentNeeded).toBe(3);
     } finally {

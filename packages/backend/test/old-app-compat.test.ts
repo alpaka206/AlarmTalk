@@ -116,13 +116,13 @@ async function scalar(sql: string, args: Array<string | number> = []): Promise<u
 
 beforeAll(async () => {
   await runMigrations(db);
-  await db.execute(`INSERT INTO users (id, email, name, plan, deletion_status) VALUES
-    ('me','me@t.test','나','plus','active'),
-    ('other','other@t.test','남','plus','active'),
-    ('leaving','leaving@t.test','떠나는 사람','plus','pending_deletion'),
-    ('p1','p1@t.test','등록1','plus','active'),
-    ('p2','p2@t.test','등록2','plus','active'),
-    ('rep','rep@t.test','교체','plus','active')`);
+  await db.execute(`INSERT INTO users (id, email, plan, deletion_status) VALUES
+    ('me','me@t.test','plus','active'),
+    ('other','other@t.test','plus','active'),
+    ('leaving','leaving@t.test','plus','pending_deletion'),
+    ('p1','p1@t.test','plus','active'),
+    ('p2','p2@t.test','plus','active'),
+    ('rep','rep@t.test','plus','active')`);
   for (const user of ['me', 'other', 'leaving', 'p1', 'p2', 'rep']) {
     for (const type of ['terms', 'privacy', 'age14', 'overseas_transfer', 'voice_biometric']) {
       await db.execute({

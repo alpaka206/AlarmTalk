@@ -10,7 +10,6 @@ import {
 } from '../lib/fcm';
 import { withWriteTransaction, withRetryableWriteTransaction } from '../lib/transactions';
 import { validateDynamicPromptSettings } from '../lib/dynamic-prompt-settings';
-import { DISPLAY_NAME_MAX_LENGTH, normalizeDisplayName } from '@alarmtalk/shared';
 import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
@@ -28,8 +27,8 @@ const user = new Hono<AppEnv>();
 
 /**
  * PATCH /user/me
- * 본인 프로필(닉네임·문구 설정)을 업데이트한다. 옛 앱이 보내던 가족 알람 설정 키(허용·방해금지 시간)는
- * 받아도 읽지 않는다 — 그 키만 오면 빈 본문과 같다(`NO_FIELDS_TO_UPDATE`).
+ * 본인 문구 설정을 업데이트한다. 옛 앱이 보내던 가족 알람 설정 키(허용·방해금지 시간)는
+ * 받아도 읽지 않는다 — 그 키만 오면 빈 본문과 같다(`NO_FIELDS_TO_UPDATE`). 닉네임(`name`)은 받고 버린다(아래).
  */
 user.patch('/me', async (c) => {
   const userId = c.get('userId');
@@ -47,26 +46,11 @@ user.patch('/me', async (c) => {
 
   const updates: string[] = [];
   const args: (string | number)[] = [];
-  let resolvedName: string | null = null;
   let resolvedDynamicPromptSettings: ReturnType<typeof validateDynamicPromptSettings> = null;
 
-  if ('name' in body && body.name !== undefined) {
-    if (typeof body.name !== 'string') {
-      return c.json({ error: 'name 은 문자열이어야 합니다', error_code: 'INVALID_NAME' }, 400);
-    }
-    // trim 만으로는 부족하다 — 제로폭·양방향 문자는 공백이 아니라서 살아남고, 그대로
-    // 화면·알림에 노출된다. 규칙은 shared 한 곳에서만 정의한다.
-    const trimmed = normalizeDisplayName(body.name);
-    if (trimmed.length === 0 || trimmed.length > DISPLAY_NAME_MAX_LENGTH) {
-      return c.json(
-        { error: '닉네임은 1~30자여야 합니다', error_code: 'INVALID_NAME_LENGTH' },
-        400,
-      );
-    }
-    updates.push('name = ?');
-    args.push(trimmed);
-    resolvedName = trimmed;
-  }
+  // ⚠ **`name` 은 받기만 하고 버린다**(2026-10-29 닉네임 삭제 — `users.name` 칸째 없다). 옛 앱(1.2.16)의 닉네임 수정이 보낸다 —
+  //   거절하면 그 앱이 "바꾸지 못했어요" 를 띄우므로 성공으로 답하고 빈 이름을 돌려준다(그 앱은 이름이 비면 이메일을 보인다).
+  const sentNameOnly = 'name' in body && body.name !== undefined && !('dynamic_prompt_settings' in body && body.dynamic_prompt_settings !== undefined);
 
   if ('dynamic_prompt_settings' in body && body.dynamic_prompt_settings !== undefined) {
     const settings = validateDynamicPromptSettings(body.dynamic_prompt_settings);
@@ -85,6 +69,7 @@ user.patch('/me', async (c) => {
   }
 
   if (updates.length === 0) {
+    if (sentNameOnly) return c.json({ success: true, name: '', dynamic_prompt_settings: null });
     return c.json({ error: '변경할 필드가 없습니다', error_code: 'NO_FIELDS_TO_UPDATE' }, 400);
   }
 
@@ -100,7 +85,8 @@ user.patch('/me', async (c) => {
 
   return c.json({
     success: true,
-    name: resolvedName,
+    // 옛 앱이 읽는 칸 — 이름은 더 저장하지 않는다(위).
+    name: '',
     dynamic_prompt_settings: resolvedDynamicPromptSettings,
   });
 });

@@ -42,7 +42,7 @@ async function replacementDb(): Promise<{ db: Client; path: string }> {
   await db.batch([
     // 교체도 승격과 같은 게이트(유료 플랜·민감 동의·월 1회 원장)를 통과해야 하므로
     // 기본 시드는 '통과하는 계정' 이다. 게이트별 거절은 아래 테스트가 각각 무너뜨린다.
-    "INSERT INTO users (id, google_id, email, name, plan) VALUES ('u1','g1','u1@test.com','나','plus')",
+    "INSERT INTO users (id, google_id, email, plan) VALUES ('u1','g1','u1@test.com','plus')",
     `INSERT INTO voice_profiles
        (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at,
         preview_language, speech_style, speech_style_status)
@@ -490,7 +490,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
     const db = await migratedDb();
     try {
       await db.batch([
-        "INSERT INTO users (id, email, name) VALUES ('u1','a@b.c','나')",
+        "INSERT INTO users (id, email) VALUES ('u1','a@b.c')",
         `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft)
          VALUES ('vp1','u1','엄마','ready','eleven-NEW',0)`,
         `INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
@@ -549,7 +549,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
     const db = await migratedDb();
 
     await db.execute({
-      sql: `INSERT INTO users (id, email, name) VALUES ('u1', 'a@b.c', '나')`,
+      sql: `INSERT INTO users (id, email) VALUES ('u1', 'a@b.c')`,
       args: [],
     });
     await db.execute({
@@ -600,7 +600,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
 
   it('옛 방식(프로필 삭제)은 알람의 목소리 조인을 끊는다 — 교체가 필요한 이유', async () => {
     const db = await migratedDb();
-    await db.execute("INSERT INTO users (id, email, name) VALUES ('u1','a@b.c','나')");
+    await db.execute("INSERT INTO users (id, email) VALUES ('u1','a@b.c')");
     await db.execute(`INSERT INTO voice_profiles (id, user_id, name, status, is_draft)
                       VALUES ('vp1','u1','엄마 목소리','ready',0)`);
     await db.execute(`INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
@@ -623,7 +623,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
   it('교체 회차는 이미 있는 클립도 전부 대상이 된다 — 아니면 조용히 아무 일도 안 한다', async () => {
     const { findMissingStockTargets } = await import('../src/lib/stock-clips');
     const db = await migratedDb();
-    await db.execute("INSERT INTO users (id, email, name) VALUES ('u1','a@b.c','나')");
+    await db.execute("INSERT INTO users (id, email) VALUES ('u1','a@b.c')");
     await db.execute(`INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft)
                       VALUES ('vp1','u1','엄마','ready','eleven-1',0)`);
     const voice = {

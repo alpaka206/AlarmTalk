@@ -71,7 +71,7 @@ beforeAll(async () => {
     ['u-paid', 'plus'],
     ['u-admin', 'free'],
   ] as const) {
-    await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, ?)`, [id, `${id}@example.com`, id, plan]);
+    await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, ?)`, [id, `${id}@example.com`, plan]);
     for (const type of ['terms', 'privacy', 'age14']) {
       await run(
         `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed, created_at) VALUES (?, ?, ?, ?, 1, ?)`,

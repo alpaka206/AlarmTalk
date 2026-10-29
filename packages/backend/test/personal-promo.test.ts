@@ -262,10 +262,10 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
   beforeAll(async () => {
     db = await freshDb('gates');
     await db.batch([
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-free', NULL, 'free@t.test', '무료', 'free')`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-free-new', NULL, 'new@t.test', '신규', 'free')`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-paid', NULL, 'paid@t.test', '유료', 'plus')`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-owner', NULL, 'owner@t.test', '보류', 'free')`,
+      `INSERT INTO users (id, google_id, email, plan) VALUES ('pp-free', NULL, 'free@t.test', 'free')`,
+      `INSERT INTO users (id, google_id, email, plan) VALUES ('pp-free-new', NULL, 'new@t.test', 'free')`,
+      `INSERT INTO users (id, google_id, email, plan) VALUES ('pp-paid', NULL, 'paid@t.test', 'plus')`,
+      `INSERT INTO users (id, google_id, email, plan) VALUES ('pp-hold-owner', NULL, 'owner@t.test', 'free')`,
       `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
        VALUES ('sub-paid', 'pp-paid', '${PERSONAL}', 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
       // 결제 보류 — 행(active·suspended)은 남고 users.plan 만 free 로 회수된 상태.
@@ -363,7 +363,7 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
       // free 라 0 이다(행이 남아 있어도 원시 free 다).
       it('직접 입력 한도 — 보류된 구독의 살아 있는 행이 있어도 원시 free 는 개인 플랜 한도·개인 풀', async () => {
         await db.batch([
-          `INSERT OR IGNORE INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-live', NULL, 'hl@t.test', '보류', 'free')`,
+          `INSERT OR IGNORE INTO users (id, google_id, email, plan) VALUES ('pp-hold-live', NULL, 'hl@t.test', 'free')`,
           `INSERT OR IGNORE INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at, entitlement_state)
            VALUES ('sub-hold-live', 'pp-hold-live', '${PERSONAL}', 'active', '2026-08-01T00:00:00Z', '2099-01-01T00:00:00Z', 'suspended')`,
         ]);
@@ -554,8 +554,8 @@ async function seedVoice(
 
 async function seedUser(client: Client, id: string, plan: string | null) {
   await client.execute({
-    sql: `INSERT INTO users (id, google_id, email, name, plan) VALUES (?, NULL, ?, ?, ?)`,
-    args: [id, `${id}@t.test`, id, plan],
+    sql: `INSERT INTO users (id, google_id, email, plan) VALUES (?, NULL, ?, ?)`,
+    args: [id, `${id}@t.test`, plan],
   });
 }
 

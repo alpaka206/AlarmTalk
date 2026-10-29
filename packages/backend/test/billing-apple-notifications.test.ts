@@ -146,7 +146,7 @@ async function recorded(uuid: string) {
 
 async function seedOwner() {
   await db.execute(
-    "INSERT INTO users (id, email, name, plan) VALUES ('owner', 'owner@example.test', 'owner', 'plus')",
+    "INSERT INTO users (id, email, plan) VALUES ('owner', 'owner@example.test', 'plus')",
   );
   await db.execute({
     sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at, cancel_at_period_end)

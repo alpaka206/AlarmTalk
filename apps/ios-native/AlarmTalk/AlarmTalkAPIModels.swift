@@ -915,7 +915,7 @@ struct PasswordResetConfirmResponse: Decodable, Equatable {
 }
 
 // MARK: - 동의 목록 (GET user/consents)
-// Android `AuthApi.kt:165-174`, 백엔드 user.ts:401-431.
+// Android `AuthApi.kt` 의 `ConsentRecord`, 백엔드 `routes/user.ts` 의 `GET /consents`.
 
 /// 동의 기록 1건(유형별 최신값). 백엔드는 snake_case 로 보내며 decoder 의
 /// convertFromSnakeCase 로 camelCase 에 매핑된다. Android `ConsentRecord`.

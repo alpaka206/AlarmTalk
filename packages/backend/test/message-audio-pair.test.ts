@@ -78,8 +78,8 @@ beforeAll(async () => {
   stockVoice = String(stock.rows[0]!.id);
   const stockOwner = String(stock.rows[0]!.user_id);
 
-  await db.execute(`INSERT INTO users (id, email, name, plan) VALUES
-    ('me','me@t.test','나','plus'), ('other','other@t.test','남','plus'), ('freeu','free@t.test','무료','free')`);
+  await db.execute(`INSERT INTO users (id, email, plan) VALUES
+    ('me','me@t.test','plus'), ('other','other@t.test','plus'), ('freeu','free@t.test','free')`);
   for (const user of ['me', 'other', 'freeu']) {
     for (const type of ['terms', 'privacy', 'age14', 'overseas_transfer', 'voice_biometric']) {
       await db.execute({

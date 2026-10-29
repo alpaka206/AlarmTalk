@@ -3691,6 +3691,16 @@ export const migrations: Migration[] = [
       `DROP TABLE IF EXISTS briefing_corp_codes`,
     ],
   },
+  {
+    // **닉네임 칸을 지운다**(2026-10-29 오너 — "가입 때도 안 받아도 돼, 테이블에서 그거 자체를 삭제"). 혼자 쓰는 앱이라 부를
+    // 이름이 필요 없다. 같은 배포에서 이 칸을 읽고 쓰는 코드가 모두 빠졌다 — 배포 → 마이그레이션 창에 새 코드는 이 칸을 부르지
+    // 않고, 칸이 nullable 이라 이름 없는 INSERT 도 옛 스키마에서 그대로 통과한다. 옛 앱(1.2.16)에는 응답의 `name` 을 빈 문자열로
+    // 싣는다(`routes/auth.ts` 의 `LEGACY_EMPTY_NAME`). 이 칸을 참조하는 색인·뷰·트리거는 없다(_kst 뷰는 이미 모두 지웠다).
+    // 이미 지운 DB 에서 다시 돌면 'no such column' 이라 그대로 지나간다(`isIdempotentDDLError`).
+    id: 146,
+    name: 'drop-users-name',
+    statements: [`ALTER TABLE users DROP COLUMN name`],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

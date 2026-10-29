@@ -20,7 +20,6 @@ import {
   EmailVerificationConfirmRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetConfirmRequestSchema,
-  clampDisplayName,
 } from '@alarmtalk/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
 import { verifyAppleIdToken } from '../lib/apple-oauth';
@@ -49,6 +48,14 @@ import {
   sendPasswordResetCode,
   shouldExposeDebugEmailCode,
 } from '../lib/email-verification';
+
+
+/**
+ * 응답의 `user.name` — **언제나 빈 문자열이다**(2026-10-29 닉네임 삭제 — `users.name` 칸째 지웠다, 마이그레이션 #146).
+ * 칸을 빼지 않는 이유: 옛 안드로이드(1.2.16)가 이 칸을 null 이 아닌 문자열로 읽는다(`authSession.user.name.ifBlank`) — 빠지면
+ * 로그인 직후 멈춘다. 1.3 강제 업데이트 뒤 응답에서도 뺀다.
+ */
+const LEGACY_EMPTY_NAME = '';
 
 const auth = new Hono<{ Bindings: Env }>();
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
@@ -516,7 +523,8 @@ auth.post('/register', async (c) => {
     );
   }
 
-  const { email, password, name, email_verification_code } = parsed.data;
+  // `name` 은 옛 앱(1.2.16)만 보낸다 — 받기만 하고 버린다(2026-10-29 닉네임 삭제, `users.name` 칸째 없다).
+  const { email, password, email_verification_code } = parsed.data;
   const normalizedEmail = normalizeAuthEmail(email);
   const db = getDB(c.env);
 
@@ -548,10 +556,9 @@ auth.post('/register', async (c) => {
     // google_id = users.id 를 박아 넣어(외부 식별자 공간 오염) 나중에 같은 이메일로
     // 구글 로그인하면 그 값이 덮어써지며 식별자가 갈라졌다. 이제 NULL 로 둔다.
     await db.execute({
-      sql: `INSERT INTO users (id, email, google_id, password_hash, name)
-            VALUES (?, ?, NULL, ?, ?)`,
-      // 1.3 앱은 이름을 보내지 않는다 — 빈 문자열로 둔다(NULL 이면 옛 안드로이드가 응답의 이름 칸을 못 받아 설정에서 멈춘다).
-      args: [id, normalizedEmail, passwordHash, name ?? ''],
+      sql: `INSERT INTO users (id, email, google_id, password_hash)
+            VALUES (?, ?, NULL, ?)`,
+      args: [id, normalizedEmail, passwordHash],
     });
 
     await consumeEmailVerificationCodes(db, normalizedEmail, EMAIL_VERIFICATION_PURPOSE_REGISTER);
@@ -559,7 +566,7 @@ auth.post('/register', async (c) => {
     // 신규 가입자는 token_epoch 가 항상 0 이지만(방금 INSERT), 폐기 로직과 일관되게
     // 명시적으로 박아 둔다.
     const token = await signAppJwt(
-      { sub: id, email: normalizedEmail, name: name || undefined, epoch: 0 },
+      { sub: id, email: normalizedEmail, epoch: 0 },
       c.env.JWT_SECRET,
     );
 
@@ -573,8 +580,8 @@ auth.post('/register', async (c) => {
         user: {
           id,
           email: normalizedEmail,
-          // 옛 앱은 이 칸을 문자열로 읽는다 — 1.3 앱이 이름 없이 가입해도 빈 문자열로 싣는다.
-          name: name ?? '',
+          // 옛 앱은 이 칸을 문자열로 읽는다(`LEGACY_EMPTY_NAME`).
+          name: LEGACY_EMPTY_NAME,
           plan: computedUserPlan('free' as const, promo),
           // 방금 만든 계정이라 구독 행이 없다 — 끝나면 종료 전환 대상이다.
           personal_promo: personalPromoField('free', promo, { hasActiveSubscriptionRow: false }),
@@ -623,7 +630,7 @@ auth.post('/login', async (c) => {
 
   try {
     const result = await db.execute({
-      sql: `SELECT id, google_id, email, password_hash, name, ${planWithGrantSql('users')} AS plan, token_epoch,
+      sql: `SELECT id, google_id, email, password_hash, ${planWithGrantSql('users')} AS plan, token_epoch,
                    deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users WHERE email = ?`,
       args: [normalizedEmail],
@@ -643,7 +650,6 @@ auth.post('/login', async (c) => {
       google_id: string | null;
       email: string;
       password_hash: string | null;
-      name: string | null;
       plan: 'free' | 'plus' | null;
       token_epoch: number | string | null;
       deletion_status: string | null;
@@ -669,7 +675,6 @@ auth.post('/login', async (c) => {
       {
         sub: row.id,
         email: row.email,
-        name: row.name ?? undefined,
         // 유예 계정이면 아래 철회가 세대를 올린다 — 올린 세대로 서명한다(`cancelPendingDeletionOnSignIn`).
         epoch: Number(row.token_epoch ?? 0) + (row.deletion_status === 'pending_deletion' && row.deletion_requested_at ? 1 : 0),
       },
@@ -710,7 +715,7 @@ auth.post('/login', async (c) => {
       user: {
         id: row.id,
         email: row.email,
-        name: row.name ?? '',
+        name: LEGACY_EMPTY_NAME,
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
         plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
         personal_promo: personalPromo,
@@ -748,12 +753,10 @@ auth.post('/google', async (c) => {
     const google = await verifyGoogleIdToken(parsed.data.id_token, c.env.GOOGLE_CLIENT_ID);
     const googleId = google.sub;
     const email = (google.email || `${googleId}@google.local`).toLowerCase().trim();
-    // ⚠ **구글이 준 이름은 받지 않는다**(2026-10-29 닉네임 삭제 — 처리방침 수집 항목에서도 뺐다). 이미 저장된 이름만 옛 앱을
-    //   위해 그대로 둔다(강제 업데이트 뒤 칸째 지운다).
-    const name = '';
+    // ⚠ **구글이 준 이름은 받지 않는다**(2026-10-29 닉네임 삭제 — 처리방침 수집 항목에서도 뺐고, `users.name` 칸째 없다).
 
     const existing = await db.execute({
-      sql: `SELECT id, google_id, email, name, ${planWithGrantSql('users')} AS plan, token_epoch,
+      sql: `SELECT id, google_id, email, ${planWithGrantSql('users')} AS plan, token_epoch,
                    deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users
             WHERE google_id = ? OR email = ?
@@ -768,9 +771,6 @@ auth.post('/google', async (c) => {
     let tokenEpoch = 0;
     // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
     let observedDeletionRequestedAt: string | null = null;
-    // DB 에 쓰는 이름과 응답·JWT 에 담는 이름은 **같은 값이어야 한다.** 갈라지면 로그인
-    // 직후엔 구글 이름이 보이다가 새로고침하면 저장된 닉네임으로 바뀐다.
-    let effectiveName = name;
 
     if (existing.rows.length > 0) {
       const row = typedRow<
@@ -778,7 +778,6 @@ auth.post('/google', async (c) => {
           id: string;
           google_id: string | null;
           email: string;
-          name: string | null;
           plan: 'free' | 'plus' | null;
           token_epoch: number | string | null;
         } & Record<string, unknown>
@@ -788,23 +787,11 @@ auth.post('/google', async (c) => {
       tokenEpoch = Number(row.token_epoch ?? 0);
       observedDeletionRequestedAt =
         row.deletion_status === 'pending_deletion' ? ((row.deletion_requested_at as string | null) ?? null) : null;
-      // 이미 이름이 있으면 그게 사용자가 고른 닉네임이다. 구글 이름은 빈 칸만 채운다.
-      //
-      // 단 **저장된 값도 규칙을 통과시킨다.** 옛 스키마(가입 max(64)·trim 없음)로 만들어진
-      // 행에는 공백뿐인 이름, 보이지 않는 문자, 64자짜리가 남아 있을 수 있다. 그대로
-      // 이기게 두면 이 문으로 다시 DB·JWT·응답에 실려 나가, 규칙을 한 곳으로 모은 의미가
-      // 없어진다. 정리해서 남는 게 없으면 구글 이름으로 고쳐 준다(Codex #671 P2).
-      const storedName = clampDisplayName(row.name ?? '');
-      effectiveName = storedName || name;
-
       await db.execute({
         sql: `UPDATE users
-              SET google_id = ?, email = ?, name = ?, updated_at = datetime('now')
+              SET google_id = ?, email = ?, updated_at = datetime('now')
               WHERE id = ?`,
-        // **저장된 이름이 이긴다.** 반대였다 — 재로그인할 때마다 구글 프로필 이름이
-        // 사용자가 앱에서 고친 닉네임을 덮어써서, 닉네임 수정이 다음 로그인에 되돌아갔다.
-        // 구글 이름은 아직 이름이 없을 때만 채운다.
-        args: [googleId, email, effectiveName || null, userId],
+        args: [googleId, email, userId],
       });
     } else {
       // 신규 구글 가입도 서버 생성 UUID 를 PK 로 쓴다. 과거에는 googleId 를 그대로 PK 로
@@ -812,9 +799,9 @@ auth.post('/google', async (c) => {
       userId = crypto.randomUUID();
       rawPlan = 'free';
       await db.execute({
-        sql: `INSERT INTO users (id, google_id, email, name)
-              VALUES (?, ?, ?, ?)`,
-        args: [userId, googleId, email, name],
+        sql: `INSERT INTO users (id, google_id, email)
+              VALUES (?, ?, ?)`,
+        args: [userId, googleId, email],
       });
     }
 
@@ -825,7 +812,7 @@ auth.post('/google', async (c) => {
     // 사용자를 보게 되어(구독 조회 등이 조용히 0행) 데이터가 반으로 쪼개졌다.
     const token = await signAppJwt(
       // 유예 계정이면 아래 철회가 세대를 올린다 — 올린 세대로 서명한다(`cancelPendingDeletionOnSignIn`).
-      { sub: userId, email, name: effectiveName || undefined, epoch: tokenEpoch + (observedDeletionRequestedAt ? 1 : 0) },
+      { sub: userId, email, epoch: tokenEpoch + (observedDeletionRequestedAt ? 1 : 0) },
       c.env.JWT_SECRET,
     );
 
@@ -870,7 +857,7 @@ auth.post('/google', async (c) => {
       user: {
         id: userId,
         email,
-        name: effectiveName,
+        name: LEGACY_EMPTY_NAME,
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
         plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
         personal_promo: personalPromo,
@@ -944,11 +931,10 @@ auth.post('/apple', async (c) => {
     );
     const appleId = apple.sub;
     const email = (apple.email || `${appleId}@apple.local`).toLowerCase().trim();
-    // ⚠ **애플이 준 이름은 받지 않는다**(2026-10-29 닉네임 삭제 — 1.3 앱은 보내지도 않는다). 이미 저장된 이름만 옛 앱을 위해 둔다.
-    const name = '';
+    // ⚠ **애플이 준 이름은 받지 않는다**(2026-10-29 닉네임 삭제 — 1.3 앱은 보내지도 않고, `users.name` 칸째 없다).
 
     const existing = await db.execute({
-      sql: `SELECT id, apple_id, email, name, ${planWithGrantSql('users')} AS plan, token_epoch,
+      sql: `SELECT id, apple_id, email, ${planWithGrantSql('users')} AS plan, token_epoch,
                    deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users
             WHERE apple_id = ? OR email = ?
@@ -963,7 +949,6 @@ auth.post('/apple', async (c) => {
     let tokenEpoch = 0;
     // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
     let observedDeletionRequestedAt: string | null = null;
-    let effectiveName = name;
     // ⚠ **저장된 진짜 이메일이 이긴다**(코덱스 #730 3차). 애플은 재로그인 때 이메일을 안
     // 주는 경우가 있어 위에서 `<sub>@apple.local` 을 합성하는데, 그 값을 JWT·응답에 실으면
     // **앱이 세션의 이메일을 가짜 주소로 덮어쓰고** 그 뒤로는 계속 그걸 보여 준다.
@@ -976,7 +961,6 @@ auth.post('/apple', async (c) => {
           id: string;
           apple_id: string | null;
           email: string;
-          name: string | null;
           plan: 'free' | 'plus' | null;
           token_epoch: number | string | null;
         } & Record<string, unknown>
@@ -986,30 +970,25 @@ auth.post('/apple', async (c) => {
       tokenEpoch = Number(row.token_epoch ?? 0);
       observedDeletionRequestedAt =
         row.deletion_status === 'pending_deletion' ? ((row.deletion_requested_at as string | null) ?? null) : null;
-      // 저장된 이름이 이긴다 — 애플 이름은 빈 칸만 채운다(구글 경로와 동일한 이유:
-      // 재로그인이 사용자가 고친 닉네임을 덮어쓰면 안 된다). 옛 스키마로 저장된 값도
-      // 규칙을 통과시킨다.
-      const storedName = clampDisplayName(row.name ?? '');
-      effectiveName = storedName || name;
       const storedEmail = (row.email ?? '').trim();
       if (storedEmail) effectiveEmail = storedEmail;
 
       await db.execute({
         sql: `UPDATE users
-              SET apple_id = ?, name = ?, updated_at = datetime('now')
+              SET apple_id = ?, updated_at = datetime('now')
               WHERE id = ?`,
         // ⚠ 구글 경로와 달리 **email 을 덮어쓰지 않는다.** 애플은 재로그인 때 이메일을
         // 안 주는 경우가 있어, 그때 합성한 `<sub>@apple.local` 로 갱신하면 이미 저장된
         // 진짜 주소가 지워진다.
-        args: [appleId, effectiveName || null, userId],
+        args: [appleId, userId],
       });
     } else {
       userId = crypto.randomUUID();
       rawPlan = 'free';
       await db.execute({
-        sql: `INSERT INTO users (id, apple_id, email, name)
-              VALUES (?, ?, ?, ?)`,
-        args: [userId, appleId, email, name],
+        sql: `INSERT INTO users (id, apple_id, email)
+              VALUES (?, ?, ?)`,
+        args: [userId, appleId, email],
       });
     }
 
@@ -1050,7 +1029,7 @@ auth.post('/apple', async (c) => {
     // JWT sub 은 항상 users.id (구글 경로 주석 참고).
     const token = await signAppJwt(
       // 유예 계정이면 아래 철회가 세대를 올린다 — 올린 세대로 서명한다(`cancelPendingDeletionOnSignIn`).
-      { sub: userId, email: effectiveEmail, name: effectiveName || undefined, epoch: tokenEpoch + (observedDeletionRequestedAt ? 1 : 0) },
+      { sub: userId, email: effectiveEmail, epoch: tokenEpoch + (observedDeletionRequestedAt ? 1 : 0) },
       c.env.JWT_SECRET,
     );
 
@@ -1095,7 +1074,7 @@ auth.post('/apple', async (c) => {
       user: {
         id: userId,
         email: effectiveEmail,
-        name: effectiveName,
+        name: LEGACY_EMPTY_NAME,
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
         plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
         personal_promo: personalPromo,
@@ -1148,7 +1127,7 @@ auth.get('/me', async (c) => {
   try {
     const db = getDB(c.env);
     const result = await db.execute({
-      sql: `SELECT id, email, name, ${planWithGrantSql('users')} AS plan, token_epoch, deletion_status, dynamic_prompt_settings_json
+      sql: `SELECT id, email, ${planWithGrantSql('users')} AS plan, token_epoch, deletion_status, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [payload.sub, payload.sub],
     });
@@ -1159,7 +1138,6 @@ auth.get('/me', async (c) => {
       {
         id: string;
         email: string;
-        name: string | null;
         plan: 'free' | 'plus' | null;
         token_epoch: number | string | null;
         deletion_status: string | null;
@@ -1195,7 +1173,6 @@ auth.get('/me', async (c) => {
       {
         sub: String(row.id),
         email: row.email,
-        name: row.name ?? undefined,
         epoch: Number(row.token_epoch ?? 0),
       },
       c.env.JWT_SECRET,
@@ -1213,7 +1190,7 @@ auth.get('/me', async (c) => {
       user: {
         id: row.id,
         email: row.email,
-        name: row.name ?? '',
+        name: LEGACY_EMPTY_NAME,
         // ⚠ **계산값**(기간 한정 개인 플랜). 앱의 판정기·울림 캐시가 이 값을 `users.plan` 으로
         //   적는다 — 구버전 앱도 이것만으로 개인 기능이 열린다. 끝나면 곧바로 'free' 가 된다.
         plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',

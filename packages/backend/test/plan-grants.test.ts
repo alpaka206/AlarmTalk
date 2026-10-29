@@ -46,7 +46,7 @@ async function effectivePlan(id: string): Promise<string> {
 }
 
 async function addUser(id: string, plan = 'free') {
-  await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, ?)`, [id, `${id}@example.com`, id, plan]);
+  await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, ?)`, [id, `${id}@example.com`, plan]);
   await run(
     `INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id, status) VALUES (?, ?, '내 목소리', ?, 'ready')`,
     [`vp-${id}`, id, `el-${id}`],

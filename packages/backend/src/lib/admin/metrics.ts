@@ -272,7 +272,6 @@ export async function loadOverview(db: Client, range: RangeDays, nowMs: number =
 export interface UserRow {
   id: string;
   email: string;
-  name: string;
   plan: string;
   createdAt: string;
   deletionStatus: string;
@@ -293,12 +292,13 @@ export async function searchUsers(db: Client, query: string): Promise<UserRow[]>
   if (q) {
     // LIKE 패턴은 값으로만 만들고 와일드카드는 이스케이프한다(CLAUDE.md 규약).
     const pattern = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
-    where.push(`(lower(u.email) LIKE lower(?) ESCAPE '\\' OR u.name LIKE ? ESCAPE '\\' OR u.id = ?)`);
-    args.push(pattern, pattern, q);
+    // 이름으로는 찾지 않는다 — 닉네임 칸이 없다(2026-10-29, 마이그레이션 #146).
+    where.push(`(lower(u.email) LIKE lower(?) ESCAPE '\\' OR u.id = ?)`);
+    args.push(pattern, q);
   }
   args.push(50);
   const res = await db.execute({
-    sql: `SELECT u.id, u.email, u.name, ${planWithGrantSql('u')} AS plan, u.created_at, u.deletion_status,
+    sql: `SELECT u.id, u.email, ${planWithGrantSql('u')} AS plan, u.created_at, u.deletion_status,
                  (SELECT app_version FROM user_app_presence p WHERE p.user_id = u.id AND p.platform = 'android') AS android,
                  (SELECT app_version FROM user_app_presence p WHERE p.user_id = u.id AND p.platform = 'ios') AS ios,
                  (SELECT MAX(last_seen_at) FROM user_app_presence p WHERE p.user_id = u.id) AS last_seen,
@@ -334,7 +334,6 @@ export async function searchUsers(db: Client, query: string): Promise<UserRow[]>
     return {
       id,
       email: String(x.email ?? ''),
-      name: String(x.name ?? ''),
       plan: String(x.plan ?? ''),
       createdAt: String(x.created_at ?? ''),
       deletionStatus: String(x.deletion_status ?? 'active'),

@@ -125,7 +125,7 @@ function productOf(provider: 'apple' | 'google') {
 
 async function seed(provider: 'apple' | 'google' = 'apple', cancel = 0) {
   await db.execute(
-    "INSERT INTO users (id, email, name, plan) VALUES ('owner', 'owner@example.test', 'owner', 'plus')",
+    "INSERT INTO users (id, email, plan) VALUES ('owner', 'owner@example.test', 'plus')",
   );
   await db.execute({
     sql: `INSERT INTO subscriptions
