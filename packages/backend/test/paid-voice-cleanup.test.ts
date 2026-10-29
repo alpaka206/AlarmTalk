@@ -9,8 +9,9 @@ import { downgradeUserToFree } from '../src/lib/billing-cancel';
 import { purgeUserAccount } from '../src/lib/account-deletion';
 
 // 실제 libSQL(인메모리) + 실제 마이그레이션으로 검증한다. 유료 음성 데이터 정리는 **호출 사용자 소유 데이터**로
-// 한정된다 — 남의 알람이 내 목소리·문구를 가리킬 길은 없다(알람 쓰기는 내 목소리·시스템 목소리만 받는다,
-// `voiceProfileBelongsToCaller`·`messageBelongsToCaller`). 목소리 공유는 2026-10-20 에 없앴다.
+// 한정된다. 목소리 공유는 2026-10-20 에 없앴다.
+// 서버에는 알람 사본이 없다(#147) — 그 목소리로 울던 알람은 주인 계정의 기기가 내린다. 서버가 하는 일은 주인을 깨울
+// 계정 목록(`voiceAccessRevokedUserIds`)을 돌려주는 것뿐이고, 강등 목록(`downgradedAlarms`)은 언제나 비어 있다.
 
 async function setupDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -39,20 +40,6 @@ async function insertMessage(db: Client, id: string, userId: string, voiceProfil
   });
 }
 
-async function insertVoiceAlarm(
-  db: Client,
-  id: string,
-  userId: string,
-  messageId: string,
-  voiceProfileId: string,
-) {
-  await db.execute({
-    sql: `INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time, mode)
-          VALUES (?, ?, ?, ?, '07:00', 'tts')`,
-    args: [id, userId, messageId, voiceProfileId],
-  });
-}
-
 /** 시스템(기본) 목소리 프로필. is_system=1 이 클론과 가르는 유일한 축이다. */
 async function insertSystemVoiceProfile(db: Client, id: string) {
   await db.execute({
@@ -69,11 +56,6 @@ async function countRows(db: Client, sql: string, args: unknown[] = []): Promise
   return res.rows.length;
 }
 
-async function getAlarm(db: Client, id: string) {
-  const res = await db.execute({ sql: `SELECT * FROM alarms WHERE id = ?`, args: [id] });
-  return res.rows[0] ?? null;
-}
-
 describe('paid voice cleanup — 내 목소리 데이터만 정리한다', () => {
   let db: Client;
   beforeEach(async () => {
@@ -87,18 +69,12 @@ describe('paid voice cleanup — 내 목소리 데이터만 정리한다', () =>
     await insertMessage(db, 'msg-B', 'B', 'vp-B');
   });
 
-  it('deletePaidVoiceDataForUser(A): A 의 알람·문구·목소리는 지우고 B 의 것은 그대로다', async () => {
-    await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
-    await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-B');
-
+  it('deletePaidVoiceDataForUser(A): A 의 문구·목소리는 지우고 B 의 것은 그대로다', async () => {
     await deletePaidVoiceDataForUser(db, 'A');
 
-    expect(await getAlarm(db, 'al-A')).toBeNull();
     expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-A'`)).toBe(0);
     expect(await countRows(db, `SELECT id FROM voice_profiles WHERE id = 'vp-A'`)).toBe(0);
 
-    const alB = await getAlarm(db, 'al-B');
-    expect(alB).toMatchObject({ mode: 'tts', message_id: 'msg-B', voice_profile_id: 'vp-B' });
     expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-B'`)).toBe(1);
     expect(await countRows(db, `SELECT id FROM voice_profiles WHERE id = 'vp-B'`)).toBe(1);
   });
@@ -115,8 +91,7 @@ describe('paid voice cleanup — 내 목소리 데이터만 정리한다', () =>
     expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-B'`)).toBe(1);
   });
 
-  it('downgradeUserToFree(A, {deleteVoiceData:false}): 클론만 반납하고 알람·문구·목소리 행은 보관한다', async () => {
-    await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
+  it('downgradeUserToFree(A, {deleteVoiceData:false}): 클론만 반납하고 문구·목소리 행은 보관한다', async () => {
     await db.execute(`UPDATE users SET plan = 'plus' WHERE id = 'A'`);
     await db.execute(`UPDATE voice_profiles SET elevenlabs_voice_id = 'provider-A' WHERE id = 'vp-A'`);
 
@@ -134,7 +109,7 @@ describe('paid voice cleanup — 내 목소리 데이터만 정리한다', () =>
     expect(vp.evicted_provider_voice_id).toBe('provider-A');
     expect(vp.evicted_at).not.toBeNull();
     expect(vp.deleted_at).toBeNull();
-    expect(await getAlarm(db, 'al-A')).toMatchObject({ mode: 'tts', message_id: 'msg-A' });
+    expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-A'`)).toBe(1);
     expect(
       await countRows(
         db,
@@ -143,8 +118,7 @@ describe('paid voice cleanup — 내 목소리 데이터만 정리한다', () =>
     ).toBe(1);
   });
 
-  it('민감 음성 동의 철회는 알람을 보존하고 음성 데이터만 제거한다 — 접근권 상실은 주인 한 사람에게', async () => {
-    await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
+  it('민감 음성 동의 철회는 음성 데이터만 제거하고 알람은 기기에 맡긴다 — 접근권 상실은 주인 한 사람에게', async () => {
     await db.execute({
       sql: `UPDATE voice_profiles SET elevenlabs_voice_id = 'provider-A' WHERE id = 'vp-A'`,
       args: [],
@@ -152,13 +126,10 @@ describe('paid voice cleanup — 내 목소리 데이터만 정리한다', () =>
 
     const revocation = await deleteSensitiveVoiceDataForUser(db, 'A');
 
-    const alarm = await getAlarm(db, 'al-A');
-    expect(alarm).not.toBeNull();
-    expect(alarm!.mode).toBe('sound-only');
-    expect(alarm!.voice_profile_id).toBeNull();
-    expect(alarm!.message_id).toBeNull();
-    expect(revocation.downgradedAlarms).toEqual([{ alarmId: 'al-A', ownerUserId: 'A' }]);
+    // 서버가 강등할 알람 행은 없다 — 주인을 깨우면 그 기기들이 이 목소리의 알람을 기본 목소리로 내린다.
+    expect(revocation.downgradedAlarms).toEqual([]);
     expect(revocation.voiceAccessRevokedUserIds).toEqual(['A']);
+    expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-A'`)).toBe(0);
     expect((await db.execute(`SELECT * FROM voice_profiles WHERE id = 'vp-A'`)).rows).toEqual([]);
     expect(
       (
@@ -176,22 +147,21 @@ describe('paid voice cleanup — 내 목소리 데이터만 정리한다', () =>
   // 이 인메모리 테스트는 FK(user_id REFERENCES users(id))를 강제해 login-id 저장 자체를 못 만드므로
   // 별도 재현 대신 코드 정합(두 id 매칭)으로 보장한다.
 
-  it('purgeUserAccount(A, 계정 삭제): A 의 행만 사라지고 B 의 알람·문구는 남는다', async () => {
-    await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
-    await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-B');
-
+  it('purgeUserAccount(A, 계정 삭제): A 의 행만 사라지고 B 의 문구·목소리는 남는다', async () => {
     await purgeUserAccount(db, 'A', 'google-A');
 
-    expect(await getAlarm(db, 'al-A')).toBeNull();
     expect((await db.execute(`SELECT id FROM users WHERE id = 'A'`)).rows).toEqual([]);
-    expect(await getAlarm(db, 'al-B')).toMatchObject({ mode: 'tts', message_id: 'msg-B' });
+    expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-A'`)).toBe(0);
+    expect(await countRows(db, `SELECT id FROM voice_profiles WHERE id = 'vp-A'`)).toBe(0);
+    expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-B'`)).toBe(1);
+    expect(await countRows(db, `SELECT id FROM voice_profiles WHERE id = 'vp-B'`)).toBe(1);
   });
 });
 
 // 동의 철회는 '생체정보(내가 등록한 클론)에서 파생된 것'만 지워야 한다. 예전에는
 // user_id 로도 지워서, 생체정보와 무관한 시스템(기본) 목소리 자산까지 날아갔다.
 describe('deleteSensitiveVoiceDataForUser — 클론 파생만 지운다', () => {
-  it('시스템 목소리로 만든 문구·생성음성·라이브러리와 그 알람은 남는다', async () => {
+  it('시스템 목소리로 만든 문구·생성음성·라이브러리는 남는다', async () => {
     const db = await setupDb();
     await insertUser(db, 'user-A');
     await insertSystemVoiceProfile(db, 'vp-system');
@@ -210,27 +180,23 @@ describe('deleteSensitiveVoiceDataForUser — 클론 파생만 지운다', () =>
             VALUES (?, ?, ?, ?, 'elevenlabs', 'pv', 'm', 'ko', 'hash-system', 't', 'obj-system')`,
       args: ['ga-system', 'user-A', 'vp-system', 'msg-system'],
     });
-    await insertVoiceAlarm(db, 'al-system', 'user-A', 'msg-system', 'vp-system');
 
     // 클론으로 만든 자산 — 이건 지워져야 한다.
     await insertMessage(db, 'msg-clone', 'user-A', 'vp-clone');
-    await insertVoiceAlarm(db, 'al-clone', 'user-A', 'msg-clone', 'vp-clone');
 
-    await deleteSensitiveVoiceDataForUser(db, 'user-A');
+    const revocation = await deleteSensitiveVoiceDataForUser(db, 'user-A');
 
     expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-system'`)).toBe(1);
     expect(await countRows(db, `SELECT id FROM message_library WHERE id = 'lib-system'`)).toBe(1);
     expect(await countRows(db, `SELECT id FROM generated_audio_assets WHERE id = 'ga-system'`)).toBe(1);
-    // 시스템 목소리 알람은 강등되지 않는다.
-    expect((await getAlarm(db, 'al-system'))?.mode).toBe('tts');
     // 시스템 보이스 캐시 오브젝트를 외부 삭제 큐에 넣으면 남의 알람까지 깨진다.
     expect(
       await countRows(db, `SELECT id FROM pending_external_deletions WHERE ref = 'obj-system'`),
     ).toBe(0);
 
-    // 클론 파생은 사라지고 그 알람만 강등된다.
+    // 클론 파생은 사라지고, 그 클론으로 울던 알람은 주인 기기가 내린다(주인을 깨운다).
     expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-clone'`)).toBe(0);
-    expect((await getAlarm(db, 'al-clone'))?.mode).toBe('sound-only');
+    expect(revocation).toEqual({ downgradedAlarms: [], voiceAccessRevokedUserIds: ['user-A'] });
   });
 
   it('클론이 없는 무료 사용자는 아무것도 잃지 않는다', async () => {
@@ -238,12 +204,11 @@ describe('deleteSensitiveVoiceDataForUser — 클론 파생만 지운다', () =>
     await insertUser(db, 'user-C');
     await insertSystemVoiceProfile(db, 'vp-system-2');
     await insertMessage(db, 'msg-free', 'user-C', 'vp-system-2');
-    await insertVoiceAlarm(db, 'al-free', 'user-C', 'msg-free', 'vp-system-2');
 
-    const downgraded = await deleteSensitiveVoiceDataForUser(db, 'user-C');
+    const revocation = await deleteSensitiveVoiceDataForUser(db, 'user-C');
 
-    expect(downgraded.downgradedAlarms).toEqual([]);
+    // 잃은 목소리가 없으니 깨울 기기도 없다.
+    expect(revocation).toEqual({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] });
     expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-free'`)).toBe(1);
-    expect((await getAlarm(db, 'al-free'))?.mode).toBe('tts');
   });
 });

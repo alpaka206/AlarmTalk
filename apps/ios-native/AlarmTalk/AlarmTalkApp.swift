@@ -27,7 +27,6 @@ struct AlarmTalkApp: App {
     /// (Android 단일 holidayCalendarStore parity).
     @StateObject private var holidayStore = HolidayStore()
     @StateObject private var auth = BackgroundDependencies.shared.auth
-    @StateObject private var remoteSync = RemoteAlarmSyncViewModel()
     @StateObject private var voiceStudio = BackgroundDependencies.shared.voiceStudio
     @StateObject private var socialFeatures = BackgroundDependencies.shared.socialFeatures
     /// 기본 목소리 교체가 아직 안 끝났는가 — 차단 화면과 재시도 축(`stockClipLanguageKey`).
@@ -75,7 +74,6 @@ struct AlarmTalkApp: App {
                     .environmentObject(alarmStore)
                     .environmentObject(alarmKit)
                     .environmentObject(auth)
-                    .environmentObject(remoteSync)
                     .environmentObject(voiceStudio)
                     // ⚠ **준비 화면도 프리페처를 깨울 수 있어야 한다**(Codex #703 P2).
                     // 위 `.task(id:)` 는 계정·언어로만 키가 걸려 있어, 이번 세션에
@@ -182,15 +180,9 @@ struct AlarmTalkApp: App {
                         await auth.restoreSession()
                         await alarmKit.startObserving(store: alarmStore)
 
-                        // RemoteAlarmSyncViewModel 의존성 주입.
-                        remoteSync.configure(store: alarmStore, auth: auth)
-
-                        // ⚠ **여기서 동기화 사이클을 돌리지 않는다**(2026-09-29). 로그인된 채 켜지면
-                        //   아래 계정 키 `.task(id: auth.session?.user.id)` 가 `runFullSync()` 와
-                        //   날씨 갱신을 이미 돈다 — 세션이 복원되는 순간 그 키가 바뀌거나(nil → id)
-                        //   처음부터 id 로 시작한다. 예전에는 여기서도 한 번 더 돌아, 콜드 스타트에
-                        //   `/alarm` 요청이 3~4번 나갔고 그동안 토글의 단건 push 가 `isBusy` 가드에 걸려
-                        //   건너뛰어졌다.
+                        // ⚠ **여기서 날씨 갱신을 돌리지 않는다**(2026-09-29). 로그인된 채 켜지면 아래 계정 키
+                        //   `.task(id: auth.session?.user.id)` 가 이미 돈다 — 세션이 복원되는 순간 그 키가 바뀌거나(nil → id)
+                        //   처음부터 id 로 시작한다. (알람을 서버로 올리는 사이클은 2026-10-29 에 없앴다 — 서버 알람 사본을 지웠다.)
 
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
                         // task 종료 시 재예약.
@@ -206,17 +198,9 @@ struct AlarmTalkApp: App {
                     }
                     // 위와 같은 이유로 user.id 로 건다(토큰은 갱신마다 바뀐다).
                     .task(id: auth.session?.user.id) {
-                        // 콜드 스타트(세션 복원)·로그인 직후 즉시 sync. 앱 시작의 사이클은 여기서만
-                        // 돈다 — 위 `.task` 에서 또 돌리지 않는다(전경 복귀·알람 탭 진입은 각자 돈다).
+                        // 콜드 스타트(세션 복원)·로그인 직후 즉시 돈다. 앱 시작의 날씨 갱신·정합화는 여기서만
+                        // 돈다 — 위 `.task` 에서 또 돌리지 않는다(전경 복귀는 따로 돈다).
                         guard auth.session != nil else { return }
-                        // ⚠ **동기화 의존성은 이 태스크가 스스로, 맨 먼저 꽂는다**(코덱스 #823 4차).
-                        //   키체인에 세션이 있으면 `AuthViewModel.init` 이 이미 읽어 두어 이 태스크는
-                        //   **위 `.task` 의 `restoreSession()`·`configure` 를 기다리지 않고** 첫 화면에서
-                        //   곧바로 돈다. `runFullSync()` 는 의존성이 없으면 조용히 돌아가므로, 여기서
-                        //   꽂지 않으면 앱 시작의 유일한 사이클이 빈손으로 끝날 수 있다. `configure` 는
-                        //   멱등이다(이미 꽂혀 있으면 그대로). 알람 탭 진입의 동기화도 이 덕에 대개
-                        //   꽂힌 뒤에 돈다.
-                        remoteSync.configure(store: alarmStore, auth: auth)
                         // ⚠ **계정이 바뀌면 StoreKit 을 다시 읽는다**(2026-08-31 리뷰).
                         // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
                         // 여기서 다시 읽지 않으면 새 계정이 다음 전경 진입 전까지 '모름' 으로
@@ -278,11 +262,9 @@ struct AlarmTalkApp: App {
                         push.start()
                         // ⚠ **알람 저장소가 다 읽힐 때까지 기다린 뒤 돈다**(코덱스 #823 6차). 이
                         //   태스크는 콜드 스타트 첫 화면에서 곧바로 돌아 디스크 로드보다 앞설 수 있다 —
-                        //   로드 전에 돌면 올릴 행이 없어 빈손으로 끝나고, 앱 시작의 사이클은 이것
-                        //   하나라 못 올린 변경이 다음 전경 복귀·탭 진입까지 남는다. 기다려도 막히는 것은
+                        //   로드 전에 돌면 아래 날씨 갱신·정합화가 빈손으로 끝난다. 기다려도 막히는 것은
                         //   이 태스크뿐이다(계정이 바뀌어 접히면 대기도 곧바로 물러선다).
                         await alarmStore.waitUntilLoadedFromDisk(timeout: 30)
-                        await remoteSync.runFullSync()
                         await refreshWeatherVariantsAndReconcile()
                         await storeRecovery
                         BackgroundSyncTask.scheduleNext()
@@ -322,7 +304,6 @@ struct AlarmTalkApp: App {
                                 ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
                             )
                         }
-                        remoteSync.clearUserScopedRemoteState()
                         voiceStudio.clearUserScopedRemoteState(preservingManifestFor: auth.session?.user.id)
                         socialFeatures.restoreAccessSnapshot(session: auth.session)
                         // 이 시점의 내 목소리 목록은 대개 비어 있다(방금 지웠고 서버 응답 전) —
@@ -338,11 +319,6 @@ struct AlarmTalkApp: App {
                     //   내내 안 받아진다(다음 `start` 는 포그라운드 복귀·언어 변경뿐). `start` 는
                     //   대상이 넓어질 때만 도는 회차를 끊고 다시 시작한다(`shouldRestart`).
                     //   안드로이드는 워커가 `listVoiceProfiles` 로 대상을 스스로 정한다.
-                    // 동의를 마치면 그동안 403 으로 막혔던 동기화를 곧바로 다시 돈다(`AuthViewModel.consentSubmitGeneration`).
-                    .onChange(of: auth.consentSubmitGeneration) { _, _ in
-                        guard auth.session != nil else { return }
-                        Task { await remoteSync.runFullSync() }
-                    }
                     .onChange(of: voiceStudio.ownedVoiceProfileIDs) { _, owned in
                         guard auth.session != nil, !owned.isEmpty else { return }
                         stockClipPrefetcher.start(session: auth.session, ownedVoiceProfileIDs: owned)
@@ -609,7 +585,6 @@ struct AlarmTalkApp: App {
                     // 비어 화면이 뜨지 않는다(「한 번 받은 동의는 다시 묻지 않는다」).
                     await auth.checkConsentStatus()
                     guard auth.session != nil else { return }
-                    await remoteSync.runFullSync()
                     await refreshWeatherVariantsAndReconcile()
                 }
                 // Phase 4-D1: 백엔드 entitlement 동기화가 직전에 실패했을 수 있다.

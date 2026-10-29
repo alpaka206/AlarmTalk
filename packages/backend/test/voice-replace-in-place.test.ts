@@ -1,15 +1,17 @@
-// **목소리 교체는 알람을 건드리지 않는다** — 실제 스키마 위에서 확인한다.
+// **목소리 교체는 기기 알람이 문 id 를 건드리지 않는다** — 실제 스키마 위에서 확인한다.
 //
 // 배경: 지금까지 목소리 등록은 "새 프로필을 만들고 옛 것을 지운다" 였다. 지우는 순간
 // 그 목소리를 쓰던 알람이 기본 알람음으로 떨어진다 — 사용자가 없애고 싶어 한 동작이다.
 // 교체는 프로필 id 와 message id 를 **그대로 두고 오디오 실체만 덮어쓰므로**, 알람은
-// 아무것도 눈치채지 못하고 소리만 새 목소리가 된다.
+// 아무것도 눈치채지 못하고 소리만 새 목소리가 된다. 알람은 기기에만 있다(서버 사본은 #147 에서 지웠다).
 //
 // 이 테스트가 지키는 것:
 //   1. 마이그레이션 #101 이 `refresh_existing` 을 추가한다(기본 0 — 기존 행 동작 불변).
-//   2. preset 을 덮어써도 **message_id 가 바뀌지 않는다**(알람이 가리키는 값).
-//   3. 덮어쓴 뒤 알람의 참조가 그대로 살아 있다(조인이 끊기지 않는다).
+//   2. preset 을 덮어써도 **message_id 가 바뀌지 않는다**(기기 알람이 가리키는 값).
+//   3. 덮어쓴 뒤 그 message_id 로 새 음원·새 목소리에 닿는다(조인이 끊기지 않는다).
 //   4. `audio_url` 은 **반드시 달라진다** — 기기 캐시는 이 값으로만 낡음을 판별한다.
+//   5. 직접 입력(custom) 음원은 다시 만들 수 없어 교체가 그 자리에서 지운다 — 키는 삭제 큐로, 원장 행은 삭제.
+//      프리셋 음원은 재렌더가 덮어쓰므로 남긴다.
 import { describe, it, expect } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { rmSync } from 'node:fs';
@@ -59,18 +61,25 @@ async function replacementDb(): Promise<{ db: Client; path: string }> {
      VALUES ('up-new','u1','uploads/new.wav','audio/wav',100,'vp2')`,
     `INSERT INTO messages
        (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
-     VALUES ('m-custom','u1','vp1','직접 문구','custom','ko',0,0,'r2://custom')`,
+     VALUES ('m-custom','u1','vp1','직접 문구','custom','ko',0,0,'r2://generated-tts/u1/custom.mp3')`,
     `INSERT INTO messages
        (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
-     VALUES ('m-preset','u1','vp1','인사','greeting','ko',0,1,'r2://preset')`,
+     VALUES ('m-preset','u1','vp1','인사','greeting','ko',0,1,'r2://generated-tts/u1/preset.mp3')`,
+    // 두 문구의 생성 음원 원장. 직접 입력 음성은 보존 기한이 없어(`audio-retention.ts`) 교체가 지우지 않으면 R2 에 영영 남는다.
+    `INSERT INTO generated_audio_assets
+       (id, user_id, voice_profile_id, message_id, provider, provider_voice_id, model_id,
+        language, request_hash, text, audio_url, audio_object_key)
+     VALUES ('ga-custom','u1','vp1','m-custom','elevenlabs','eleven-old','m','ko','h-custom','직접 문구',
+             'r2://generated-tts/u1/custom.mp3','generated-tts/u1/custom.mp3')`,
+    `INSERT INTO generated_audio_assets
+       (id, user_id, voice_profile_id, message_id, provider, provider_voice_id, model_id,
+        language, request_hash, text, audio_url, audio_object_key)
+     VALUES ('ga-preset','u1','vp1','m-preset','elevenlabs','eleven-old','m','ko','h-preset','인사',
+             'r2://generated-tts/u1/preset.mp3','generated-tts/u1/preset.mp3')`,
     // 옛 사전렌더 큐 행 — 소유자가 로그인 id 로 적혀 있다(이 테이블엔 FK 가 없다).
     // cron 은 이 값으로 동의를 확인하므로 교체가 정규 id 로 고쳐 두어야 한다.
     `INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language, status)
      VALUES ('vp1','g1','ko','done')`,
-    // 소유자 본인 알람 — 서버 행 강등만으로는 그 기기(와 다른 기기)의 로컬 알람에 닿지 않는다.
-    `INSERT INTO alarms
-       (id, user_id, time, mode, voice_profile_id, message_id)
-     VALUES ('a-mine','u1','06:30','tts','vp1','m-custom')`,
     ...SENSITIVE_REQUIRED_CONSENTS.map(
       (type, i) => `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
                     VALUES ('c${i}','u1','${type}','${CURRENT_POLICY_VERSION}',1)`,
@@ -94,10 +103,10 @@ async function expectUntouched(db: Client) {
   expect(Number(queue.rows[0]!.refresh_existing)).toBe(0);
   const deletions = await db.execute('SELECT COUNT(*) AS n FROM pending_external_deletions');
   expect(Number(deletions.rows[0]!.n)).toBe(0);
-  const mine = await db.execute("SELECT mode, message_id FROM alarms WHERE id = 'a-mine'");
-  expect(mine.rows[0]).toMatchObject({ mode: 'tts', message_id: 'm-custom' });
   const audio = await db.execute("SELECT audio_url FROM messages WHERE id = 'm-custom'");
-  expect(String(audio.rows[0]!.audio_url)).toBe('r2://custom');
+  expect(String(audio.rows[0]!.audio_url)).toBe('r2://generated-tts/u1/custom.mp3');
+  const assets = await db.execute('SELECT id FROM generated_audio_assets ORDER BY id');
+  expect(assets.rows.map((row) => String(row.id))).toEqual(['ga-custom', 'ga-preset']);
 }
 
 describe('목소리 교체 — 제자리 덮어쓰기', () => {
@@ -107,6 +116,20 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       // 초안에서 고른 결(차분)이 현역 프로필의 옛 결(경쾌)을 덮어야 한다 — 재렌더가 그 결로 돈다.
       await db.execute("UPDATE voice_profiles SET voice_energy = 'lively' WHERE id = 'vp1'");
       await db.execute("UPDATE voice_profiles SET voice_energy = 'calm' WHERE id = 'vp2'");
+      // 남의 직접 입력 음원 — 교체는 **대상 목소리의** 직접 입력만 지운다.
+      await db.batch([
+        "INSERT INTO users (id, google_id, email, plan) VALUES ('u2','g2','u2@test.com','plus')",
+        `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft)
+         VALUES ('vp-other','u2','남의 목소리','ready','eleven-other',0)`,
+        `INSERT INTO messages
+           (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
+         VALUES ('m-other','u2','vp-other','남의 문구','custom','ko',0,0,'r2://generated-tts/u2/custom.mp3')`,
+        `INSERT INTO generated_audio_assets
+           (id, user_id, voice_profile_id, message_id, provider, provider_voice_id, model_id,
+            language, request_hash, text, audio_url, audio_object_key)
+         VALUES ('ga-other','u2','vp-other','m-other','elevenlabs','eleven-other','m','ko','h-other','남의 문구',
+                 'r2://generated-tts/u2/custom.mp3','generated-tts/u2/custom.mp3')`,
+      ]);
       const result = await replaceVoiceInPlace(db as never, {
         targetUserIds: ['u1'],
         draftProfileId: 'vp2',
@@ -118,19 +141,19 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error(result.error);
-      // ⚠ 본인 소유 알람을 빼면 등록 기기 말고 다른 기기가 **지운 목소리로 계속 운다** — 서버 행 강등이
-      // 그 기기의 로컬 알람에 닿지 않는다(Codex #703 P1).
-      expect(result.revokedCustomAlarms).toEqual([{ alarmId: 'a-mine', ownerUserId: 'u1' }]);
+      // ⚠ 서버에는 알람 행이 없다(#147) — 그 목소리의 직접 입력 알람은 주인 계정의 기기들이 내린다. 등록 기기 말고
+      // 다른 기기는 이 신호로만 안다(Codex #703 P1 — 빠지면 그 기기가 **지운 목소리로 계속 운다**).
       expect(result.voiceAccessRevokedUserIds).toEqual(['u1']);
-      const mine = await db.execute(
-        "SELECT mode, wake_mode, message_id, voice_profile_id FROM alarms WHERE id = 'a-mine'",
-      );
-      expect(mine.rows[0]).toMatchObject({
-        mode: 'sound-only',
-        wake_mode: 'sound_then_voice',
-        message_id: null,
-        voice_profile_id: null,
-      });
+      expect(result).not.toHaveProperty('revokedCustomAlarms');
+      // 직접 입력 음원은 그 자리에서 지운다 — 원장 행은 지우고(키는 아래 삭제 큐에 있다) 문구의 참조도 끊는다.
+      // 문구 행은 사용량 집계용으로 남는다. 프리셋 음원과 남의 직접 입력 음원은 그대로다.
+      const assets = await db.execute('SELECT id FROM generated_audio_assets ORDER BY id');
+      expect(assets.rows.map((row) => String(row.id))).toEqual(['ga-other', 'ga-preset']);
+      const customMessage = await db.execute("SELECT audio_url FROM messages WHERE id = 'm-custom'");
+      expect(customMessage.rows).toHaveLength(1);
+      expect(customMessage.rows[0]!.audio_url).toBeNull();
+      const otherMessage = await db.execute("SELECT audio_url FROM messages WHERE id = 'm-other'");
+      expect(String(otherMessage.rows[0]!.audio_url)).toBe('r2://generated-tts/u2/custom.mp3');
       // 푸시는 세대를 함께 싣는다 — id 만 보내면 이미 반영한 기기가 **새 목소리로 만든**
       // 알람까지 지운다.
       expect(result.customAudioInvalidatedAt).not.toBeNull();
@@ -159,7 +182,11 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
         .toEqual(expect.arrayContaining([
           ['elevenlabs_voice', 'eleven-old'],
           ['r2_object', 'uploads/old.wav'],
+          ['r2_object', 'generated-tts/u1/custom.mp3'],
         ]));
+      const queuedRefs = deletionQueue.rows.map((row) => String(row.ref));
+      expect(queuedRefs).not.toContain('generated-tts/u1/preset.mp3');
+      expect(queuedRefs).not.toContain('generated-tts/u2/custom.mp3');
 
       const renderer = await db.execute(
         "SELECT refresh_existing, language, owner_user_id FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
@@ -477,6 +504,13 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       ).toBe(0);
       const target = await db.execute("SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = 'vp1'");
       expect(String(target.rows[0]!.elevenlabs_voice_id)).toBe('eleven-old');
+      // 직접 입력 음원 삭제도 같은 커밋이다 — 롤백되면 원장 행·참조가 돌아오고 삭제 큐에도 남지 않는다.
+      const custom = await db.execute("SELECT audio_url FROM messages WHERE id = 'm-custom'");
+      expect(String(custom.rows[0]!.audio_url)).toBe('r2://generated-tts/u1/custom.mp3');
+      const asset = await db.execute("SELECT COUNT(*) AS n FROM generated_audio_assets WHERE id = 'ga-custom'");
+      expect(Number(asset.rows[0]!.n)).toBe(1);
+      const queued = await db.execute('SELECT COUNT(*) AS n FROM pending_external_deletions');
+      expect(Number(queued.rows[0]!.n)).toBe(0);
     } finally {
       db.close();
       for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
@@ -545,7 +579,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
     expect(Number(row.rows[0]!.refresh_existing)).toBe(0);
   });
 
-  it('preset 을 덮어써도 message_id 가 그대로고 알람 참조가 끊기지 않는다', async () => {
+  it('preset 을 덮어써도 message_id 가 그대로고 기기 알람이 문 id 로 새 음원에 닿는다', async () => {
     const db = await migratedDb();
 
     await db.execute({
@@ -563,11 +597,8 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
             VALUES ('m1', 'u1', 'vp1', '옛 문구', 'weather', 'ko', 0, 1, 'r2://old-object')`,
       args: [],
     });
-    await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, time, voice_profile_id, message_id)
-            VALUES ('a1', 'u1', '07:00', 'vp1', 'm1')`,
-      args: [],
-    });
+    // 기기 알람이 들고 있는 값 — 알람은 기기에만 있다(#147).
+    const deviceAlarmMessageId = 'm1';
 
     // ── 교체: message 행을 **그대로 두고** 오디오·문구만 갈아끼운다 ───────────
     await db.execute({
@@ -579,43 +610,36 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       args: ['eleven-NEW', 'vp1'],
     });
 
-    // 알람은 아무것도 바뀌지 않았다.
-    const alarm = await db.execute("SELECT voice_profile_id, message_id FROM alarms WHERE id = 'a1'");
-    expect(String(alarm.rows[0]!.voice_profile_id)).toBe('vp1');
-    expect(String(alarm.rows[0]!.message_id)).toBe('m1');
-
-    // 그런데 재생 경로(알람 → message → audio_url)는 새 음원을 가리킨다.
-    const joined = await db.execute(`
-      SELECT m.id AS message_id, m.audio_url, vp.elevenlabs_voice_id
-      FROM alarms a
-      JOIN messages m ON m.id = a.message_id
-      JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-      WHERE a.id = 'a1' AND vp.deleted_at IS NULL AND COALESCE(vp.is_draft, 0) = 0
-    `);
-    expect(joined.rows.length, '교체 뒤 알람→목소리 조인이 끊겼다').toBe(1);
+    // 기기 알람이 문 id 는 그대로인데 재생 경로(message → audio_url)는 새 음원을 가리킨다.
+    const joined = await db.execute({
+      sql: `SELECT m.id AS message_id, m.voice_profile_id, m.audio_url, vp.elevenlabs_voice_id
+            FROM messages m
+            JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+            WHERE m.id = ? AND vp.deleted_at IS NULL AND COALESCE(vp.is_draft, 0) = 0`,
+      args: [deviceAlarmMessageId],
+    });
+    expect(joined.rows.length, '교체 뒤 기기 알람의 문구→목소리 조인이 끊겼다').toBe(1);
+    expect(String(joined.rows[0]!.voice_profile_id)).toBe('vp1');
     expect(String(joined.rows[0]!.message_id)).toBe('m1');
     expect(String(joined.rows[0]!.audio_url)).toBe('r2://new-object');
     expect(String(joined.rows[0]!.elevenlabs_voice_id)).toBe('eleven-NEW');
   });
 
-  it('옛 방식(프로필 삭제)은 알람의 목소리 조인을 끊는다 — 교체가 필요한 이유', async () => {
+  it('옛 방식(프로필 삭제)은 기기 알람이 문 문구의 목소리 조인을 끊는다 — 교체가 필요한 이유', async () => {
     const db = await migratedDb();
     await db.execute("INSERT INTO users (id, email) VALUES ('u1','a@b.c')");
     await db.execute(`INSERT INTO voice_profiles (id, user_id, name, status, is_draft)
                       VALUES ('vp1','u1','엄마 목소리','ready',0)`);
     await db.execute(`INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
                       VALUES ('m1','u1','vp1','문구','weather','ko',0,1,'r2://o')`);
-    await db.execute(`INSERT INTO alarms (id, user_id, time, voice_profile_id, message_id)
-                      VALUES ('a1','u1','07:00','vp1','m1')`);
 
-    // 지금까지의 등록 흐름: 옛 프로필을 지운다.
+    // 지금까지의 등록 흐름: 옛 프로필을 지운다. 기기 알람은 여전히 'm1' 을 들고 있다.
     await db.execute("UPDATE voice_profiles SET deleted_at = datetime('now') WHERE id = 'vp1'");
 
     const joined = await db.execute(`
-      SELECT m.id FROM alarms a
-      JOIN messages m ON m.id = a.message_id
+      SELECT m.id FROM messages m
       JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-      WHERE a.id = 'a1' AND vp.deleted_at IS NULL
+      WHERE m.id = 'm1' AND vp.deleted_at IS NULL
     `);
     expect(joined.rows.length, '삭제해도 조인이 살아 있다면 이 테스트의 전제가 틀린 것이다').toBe(0);
   });

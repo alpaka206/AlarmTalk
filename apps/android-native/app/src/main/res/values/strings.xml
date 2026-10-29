@@ -477,6 +477,8 @@
     <string name="voices_recording_stop_failed">녹음에 실패했어요.</string>
     <string name="voices_register">등록</string>
     <string name="voices_required_field">꼭 입력해 주세요.</string>
+    <string name="voices_name_too_long">이름은 %1$d자까지 쓸 수 있어요.</string>
+    <string name="msg_try_again_shortly">잠시 후 다시 시도해 주세요.</string>
     <string name="voices_reupload">재업로드</string>
     <string name="voices_select_file_first">파일을 선택해 주세요.</string>
     <string name="voices_selected_audio_unusable">선택한 오디오를 사용할 수 없어요.</string>
@@ -727,7 +729,6 @@
     <string name="api_error_voice_cloning_failed">목소리를 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="api_error_invalid_voice_pitch">톤 값이 올바르지 않아요. 다시 맞춰 주세요.</string>
     <string name="api_error_voice_pitch_locked">톤은 목소리를 등록할 때만 정할 수 있어요.</string>
-    <string name="api_error_alarm_not_found">이미 사라진 알람이에요.</string>
     <string name="api_error_tts_generation_failed">음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="voices_not_ready_title">목소리를 아직 받는 중이에요</string>
     <string name="voices_not_ready_message_progress">이 알람에 쓸 목소리를 받고 있어요. 이 목소리부터 먼저 받아요. (%1$d%%)\n다른 기본 목소리도 이어서 받아요.</string>

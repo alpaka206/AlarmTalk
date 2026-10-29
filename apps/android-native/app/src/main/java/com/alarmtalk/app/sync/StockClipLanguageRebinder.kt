@@ -43,6 +43,20 @@ import kotlinx.coroutines.withContext
  *
  * iOS 짝은 `StockClipLanguageRebinder.swift` 다 — **한쪽만 고치지 말 것.**
  */
+/**
+ * **버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트**(messageId → 테마) — 서버가 준 은퇴 클립 힌트와, 지금 목록에 실린
+ * 기본 목소리 클립의 테마를 합친다(서버 힌트가 이긴다).
+ *
+ * ⚠ 예전에는 서버가 그 사용자의 **서버 알람 사본**이 문 클립까지 힌트로 줬다. 사본을 지운 뒤(2026-10-29)로는 은퇴한
+ *   클립만 준다 — 은퇴하지 않은 클립은 목록에 테마와 함께 이미 실려 있어 여기서 찾는다. iOS 짝은
+ *   `VoiceStudioViewModel.legacyBucketHints(from:)`.
+ */
+internal fun legacyBucketHintsOf(manifest: com.alarmtalk.app.network.StockClipListResponse): Map<String, String> =
+    manifest.clips
+        .filter { com.alarmtalk.app.data.isSystemVoiceId(it.voiceProfileId) && !it.category.isNullOrBlank() }
+        .associate { it.messageId to it.category!! } +
+        manifest.legacyBucketHints.associate { hint -> hint.messageId to hint.category }
+
 object StockClipLanguageRebinder {
 
     /** 다시 묶은 알람 수. */

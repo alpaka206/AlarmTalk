@@ -98,6 +98,7 @@ internal fun MainViewModel.createAlarm(
             com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
             com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)
             com.alarmtalk.app.data.recordDatedAlarmSaved(getApplication(), saved, ownerUserId)
+            requestCloneCheerSupplementIfNeeded(saved, previous = null)
             // 성공 토스트는 띄우지 않는다 — 저장 즉시 리스트에 행이 생기고 홈 헤더가
             // '몇 시간 후에 울려요'를 이미 말해준다(안내 중복 소음).
             onDone()
@@ -129,6 +130,8 @@ internal fun MainViewModel.updateAlarm(
     }
     if (!requireAlarmPermissionsForMutation()) return
     val ownerUserId = authSession?.user?.id
+    // 고치기 전의 행 — 응원 보충은 테마·목소리를 새로 골랐을 때만 알린다(`needsCloneCheerSupplement`).
+    val previous = alarms.value.firstOrNull { it.id == alarmId }
     // 생성과 같은 규약 — 아래 [MainViewModel.alarmSaving] 주석 참고.
     alarmSaving = true
     viewModelScope.launch {
@@ -142,6 +145,7 @@ internal fun MainViewModel.updateAlarm(
             com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
             com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)
             com.alarmtalk.app.data.recordDatedAlarmSaved(getApplication(), saved, ownerUserId)
+            requestCloneCheerSupplementIfNeeded(saved, previous)
             // 생성과 동일 — 성공 토스트 생략(리스트/헤더가 결과를 보여준다).
             onDone()
         }.onFailure { error ->
@@ -244,3 +248,27 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
     }
 }
 
+/**
+ * 내 클론으로 응원 알람을 저장했으면 서버에 보충을 알린다(`needsCloneCheerSupplement` — 스펙 voice-and-message §5-4).
+ * 답을 기다리지 않고 실패해도 저장은 그대로다 — 잃는 것은 보충이 한 번 늦는 것뿐이고, 다음 응원 저장이 다시 알린다.
+ */
+private fun MainViewModel.requestCloneCheerSupplementIfNeeded(
+    saved: com.alarmtalk.app.data.AlarmEntity,
+    previous: com.alarmtalk.app.data.AlarmEntity?,
+) {
+    if (!com.alarmtalk.app.data.needsCloneCheerSupplement(saved, previous)) return
+    val session = authSession ?: return
+    val voiceId = saved.voiceProfileId ?: return
+    viewModelScope.launch {
+        runCatching {
+            api.requestVoiceContentSupplement(
+                com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token),
+                voiceId,
+                com.alarmtalk.app.network.VoiceContentSupplementRequest(theme = com.alarmtalk.app.data.CHEER_BUCKET_ID),
+            )
+        }.onFailure { error ->
+            if (error is kotlin.coroutines.cancellation.CancellationException) throw error
+            android.util.Log.i("AlarmActions", "Cheer supplement request failed; the next cheer save asks again", error)
+        }
+    }
+}

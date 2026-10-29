@@ -260,3 +260,21 @@ class CheerVarietySource(
         }
     }
 }
+
+/**
+ * **이 저장이 클론 응원 보충을 요청해야 하는가**(스펙 voice-and-message §5-4 「클론은 고른 것만 보충한다」).
+ *
+ * 내 클론 목소리로 응원 테마를 말하는 알람이고, **테마나 목소리를 새로 골랐을 때만**이다 — 켜고 끄기·시각만 고친 저장은
+ * 부르지 않는다(예전 서버가 PATCH 마다 실패한 보충을 다시 열어 유료 합성을 다시 시도했다 — 2026-10-29 고침과 같은 선).
+ * 기본 목소리·추가 팩은 보충이 없다(그 클립은 서버가 이미 게시한다).
+ *
+ * ⚠ 예전에는 서버 알람 사본의 쓰기(`POST/PATCH /alarm`)가 이 판정을 했다. 사본을 없앤 뒤(2026-10-29)로는 앱이 판정해
+ *   `POST /voice/:id/content-supplement` 로 알린다. iOS 짝은 `CheerVariety.needsCloneSupplement`.
+ */
+internal fun needsCloneCheerSupplement(saved: AlarmEntity, previous: AlarmEntity?): Boolean {
+    if (saved.bucketId != CHEER_BUCKET_ID) return false
+    if (saved.playMode == AlarmPlayModes.ALARM_ONLY || saved.voiceSource == VoiceSources.LOCAL_AUDIO) return false
+    val voiceId = saved.voiceProfileId?.takeIf { it.isNotBlank() } ?: return false
+    if (isFreeFixedVoiceId(voiceId)) return false
+    return previous == null || previous.bucketId != CHEER_BUCKET_ID || previous.voiceProfileId != voiceId
+}

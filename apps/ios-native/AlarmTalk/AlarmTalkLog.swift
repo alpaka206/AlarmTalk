@@ -62,7 +62,7 @@ enum AlarmTalkLog {
     /// 맡는다 — 401 은 [isHandledAuthFailure], 사용자가 고칠 예상된 거절 목록은 [isExpectedRefusal], 탈퇴 유예 403 은
     /// [isAccountPendingDeletion], 동의 필요 403 은 [isConsentRequired]. 넷 다 기기 사정으로 곧 나아질 실패가 아니라
     /// 뜻이 달라서, 한 판정에 합치면 브레드크럼 category 가 섞인다. 그 밖의 4xx 는 호출부가 `error_code` 를 보고
-    /// 결정한다(`RemoteAlarmSyncViewModel` 의 `CONSENT_REQUIRED` — 워커는 실패가 아니라 동의 대기로 접는다).
+    /// 결정한다(예: `CONSENT_REQUIRED` — 동의 전 자동 요청은 실패가 아니라 동의 대기로 접는다).
     static func isExpectedTransientFailure(_ error: Error) -> Bool {
         if error is CancellationError { return true }
         return errorChainContains(error) { candidate in

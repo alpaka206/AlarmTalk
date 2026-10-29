@@ -829,4 +829,15 @@ extension LocalAlarmRecord {
     var isManualMessageAlarm: Bool {
         usesCustomMessageVoice && ttsMessageId?.nilIfBlank != nil
     }
+
+    /// 사용 기록에 남기는 **문구 종류** — `alarm_only`(알람음) · `recording`(직접 녹음) · 테마(`cheer`·`weather` …) · 생성형
+    /// 종류(`preset`·`wake` …) · `manual`(직접 입력). 관리자 콘솔의 '알람 문구 종류' 가 이것을 센다(서버 알람 사본을 지운
+    /// 2026-10-29 부터). 원문은 싣지 않는다. 안드로이드 짝은 `AlarmEntity.messageKindForUsage`.
+    var messageKindForUsage: String {
+        if playModeEnum == .alarmOnly { return "alarm_only" }
+        if voiceSourceEnum == .localAudio { return "recording" }
+        if let bucket = bucketId.nilIfBlank { return bucket.trimmingCharacters(in: .whitespaces) }
+        if voiceRandomPrompt { return voiceRandomContext.nilIfBlank?.trimmingCharacters(in: .whitespaces) ?? "preset" }
+        return "manual"
+    }
 }

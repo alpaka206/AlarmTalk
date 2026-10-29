@@ -37,11 +37,19 @@ async function insertUpload(id: string, profileId: string | null) {
   });
 }
 
-async function insertMessage(id: string, audioUrl: string | null, opts: { preset?: boolean } = {}) {
+/**
+ * 문구 하나. 종류를 꼭 적는다 — `messages.category` 의 기본값이 `'custom'`(직접 입력)이라 빼면 보존 대상이 된다.
+ * 기본은 날씨처럼 회차마다 새로 만드는 문구(30일 뒤 지운다)다.
+ */
+async function insertMessage(
+  id: string,
+  audioUrl: string | null,
+  opts: { preset?: boolean; category?: string } = {},
+) {
   await db.execute({
-    sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, is_preset)
-          VALUES (?, 'u1', 'p_final', ?, ?, ?)`,
-    args: [id, id, audioUrl, opts.preset ? 1 : 0],
+    sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category, is_preset)
+          VALUES (?, 'u1', 'p_final', ?, ?, ?, ?)`,
+    args: [id, id, audioUrl, opts.category ?? 'weather', opts.preset ? 1 : 0],
   });
 }
 
@@ -56,7 +64,9 @@ async function insertGenerated(id: string, messageId: string, key: string) {
 }
 
 /**
- * 업로드 넷(확정 원본 1 + 지울 것 3)과 생성 음원 셋(지울 것 1 + 알람이 쓰는 것 1 + 프리셋 1).
+ * 업로드 넷(확정 원본 1 + 지울 것 3)과 생성 음원 셋(지울 것 1 + 직접 입력 1 + 프리셋 1).
+ * 직접 입력 음성은 기한 없이 둔다(2026-10-29 — 그 목소리를 지울 때·탈퇴할 때만 지운다). 예전에는 서버 알람 사본이
+ * 가리키는 음원을 남겼다 — 사본을 지웠다(#147).
  */
 async function seed() {
   await insertProfile('p_final');
@@ -68,9 +78,8 @@ async function seed() {
 
   await insertMessage('m_lib', 'r2://generated-tts/u1/lib.mp3');
   await insertGenerated('g_lib', 'm_lib', 'generated-tts/u1/lib.mp3');
-  await insertMessage('m_alarm', 'r2://generated-tts/u1/alarm.mp3');
-  await insertGenerated('g_alarm', 'm_alarm', 'generated-tts/u1/alarm.mp3');
-  await db.execute(`INSERT INTO alarms (id, user_id, message_id, time) VALUES ('a1', 'u1', 'm_alarm', '07:00')`);
+  await insertMessage('m_custom', 'r2://generated-tts/u1/custom.mp3', { category: 'custom' });
+  await insertGenerated('g_custom', 'm_custom', 'generated-tts/u1/custom.mp3');
   await insertMessage('m_preset', 'r2://generated-tts/u1/preset.mp3', { preset: true });
   await insertGenerated('g_preset', 'm_preset', 'generated-tts/u1/preset.mp3');
 }
@@ -101,15 +110,15 @@ const EXPECTED_QUEUE = [
 ];
 
 describe('cleanupExpiredAudio — 행 삭제와 삭제 예약은 한 트랜잭션', () => {
-  it('정상: 만료 행은 지워지고 그 키가 큐에 정확히 한 번 들어간다 — 확정 원본·알람 음원·프리셋은 남는다', async () => {
+  it('정상: 만료 행은 지워지고 그 키가 큐에 정확히 한 번 들어간다 — 확정 원본·직접 입력 음성·프리셋은 남는다', async () => {
     await seed();
 
     await cleanupExpiredAudio(db, NOW);
 
     expect(await ids('voice_uploads')).toEqual(['up_final']);
-    expect(await ids('generated_audio_assets')).toEqual(['g_alarm', 'g_preset']);
+    expect(await ids('generated_audio_assets')).toEqual(['g_custom', 'g_preset']);
     expect(await audioUrlOf('m_lib'), '지운 음원을 가리키는 문구 포인터는 비운다').toBeNull();
-    expect(await audioUrlOf('m_alarm')).toBe('r2://generated-tts/u1/alarm.mp3');
+    expect(await audioUrlOf('m_custom')).toBe('r2://generated-tts/u1/custom.mp3');
     expect(await audioUrlOf('m_preset')).toBe('r2://generated-tts/u1/preset.mp3');
     expect(await queuedRefs()).toEqual(EXPECTED_QUEUE);
 
@@ -194,9 +203,10 @@ describe('cleanupExpiredAudio — 행 삭제와 삭제 예약은 한 트랜잭�
   /**
    * 고른 뒤 쓰기 전에 상태가 바뀌면 쓰기 문장이 **같은 조건을 다시 본다** — 고른 목록만 믿지 않는다.
    * 업로드: 그 사이 promote 된 확정 원본은 지우지도, 예약하지도 않는다.
-   * 생성 음원: 그 사이 알람이 붙은 음원은 지우지 않는다(예전에는 다시 보지 않아 알람이 무음이 됐다).
+   * 생성 음원: 그 사이 같은 음원을 가리키는 직접 입력 문구가 생기면 지우지 않는다(예전에는 다시 보지 않아 그 문구가
+   * 무음이 됐다 — 당시 갈래는 알람 연결이었다).
    */
-  it('고른 뒤 promote·알람 연결이 생기면 그 행은 건너뛴다', async () => {
+  it('고른 뒤 promote·직접 입력 문구 연결이 생기면 그 행은 건너뛴다', async () => {
     await seed();
     const raced = { upload: false, generated: false };
     const racing = Object.create(db) as Client;
@@ -212,7 +222,7 @@ describe('cleanupExpiredAudio — 행 삭제와 삭제 예약은 한 트랜잭�
       }
       if (!raced.generated && sql.includes('FROM generated_audio_assets g')) {
         raced.generated = true;
-        await db.execute(`INSERT INTO alarms (id, user_id, message_id, time) VALUES ('a2', 'u1', 'm_lib', '08:00')`);
+        await insertMessage('m_custom2', 'r2://generated-tts/u1/lib.mp3', { category: 'custom' });
       }
       return result;
     }) as Client['execute'];
@@ -221,11 +231,38 @@ describe('cleanupExpiredAudio — 행 삭제와 삭제 예약은 한 트랜잭�
 
     expect(raced).toEqual({ upload: true, generated: true });
     expect(await ids('voice_uploads')).toEqual(['up_draft', 'up_final']);
-    expect(await ids('generated_audio_assets')).toEqual(['g_alarm', 'g_lib', 'g_preset']);
+    expect(await ids('generated_audio_assets')).toEqual(['g_custom', 'g_lib', 'g_preset']);
     expect(await audioUrlOf('m_lib')).toBe('r2://generated-tts/u1/lib.mp3');
     expect(await queuedRefs()).toEqual([
       'r2_object:voices/u1/up_family.mp3',
       'r2_object:voices/u1/up_orphan.mp3',
+    ]);
+  });
+});
+
+describe('cleanupExpiredAudio — 직접 입력 음성은 기한 없이 둔다', () => {
+  /**
+   * 보존 판정은 '살아 있는 직접 입력 문구가 이 키를 가리키는가' 하나다. 문구 종류가 직접 입력이 아니거나, 다른 경로가
+   * 참조를 이미 끊었으면(문구의 `audio_url` 이 비었다) 30일 뒤 지운다 — 남기면 R2 에 영영 남는다.
+   */
+  it('직접 입력 문구가 가리키면 남기고, 참조가 끊긴 직접 입력·다른 종류는 30일 뒤 지운다', async () => {
+    await insertProfile('p_final');
+    await insertMessage('m_custom', 'r2://generated-tts/u1/custom.mp3', { category: 'custom' });
+    await insertGenerated('g_custom', 'm_custom', 'generated-tts/u1/custom.mp3');
+    await insertMessage('m_cut', null, { category: 'custom' });
+    await insertGenerated('g_cut', 'm_cut', 'generated-tts/u1/cut.mp3');
+    await insertMessage('m_fortune', 'r2://generated-tts/u1/fortune.mp3', { category: 'fortune' });
+    await insertGenerated('g_fortune', 'm_fortune', 'generated-tts/u1/fortune.mp3');
+
+    // 만든 지 몇 년이 지나도 직접 입력은 남는다.
+    await cleanupExpiredAudio(db, new Date('2030-01-01T00:00:00Z'));
+
+    expect(await ids('generated_audio_assets')).toEqual(['g_custom']);
+    expect(await audioUrlOf('m_custom')).toBe('r2://generated-tts/u1/custom.mp3');
+    expect(await audioUrlOf('m_fortune')).toBeNull();
+    expect(await queuedRefs()).toEqual([
+      'r2_object:generated-tts/u1/cut.mp3',
+      'r2_object:generated-tts/u1/fortune.mp3',
     ]);
   });
 });

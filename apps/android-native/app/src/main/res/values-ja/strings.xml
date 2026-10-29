@@ -455,6 +455,8 @@
     <string name="voices_recording_stop_failed">録音に失敗しました。</string>
     <string name="voices_register">登録</string>
     <string name="voices_required_field">必ず入力してください。</string>
+    <string name="voices_name_too_long">名前は%1$d文字までです。</string>
+    <string name="msg_try_again_shortly">しばらくしてからもう一度お試しください。</string>
     <string name="voices_reupload">再アップロード</string>
     <string name="voices_select_file_first">ファイルを選択してください。</string>
     <string name="voices_selected_audio_unusable">選択した音声は使用できません。</string>
@@ -701,7 +703,6 @@
     <string name="api_error_voice_cloning_failed">声を作成できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="api_error_invalid_voice_pitch">トーンの値が正しくありません。調整し直してください。</string>
     <string name="api_error_voice_pitch_locked">トーンは声を登録するときにだけ設定できます。</string>
-    <string name="api_error_alarm_not_found">このアラームはすでに削除されています。</string>
     <string name="api_error_tts_generation_failed">音声を作成できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="voices_not_ready_title">声をダウンロード中です</string>
     <string name="voices_not_ready_message_progress">このアラームで使う声を先にダウンロードしています。(%1$d%%)\nほかの基本の声も続けてダウンロードします。</string>

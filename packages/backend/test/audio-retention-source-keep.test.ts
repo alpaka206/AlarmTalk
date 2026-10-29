@@ -46,8 +46,13 @@ async function setupDb() {
       voice_profile_id TEXT,
       created_at TEXT NOT NULL
     );
-    CREATE TABLE alarms (id TEXT PRIMARY KEY, message_id TEXT);
-    CREATE TABLE messages (id TEXT PRIMARY KEY, audio_url TEXT, is_preset INTEGER DEFAULT 0);
+    -- 직접 입력 가드가 보는 칸(category)까지 운영 스키마와 같은 기본값으로 둔다.
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      audio_url TEXT,
+      category TEXT DEFAULT 'custom',
+      is_preset INTEGER DEFAULT 0
+    );
   `);
   return db;
 }

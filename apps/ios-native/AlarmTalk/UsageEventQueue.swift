@@ -37,7 +37,7 @@ enum UsageEventType: String, Codable {
     case alarmReady = "alarm_ready"
     case manualResultReused = "manual_result_reused"
     case generationOutcome = "generation_outcome"
-    /// 광고 보상 — iOS 에는 아직 광고 보상 흐름이 없다(안드로이드만). 계약을 맞춰 둘 뿐 심은 곳이 없다.
+    /// 광고 보상 — 한 번의 단계가 같은 시도로 묶인다(`AdRewardAttempts`).
     case rewardOffer = "reward_offer"
     case rewardViewStarted = "reward_view_started"
     case rewardPending = "reward_pending"
@@ -384,5 +384,50 @@ final class UsageEventQueue: @unchecked Sendable {
         } catch {
             return false
         }
+    }
+}
+
+/// **광고 보상 한 번**(`reward_offer` → `reward_view_started` → `reward_pending` → `reward_granted` → `reward_spent`,
+/// `docs/spec/usage-events.md` §7.1). 단계가 같은 `attempt_id` 로 묶인다. 제안 없이 시청이 시작되면(다른 입구) 거기서 새 시도를 연다.
+/// 안드로이드 `data/UsageSignals.kt` 의 `AdRewardAttempts` 짝 — 예전 iOS 는 광고 흐름이 있는데도 이 다섯 종류를 하나도 적지
+/// 않아, 관리자 광고 퍼널이 iOS 를 0 으로 셌다(2026-10-29 두 앱 비교).
+@MainActor
+enum AdRewardAttempts {
+    private static var currentID: String?
+    private static var pendingAt: ContinuousClock.Instant?
+
+    static func offered(surface: String, userID: String?) {
+        let id = UsageEventContract.newAttemptID()
+        currentID = id
+        pendingAt = nil
+        UsageEventQueue.shared.record(.rewardOffer, attemptID: id, props: UsageEventProps(surface: surface), userID: userID)
+    }
+
+    /// 광고가 **실제로 뜨는 순간**에 적는다 — 동의·재고·표시 실패로 아무것도 못 본 시도를 시청으로 세지 않는다.
+    static func viewStarted(userID: String?) {
+        let id = currentID ?? UsageEventContract.newAttemptID()
+        currentID = id
+        UsageEventQueue.shared.record(.rewardViewStarted, attemptID: id, userID: userID)
+    }
+
+    static func pending(userID: String?) {
+        guard let id = currentID else { return }
+        pendingAt = .now
+        UsageEventQueue.shared.record(.rewardPending, attemptID: id, userID: userID)
+    }
+
+    /// 대기에서 지급 확인까지(`duration_ms`, 단조 시계).
+    static func granted(userID: String?) {
+        guard let id = currentID else { return }
+        let waited = pendingAt.map { UsageEventContract.elapsedMs(since: $0) }
+        UsageEventQueue.shared.record(.rewardGranted, attemptID: id, props: UsageEventProps(durationMs: waited), userID: userID)
+    }
+
+    /// 보상으로 직접 입력 한 번을 만들었다. 지급을 본 시도가 있으면 그 시도로 잇고, 없으면(늦게 들어온 보상) 따로 적는다.
+    static func spent(requestID: String?, userID: String?) {
+        let id = currentID
+        currentID = nil
+        pendingAt = nil
+        UsageEventQueue.shared.record(.rewardSpent, attemptID: id, props: UsageEventProps(requestID: requestID), userID: userID)
     }
 }

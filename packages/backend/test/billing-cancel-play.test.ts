@@ -72,6 +72,11 @@ function findCall(sqlFragment: string) {
   return mockDB.calls.find((c) => c.sql.includes(sqlFragment));
 }
 
+/** 서버 알람 사본(`alarms`)은 #147 에서 지웠다 — 그 표를 부르는 SQL 이 있으면 운영에서 'no such table' 로 실패한다. */
+function touchesAlarmTable(): boolean {
+  return mockDB.calls.some((c) => /\balarms\b/i.test(c.sql));
+}
+
 beforeEach(() => {
   mockDB.reset();
   mockDB.pushResultFor('SELECT DISTINCT s.id FROM subscriptions s', []);
@@ -454,7 +459,7 @@ describe('POST /billing/cancel — 스냅샷 단위 취소 (E1)', () => {
     ).toBe(false);
     expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['plus', 'user-pk-1']);
     expect(findCall('UPDATE voice_profiles')).toBeUndefined();
-    expect(findCall('UPDATE alarms')).toBeUndefined();
+    expect(touchesAlarmTable()).toBe(false);
     // 보관 예약은 유지 — sweep 이 삭제 전 활성 유료 구독을 재확인한다.
     expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
   });
@@ -496,7 +501,7 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
     expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['plus', 'user-pk-1']);
     // 여전히 유료이므로 클론을 반납하지 않는다.
     expect(findCall('UPDATE voice_profiles')).toBeUndefined();
-    expect(findCall('UPDATE alarms')).toBeUndefined();
+    expect(touchesAlarmTable()).toBe(false);
   });
 
   it('마지막 활성 구독을 취소하면 free 강등 + 클론 반납을 한다 — 알람은 건드리지 않는다', async () => {
@@ -509,8 +514,8 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
       mockDB.calls.some((c) => c.sql.includes('UPDATE users SET plan') && c.args[0] === 'free'),
     ).toBe(true);
     expect(findCall('UPDATE voice_profiles')).toBeDefined();
-    // 음성 데이터는 보관 기한까지 남고 재생만 잠긴다 — 내 알람을 서버에서 내리지 않는다.
-    expect(findCall('UPDATE alarms')).toBeUndefined();
+    // 음성 데이터는 보관 기한까지 남고 재생만 잠긴다 — 서버에는 내릴 알람 행이 없다(#147).
+    expect(touchesAlarmTable()).toBe(false);
   });
 });
 

@@ -455,6 +455,8 @@
     <string name="voices_recording_stop_failed">Recording failed.</string>
     <string name="voices_register">Register</string>
     <string name="voices_required_field">This field is required.</string>
+    <string name="voices_name_too_long">Names can be up to %1$d characters.</string>
+    <string name="msg_try_again_shortly">Please try again in a moment.</string>
     <string name="voices_reupload">Re-upload</string>
     <string name="voices_select_file_first">Please select a file.</string>
     <string name="voices_selected_audio_unusable">The selected audio can\'t be used.</string>
@@ -701,7 +703,6 @@
     <string name="api_error_voice_cloning_failed">We couldn\'t create the voice. Please try again in a moment.</string>
     <string name="api_error_invalid_voice_pitch">The tone value isn\'t valid. Please adjust it and try again.</string>
     <string name="api_error_voice_pitch_locked">Tone can only be set when you register a voice.</string>
-    <string name="api_error_alarm_not_found">This alarm no longer exists.</string>
     <string name="api_error_tts_generation_failed">We could not create the audio. Please try again in a moment.</string>
     <string name="voices_not_ready_title">Still downloading voices</string>
     <string name="voices_not_ready_message_progress">Downloading the voice for this alarm first. (%1$d%%)\nThe other default voices keep downloading after it.</string>

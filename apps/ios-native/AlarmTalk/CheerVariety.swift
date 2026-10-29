@@ -212,4 +212,20 @@ extension CheerVariety {
               let mode = record.cheerMode else { return nil }
         return UsageEventProps(contentMode: CheerMode.normalize(mode) == .pinned ? .fixed : .varied)
     }
+
+    /// **이 저장이 클론 응원 보충을 요청해야 하는가**(스펙 voice-and-message §5-4 「클론은 고른 것만 보충한다」).
+    ///
+    /// 내 클론 목소리로 응원 테마를 말하는 알람이고, **테마나 목소리를 새로 골랐을 때만**이다 — 켜고 끄기·시각만 고친 저장은
+    /// 부르지 않는다. 기본 목소리·추가 팩은 보충이 없다.
+    /// ⚠ 예전에는 서버 알람 사본의 쓰기(`POST/PATCH /alarm`)가 이 판정을 했다. 사본을 없앤 뒤(2026-10-29)로는 앱이 판정해
+    ///   `POST /voice/:id/content-supplement` 로 알린다. 안드로이드 짝은 `data/CheerVariety.kt` 의 `needsCloneCheerSupplement`.
+    static func needsCloneSupplement(saved: LocalAlarmRecord, previous: LocalAlarmRecord?) -> Bool {
+        guard saved.bucketId == bucketID,
+              saved.playModeEnum != .alarmOnly,
+              saved.voiceSourceEnum != .localAudio,
+              let voiceID = saved.voiceProfileId.nilIfBlank,
+              !isFreeFixedVoiceID(voiceID) else { return false }
+        guard let previous else { return true }
+        return previous.bucketId != bucketID || previous.voiceProfileId != voiceID
+    }
 }

@@ -5,7 +5,6 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.alarm.AlarmScheduler
 import com.alarmtalk.app.network.ExpectedVariantCounts
-import com.alarmtalk.app.network.RemoteAlarmMapper
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.StockClipListResponse
 import com.alarmtalk.app.network.VoicePackClip
@@ -13,7 +12,6 @@ import com.alarmtalk.app.network.VoicePackSummary
 import com.alarmtalk.app.network.WithdrawnVoicePack
 import com.alarmtalk.app.sync.StockClipLanguageRebinder
 import com.google.gson.Gson
-import com.google.gson.JsonParser
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -135,7 +133,6 @@ class VoicePackTest {
         assertEquals("stock_m1", StockClip(messageId = "m1", voiceProfileId = SUBSTITUTE_SYSTEM_VOICE_ID).clipCacheKey())
         assertTrue(clips.all { it.voiceProfileId == packVoiceId && it.language == "ja" })
         assertTrue(clips.first().audioUrl!!.startsWith("voice-pack://first-pack/c-greeting?sha256="))
-        assertFalse(RemoteAlarmMapper.isRemoteAudioUrl(clips.first().audioUrl!!))
         assertEquals("ja", voicePackLanguageOf(clips, packVoiceId))
         assertNull(voicePackLanguageOf(clips, SUBSTITUTE_SYSTEM_VOICE_ID))
     }
@@ -210,17 +207,6 @@ class VoicePackTest {
         assertFalse(next.ready)
         assertEquals(4, next.contentRevision)
         assertEquals(5L, next.withdrawnPlaybackUntilMillis)
-    }
-
-    @Test
-    fun serverCopyCarriesNoPackIds() {
-        val body = JsonParser.parseString(Gson().toJson(RemoteAlarmMapper.toWriteRequest(packAlarm()))).asJsonObject
-        // 서버는 팩 목소리를 모른다 — 실으면 404 로 동기화가 영영 실패한다.
-        assertTrue(!body.has("voice_profile_id") || body.get("voice_profile_id").isJsonNull)
-        assertTrue(!body.has("message_id") || body.get("message_id").isJsonNull)
-        assertEquals("sound-only", body.get("mode").asString)
-        assertEquals("weather", body.get("bucket_id").asString)
-        assertTrue(RemoteAlarmMapper.toWriteRequest(packAlarm()).clearsMissingVoiceReferences)
     }
 
     @Test

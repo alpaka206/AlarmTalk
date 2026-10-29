@@ -118,7 +118,7 @@ async function getPushTargetsForUsers(
 
 export async function getTokensForUser(db: Client, userId: string): Promise<string[]> {
   // push_tokens.user_id 는 users.id(PK, FK REFERENCES users(id))로 저장한다. 하지만 호출부는 users.id
-  // 또는 로그인 ID(알람 행의 user_id)를 넘긴다.
+  // 또는 로그인 ID(옛 행의 user_id)를 넘긴다.
   // 로그인 ID 는 계정 종류별로 google_id/email-계정=users.id 로 다르므로(auth.ts loginSub),
   // users 로 조인해 두 식별자(id/google_id) 모두 매칭한다(각각 유니크라 최대 1명 매칭).
   const result = await db.execute({
@@ -346,8 +346,8 @@ export async function sendVoiceShareChangedPush(
 /**
  * 강등 신호를 만든다 — **계정 단위로 접어서**.
  *
- * 서버가 목소리를 떼어 낸 알람의 주인, 그리고 알람 행과 무관하게 목소리 접근권을 잃은 계정에
- * `voice_access_revoked` 를 **한 번씩** 보낸다. 클라는 이 신호로 목소리 접근권을 다시 확인해 로컬
+ * 목소리 접근권을 잃은 계정에 `voice_access_revoked` 를 **한 번씩** 보낸다(서버 알람 사본을 지운 뒤(#147)로는
+ * `targets` 가 언제나 비어 있다 — 알람은 기기에만 있다). 클라는 이 신호로 목소리 접근권을 다시 확인해 로컬
  * 알람을 내린다(`VoiceAccessSyncWorker` / iOS `onAuthoritativeRefresh`) — 알람마다 보내면 토큰
  * 조회와 FCM 왕복만 알람 수만큼 늘어나, 한 스윕이 여러 알람을 강등할 때 Workers 서브리퀘스트
  * 상한에 걸릴 수 있다(AGENTS.md).
@@ -379,7 +379,7 @@ export function buildDowngradeSignals(
     replacedGeneration?: string;
   } = {},
 ): SilentSignal[] {
-  // 알람 행을 못 찾은 계정도 포함한다(서버에 아직 동기화되지 않은 로컬 알람 때문에).
+  // 알람은 기기에만 있어(#147) 서버가 알람으로는 찾을 수 없다 — 접근권을 잃은 계정 전부에 보낸다.
   const voiceAccessOwners = new Set([
     ...targets.map((t) => t.ownerUserId),
     ...voiceAccessRevokedUserIds.filter(Boolean),
@@ -404,7 +404,7 @@ export function buildDowngradeSignals(
 }
 
 /**
- * 서버가 강등한 알람과 접근권을 잃은 계정을 그 기기들에 알린다(`buildDowngradeSignals`).
+ * 목소리 접근권을 잃은 계정을 그 기기들에 알린다(`buildDowngradeSignals`).
  *
  * 반드시 **쓰기 트랜잭션 커밋 후에** 부를 것. 롤백될 수 있는 변경을 미리 알리면 안 된다.
  * 전송 실패는 삼키며, 하루 주기 재확인과 앱 시작 재조회가 정확성을 보장한다.
@@ -414,8 +414,8 @@ export async function notifyDowngradedAlarms(
   env: SignalPushEnv | undefined,
   targets: Array<{ alarmId: string; ownerUserId: string }>,
   /**
-   * 목소리 접근권을 잃은 계정들 — 서버에서 찾은 알람 행과 **무관하게** 알려야 한다.
-   * 아직 서버로 동기화되지 않은 로컬 알람은 targets 에 안 잡히는데, 발사는 로컬이고
+   * 목소리 접근권을 잃은 계정들 — 알람은 기기에만 있어(#147) 서버가 알람으로 찾을 수 없다.
+   * 발사는 로컬이고
    * 울림 시점 동의 게이트도 없어 그 기기는 지워진 녹음으로 계속 울린다.
    */
   voiceAccessRevokedUserIds: string[] = [],

@@ -151,14 +151,12 @@ export const ERROR_CODES = [
   'INVALID_VIBRATION_PATTERN',
   'INVALID_VOICE_PROFILE_ID',
   'INVALID_WAKE_MODE',
-  // 알람 쓰기 (alarm-mutation.ts)
-  'ALARM_DELETE_FAILED',
-  'ALARM_NOT_FOUND',
+  // 알람 쓰기 (alarm-mutation.ts) — 옛 앱의 올리기를 저장 없이 받는 호환 경로다(2026-10-29 서버 알람 사본 삭제). 행이 없으니
+  // `ALARM_NOT_FOUND`·`ALARM_DELETE_FAILED`·`NO_UPDATE_FIELDS` 는 더 나가지 않아 뺐다.
   'INVALID_ALARM_ID',
   'MESSAGE_NOT_FOUND',
   /** `POST /alarm` 의 `target_user_id` 가 남의 계정이다 — 남에게 보내는 알람은 없다(옛 앱의 가족 알람 보내기). */
   'NOT_CONNECTED',
-  'NO_UPDATE_FIELDS',
   'REQUIRED_FIELDS_MISSING',
   'VOICE_FEATURE_REQUIRES_PAID_PLAN',
   'VOICE_PROFILE_NOT_FOUND',

@@ -141,8 +141,6 @@ enum APIErrorMessages {
             return String(localized: "목소리를 만들려면 음성 정보 활용 동의가 필요해요. 더보기 → 약관 및 동의에서 다시 동의해 주세요.")
 
         // ── 알람·문구 ─────────────────────────────────────────────────────
-        case "ALARM_NOT_FOUND":
-            return String(localized: "이미 사라진 알람이에요.")
         case "TTS_GENERATION_FAILED":
             return String(localized: "음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
 

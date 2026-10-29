@@ -479,8 +479,7 @@ class StockClipPrefetchWorker(
             // ⚠ **한 번만 만들어 아래 두 곳이 같은 답을 보게 한다.** 재바인딩과 정리가
             //   서로 다른 힌트로 판정하면, 정리가 "갈아탈 것이 없다" 로 읽고 아직 옛 클립을
             //   문 알람의 파일을 지운다 — 그 알람은 무음이 된다.
-            val legacyHints = manifest.legacyBucketHints
-                .associate { hint -> hint.messageId to hint.category }
+            val legacyHints = legacyBucketHintsOf(manifest)
             // 이 기기 사용자의 지역·사주. 조건형 버킷(날씨·운세)을 묶을 때 빈 자리에만 채운다 —
             // 조건 없이 저장된 행은 그 값이 비어 있어서, 안 채우면 날씨는 서버 기본값(서울),
             // 운세는 빈 프로필 해시로 떨어진다.

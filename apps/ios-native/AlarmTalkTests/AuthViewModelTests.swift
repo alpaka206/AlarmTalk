@@ -22,6 +22,14 @@ import XCTest
 @MainActor
 final class AuthViewModelTests: XCTestCase {
 
+    /// 마케팅 동의 캐시(`MarketingConsentCache`)는 앱 기본 저장소에 산다 — 앞 테스트가 적은 값이 다음 테스트의 첫 그림이 되지 않게
+    /// 매번 비운다.
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.removeObject(forKey: "marketing_consent_cache.user_id")
+        UserDefaults.standard.removeObject(forKey: "marketing_consent_cache.agreed")
+    }
+
     func testBackgroundRenewalPublishesTheStoredTokenToMemory() async throws {
         PendingSignOutStore.removeAll()
         let api = MockAuthAPI()
@@ -1956,21 +1964,9 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertTrue(vm.needsConsent)
         XCTAssertTrue(vm.consentIsReconsent)
         XCTAssertEqual(api.consentStatusCallCount, 1)
-        let generation = vm.consentSubmitGeneration
         await vm.submitConsents(agreedOptional: [])
         XCTAssertEqual(api.lastRecordConsentsRequest?.consents.map(\.type), ["privacy"])
-        XCTAssertEqual(vm.consentSubmitGeneration, generation + 1)
         XCTAssertFalse(vm.showConsentScreen)
-    }
-
-    func test_failedConsentSubmissionDoesNotRestartSync() async {
-        let api = MockAuthAPI()
-        api.recordConsentsResult = .failure(APIError.invalidResponse)
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        vm._setSessionForTesting(makeEmailSession())
-        let generation = vm.consentSubmitGeneration
-        await vm.submitConsents(agreedOptional: [])
-        XCTAssertEqual(vm.consentSubmitGeneration, generation)
     }
 
     func test_consent403_overlappingForegroundLookupFailureStillOpensFallback() async {
@@ -2087,7 +2083,9 @@ final class AuthViewModelTests: XCTestCase {
 
     /// 쓰기는 한 번에 하나다. 화면을 나갔다 들어오면 화면 상태는 새로 만들어지므로, 잠금이 화면에 있으면 앞 쓰기가
     /// 도는 중에 또 보내 서버에 늦게 닿은 쪽이 이긴다. 그 사이의 진입 조회도 쓰기 결과보다 낡았다.
-    func test_marketingConsent_쓰는_동안에는_다시_보내지도_조회하지도_않는다() async {
+    /// 쓰는 동안에도 누를 수 있다 — 겹쳐 보내지 않고, 앞 쓰기가 끝나면 **마지막으로 누른 값**을 이어 보낸다(2026-10-29 두 앱
+    /// 비교 — 예전 iOS 는 쓰는 동안 스위치를 잠갔다). 쓰는 동안에는 조회도 하지 않는다.
+    func test_marketingConsent_쓰는_동안_누른_마지막_값을_이어_보낸다() async {
         let api = MockAuthAPI()
         api.listConsentsResult = .success(marketingConsents(false))
         let writeSent = expectation(description: "쓰기 전송")
@@ -2104,14 +2102,17 @@ final class AuthViewModelTests: XCTestCase {
         await fulfillment(of: [writeSent], timeout: 3)
         XCTAssertTrue(vm.marketingConsentWriteInFlight)
         await vm.updateMarketingConsent(false)
+        XCTAssertEqual(vm.marketingConsentAgreed, false, "누른 값은 곧바로 그린다")
         await vm.loadMarketingConsent()
 
         XCTAssertEqual(api.recordConsentsCallCount, 1, "앞 쓰기가 끝나기 전에 겹쳐 보내지 않는다")
         XCTAssertEqual(api.listConsentsCallCount, 1, "쓰는 동안에는 조회하지 않는다")
         held.release(1)
         await write.value
+        XCTAssertEqual(api.recordConsentsCallCount, 2, "끝나면 마지막 값을 이어 보낸다")
+        XCTAssertEqual(api.lastRecordConsentsRequest?.consents.first?.agreed, false)
         XCTAssertFalse(vm.marketingConsentWriteInFlight)
-        XCTAssertEqual(vm.marketingConsentAgreed, true)
+        XCTAssertEqual(vm.marketingConsentAgreed, false)
     }
 
     /// 로그인한 동안의 실패는 **그 동작의 자리에** 남는다(2026-10-29 오너 — 알림이 아니라 빨간 글자). `statusMessage` 는 로그인

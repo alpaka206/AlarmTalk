@@ -9,7 +9,6 @@ struct AlarmsListView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
-    @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
     @State private var actionMessage: String?
@@ -108,19 +107,14 @@ struct AlarmsListView: View {
         .preference(key: AlarmSelectionActiveKey.self, value: selectionMode)
     }
 
-    /// 인라인 액션 메시지(alarmKit 유래) 우선, 없으면 동기화 상태 메시지. 둘 중 하나만.
+    /// 인라인 액션 메시지(alarmKit 유래). 알람을 서버로 올리지 않으므로(2026-10-29) 동기화 문구는 없다.
     private var displayedMessage: String? {
-        actionMessage ?? remoteSync.statusMessage
+        actionMessage
     }
 
-    /// 표시 중인 메시지를 닫는다. actionMessage 가 떠 있으면 그것을, 아니면 동기화
-    /// 상태 메시지를 지운다(둘은 동시에 뜨지 않으므로 보이는 쪽만 비운다).
+    /// 표시 중인 메시지를 닫는다.
     private func dismissDisplayedMessage() {
-        if actionMessage != nil {
-            actionMessage = nil
-        } else {
-            remoteSync.statusMessage = nil
-        }
+        actionMessage = nil
     }
 
     /// 목록 **밖에 고정**되는 헤더. 스크롤해도 '다음 알람까지' 가 남고, 무엇보다 목록을
@@ -400,9 +394,6 @@ struct AlarmsListView: View {
                 actionMessage = alarmKit.statusMessage ?? String(localized: "알람 상태 변경에 실패했어요.")
                 return
             }
-            if let synced = store.record(id: updated.id), shouldPushToServer(synced) {
-                await remoteSync.push(record: synced, store: store, session: auth.session)
-            }
             actionMessage = nil
         } else {
             let canceled = await alarmKit.cancelScheduledAlarm(record: alarm)
@@ -412,46 +403,21 @@ struct AlarmsListView: View {
                 return
             }
             store.setEnabled(id: alarm.id, enabled: false)
-            if let updated = store.record(id: alarm.id), shouldPushToServer(updated) {
-                await remoteSync.push(record: updated, store: store, session: auth.session)
-            }
             actionMessage = nil
         }
-    }
-
-    /// 이 행의 변경을 곧바로 서버에 올려도 되는가 — 서버에 이미 있는 행만. 아직 없는 행은
-    /// 다음 일괄 push 가 만든다(`RemoteAlarmPushSync`).
-    private func shouldPushToServer(_ record: LocalAlarmRecord) -> Bool {
-        record.remoteAlarmId != nil
     }
 
     /// 알람 삭제 실행. 스와이프 삭제 버튼 또는 길게 누르기 메뉴에서 곧바로 호출된다
     /// (Android 즉시 삭제 미러 — 별도 확인 다이얼로그 없음, 스와이프 제스처가 안전장치).
     ///
-    /// 의도적 누락: 서버에 소프트 삭제(휴지통)가 없어 양 플랫폼 모두 실행취소/스낵바를
-    /// 제공하지 않는다. 서버 + AlarmKit + 음원 캐시가 즉시·비가역 삭제된다.
-    ///
-    /// ⚠ **서버를 기다리지 않는다**(2026-08-18 낙관적 삭제). 로컬을 먼저 지우고 서버 삭제는
-    /// 뒤에서 돈다 — 예전에는 서버 왕복을 다 기다린 뒤에야 행이 사라져서, 스와이프가 제자리로
-    /// 돌아오고 아무 일도 안 일어난 것처럼 보였다. 실패해도 **되살아나지 않는다**: 서버에서
-    /// 받아 오는 알람이 없어 서버에 고아 행이 남을 뿐 사용자에게는 보이지 않는다.
+    /// 의도적 누락: 휴지통이 없어 양 플랫폼 모두 실행취소/스낵바를 제공하지 않는다. AlarmKit 예약과 음원 캐시가
+    /// 즉시·비가역 삭제된다. 서버에는 알람 사본이 없다(2026-10-29) — 지울 서버 행도 없다.
     @MainActor
     private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
         let deleted = await alarmKit.cancel(record: alarm, store: store)
         guard deleted else {
             actionMessage = alarmKit.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
             return
-        }
-        // 서버 삭제는 뒤에서. 화면은 이미 사라졌다.
-        // ⚠ **실패를 알리지 않는다**(`announceFailure: false`). 사용자가 원한 결과(목록에서
-        // 사라짐)는 이미 이뤄졌고, 서버에 고아 행이 남아도 보이지 않는다. 여기서 배너를 띄우면
-        // **지워진 알람 옆에 "삭제에 실패했어요"** 가 뜬다.
-        Task {
-            await remoteSync.deleteRemote(
-                record: alarm,
-                session: auth.session,
-                announceFailure: false
-            )
         }
     }
 }

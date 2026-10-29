@@ -97,7 +97,6 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     // '목소리 느낌' 선택 제거) 그 코드를 받을 길이 없다. 서버는 1.2.10 앱 때문에 아직 낸다.
 
     // ── 알람·문구 ─────────────────────────────────────────────────────────
-    "ALARM_NOT_FOUND" to R.string.api_error_alarm_not_found,
     "TTS_GENERATION_FAILED" to R.string.api_error_tts_generation_failed,
 )
 

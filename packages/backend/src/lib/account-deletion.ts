@@ -260,9 +260,9 @@ export async function pseudonymizeBillingForRetention(
  * 탈퇴하는 계정 자신은 빠진다 — 그 기기는 곧 사라진다(`revokeDeletedVoices` 의 `excludeOwnerUserIds`).
  */
 export type AccountPurgeNotifications = {
-  /** 서버 알람 행에서 찾은 강등 대상. 그 알람의 주인 기기가 목소리 접근권을 다시 확인한다. */
+  /** 서버가 강등한 알람 — 서버 알람 사본을 지운 뒤(#147)로는 언제나 비어 있다(`revokeDeletedVoices`). */
   downgradedAlarms: DowngradedAlarm[];
-  /** 서버 알람 행과 **무관하게** 목소리 접근권을 잃은 계정들(`VoiceRevocationNotifications`). */
+  /** 목소리 접근권을 잃은 계정들 — 그 기기가 제 알람을 내린다(`VoiceRevocationNotifications`). */
   voiceAccessRevokedUserIds: string[];
 };
 
@@ -322,7 +322,7 @@ export async function purgeUserAccount(
     // ⚠ **자리를 옮기지 말 것.** 아래 둘보다 앞이어야 한다:
     //   구독 취소 — 철회는 지금 상태를 읽어 대상을 고른다. 그 상태를 바꿀 수 있는 쓰기보다 먼저 돈다
     //   (2026-09-30 — 순서가 뒤집혀 있던 동안 철회가 대상을 못 찾았다),
-    //   `DELETE FROM alarms`·messages·voice_profiles 삭제 — 조회 대상이 사라진다.
+    //   messages·voice_profiles 삭제 — 조회 대상이 사라진다(서버 알람 행은 #147 에서 지웠다).
     const revocation = await revokeDeletedVoices(tx, {
       voiceProfileIds: cloneIds,
       ownerUserIds: userIds,
@@ -412,12 +412,6 @@ export async function purgeUserAccount(
                  SELECT id FROM messages WHERE user_id IN (?, ?)
                )`,
       args: [...userIds, ...userIds, ...userIds],
-    });
-    // 내 알람 행. 남겨 두면 audio-retention 이 message_id 를 영구 사용 참조로 오인하고, 계정 id 도
-    // 그대로 남는다.
-    writes.push({
-      sql: `DELETE FROM alarms WHERE user_id IN (?, ?)`,
-      args: userIds,
     });
     if (cloneIds.length > 0) {
       const cph = cloneIds.map(() => '?').join(', ');

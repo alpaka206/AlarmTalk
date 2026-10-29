@@ -194,7 +194,6 @@ beforeEach(async () => {
   vi.mocked(playRevokeSubscription).mockReset().mockResolvedValue(undefined);
   vi.mocked(googlePaymentAnchor).mockResolvedValue(new Date(PAID));
   // 테스트 DB 안에서만 초기화한다. FK 의존 순서대로 지운다.
-  await db.execute("DELETE FROM alarms WHERE id='orphan-own-alarm'");
   await db.execute("DELETE FROM messages WHERE id='orphan-message'");
   await db.execute("DELETE FROM voice_profiles WHERE id='orphan-voice'");
   await db.execute("DELETE FROM pending_external_deletions WHERE ref='orphan-provider'");
@@ -1540,8 +1539,6 @@ describe('결제 전 HTTP 응답', () => {
       VALUES ('orphan-voice','owner','남길 목소리','orphan-provider')`);
     await db.execute(`INSERT INTO messages (id,user_id,voice_profile_id,text)
       VALUES ('orphan-message','owner','orphan-voice','보관할 문구')`);
-    await db.execute(`INSERT INTO alarms (id,user_id,message_id,voice_profile_id,time,mode)
-      VALUES ('orphan-own-alarm','owner','orphan-message','orphan-voice','07:00','tts')`);
   }
   it('고아 유료 등급도 강등 전체를 커밋하고 통지하며 재조회로 유예를 늘리지 않는다', async () => {
     await orphanedPlan();
@@ -1565,9 +1562,6 @@ describe('결제 전 HTTP 응답', () => {
     expect(voice.evicted_provider_voice_id).toBe('orphan-provider');
     expect(voice.evicted_at).not.toBeNull();
     expect(await rows("SELECT * FROM messages WHERE id='orphan-message'")).toHaveLength(1);
-    expect((await rows("SELECT mode FROM alarms WHERE id='orphan-own-alarm'"))[0]!.mode).toBe(
-      'tts',
-    );
     const retention = await rows('SELECT * FROM paid_voice_retention ORDER BY user_id');
     expect(retention.map((row) => row.user_id)).toEqual(['owner']);
     expect(sendPlanChangedPush).toHaveBeenCalledTimes(1);
@@ -1591,9 +1585,6 @@ describe('결제 전 HTTP 응답', () => {
       expect(
         (await rows("SELECT elevenlabs_voice_id FROM voice_profiles WHERE id='orphan-voice'"))[0],
       ).toEqual({ elevenlabs_voice_id: 'orphan-provider' });
-      expect((await rows("SELECT mode FROM alarms WHERE id='orphan-own-alarm'"))[0]!.mode).toBe(
-        'tts',
-      );
       expect(
         await rows("SELECT * FROM pending_external_deletions WHERE ref='orphan-provider'"),
       ).toHaveLength(0);

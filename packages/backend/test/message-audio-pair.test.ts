@@ -1,10 +1,13 @@
-// **알람 저장과 오디오 내려받기는 같은 답을 낸다** — `messageBelongsToCaller`(쓰기 허용)와
-// `GET /tts/messages/:id/audio`(읽기 허용)는 한 쌍이다(CLAUDE.md). 어긋나면 들리는데 저장이 안 되거나, 저장은 되는데
-// 받을 수 없는 알람이 생긴다. 목소리 공유를 없앤 뒤(2026-10-20) 허용 갈래는 둘이다 — 내 문구(내 목소리·스톡 목소리)와
-// 시스템 스톡 프리셋. 공유 시절에 남은 행(남의 목소리로 만든 내 문구, 남의 프리셋 클립)은 양쪽 모두 막힌다.
+// **오디오 내려받기(`GET /tts/messages/:id/audio`)의 허용 갈래.** 목소리 공유를 없앤 뒤(2026-10-20) 허용 갈래는 둘이다 —
+// 내 문구(내 목소리·스톡 목소리)와 시스템 스톡 프리셋. 공유 시절에 남은 행(남의 목소리로 만든 내 문구, 남의 프리셋 클립)과
+// 초안 목소리 문구는 막힌다. 내 목소리 문구는 개인 목소리 권한(계산값)이 있어야 한다.
 //
-// 목 DB 로는 두 SQL 이 같은 행을 고르는지 볼 수 없어서, 실제 워커와 실제 libSQL 로 두 라우트를 나란히 부른다.
-// 시드한 문구는 음원이 없다 — 허용이면 오디오 라우트가 소유권 게이트를 지나 `MESSAGE_AUDIO_MISSING` 에서 멈춘다.
+// 예전에는 알람 저장의 쓰기 허용(`messageBelongsToCaller`)과 한 쌍으로 같은 답을 내는지 봤다. 서버 알람 사본을 지운 뒤(#147)
+// `POST/PATCH /alarm` 은 아무것도 저장하지 않는 옛 앱 호환 자리라(`alarm-compat.test.ts`) 막을 쓰기가 없다 — 남은 문은
+// 이 라우트 하나다.
+//
+// 실제 워커와 실제 libSQL 로 부른다. 시드한 문구는 음원이 없다 — 허용이면 오디오 라우트가 소유권 게이트를 지나
+// `MESSAGE_AUDIO_MISSING` 에서 멈춘다.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -64,8 +67,6 @@ async function call(method: string, path: string, user: string, body?: unknown) 
   return { status: res.status, json: (await res.json()) as Record<string, any> };
 }
 
-const saveAlarm = (user: string, fields: Record<string, unknown>) =>
-  call('POST', '/api/alarm', user, { time: '07:00', repeat_days: [], timezone: 'Asia/Seoul', ...fields });
 const downloadAudio = (user: string, messageId: string) =>
   call('GET', `/api/tts/messages/${messageId}/audio`, user);
 
@@ -125,7 +126,7 @@ afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-describe('문구 — 알람 저장과 오디오 내려받기가 같은 답을 낸다', () => {
+describe('문구 — 오디오 내려받기의 허용 갈래', () => {
   it.each([
     ['내 문구·내 목소리', true, 'ownCustom'],
     ['내 프리셋·내 목소리', true, 'ownPreset'],
@@ -136,102 +137,21 @@ describe('문구 — 알람 저장과 오디오 내려받기가 같은 답을 �
     ['남의 프리셋 클립(공유 시절 갈래)', false, 'othersPreset'],
     ['초안 목소리 문구', false, 'ownOnDraft'],
   ] as const)('%s → 허용 %s', async (_label, allowed, key) => {
-    const save = await saveAlarm('me', { message_id: M[key], mode: 'tts' });
     const audio = await downloadAudio('me', M[key]);
     if (allowed) {
-      expect(save.status).toBe(201);
       expect([audio.status, audio.json.error_code]).toEqual([404, 'MESSAGE_AUDIO_MISSING']);
     } else {
-      expect([save.status, save.json.error_code]).toEqual([404, 'MESSAGE_NOT_FOUND']);
       expect([audio.status, audio.json.error_code]).toEqual([404, 'MESSAGE_NOT_FOUND']);
     }
   });
 
-  it('무료 계정의 자기 클론 문구는 저장도 내려받기도 유료 게이트에 막힌다', async () => {
-    const save = await saveAlarm('freeu', { message_id: M.freeOnOwnClone, mode: 'tts' });
+  it('무료 계정의 자기 클론 문구는 유료 게이트에 막힌다', async () => {
     const audio = await downloadAudio('freeu', M.freeOnOwnClone);
-    expect([save.status, save.json.error_code]).toEqual([403, 'VOICE_FEATURE_REQUIRES_PAID_PLAN']);
     expect([audio.status, audio.json.error_code]).toEqual([403, 'VOICE_LOCKED_FREE_PLAN']);
   });
 
-  it('무료 계정도 시스템 스톡 프리셋은 저장하고 내려받는다', async () => {
-    const save = await saveAlarm('freeu', {
-      message_id: M.stockPreset,
-      voice_profile_id: stockVoice,
-      mode: 'tts',
-    });
+  it('무료 계정도 시스템 스톡 프리셋은 내려받는다', async () => {
     const audio = await downloadAudio('freeu', M.stockPreset);
-    expect(save.status).toBe(201);
     expect([audio.status, audio.json.error_code]).toEqual([404, 'MESSAGE_AUDIO_MISSING']);
-  });
-});
-
-describe('목소리 — 알람에 걸 수 있는 것은 내 정식 목소리와 스톡 목소리뿐이다', () => {
-  it.each([
-    ['내 목소리', 201, 'mine'],
-    ['남의 목소리', 404, 'other'],
-    ['내 초안', 404, 'draft'],
-  ] as const)('%s → %i', async (_label, status, key) => {
-    const res = await saveAlarm('me', { voice_profile_id: V[key], mode: 'tts' });
-    expect(res.status).toBe(status);
-    if (status === 404) expect(res.json.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
-  });
-
-  it('스톡 목소리 → 201', async () => {
-    expect((await saveAlarm('me', { voice_profile_id: stockVoice, mode: 'tts' })).status).toBe(201);
-  });
-});
-
-// PATCH 는 문구·목소리가 저장된 값에서 **바뀔 때만** 소유권을 본다 — 안드로이드 동기화는 토글마다 두 값을 그대로 보낸다.
-// 그대로 보낸 값은 새 참조가 아니다. 공유 시절에 남은 행도 켜고 끌 수 있어야 하고, 막힌 클립의 재생은 오디오 라우트가 막는다.
-describe('PATCH /alarm — 그대로 보낸 문구·목소리는 다시 보지 않고, 바꾸는 값만 본다', () => {
-  async function legacyAlarm(): Promise<string> {
-    const id = crypto.randomUUID();
-    await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time, mode, is_active)
-            VALUES (?, 'me', ?, ?, '06:30', 'tts', 1)`,
-      args: [id, M.ownOnOthersVoice, V.other],
-    });
-    return id;
-  }
-
-  it('공유 시절 행을 같은 값 그대로 실어 끄면 200', async () => {
-    const id = await legacyAlarm();
-    const res = await call('PATCH', `/api/alarm/${id}`, 'me', {
-      is_active: false,
-      message_id: M.ownOnOthersVoice,
-      voice_profile_id: V.other,
-      time: '06:30',
-    });
-    expect(res.status).toBe(200);
-    expect(res.json.alarm).toMatchObject({ id, is_active: false });
-    expect(res.json.alarm).not.toHaveProperty('target_user_id');
-  });
-
-  it.each([
-    ['남의 문구로 바꾸면', 'MESSAGE_NOT_FOUND', { message_id: M.others }],
-    ['초안 목소리로 바꾸면', 'VOICE_PROFILE_NOT_FOUND', { voice_profile_id: V.draft }],
-  ] as const)('%s 404 %s — 행은 그대로다', async (_label, code, change) => {
-    const id = await legacyAlarm();
-    const res = await call('PATCH', `/api/alarm/${id}`, 'me', change);
-    expect([res.status, res.json.error_code]).toEqual([404, code]);
-    const row = await db.execute({ sql: 'SELECT message_id, voice_profile_id FROM alarms WHERE id = ?', args: [id] });
-    expect(row.rows[0]).toMatchObject({ message_id: M.ownOnOthersVoice, voice_profile_id: V.other });
-  });
-
-  it('내 문구·목소리로 바꾸면 200', async () => {
-    const id = await legacyAlarm();
-    const res = await call('PATCH', `/api/alarm/${id}`, 'me', {
-      message_id: M.ownCustom,
-      voice_profile_id: V.mine,
-    });
-    expect(res.status).toBe(200);
-    expect(res.json.alarm).toMatchObject({ message_id: M.ownCustom, voice_profile_id: V.mine });
-  });
-
-  it('남의 알람은 고칠 수 없다 — 404 ALARM_NOT_FOUND', async () => {
-    const id = await legacyAlarm();
-    const res = await call('PATCH', `/api/alarm/${id}`, 'other', { is_active: false });
-    expect([res.status, res.json.error_code]).toEqual([404, 'ALARM_NOT_FOUND']);
   });
 });

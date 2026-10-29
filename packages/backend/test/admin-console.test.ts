@@ -1,9 +1,10 @@
 // 관리자 콘솔(`docs/spec/admin-console.md`) — 실제 SQLite(메모리)에 마이그레이션을 전부 돌리고 확인한다.
-//  - 대상 고르기: 플랫폼·빌드 미만·기록 없는 기기·재동의 필요·광고 동의·켜진 알람·탈퇴 대기 제외
+//  - 대상 고르기: 플랫폼·빌드 미만·기록 없는 기기·재동의 필요·광고 동의·최근 울림·탈퇴 대기 제외
 //  - 발송: 시험 발송 없이는 전체 발송을 못 만든다, 광고는 시간 밖에 못 보낸다, 걸음이 커서를 따라 끝까지 간다,
 //    같은 걸음을 두 번 밟으면 한쪽만 보낸다, 기록에 받는 사람을 적지 않는다
 //  - 앱 빌드 기록: 헤더 검증, 같은 값은 한 시간에 한 번
-//  - 화면: 개요·사용자·알림 화면이 실제 DB 로 그려진다
+//  - 화면: 개요·사용자·알림 화면이 실제 DB 로 그려진다. 알람 문구 종류는 서버 알람 사본이 아니라(#147 에서 지웠다)
+//    알람 저장 사용 기록에서 센다
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { Hono } from 'hono';
@@ -67,7 +68,7 @@ async function fullConsent(userId: string, version = CURRENT_POLICY_VERSION) {
 
 /**
  * 사람들:
- *  u-a  안드로이드 빌드 30 · 동의 완료 · 마케팅 동의 · 켜진 알람
+ *  u-a  안드로이드 빌드 30 · 동의 완료 · 마케팅 동의 · 어제 알람이 울림
  *  u-b  안드로이드 빌드 35 · privacy 3(재동의 필요)
  *  u-c  iOS 빌드 10 · 동의 완료
  *  u-d  안드로이드 · 빌드 기록 없음 · 동의 완료
@@ -121,8 +122,6 @@ async function seedPeople() {
   await consent('u-f', 'privacy', '4');
   await consent('u-f', 'age14', '4');
   await consent('u-f', 'marketing', '4', 0);
-  await run(`INSERT INTO alarms (id, user_id, time, repeat_days, is_active) VALUES ('al-a', 'u-a', '07:00', '[]', 1)`);
-  await run(`INSERT INTO alarms (id, user_id, time, repeat_days, is_active) VALUES ('al-d', 'u-d', '07:00', '[]', 0)`);
   // 울림 기록 — u-a 는 어제 울렸고(안드로이드), u-d 는 20일 전에 끈 기록만 있다(iOS 는 울림 순간을 못 봐 해제만 남는다).
   await run(`INSERT INTO usage_events (id, user_id, type, occurred_at) VALUES ('ue-a', 'u-a', 'alarm_rang', datetime('now', '-1 day'))`);
   await run(`INSERT INTO usage_events (id, user_id, type, occurred_at) VALUES ('ue-d', 'u-d', 'alarm_dismissed', datetime('now', '-20 days'))`);
@@ -563,6 +562,42 @@ describe('화면', () => {
     expect(o.versions.find((v) => v.platform === 'android' && v.version === 30)?.users).toBe(1);
     // 알람은 켜 둔 수가 아니라 울린 사람을 센다 — 7일 u-a, 30일 u-a·u-d, 울림 횟수는 안드로이드의 울림만.
     expect(o.rings).toEqual({ usersD7: 1, usersD30: 2, rangD7: 1 });
+  });
+
+  // 2026-10-29 — 서버 알람 사본을 지웠다(#147). 앱이 알람을 저장할 때 남기는 사용 기록(`alarm_created`·`alarm_updated` 의
+  // `detail` = 문구 종류)에서 센다 — 알람마다 30일 안의 **마지막** 저장 하나, 그 뒤에 지웠으면 세지 않는다.
+  it('알람 문구 종류는 알람 저장 기록에서 센다 — 알람마다 30일 안의 마지막 저장 하나', async () => {
+    const events: Array<[string, string, string, string | null, number]> = [
+      // [사람, 알람, 종류(type), 문구 종류(detail), 며칠 전]
+      ['u-a', 'al-1', 'alarm_created', 'weather', 5],
+      ['u-a', 'al-1', 'alarm_updated', 'cheer', 2], // 같은 알람의 마지막 저장이 이긴다
+      ['u-a', 'al-2', 'alarm_created', 'cheer', 1],
+      ['u-c', 'al-1', 'alarm_created', 'manual', 3], // 알람 id 가 같아도 사람이 다르면 다른 알람이다
+      ['u-d', 'al-3', 'alarm_created', 'weather', 4],
+      ['u-d', 'al-3', 'alarm_deleted', null, 1], // 지운 알람은 세지 않는다
+      ['u-d', 'al-4', 'alarm_created', 'fortune', 40], // 30일 밖
+      ['u-b', 'al-5', 'alarm_created', null, 1], // 1.3 앞 앱은 종류를 남기지 않는다
+    ];
+    for (const [user, alarm, type, detail, daysAgo] of events) {
+      await run(
+        `INSERT INTO usage_events (id, user_id, type, alarm_id, detail, occurred_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now', ?))`,
+        [`ue-theme-${user}-${alarm}-${type}`, user, type, alarm, detail, `-${daysAgo} days`],
+      );
+    }
+    try {
+      expect((await loadOverview(db, 30)).alarmThemes).toEqual([
+        { theme: 'cheer', total: 2 },
+        { theme: 'manual', total: 1 },
+      ]);
+      const html = await (await request('/admin', { headers: { Authorization: AUTH } })).text();
+      expect(html).toContain('알람 문구 종류 (30일)');
+      expect(html).toContain('응원');
+      expect(html).toContain('직접 입력');
+      expect(html).not.toContain('켜진 알람의 문구 테마');
+    } finally {
+      await run(`DELETE FROM usage_events WHERE id LIKE 'ue-theme-%'`);
+    }
   });
 
   it('동의 행이 하나도 없는 사람도 재동의 필요로 센다 — 서버는 그 사람도 막는다', async () => {

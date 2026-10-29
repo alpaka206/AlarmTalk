@@ -68,6 +68,8 @@ internal fun AlarmListScreen(
     voiceProfiles: List<VoiceProfile>,
     pendingVoiceDraft: VoiceProfile?,
     voiceProfileBusy: Boolean,
+    // 목소리 탭에서 한 일이 안 됐다는 이유(`MainViewModel.voiceTabError`) — 탭 맨 위에 빨간 글자로.
+    voiceTabError: String? = null,
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
@@ -280,6 +282,16 @@ internal fun AlarmListScreen(
             NativeTab.Voices -> {
                 // 페이지 대제목('목소리')은 두지 않는다 — 하단 탭 라벨이 이미 위치를 말해주고,
                 // 첫 섹션 제목('내 목소리')이 곧바로 내용을 연다(알람 탭의 무제목과 일관).
+                voiceTabError?.let { reason ->
+                    item {
+                        Text(
+                            text = reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                    }
+                }
                 item {
                     VoiceProfileManagementPanel(
                         onCreateAlarmWithVoice = onCreateAlarmWithVoice,

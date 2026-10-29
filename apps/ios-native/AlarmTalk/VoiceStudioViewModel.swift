@@ -808,10 +808,22 @@ final class VoiceStudioViewModel: ObservableObject {
     private func adoptStockClipManifest(_ manifest: StockClipListResponse) {
         stockClips = manifest.clips
         expectedVariants = manifest.expectedVariants
-        legacyBucketHints = Dictionary(
-            (manifest.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
-            uniquingKeysWith: { first, _ in first },
-        )
+        legacyBucketHints = Self.legacyBucketHints(from: manifest)
+    }
+
+    /// **버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트**(messageId → 테마) — 서버가 준 은퇴 클립 힌트와, 지금 목록에 실린
+    /// 기본 목소리 클립의 테마를 합친다(서버 힌트가 이긴다).
+    ///
+    /// ⚠ 예전에는 서버가 그 사용자의 **서버 알람 사본**이 문 클립까지 힌트로 줬다. 사본을 지운 뒤(2026-10-29)로는 은퇴한 클립만
+    ///   준다 — 은퇴하지 않은 클립은 목록에 테마와 함께 이미 실려 있어 여기서 찾는다. 안드로이드 짝은
+    ///   `sync/StockClipLanguageRebinder.kt` 의 `legacyBucketHintsOf`.
+    static func legacyBucketHints(from manifest: StockClipListResponse) -> [String: String] {
+        var hints: [String: String] = [:]
+        for clip in manifest.clips where isSystemVoiceId(clip.voiceProfileId) {
+            if let category = clip.category.nilIfBlank { hints[clip.messageId] = category }
+        }
+        for hint in manifest.legacyBucketHints ?? [] { hints[hint.messageId] = hint.category }
+        return hints
     }
 
     /// 이번 실행에서 서버 매니페스트를 받았는가. 디스크 시드와 구분하기 위한 값이다.
@@ -1353,6 +1365,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 ),
                 userID: track.ownerUserID
             )
+            if response.chargedSource == UsageEventProps.ChargedSource.ad.rawValue {
+                AdRewardAttempts.spent(requestID: track.requestID, userID: track.ownerUserID)
+            }
             return
         }
         UsageEventQueue.shared.record(
@@ -1372,6 +1387,9 @@ final class VoiceStudioViewModel: ObservableObject {
             ),
             userID: track.ownerUserID
         )
+        if response.chargedSource == UsageEventProps.ChargedSource.ad.rawValue {
+            AdRewardAttempts.spent(requestID: track.requestID, userID: track.ownerUserID)
+        }
     }
 
     /// 서버가 답하기 전에 실패했다(거절·연결 실패). 서버가 거절했으면 세지 않았다(`none` — 실패는 환불된다),

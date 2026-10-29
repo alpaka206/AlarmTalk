@@ -34,8 +34,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * - [CONSENT_PENDING]: 로그인 직후 동의 전에는 서버가 모든 데이터 라우트를 403
  *   `CONSENT_REQUIRED` 로 막는다(`middleware/consent.ts`). 사용자가 동의를 마쳐야 풀리는
  *   상태라 백오프 재시도는 403 만 반복한다 — 한 사용자가 17분에 12건을 남겼다. 성공으로
- *   끝내고, 동의 뒤 알람 탭 진입의 `syncNow` 와 주기 실행이 다시 끌어온다. 전경 경로
- *   (`MainViewModelAuthActions` 의 `syncNow`)와 같은 판단이다.
+ *   끝내고, 동의 뒤 주기 실행이 다시 끌어온다.
  *   ⚠ 정확히 `CONSENT_REQUIRED` 만이다 — `CONSENT_STATE_UNAVAILABLE` 같은 실제 인증·동의 파손은
  *   [RETRY] 로 가 모니터링에 남는다.
  * - **탈퇴 유예 403(`ACCOUNT_PENDING_DELETION`)도 [SESSION_EXPIRED] 다 — 단 끝내는 방법이 다르다**(2026-10-15).

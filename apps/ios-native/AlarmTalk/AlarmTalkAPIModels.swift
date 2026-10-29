@@ -300,109 +300,13 @@ struct AuthUser: Codable, Equatable, Identifiable {
 
 }
 
-struct RemoteAlarmResponse: Decodable {
-    var alarm: RemoteAlarm
+/// `POST /voice/:id/content-supplement` — 그 클론으로 이 테마 알람을 저장했다고 알린다(지금은 응원만).
+struct VoiceContentSupplementRequest: Encodable {
+    var theme: String
 }
 
-struct RemoteAlarm: Codable, Identifiable, Equatable {
-    var id: String
-    var time: String?
-    var repeatDays: [Int]?
-    var isActive: Bool?
-    var snoozeMinutes: Int?
-    var mode: String?
-    var vibrationPattern: String?
-    var wakeMode: String?
-    var voiceProfileId: String?
-    var messageId: String?
-    var messageText: String?
-    var category: String?
-    /// 고른 테마 — 서버 `alarms.bucket_id`. 안드로이드 `RemoteAlarm.bucketId` 짝.
-    var bucketId: String?
-    var creationReplayed: Bool? = nil
-    /// 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4) — 응원 알람을 저장한 응답에만 실린다.
-    var cheerMode: String? = nil
-    var cheerPinnedContentId: String? = nil
-}
-
-struct RemoteAlarmWriteRequest: Encodable {
-    var time: String
-    var repeatDays: [Int]
-    var snoozeMinutes: Int
-    var mode: String
-    var vibrationPattern: String
-    var wakeMode: String
-    var isActive: Bool?
-    var messageId: String?
-    var voiceProfileId: String?
-    /// 고른 무료 테마. 서버 `alarms.bucket_id` — 안드로이드도 같은 키로 보낸다.
-    /// 서버가 값을 검증하므로(`alarm-helpers.ts` 의 `INVALID_BUCKET_ID`) 아무 문자열이나
-    /// 넣으면 400 이 난다.
-    var bucketId: String?
-    /// 기기 타임존 식별자 (예: "Asia/Seoul"). 서버가 사용자 로컬 시각 기준으로
-    /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
-    var timezone: String? = TimeZone.current.identifier
-    var clientAlarmId: String? = nil
-    /// 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4). 응원 알람만 싣는다 — 다른 알람은 nil 이라 빠진다.
-    /// 안드로이드 `RemoteAlarmWriteRequest.cheerMode` 미러.
-    var cheerMode: String? = nil
-    var cheerPinnedContentId: String? = nil
-    /// `messageId`·`bucketId` 가 비어 있으면 **빼지 않고 `null` 로 실어** 서버 값을 지운다.
-    /// 본문에는 실리지 않는다(`encode(to:)` 가 읽기만 한다). 안드로이드
-    /// `RemoteAlarmWriteRequest.clearsMissingVoiceReferences` 미러.
-    ///
-    /// 합성 인코딩은 nil 을 빼고(`encodeIfPresent`), 서버 `PATCH /alarm` 은 빠진 필드를 **그대로 둔다.**
-    /// 그래서 무료 잠금이 오디오 없이 기본 목소리로 바꾼 알람(`preLockVoice != nil`)을 켜고 끄면 새
-    /// 기본 목소리 id 만 올라가고 클론의 `message_id`·`bucket_id` 는 서버에 남는다 — 기본 인사말
-    /// 알람은 토글마다 `INVALID_BUCKET_ID` 로 거절되고, 나머지는 반쯤 바뀐 서버 행이 된다(Codex #820).
-    var clearsMissingVoiceReferences: Bool = false
-    /// 날짜 지정 알람의 날짜(`YYYY-MM-DD`) — 서버 `alarms.target_date`. ⚠ **nil 도 `null` 로 싣는다**
-    /// (`encode(to:)`). 서버 `PATCH` 는 빠진 필드를 그대로 두므로, 빼면 날짜 알람을 반복 알람으로 고쳐도
-    /// 서버 사본에 날짜가 남는다. 스펙 `docs/spec/alarm-lifecycle.md` §4-7.
-    var targetDate: String? = nil
-
-    private enum CodingKeys: String, CodingKey {
-        case time, repeatDays, snoozeMinutes, mode, vibrationPattern, wakeMode, isActive, messageId
-        case voiceProfileId, bucketId, timezone, clientAlarmId, targetDate
-        case cheerMode, cheerPinnedContentId
-    }
-
-    /// 합성 인코딩과 같다(nil 은 뺀다) — 단 `clearsMissingVoiceReferences` 면 `messageId`·`bucketId`
-    /// 의 nil 을 `null` 로 싣는다. 키 이름은 인코더의 `convertToSnakeCase` 가 만든다.
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(time, forKey: .time)
-        try container.encode(repeatDays, forKey: .repeatDays)
-        try container.encode(snoozeMinutes, forKey: .snoozeMinutes)
-        try container.encode(mode, forKey: .mode)
-        try container.encode(vibrationPattern, forKey: .vibrationPattern)
-        try container.encode(wakeMode, forKey: .wakeMode)
-        try container.encodeIfPresent(isActive, forKey: .isActive)
-        try encodeClearable(messageId, forKey: .messageId, in: &container)
-        try container.encodeIfPresent(voiceProfileId, forKey: .voiceProfileId)
-        try encodeClearable(bucketId, forKey: .bucketId, in: &container)
-        try container.encodeIfPresent(timezone, forKey: .timezone)
-        try container.encodeIfPresent(clientAlarmId, forKey: .clientAlarmId)
-        if let targetDate {
-            try container.encode(targetDate, forKey: .targetDate)
-        } else {
-            try container.encodeNil(forKey: .targetDate)
-        }
-        try container.encodeIfPresent(cheerMode, forKey: .cheerMode)
-        try container.encodeIfPresent(cheerPinnedContentId, forKey: .cheerPinnedContentId)
-    }
-
-    private func encodeClearable(
-        _ value: String?,
-        forKey key: CodingKeys,
-        in container: inout KeyedEncodingContainer<CodingKeys>
-    ) throws {
-        if let value {
-            try container.encode(value, forKey: key)
-        } else if clearsMissingVoiceReferences {
-            try container.encodeNil(forKey: key)
-        }
-    }
+struct VoiceContentSupplementResponse: Decodable {
+    var result: String?
 }
 
 struct VoiceProfileListResponse: Decodable {

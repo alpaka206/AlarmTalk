@@ -708,6 +708,8 @@ internal fun AlarmTalkApp(
     LaunchedEffect(currentTab, sessionEffectKey) {
         if (authSession == null) return@LaunchedEffect
         val tab = currentTab ?: return@LaunchedEffect
+        // 목소리 탭에 들어올 때마다 지난 실패 이유를 지운다 — 아래 스로틀보다 앞이다(갱신은 건너뛰어도 지우기는 한다).
+        if (tab == NativeTab.Voices) viewModel.voiceTabError = null
         val throttleKey = tab to sessionEffectKey
         val now = System.currentTimeMillis()
         val last = lastTabRefreshAt[throttleKey]
@@ -729,7 +731,6 @@ internal fun AlarmTalkApp(
             }
             // 알람 홈: 히어로가 구독 데이터를 쓰므로 함께 갱신한다.
             NativeTab.Alarms -> {
-                viewModel.syncNow()
                 viewModel.refreshBilling()
                 // 편집기가 이 탭에서 열리고, cron 이 세션 중 만든 클론 클립을 오프라인 버킷 판정
                 // (hasCompleteCloneBucket)에 반영하려면 매니페스트를 다시 봐야 한다(신선도 창 안이면
@@ -1520,6 +1521,7 @@ internal fun AlarmTalkApp(
                           voiceProfiles = voiceProfiles,
                           pendingVoiceDraft = pendingVoiceDraft,
                           voiceProfileBusy = voiceProfileBusy,
+                          voiceTabError = viewModel.voiceTabError,
                           billingBusy = billingBusy,
                           subscriptionResponse = subscriptionResponse,
                           // 삭제 경고('지금 지우면 이번 달엔 못 만들어요')는 초안 시도 쿼터가 아니라

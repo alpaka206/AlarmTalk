@@ -84,6 +84,11 @@ function req(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
 
+/** 서버 알람 사본은 #147 에서 지웠다 — 그 표를 부르는 SQL 이 하나라도 있으면 운영에서 'no such table' 로 500 이다. */
+function touchesAlarmTable(sql: string): boolean {
+  return /\balarms\b/i.test(sql);
+}
+
 function fakeExecutionCtx() {
   const tasks: Promise<unknown>[] = [];
   return {
@@ -1140,7 +1145,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('생성된 음원은 정리하되 메시지와 알람 자체는 보존', async () => {
+  it('생성된 음원은 정리하되 메시지는 보존하고, 알람은 주인 기기가 내린다', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     const res = await req(
@@ -1153,19 +1158,16 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(body.deleted).toBe(true);
     expect(
       mockDB.calls.some(
-        (c) => c.sql.startsWith('DELETE FROM messages') || c.sql.startsWith('DELETE FROM alarms'),
+        (c) => c.sql.startsWith('DELETE FROM messages') || touchesAlarmTable(c.sql),
       ),
     ).toBe(false);
     const assetsDelete = mockDB.calls.find((c) =>
       c.sql.startsWith('DELETE FROM generated_audio_assets'),
     );
     expect(assetsDelete).toBeDefined();
-    const alarmsCascade = mockDB.calls.find((c) => c.sql.startsWith('UPDATE alarms'));
-    expect(alarmsCascade).toBeDefined();
-    expect(alarmsCascade!.sql).toContain("mode = 'sound-only'");
-    expect(alarmsCascade!.sql).toContain("wake_mode = 'sound_then_voice'");
-    expect(alarmsCascade!.sql).toContain('message_id = NULL');
-    expect(alarmsCascade!.sql).toContain('voice_profile_id = NULL');
+    // 서버에는 알람 행이 없다(#147) — 그 목소리로 울던 알람은 주인 계정의 기기들이 접근권을 다시 확인해 내린다.
+    // 서버가 찾아낸 강등 대상은 없고, 주인 계정은 언제나 깨운다.
+    expect(mockNotifyDowngradedAlarms).toHaveBeenCalledWith(mockDB.client, ENV, [], ['user-1']);
     const messagesUpdate = mockDB.calls.find((c) =>
       c.sql.startsWith('UPDATE messages SET audio_url'),
     );
@@ -1175,14 +1177,14 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(update?.sql).not.toContain('is_shared');
   });
 
-  // 프로필 tombstone 과 알람 철회는 **한 커밋**이다 — 철회가 실패하면 전부 롤백돼 재시도할 수 있어야 한다.
-  // 프로필만 먼저 사라지면 재시도는 404 이고, 그 목소리를 쓰던 알람은 지운 녹음으로 계속 운다.
-  it('철회가 실패하면 프로필 삭제도 함께 롤백한다', async () => {
+  // 프로필 tombstone 과 음원 정리는 **한 커밋**이다 — 정리가 실패하면 전부 롤백돼 재시도할 수 있어야 한다.
+  // 프로필만 먼저 사라지면 재시도는 404 이고, 지운 목소리의 음원이 참조를 문 채 남는다. 철회 알림도 커밋 뒤에만 간다.
+  it('음원 정리가 실패하면 프로필 삭제도 함께 롤백하고 철회 알림을 보내지 않는다', async () => {
     mockDB.pushResultFor('SELECT * FROM voice_profiles', [
       { id: V1, elevenlabs_voice_id: 'elv-not-deleted' },
     ]);
     mockDB.pushResultFor('UPDATE voice_profiles', [], 1);
-    mockDB.pushErrorFor("UPDATE alarms SET mode = 'sound-only'", new Error('SQLITE_BUSY: database is locked'));
+    mockDB.pushErrorFor('UPDATE messages SET audio_url = NULL', new Error('SQLITE_BUSY: database is locked'));
 
     const res = await req(
       buildApp(),
@@ -1193,6 +1195,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(mockDB.transactions.rollbacks).toBe(1);
     expect(mockDB.transactions.commits).toBe(0);
     expect(mockDeleteVoice).not.toHaveBeenCalled();
+    expect(mockNotifyDowngradedAlarms).not.toHaveBeenCalled();
   });
 
   it('삭제해도 이번 달 목소리 변경 원장은 남는다 — 지웠다 만들기로 월 1회를 우회할 수 없다', async () => {
@@ -1209,7 +1212,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(ledgerDelete).toBeUndefined();
   });
 
-  it('force=true 여도 메시지와 알람 행은 삭제하지 않음', async () => {
+  it('force=true 여도 메시지 행은 삭제하지 않음', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     const res = await req(
@@ -1222,7 +1225,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(body.deleted).toBe(true);
     expect(
       mockDB.calls.some(
-        (c) => c.sql.startsWith('DELETE FROM messages') || c.sql.startsWith('DELETE FROM alarms'),
+        (c) => c.sql.startsWith('DELETE FROM messages') || touchesAlarmTable(c.sql),
       ),
     ).toBe(false);
   });
@@ -1306,7 +1309,7 @@ describe('GET / — pagination edge cases (voice-profile)', () => {
 /* ------------------------------------------------------------------ */
 /*  Edge cases — PATCH /:id name validation                            */
 /* ------------------------------------------------------------------ */
-describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profile)', () => {
+describe('PATCH /:id — 교체(replace_existing) 시 직접 입력 음원 처리 (voice-profile)', () => {
   // ⚠ **화면이 약속한 것을 서버가 실제로 해야 한다.**
   //
   // 등록 확정의 교체 체크는 이렇게 말한다:
@@ -1318,7 +1321,11 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
   // 동의했는데 정반대가 일어났다.
   //
   // 프리셋은 반대로 **살아남아야** 한다 — `voice_prerender_queue` 가 새 목소리로 다시 만든다.
-  it('직접 입력(custom) 알람만 기본 알람으로 내리고 프리셋은 남긴다', async () => {
+  //
+  // 서버에는 알람 행이 없다(#147) — 알람을 기본 알람으로 내리는 것은 기기다(등록 기기는 응답의 `replaced`, 다른 기기는
+  // 주인 계정 푸시). 서버는 옛 목소리의 **직접 입력 음원**을 그 자리에서 지운다 — 직접 입력 음성은 보존 기한이 없어
+  // (`audio-retention.ts`) 참조만 끊으면 R2 에 영영 남는다.
+  it('직접 입력(custom) 음원만 지우고 프리셋은 남긴다 — 알람은 주인 기기가 내린다', async () => {
     // ① 존재/초안 확인(previewed_at 이 있어야 승격이 통과한다)
     mockDB.pushResult([{ id: V2, is_draft: 1, previewed_at: '2026-08-12T00:00:00Z' }]);
     // ② 현역 개수(한도 검사) — 1이면 교체 갈래로 간다
@@ -1335,10 +1342,6 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old' }]);
     mockDB.pushResultFor('SELECT object_key FROM voice_uploads WHERE voice_profile_id', [
       { object_key: 'uploads/old.wav' },
-    ]);
-    mockDB.pushResultFor('SELECT a.id AS alarm_id', [
-      // 그 목소리로 만든 직접 입력 문구를 쓰는 내 알람 — 등록 기기 말고 다른 기기에도 있을 수 있다.
-      { alarm_id: 'alarm-mine', row_owner_user_id: 'user-1' },
     ]);
     mockDB.pushResultFor('SELECT id, name, status, relationship_label', [
       {
@@ -1387,13 +1390,29 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       '초안에서 고른 목소리의 결이 교체된 프로필로 옮겨 오지 않는다(Codex #802)',
     ).toContain('voice_energy = ?');
 
-    const alarmUpdate = mockDB.calls.find(
-      (call) => call.sql.includes('UPDATE alarms') && call.sql.includes("mode = 'sound-only'"),
+    expect(
+      mockDB.calls.some((call) => touchesAlarmTable(call.sql)),
+      '지운 알람 표(#147)를 불렀다',
+    ).toBe(false);
+    // 지울 키를 행보다 먼저 삭제 큐에 적는다(outbox — 드레인이 커밋 뒤에 지운다).
+    const customEnqueueIndex = mockDB.calls.findIndex(
+      (call) =>
+        call.sql.includes('INSERT INTO pending_external_deletions') &&
+        call.sql.includes('FROM generated_audio_assets g'),
     );
-    expect(alarmUpdate, '직접 입력 알람을 기본 알람으로 내리는 UPDATE 가 없다').toBeDefined();
-    // ⚠ **대상을 custom 으로 좁혀야 한다.** 좁히지 않으면 프리셋 알람까지 기본 알람이 되어,
-    // 교체의 존재 이유(알람을 살린 채 목소리만 바꾼다)가 사라진다.
-    expect(alarmUpdate!.sql).toContain("category = 'custom'");
+    expect(customEnqueueIndex, '직접 입력 음원의 R2 키를 삭제 큐에 넣지 않는다').toBeGreaterThanOrEqual(0);
+    const customEnqueue = mockDB.calls[customEnqueueIndex]!;
+    expect(customEnqueue.args).toEqual(['r2_object', V1]);
+    const customDeleteIndex = mockDB.calls.findIndex((call) =>
+      call.sql.includes('DELETE FROM generated_audio_assets'),
+    );
+    expect(customDeleteIndex, '직접 입력 음원 원장 행을 지우지 않는다').toBeGreaterThan(customEnqueueIndex);
+    const customDelete = mockDB.calls[customDeleteIndex]!;
+    expect(customDelete.args).toEqual([V1]);
+    // ⚠ **대상을 custom 으로 좁혀야 한다.** 좁히지 않으면 프리셋 음원까지 지워, 재렌더가 끝날 때까지 프리셋 알람이
+    // 소리를 잃는다 — 교체의 존재 이유(알람을 살린 채 목소리만 바꾼다)가 사라진다.
+    expect(customEnqueue.sql).toContain("category = 'custom'");
+    expect(customDelete.sql).toContain("category = 'custom'");
 
     const audioClear = mockDB.calls.find(
       (call) => call.sql.includes('UPDATE messages') && call.sql.includes('audio_url = NULL'),
@@ -1422,8 +1441,9 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     expect(mockNotifyDowngradedAlarms).toHaveBeenCalledWith(
       mockDB.client,
       ENV,
-      // 소유자 본인 알람도 알린다 — 안 알리면 등록 기기 말고 다른 기기가 지운 목소리로 운다.
-      [{ alarmId: 'alarm-mine', ownerUserId: 'user-1' }],
+      // 서버가 찾아낸 강등 대상은 없다(알람 행이 없다). 주인 계정을 깨워야 등록 기기 말고 다른 기기가 지운 목소리로
+      // 울지 않는다.
+      [],
       ['user-1'],
       // 교체는 프로필 id 가 살아 있어 '접근 가능 목록 대조' 로는 안 걸린다 — 무엇이 무효가 됐는지와 그 세대를
       // payload 로 알려야 클라가 그 교체의 custom 알람만 좁혀 정리한다(`voice_access_revoked`·`scope: custom_messages`).
@@ -1650,7 +1670,7 @@ describe('DELETE /:id — force edge cases (voice-profile)', () => {
     expect((await res.json()).deleted).toBe(true);
     expect(
       mockDB.calls.some(
-        (c) => c.sql.startsWith('DELETE FROM messages') || c.sql.startsWith('DELETE FROM alarms'),
+        (c) => c.sql.startsWith('DELETE FROM messages') || touchesAlarmTable(c.sql),
       ),
     ).toBe(false);
   });
@@ -1678,7 +1698,7 @@ describe('DELETE /:id — force edge cases (voice-profile)', () => {
     expect((await res.json()).deleted).toBe(true);
     expect(
       mockDB.calls.some(
-        (c) => c.sql.startsWith('DELETE FROM messages') || c.sql.startsWith('DELETE FROM alarms'),
+        (c) => c.sql.startsWith('DELETE FROM messages') || touchesAlarmTable(c.sql),
       ),
     ).toBe(false);
   });

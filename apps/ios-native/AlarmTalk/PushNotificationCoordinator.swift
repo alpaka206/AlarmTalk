@@ -766,8 +766,6 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         }
 
         BackgroundSyncTask.register(
-            // 회차 직렬화는 타입 전역(`serialGate`)이라 화면 쪽 인스턴스와 겹쳐도 차례를 지킨다.
-            push: RemoteAlarmPushSync(store: deps.alarmStore, auth: deps.auth),
             socialFeatures: deps.socialFeatures,
             store: deps.alarmStore,
             alarmKit: deps.alarmKit,
