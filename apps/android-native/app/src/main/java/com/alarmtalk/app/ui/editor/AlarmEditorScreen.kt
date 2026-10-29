@@ -42,8 +42,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -414,6 +417,10 @@ internal fun AlarmEditorScreen(
     var isRecording by remember { mutableStateOf(false) }
     // 음성 생성 구간(편집기 안에서 도는 부분). 저장 전체는 아래 [busy] 로 본다.
     var generating by remember { mutableStateOf(false) }
+    // ⚠ **저장을 누른 뒤 찾거나 만드는 사이에 바꾼 것은 그 값으로 저장한다**(2026-10-29 오너 "저장을 누르면 바뀐걸로 되어야").
+    //   예전에는 생성이 끝나면 누른 순간의 목소리·문구로 덮어 저장했다(로컬 확인 갈래는 아무것도 안 하고 버렸다). 이제 결과는
+    //   폰에 두고(같은 입력이면 다시 쓴다) 이 표시를 세워, 잠금이 풀리면 **지금 화면 값으로** 저장을 다시 돈다(아래 LaunchedEffect).
+    var resaveAfterChange by remember { mutableStateOf(false) }
     // 저장 버튼의 로컬 확인(같은 문구의 오디오가 폰에 있는가) — 파일을 읽으므로 IO 에서, 찾는 동안은
     // '저장 중' 이다(`docs/spec/alarm-editor.md` §6).
     val manualAudioReuse = remember(scope) { ManualAudioReuseGate(scope) }
@@ -640,6 +647,8 @@ internal fun AlarmEditorScreen(
         bucket: String,
         profileId: String,
         contextVariantIndex: Int? = null,
+        // 받는 사이 편집기가 바뀌었으면 묶지 않는다(저장 흐름 — `resaveAfterChange`). 묶으면 누른 순간의 목소리로 덮인다.
+        applyIf: () -> Boolean = { true },
     ): Boolean {
         val clipLanguage = clipGate.bucketClipLanguageFor(bucket, profileId)
         val clips = stockClips
@@ -687,6 +696,7 @@ internal fun AlarmEditorScreen(
             texts.add(clip.text)
         }
         val representative = representativeAudio ?: return false
+        if (!applyIf()) return false
         val first = clips.first()
         editor.setBucketAudio(
             audio = representative,
@@ -1020,6 +1030,8 @@ internal fun AlarmEditorScreen(
             // 이전에 진행 중이던 generation 이 남아 있다면 취소.
             generationJob?.cancel()
             generating = true
+            // 시작한 순간의 편집기 — 끝났을 때 이것과 다르면 그 사이 사용자가 바꾼 것이다(`resaveAfterChange`).
+            val draftAtStart = editor.toDraft()
             generationJob = scope.launch {
                 generating = true
                 // 1) **문구 종류를 골랐으면 반드시 사전렌더 클립으로 묶는다.**
@@ -1062,11 +1074,20 @@ internal fun AlarmEditorScreen(
                 if (bucketMessageChosen && cloneBucketCategory != null) {
                     // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
                     // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
+                    var changedMeanwhile = false
                     val bound = runCatching {
-                        bindStockBucketClips(cloneBucketCategory, profileId, editor.contextVariantIndex)
+                        bindStockBucketClips(
+                            cloneBucketCategory,
+                            profileId,
+                            editor.contextVariantIndex,
+                            applyIf = { (editor.toDraft() == draftAtStart).also { if (!it) changedMeanwhile = true } },
+                        )
                     }.getOrDefault(false)
                     generating = false
-                    if (bound) {
+                    if (changedMeanwhile) {
+                        // 받는 사이 목소리·종류 등을 바꿨다 — 받은 클립은 폰에 남고, 지금 값으로 다시 저장한다.
+                        resaveAfterChange = true
+                    } else if (bound) {
                         onSave(editor.toDraft())
                     } else {
                         openClipPreparation(profileId)
@@ -1168,6 +1189,12 @@ internal fun AlarmEditorScreen(
                             audioStore.linkTtsInput(displayTextKey, cacheKey, response.text)
                         }
                     }
+                    if (editor.toDraft() != draftAtStart) {
+                        // 만드는 사이 목소리·문구·시각 등을 바꿨다 — 누른 순간의 값으로 덮어 저장하지 않는다. 받은 결과는 위에서 폰에
+                        // 두었으므로(입력 키 화살표) 같은 입력으로 돌아오면 다시 쓰고, 지금 값으로 저장을 다시 돈다.
+                        resaveAfterChange = true
+                        return@runCatching
+                    }
                     editor.setGeneratedTtsAudio(
                         audio = cachedAudio,
                         profileId = profileId,
@@ -1251,16 +1278,19 @@ internal fun AlarmEditorScreen(
         //   `docs/spec/alarm-editor.md` §6). 예전에는 누르는 순간 메인에서 별칭을 읽고 파일을 찾고 길이까지
         //   쟀다. 찾는 동안은 '저장 중' 이라(`busy`) 그 사이의 탭은 버려진다 — 쌓이면 두 번 저장·두 번
         //   팝(검은 화면)이다. 편집기 상태는 IO 에서 읽지 않는다 — 누른 순간의 값을 잡아 넘긴다.
-        // ⚠ **찾는 동안 편집기가 바뀌었으면 이 저장은 버린다**(Codex #879). 찾는 동안 잠기는 것은 저장 버튼뿐이라
+        // ⚠ **찾는 동안 편집기가 바뀌었으면 이 결과로 잇지 않는다**(Codex #879). 찾는 동안 잠기는 것은 저장 버튼뿐이라
         //   시각·문구·목소리는 그대로 고칠 수 있다 — 결과를 그대로 이으면 누른 순간의 목소리·문구로 찾은(또는 만들)
         //   오디오가 바뀐 상태(`editor.toDraft()`)와 섞여 저장된다. 누른 순간의 초안과 같을 때만 잇고, 다르면
-        //   아무것도 하지 않는다 — 잠금이 풀리니 다시 누르면 지금 상태로 저장된다.
+        //   **지금 상태로 저장을 다시 돈다**(`resaveAfterChange`, 2026-10-29 — 예전에는 버리고 다시 누르기를 기다렸다).
         val draftAtTap = editor.toDraft()
         val rawAudioUriAtTap = editor.rawAudioUri
         manualAudioReuse.request(
             lookup = { ttsInputKey?.let { audioStore.findReusableTtsAudio(it, rawAudioUriAtTap) } },
             onFound = found@{ reusable ->
-                if (editor.toDraft() != draftAtTap) return@found
+                if (editor.toDraft() != draftAtTap) {
+                    resaveAfterChange = true
+                    return@found
+                }
                 editor.setGeneratedTtsAudio(
                     audio = reusable.audio,
                     profileId = profileId,
@@ -1288,7 +1318,10 @@ internal fun AlarmEditorScreen(
                 onSave(editor.toDraft())
             },
             onMissing = missing@{
-                if (editor.toDraft() != draftAtTap) return@missing
+                if (editor.toDraft() != draftAtTap) {
+                    resaveAfterChange = true
+                    return@missing
+                }
                 // ② **오프라인이면 여기서 막는다** — 요청을 보내 보지 않는다(voice-and-message §8). 아래 남은
                 //   횟수 조회부터 네트워크다. 판정식은 예전 저장 사유와 같다(직접 입력 + 오프라인 + 폰에 없음).
                 if (editor.isManualForSave() && !isOnline) {
@@ -1298,6 +1331,20 @@ internal fun AlarmEditorScreen(
                 }
             },
         )
+    }
+
+    // 저장을 누른 뒤 바꾼 것이 있으면 잠금이 풀린 뒤 **지금 화면 값으로** 저장을 다시 돈다. 코루틴에서 `saveEditor()` 를 곧바로 부르지
+    // 않는 이유: 그 코루틴은 누른 순간의 지역 함수 사본을 들고 있어 그때의 값(잠금·목록·연결 상태)을 읽는다(CLAUDE.md 「Compose
+    // 콜백에 지역 함수 참조를 넘기지 않는다」). 이 효과는 키가 바뀔 때마다 새로 시작해 지금의 `saveEditor` 를 부른다.
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(saving) {
+        if (saving) focusManager.clearFocus()
+    }
+    LaunchedEffect(resaveAfterChange, busy) {
+        if (resaveAfterChange && !busy) {
+            resaveAfterChange = false
+            saveEditor()
+        }
     }
 
     val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -1773,7 +1820,8 @@ internal fun AlarmEditorScreen(
 
     // 랜덤 문구는 알람 시각이 프롬프트 컨텍스트로 들어가므로,
     // 시각이 바뀌면 기존 캐시 TTS 를 무효화해 저장 시 재생성하게 한다.
-    // 또한 진행 중인 generation 코루틴이 있으면 결과가 stale 한 시각으로 저장되지 않도록 취소한다.
+    // ⚠ 진행 중인 생성은 **취소하지 않는다**(2026-10-29). 예전에는 옛 시각으로 저장되지 않게 취소했는데, 서버는 이미 받아 세었을 수
+    //   있고 사용자는 저장을 다시 눌러야 했다. 이제 생성이 끝나면 바뀐 것을 보고 지금 값(새 시각)으로 다시 저장한다(`resaveAfterChange`).
     var observedInitialTime by remember { mutableStateOf(false) }
     LaunchedEffect(editor.hour, editor.minute) {
         if (!observedInitialTime) {
@@ -1783,14 +1831,6 @@ internal fun AlarmEditorScreen(
         if (editor.voiceRandomPrompt && !editor.ttsMessageId.isNullOrBlank()) {
             editor.clearTtsMeta()
             editor.clearAudio()
-        }
-        generationJob?.let { current ->
-            if (current.isActive) {
-                current.cancel()
-                generating = false
-                audioMessage = context.getString(R.string.editor_voice_generation_canceled_time_changed)
-            }
-            generationJob = null
         }
     }
 
@@ -2160,6 +2200,22 @@ internal fun AlarmEditorScreen(
                 onDismiss = { settingsDetailPanel = null },
             )
         }
+        }
+        // ⚠ **뷰모델이 저장하는 동안에는 편집기를 바꾸지 못한다**(2026-10-29). 그때는 초안이 이미 넘어가 있어(날씨 알람은 조건을
+        //   푸느라 몇 초 걸린다) 바꾼 것이 저장되지 않은 채 편집기만 닫힌다 — 화면과 저장이 갈라진다. 찾거나 만드는 동안은 바꿔도
+        //   된다(끝난 뒤 지금 값으로 다시 저장한다 — `resaveAfterChange`).
+        if (saving) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                            }
+                        }
+                    },
+            )
         }
     }
 

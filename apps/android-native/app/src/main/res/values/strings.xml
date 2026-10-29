@@ -236,7 +236,6 @@
     <string name="editor_vibration_pattern">패턴</string>
     <string name="editor_vibration_use">진동 사용</string>
     <string name="editor_vibration_title">진동</string>
-    <string name="editor_voice_generation_canceled_time_changed">알람 시각이 바뀌어 음성 생성을 중단했어요.</string>
     <string name="editor_voice_loading">목소리를 불러오는 중이에요.</string>
     <string name="editor_voice_output_title">목소리 크기</string>
     <string name="editor_voice_row_title">목소리</string>
