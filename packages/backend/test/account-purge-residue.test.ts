@@ -168,13 +168,13 @@ async function sha256Hex(value: string): Promise<string> {
 async function seed(): Promise<void> {
   // ── 사람 ──────────────────────────────────────────────────────────────────
   await run(
-    `INSERT INTO users (id, google_id, email, name, plan, apple_id, apple_refresh_token,
+    `INSERT INTO users (id, google_id, email, plan, apple_id, apple_refresh_token,
                         dynamic_prompt_settings_json, deletion_status, deletion_requested_at, deletion_purge_at)
-     VALUES (?, ?, ?, ?, 'plus', ?, ?, ?, 'pending_deletion', '2026-08-30T00:00:00.000Z', '2026-09-29T00:00:00.000Z')`,
-    [A_PK, A_LOGIN, A_EMAIL, A_NAME, A_APPLE, A_APPLE_REFRESH, '{"weather":{"city":"Seoul"},"fortune":{"birth":"1990-01-01"}}'],
+     VALUES (?, ?, ?, 'plus', ?, ?, ?, 'pending_deletion', '2026-08-30T00:00:00.000Z', '2026-09-29T00:00:00.000Z')`,
+    [A_PK, A_LOGIN, A_EMAIL, A_APPLE, A_APPLE_REFRESH, '{"weather":{"city":"Seoul"},"fortune":{"birth":"1990-01-01"}}'],
   );
-  await run(`INSERT INTO users (id, google_id, email, name, plan) VALUES (?, 'google-sub-b', 'b@example.com', '남는사람', 'plus')`, [B_PK]);
-  await run(`INSERT INTO users (id, email, name, plan) VALUES (?, 'c@example.com', '다른사람', 'free')`, [C_PK]);
+  await run(`INSERT INTO users (id, google_id, email, plan) VALUES (?, 'google-sub-b', 'b@example.com', 'plus')`, [B_PK]);
+  await run(`INSERT INTO users (id, email, plan) VALUES (?, 'c@example.com', 'free')`, [C_PK]);
 
   // ── 구독·결제 ─────────────────────────────────────────────────────────────
   await run(

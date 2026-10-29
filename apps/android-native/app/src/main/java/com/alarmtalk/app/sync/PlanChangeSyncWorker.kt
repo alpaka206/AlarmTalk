@@ -13,6 +13,7 @@ import com.alarmtalk.app.EntitlementWrite
 import com.alarmtalk.app.EntitlementWriter
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAppContainer
+import com.alarmtalk.app.data.DowngradeNoticeStore
 import com.alarmtalk.app.isDefinitelyFree
 import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
@@ -194,8 +195,12 @@ class PlanChangeSyncWorker(
                 // 소유자를 다시 읽기 전에 로그아웃→B 로그인이 끼면, A 로 확정한 '진짜 무료' 가
                 // B 의 **유료** 알람에 적용돼 sound-only 로 바뀌고 다시 예약된다. 검사와 파괴적
                 // 쓰기가 다른 시점이면 이 창은 호출부에서 못 닫는다(Codex #665 P1).
-                AlarmAppContainer.repository(applicationContext)
+                val locked = AlarmAppContainer.repository(applicationContext)
                     .lockPaidAlarmTalks(expectedOwnerUserId = userId)
+                // ⚠ **잠갔으면 안내도 여기서 남긴다**(2026-10-29 두 앱 비교). 앱을 닫아 둔 사이 구독이 끝나면 이 워커가 먼저
+                //   잠그고, 다음에 앱을 열어도 전경의 `applyFreePlanVoiceLock` 은 이미 잠긴 행을 건너뛰어 0 개를 잠근다 — 안내를
+                //   남길 자리가 없어 '기본 목소리로 바뀌었다' 가 영영 뜨지 않았다. 개수가 0 이면 `record` 가 아무것도 하지 않는다.
+                DowngradeNoticeStore(applicationContext).record(userId, DowngradeNoticeStore.Cause.FREE_PLAN, locked)
             }
             Result.success()
         }.getOrElse { error ->

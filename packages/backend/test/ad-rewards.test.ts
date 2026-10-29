@@ -101,7 +101,7 @@ beforeEach(async () => {
   db = createClient({ url: ':memory:' });
   await runMigrations(db);
   await db.execute({
-    sql: `INSERT INTO users (id, email, name, plan) VALUES (?, 'f@example.com', '무료', 'free')`,
+    sql: `INSERT INTO users (id, email, plan) VALUES (?, 'f@example.com', 'free')`,
     args: [USER],
   });
 }, 60_000);
@@ -364,7 +364,7 @@ describe('GET /api/ads/admob-ssv', () => {
   it('UUID 전환 전의 계정 PK(구글 sub)도 적립한다', async () => {
     const legacy = '108234567890123456789';
     await db.execute({
-      sql: `INSERT INTO users (id, email, name, plan) VALUES (?, 'old@example.com', '옛계정', 'free')`,
+      sql: `INSERT INTO users (id, email, plan) VALUES (?, 'old@example.com', 'free')`,
       args: [legacy],
     });
     const res = await call(

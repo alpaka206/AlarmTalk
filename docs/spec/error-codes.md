@@ -289,17 +289,17 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 (`network/ApiErrorMessages.kt`)은 이미 가입된 주소의 409(`routes/auth.ts`)다. 정상 흐름에서 그 409 를
 받는 자리는 **인증 코드 요청**(`POST /auth/email-code`)이고, 거기는 표를 부르는 자리가 아니다 —
 두 앱 모두 **화면이 직접** 가른다: 안드로이드 `duplicateEmailMessage`
-(`ui/main/MainViewModelAuthActions.kt`), iOS `AuthViewModel.requestEmailVerification` 의
-`userFacingErrorMessage` 폴백.
-- **가입(`POST /auth/register`)은 2026-10-11 부터 표를 부른다**(위 문단). 거기서 이 409 는 코드를 받은
-  뒤 같은 주소로 다른 가입이 먼저 끝난 경쟁에서만 온다. 안드로이드는 그때도 `duplicateEmailMessage`
-  (화면 층)가 표보다 **먼저** 받아 로그인 화면으로 넘긴다 — 층 순서 그대로다. iOS 는 표에 그 두 줄이
-  없어 가입 화면의 폴백으로 떨어진다.
-- **iOS 표에 이 둘을 더하는 일은 이번 변경에 넣지 않았다.** 더하면 가입의 그 드문 409 문장만 달라지고
-  코드 요청 경로는 그대로다 — 표만 같아 보이고 실제 차이는 남는다. 맞추려면 두 경로를 함께, 아래의
-  화면 전환까지 정한다.
-- 특히 `AUTH_EMAIL_TAKEN` 은 문구만이 아니라 **로그인 화면 전환**(`authRedirectToLogin`)을
-  겸한다. 표는 문자열 하나만 돌려주므로 구조적으로 그 일을 할 수 없다.
+(`ui/main/MainViewModelAuthActions.kt`), iOS `AuthViewModel.duplicateEmailOutcome`.
+- **두 경로 모두 화면 층이 표보다 먼저 받는다**(2026-10-29 두 앱 맞춤). 코드 요청과 가입(`POST /auth/register` —
+  거기서 이 409 는 코드를 받은 뒤 같은 주소로 다른 가입이 먼저 끝난 경쟁에서만 온다) 둘 다다. 예전 iOS 는 두 코드를
+  몰라 "인증 코드를 보내지 못했어요"/가입 폴백으로 말했고, 이미 가입한 사람이 다시 받기만 눌렀다.
+- `AUTH_EMAIL_TAKEN` 은 문구만이 아니라 **로그인 화면 전환**을 겸한다(안드로이드 `authRedirectToLogin`, iOS
+  `redirectToLoginTick`). 입력한 이메일은 그대로 두고, 왜 넘어왔는지는 로그인 제목 아래(`authNotice`)에 말한다.
+  표는 문자열 하나만 돌려주므로 구조적으로 그 일을 할 수 없다 — 그래서 iOS 표에는 이 둘을 더하지 않는다.
+- `AUTH_EMAIL_SOCIAL` 은 `provider`(`google`·`apple`)를 함께 싣는다. 구글 연결이 있으면 `google`, 애플만 있으면
+  `apple`(예전에는 언제나 `google` 이라 애플로 가입한 사람이 안드로이드에서 "구글로 가입된 이메일" 을 들었다).
+  안드로이드는 그 값으로 문장을 고르고, iOS 는 고르지 않는다 — 소셜 로그인이 애플뿐인데 구글로 가입한 사람도 같은
+  코드를 받으므로 "Apple 또는 Google로 가입된 이메일" 로 말한다(`APIError` 가 `provider` 를 싣지 않는다).
 - 안드로이드 표의 그 두 줄은 화면 층이 늘 먼저 받아 지금도 **닿지 않는 자리**다. 지우려면 가입·코드
   요청 경로가 정말로 표까지 내려오지 않는지 먼저 확인하고, 이 문단도 함께 고친다.
 

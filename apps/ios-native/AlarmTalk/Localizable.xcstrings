@@ -14151,6 +14151,176 @@
           }
         }
       }
+    },
+    "이미 가입된 이메일이에요. 로그인해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This email is already registered. Please log in."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "既に登録済みのメールです。ログインしてください。"
+          }
+        }
+      }
+    },
+    "Apple 또는 Google로 가입된 이메일이에요. 처음 가입한 방법으로 로그인해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This email is registered with Apple or Google. Please sign in the way you first signed up."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AppleまたはGoogleで登録済みのメールです。最初に登録した方法でログインしてください。"
+          }
+        }
+      }
+    },
+    "녹음이 필요해요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording needed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音が必要です"
+          }
+        }
+      }
+    },
+    "지역이 없어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No region"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地域がありません"
+          }
+        }
+      }
+    },
+    "운세 정보가 없어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No fortune details"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "占いの情報がありません"
+          }
+        }
+      }
+    },
+    "먼저 목소리를 녹음하거나 파일을 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record a voice or pick a file first."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先に声を録音するか、ファイルを選んでください。"
+          }
+        }
+      }
+    },
+    "알람을 읽어 줄 목소리를 먼저 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the voice that will read your alarm."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームを読み上げる声を先に選んでください。"
+          }
+        }
+      }
+    },
+    "날씨 문구를 쓰려면 지역이 필요해요. 문구 화면에서 지역을 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weather messages need a region. Pick one on the message screen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気の文章には地域が必要です。文章の画面で地域を選んでください。"
+          }
+        }
+      }
+    },
+    "운세 문구를 쓰려면 성별과 생년월일, 태어난 시간이 필요해요. 문구 화면에서 입력해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortune messages need your gender, birth date and birth time. Add them on the message screen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "占いの文章には性別・生年月日・生まれた時間が必要です。文章の画面で入力してください。"
+          }
+        }
+      }
+    },
+    "목소리 파일을 아직 받는 중이에요. 잠시 뒤에 다시 저장해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The voice file is still downloading. Try saving again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声ファイルをまだ受信中です。少し経ってからもう一度保存してください。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

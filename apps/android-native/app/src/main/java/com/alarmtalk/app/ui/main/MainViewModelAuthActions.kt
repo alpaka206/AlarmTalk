@@ -119,7 +119,12 @@ private fun MainViewModel.duplicateEmailMessage(error: Throwable): String? {
             authRedirectToLogin = true
             app.getString(R.string.msg_register_email_taken)
         }
-        "AUTH_EMAIL_SOCIAL" -> app.getString(R.string.msg_register_email_social_google)
+        // 서버가 가입한 소셜을 알려 준다(`provider`). 애플로 가입한 사람(아이폰)에게 구글로 안내하지 않는다.
+        "AUTH_EMAIL_SOCIAL" -> if (parsed.provider == "apple") {
+            app.getString(R.string.msg_register_email_social_apple)
+        } else {
+            app.getString(R.string.msg_register_email_social_google)
+        }
         else -> null
     }
 }
@@ -201,14 +206,12 @@ internal fun MainViewModel.confirmEmailVerification(email: String, code: String)
 internal fun MainViewModel.register(
     email: String,
     password: String,
-    name: String,
     emailVerificationCode: String,
 ) {
     if (authBusy) return
     val normalizedEmail = email.trim().lowercase()
-    val trimmedName = name.trim()
     val trimmedCode = emailVerificationCode.trim()
-    if (normalizedEmail.isBlank() || password.isBlank() || trimmedName.isBlank() || trimmedCode.isBlank()) {
+    if (normalizedEmail.isBlank() || password.isBlank() || trimmedCode.isBlank()) {
         registerError = getApplication<android.app.Application>().getString(R.string.msg_register_all_fields_required)
         return
     }
@@ -225,7 +228,6 @@ internal fun MainViewModel.register(
                 RegisterRequest(
                     email = normalizedEmail,
                     password = password,
-                    name = trimmedName,
                     emailVerificationCode = trimmedCode,
                 ),
             )
@@ -506,6 +508,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
     val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val shouldSignOutGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
+    clearActionError(SignedInAction.ACCOUNT_DELETION)
     viewModelScope.launch {
         authBusy = true
         // 유예 신청은 **모든 기기의 세션을 끊는다**(서버가 `token_epoch` 를 올린다 — user.ts). 성공하면 곧바로
@@ -541,7 +544,11 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             // 동안의 **진짜** 자동 만료가 마커를 못 남겨, 업데이트 후 재예약이 이 기기의
             // 알람을 복원하지 못한다. (성공 갈래는 `clearSignedInSession` 이 내린다.)
             endSignOutMarker()
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_request_failed))
+            // 확인 창이 열린 채다 — 스낵바는 그 창의 어두운 막 아래에 깔린다. 창 안에 빨간 글자로 말한다.
+            failAction(
+                SignedInAction.ACCOUNT_DELETION,
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_request_failed)),
+            )
         } finally {
             authBusy = false
         }
@@ -629,37 +636,6 @@ internal fun MainViewModel.onAccountLeftInBackground(left: com.alarmtalk.app.cor
         val session = authSession ?: return@launch
         if (session.user.id != left.userId || session.token != left.clearedToken) return@launch
         leaveAccountForPendingDeletion(session)
-    }
-}
-
-internal fun MainViewModel.updateNickname(name: String) {
-    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
-    val trimmed = name.trim()
-    if (trimmed.isEmpty() || trimmed.length > 30) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_nickname_length_invalid)
-        return
-    }
-    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
-    val startGeneration = authSessionStore.sessionGeneration()
-    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
-    viewModelScope.launch {
-        authBusy = true
-        runCatching {
-            api.updateProfile(authorization, com.alarmtalk.app.network.UpdateProfileRequest(name = trimmed))
-        }.onSuccess {
-            // 바꾼 칸(이름)만 **지금 세션** 위에 — 요청 전의 `session` 사본을 되쓰면 그 사이 `/auth/me` 가 적은
-            // plan·프로모·받은 시각을 되돌린다([saveProfileEdit]).
-            saveProfileEdit(session.user.id, startGeneration) { it.copy(name = trimmed) }?.let { saved ->
-                authSession = saved
-                // 확인 조회 — 저장 전에 떠나 옛 이름을 읽은 `/auth/me` 가 늦게 와도 바로잡는다([saveProfileEdit]).
-                refreshAppSession(rollToken = false)
-            }
-            dismissEditNickname()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to update nickname", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_nickname_change_failed))
-        }
-        authBusy = false
     }
 }
 
@@ -944,13 +920,13 @@ internal fun MainViewModel.refreshConsentCollectAfterGate() {
  * 업데이트뿐이다 — 모르는 필수 동의와 같은 게이트로 보낸다. 반대로 이 앱이 앞서가는
  * 경우(서버 배포가 아직 안 끝난 구간)는 업데이트해도 안 풀리므로 그렇게 말하면 안 된다.
  */
-private fun MainViewModel.handleConsentVersionMismatch(error: Throwable): Boolean {
+private fun MainViewModel.handleConsentVersionMismatch(error: Throwable, action: SignedInAction): Boolean {
     val api = com.alarmtalk.app.network.apiError(error)
     if (api.code != "POLICY_VERSION_MISMATCH" && api.code != "DOCUMENT_VERSION_REQUIRED") return false
     val serverVersion = api.current?.toIntOrNull()
     val bundled = bundledPolicyVersion?.toIntOrNull()
     if (serverVersion != null && bundled != null && serverVersion <= bundled) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed)
+        failAction(action, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         return true
     }
     consentUnsupported = true
@@ -959,6 +935,7 @@ private fun MainViewModel.handleConsentVersionMismatch(error: Throwable): Boolea
 
 internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
     val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
+    clearActionError(SignedInAction.CONSENT)
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     // 서버에 "현재 정책 버전"으로 기록되도록 직전 checkConsentStatus 가 저장한 버전을 함께 보낸다.
     // version 을 비우면 백엔드가 "1" 로 기록해, 정책이 개정된 뒤엔 옛 버전으로 저장되어
@@ -1034,8 +1011,11 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
             if (authSession?.user?.id != ownerUserId) return@onFailure
-            if (handleConsentVersionMismatch(error)) return@onFailure
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
+            if (handleConsentVersionMismatch(error, SignedInAction.CONSENT)) return@onFailure
+            failAction(
+                SignedInAction.CONSENT,
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed)),
+            )
         }
         authBusy = false
     }
@@ -1050,6 +1030,7 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
 internal fun MainViewModel.submitVoiceConsents() {
     val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val request = pendingSensitiveConsent ?: return
+    clearActionError(SignedInAction.SENSITIVE_CONSENT)
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
     // 이 요청을 시작한 계정. 코루틴이 request 를 지역 변수로 붙들고 있어, 응답이 오는 사이
@@ -1103,8 +1084,12 @@ internal fun MainViewModel.submitVoiceConsents() {
                 request.resumeVoiceDrafts?.let { purgeVoiceCloneSourceRecordings(it) }
                 return@onFailure
             }
-            if (handleConsentVersionMismatch(error)) return@onFailure
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
+            if (handleConsentVersionMismatch(error, SignedInAction.SENSITIVE_CONSENT)) return@onFailure
+            // 시트(자기 창)가 열린 채다 — 스낵바는 그 아래에 깔린다. 시트 안에 빨간 글자로 말한다.
+            failAction(
+                SignedInAction.SENSITIVE_CONSENT,
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed)),
+            )
         }
     }
 }
@@ -1159,6 +1144,7 @@ internal fun MainViewModel.loadMarketingConsent() {
 // 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 서버가 가진 값으로 되돌린다.
 internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
     sessionOrMessage(R.string.msg_login_required_to_use) ?: return
+    clearActionError(SignedInAction.MARKETING)
     // ⚠ **진행 중인 쓰기가 있으면 버리지 말고 '마지막 값' 으로 예약한다.**
     // 예전에는 그냥 `return` 이라, 스위치가 상시 활성이 된 지금은 연속으로 토글하면
     // **화면은 켜져 있는데 서버는 꺼진 채**로 끝날 수 있다. 낙관적 표시는 아래에서
@@ -1232,7 +1218,11 @@ private fun MainViewModel.sendMarketingConsent(agreed: Boolean, rollbackTo: Bool
                 // 왜 되돌아갔는지 말해 줄 것이 필요하다.
                 val error = result.exceptionOrNull()
                 if (next.failed && error != null) {
-                    message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed))
+                    // 스위치 바로 아래에 빨간 글자로 말한다(동의 내역 화면) — 스낵바는 화면 위쪽에 잠깐 떴다 사라진다.
+                    failAction(
+                        SignedInAction.MARKETING,
+                        userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed)),
+                    )
                 }
             }
         }
@@ -1265,6 +1255,7 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return false
     }
+    clearActionError(SignedInAction.WITHDRAWAL)
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     // 철회로 사라질 목소리 id 를 **POST 전에 서버에서 확정**한다.
@@ -1280,10 +1271,13 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
     val revokedVoiceIds = runCatching {
         api.listVoiceProfiles(authorization).profiles
     }.getOrElse { error ->
+        // ⚠ **화면을 떠나 취소된 것은 실패가 아니다**(2026-10-29 두 앱 비교). 아직 아무것도 보내지 않았으니 조용히 물러선다 —
+        //   예전에는 `runCatching` 이 취소까지 받아 떠난 화면에 '철회에 실패했어요' 를 남겼다.
+        if (error is kotlinx.coroutines.CancellationException) throw error
         AlarmTalkLog.reportError("Failed to resolve owned voices before consent withdrawal", error)
-        message = userFacingError(
-            error,
-            getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
+        failAction(
+            SignedInAction.WITHDRAWAL,
+            userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed)),
         )
         return false
     }
@@ -1341,9 +1335,10 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
                 AlarmTalkLog.reportError("Failed to withdraw voice biometric consent", error)
                 // 실패는 알릴 대상이 이 계정 화면뿐이라, 세션이 바뀌었으면 조용히 끝낸다.
                 if (authSession?.user?.id != userId) return@fold false
-                message = userFacingError(
-                    error,
-                    getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
+                // 철회 버튼 아래에 빨간 글자로 말한다(동의 내역 화면).
+                failAction(
+                    SignedInAction.WITHDRAWAL,
+                    userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed)),
                 )
                 false
             },

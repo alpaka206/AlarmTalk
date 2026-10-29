@@ -177,7 +177,7 @@ final class MessageContextMemoryTests: XCTestCase {
 
     /// **쓸 수 없는 목소리는 버튼을 죽이지 않고 누를 때 알럿으로 막는다**(2026-09-29 —
     /// 편집기의 '삭제된 목소리' 배너를 걷어낸 뒤로 이 알럿이 유일한 설명이다).
-    /// `saveFlow` 첫머리와 `editorSaveBlocked` 가 같은 판정을 본다.
+    /// `saveFlow` 첫머리와 `editorSaveBlockReason` 이 같은 판정을 본다.
     /// 안드로이드 `SaveBlockReason.VOICE_UNAVAILABLE` 짝.
     func testUnusableVoiceIsExplainedOnSaveInsteadOfADeadButton() {
         var audioChecked = false

@@ -27,10 +27,7 @@ struct LoginView: View {
     @State private var email: String = ""
     @State private var password: String = ""
     @State private var confirmPassword: String = ""
-    @State private var name: String = ""
     @State private var verificationCode: String = ""
-    /// 닉네임이 상한을 넘겨 잘렸는가 — 이유를 입력창 아래에 띄운다(말없이 자르지 않는다).
-    @State private var nameTooLong = false
     /// 로그인 제출을 눌렀는데 이메일이 형식에 안 맞았는가 — **누른 뒤에만** 뜬다.
     /// 치는 도중에 빨갛게 만들면 아직 다 치지도 않은 주소를 틀렸다고 하는 셈이다.
     /// 안드로이드 `ui/auth/AuthScreen.kt` 의 `emailFormatError` 와 같은 규칙이다.
@@ -80,8 +77,7 @@ struct LoginView: View {
         // ⚠ **형식으로 버튼을 죽이지 않는다 — 가입 모드도 마찬가지**(2026-09-21 리뷰).
         // 예전에는 여기에만 `emailLooksValid` 가 남아, 로그인은 눌러서 이유를 듣는데
         // 가입은 같은 주소로 버튼이 죽어 있었다. 잠그는 것은 **보낼 것이 없을 때**뿐이다.
-        return !name.isEmpty &&
-            AuthEmailFormat.canRequestEmailCode(email) &&
+        return AuthEmailFormat.canRequestEmailCode(email) &&
             isEmailVerifiedForCurrentInput &&
             passwordLengthValid &&
             passwordHasLetterAndDigit &&
@@ -120,8 +116,12 @@ struct LoginView: View {
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(AuthSceneColors.textDim)
 
-                    if mode == .register {
-                        nameField
+                    // 가입에서 이미 가입된 이메일이라 로그인으로 넘어온 경우 — 왜 화면이 바뀌었는지 여기서 말한다
+                    // (안드로이드 `ui/auth/AuthScreen.kt` 의 `authNotice` 자리).
+                    if mode == .login, let notice = auth.authNotice {
+                        Text(notice)
+                            .font(theme.typography.bodyMedium)
+                            .foregroundStyle(AuthSceneColors.accent)
                     }
 
                     emailField
@@ -206,9 +206,15 @@ struct LoginView: View {
         // 가입 쪽 인라인 오류도 함께 지운다 — 안드로이드의 그 자리도 `registerError` 를 지운다. 남기면
         // 다시 들어온 가입 화면의 '이메일 인증' 버튼 아래에 앞 회차의 문장이 붙어 있다(코드 줄은
         // `handleModeChange` 가 닫는다).
-        .onChange(of: mode) { _, _ in
+        .onChange(of: mode) { _, next in
             auth.clearLoginError()
             auth.clearEmailCodeError()
+            // 로그인으로 넘어온 이유는 로그인에 남기고, 가입으로 돌아가면 지운다(안드로이드도 같다).
+            if next == .register { auth.clearAuthNotice() }
+        }
+        // 이미 가입된 이메일 — 입력한 이메일은 그대로 둔 채 로그인으로 돌린다(`AuthViewModel.authNotice`).
+        .onChange(of: auth.redirectToLoginTick) { _, _ in
+            handleModeChange(.login)
         }
         // 코드 칸을 비우라는 신호 — 서버가 코드를 거절했거나 다시 받기가 성공했다
         // (`AuthViewModel.emailCodeFieldClearTick`, 스펙 session-and-auth 「이메일 인증 코드」).
@@ -226,42 +232,6 @@ struct LoginView: View {
     }
 
     // MARK: - Sections
-
-    private var nameField: some View {
-        VStack(alignment: .leading, spacing: 0) {
-        VocaTextField(
-            title: "이름",
-            text: $name,
-            keyboardType: .default,
-            submitLabel: .next,
-            enabled: !auth.isBusy
-        )
-        .onChange(of: name) { _, newValue in
-            // 규칙은 InputSanitizer 한 곳에서만(제어·제로폭·양방향 문자 제거, 줄바꿈→공백).
-            let sanitized = InputSanitizer.sanitizeDisplayName(newValue)
-            let cleaned = InputSanitizer.clampDisplayName(newValue)
-            // ⚠ **말없이 자르지 말 것**(CLAUDE.md). 상한에서 입력은 막되, 넘겨 치는
-            // 순간 이유를 띄운다. 안 그러면 사용자는 글자가 왜 안 들어가는지 모른 채
-            // 갇힌다. 안드로이드 `AuthScreen` 의 `nameTooLong` 과 같은 규칙이다.
-            //
-            // ⚠ **상한과 정확히 같을 때는 플래그를 건드리지 않는다.** 잘라서 돌려준
-            // 값을 IME 가 그대로 되돌려 보내므로, 여기서 끄면 경고가 곧바로 사라진다.
-            if sanitized.count > InputSanitizer.displayNameMaxLength {
-                nameTooLong = true
-            } else if sanitized.count < InputSanitizer.displayNameMaxLength {
-                nameTooLong = false
-            }
-            if cleaned != newValue { name = cleaned }
-        }
-        if nameTooLong {
-            Text("닉네임은 \(InputSanitizer.displayNameMaxLength)자 이내로 써 주세요")
-                .font(theme.typography.bodySmall)
-                .foregroundStyle(AuthSceneColors.error)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
-        }
-        }
-    }
 
     /// 형식 오류는 **이메일 칸 아래**에 붙는다. 나머지 로그인 실패(`auth.loginError`)는
     /// 비밀번호 칸 아래지만, 이건 이메일을 고쳐야 하는 일이라 고칠 칸 옆에 있어야 한다.
@@ -521,7 +491,6 @@ struct LoginView: View {
                     await auth.registerWithEmail(
                         email: normalizedEmail,
                         password: password,
-                        name: name,
                         verificationCode: verificationCode
                     )
                 }

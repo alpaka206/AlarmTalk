@@ -83,12 +83,10 @@ async function seedPeople() {
     ['u-e', 'pending_deletion'],
     ['u-f', 'active'],
   ] as const) {
-    await run(`INSERT INTO users (id, email, name, plan, deletion_status) VALUES (?, ?, ?, 'free', ?)`, [
+    await run(`INSERT INTO users (id, email, plan, deletion_status) VALUES (?, ?, 'free', ?)`, [
       id,
       `${id}@example.com`,
-      id,
-      status,
-    ]);
+      status,]);
   }
   await run(`UPDATE users SET email = 'Tester@Example.com' WHERE id = 'u-c'`);
   const tokens: Array<[string, string, string]> = [
@@ -125,6 +123,9 @@ async function seedPeople() {
   await consent('u-f', 'marketing', '4', 0);
   await run(`INSERT INTO alarms (id, user_id, time, repeat_days, is_active) VALUES ('al-a', 'u-a', '07:00', '[]', 1)`);
   await run(`INSERT INTO alarms (id, user_id, time, repeat_days, is_active) VALUES ('al-d', 'u-d', '07:00', '[]', 0)`);
+  // 울림 기록 — u-a 는 어제 울렸고(안드로이드), u-d 는 20일 전에 끈 기록만 있다(iOS 는 울림 순간을 못 봐 해제만 남는다).
+  await run(`INSERT INTO usage_events (id, user_id, type, occurred_at) VALUES ('ue-a', 'u-a', 'alarm_rang', datetime('now', '-1 day'))`);
+  await run(`INSERT INTO usage_events (id, user_id, type, occurred_at) VALUES ('ue-d', 'u-d', 'alarm_dismissed', datetime('now', '-20 days'))`);
 }
 
 beforeAll(async () => {
@@ -164,7 +165,9 @@ describe('대상 고르기', () => {
     expect(await count({ marketingOnly: true })).toMatchObject({ android: 1, ios: 0, users: 1 });
   });
 
-  it('켜진 알람이 있는 사람만', async () => {
+  // 2026-10-29 — 켜진 알람 수 대신 실제로 울린 것을 본다(서버 알람 사본이 아니라 사용 기록). 옛 이름의 조건도 같은 뜻으로 읽는다.
+  it('최근 7일 알람이 울린 사람만', async () => {
+    expect(await count({ recentRingOnly: '1' })).toMatchObject({ android: 1, ios: 0, users: 1 });
     expect(await count({ activeAlarmOnly: '1' })).toMatchObject({ android: 1, ios: 0, users: 1 });
   });
 
@@ -261,7 +264,7 @@ describe('발송', () => {
     await expect(sendTestPush(db, NO_PUSH_ENV, 'nobody@example.com', copy)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND',
     });
-    await run(`INSERT OR IGNORE INTO users (id, email, name, plan) VALUES ('u-none', 'none@example.com', 'n', 'free')`);
+    await run(`INSERT OR IGNORE INTO users (id, email, plan) VALUES ('u-none', 'none@example.com', 'free')`);
     await fullConsent('u-none'); // 기기만 없는 사람 — 개요의 재동의 숫자를 흔들지 않게
     await expect(sendTestPush(db, NO_PUSH_ENV, 'none@example.com', copy)).rejects.toMatchObject({
       code: 'ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE',
@@ -298,7 +301,7 @@ describe('발송', () => {
     const extra = STEP_SEND_LIMIT + 5;
     for (let i = 0; i < extra; i++) {
       const id = `u-bulk-${String(i).padStart(3, '0')}`;
-      await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`, [id, `${id}@example.com`, id]);
+      await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, 'free')`, [id, `${id}@example.com`]);
       await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`, [
         `pt-bulk-${String(i).padStart(3, '0')}`,
         id,
@@ -360,7 +363,7 @@ describe('발송', () => {
     const extra = STEP_SEND_LIMIT + 5;
     for (let i = 0; i < extra; i++) {
       const id = `u-grow-${String(i).padStart(3, '0')}`;
-      await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`, [id, `${id}@example.com`, id]);
+      await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, 'free')`, [id, `${id}@example.com`]);
       await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`, [
         `pt-grow-${String(i).padStart(3, '0')}`,
         id,
@@ -394,7 +397,7 @@ describe('발송', () => {
     const ahead = 130;
     for (let i = 0; i < ahead; i++) {
       const id = `u-ahead-${String(i).padStart(3, '0')}`;
-      await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, 'free')`, [id, `${id}@example.com`, id]);
+      await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, 'free')`, [id, `${id}@example.com`]);
       await fullConsent(id);
       await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES (?, ?, ?, 'android')`, [
         `pt-0ahead-${String(i).padStart(3, '0')}`,
@@ -558,10 +561,12 @@ describe('화면', () => {
     expect(o.consent.reconsentNeeded).toBe(2); // u-b, u-f (탈퇴 대기 u-e 는 세지 않는다)
     expect(o.signupsByDay).toHaveLength(30);
     expect(o.versions.find((v) => v.platform === 'android' && v.version === 30)?.users).toBe(1);
+    // 알람은 켜 둔 수가 아니라 울린 사람을 센다 — 7일 u-a, 30일 u-a·u-d, 울림 횟수는 안드로이드의 울림만.
+    expect(o.rings).toEqual({ usersD7: 1, usersD30: 2, rangD7: 1 });
   });
 
   it('동의 행이 하나도 없는 사람도 재동의 필요로 센다 — 서버는 그 사람도 막는다', async () => {
-    await run(`INSERT INTO users (id, email, name, plan) VALUES ('u-zero', 'zero@example.com', 'zero', 'free')`);
+    await run(`INSERT INTO users (id, email, plan) VALUES ('u-zero', 'zero@example.com', 'free')`);
     try {
       expect((await loadOverview(db, 30)).consent.reconsentNeeded).toBe(3);
     } finally {

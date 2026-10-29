@@ -687,14 +687,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     /// 이메일/비밀번호 회원가입. 인증코드 검증 이후 호출되어야 한다.
-    func register(email: String, password: String, name: String, verificationCode: String) async throws -> AuthSession {
+    func register(email: String, password: String, verificationCode: String) async throws -> AuthSession {
         try await request(
             "auth/register",
             method: "POST",
             body: EmailRegisterRequest(
                 email: email,
                 password: password,
-                name: name,
                 emailVerificationCode: verificationCode
             )
         )

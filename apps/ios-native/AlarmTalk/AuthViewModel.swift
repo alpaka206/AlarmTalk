@@ -29,7 +29,7 @@ extension AlarmTalkAPI: AuthAPIProviding {}
 protocol EmailCodeAPIProviding: AnyObject, Sendable {
     func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse
     func verifyEmailCode(email: String, code: String) async throws -> VerifyEmailCodeResponse
-    func register(email: String, password: String, name: String, verificationCode: String) async throws -> AuthSession
+    func register(email: String, password: String, verificationCode: String) async throws -> AuthSession
     func requestPasswordReset(email: String) async throws -> RequestEmailVerificationResponse
     func confirmPasswordReset(email: String, code: String, password: String) async throws -> PasswordResetConfirmResponse
 }
@@ -71,7 +71,7 @@ final class AuthViewModel: ObservableObject {
     /// `statusMessage` 는 로그인·비밀번호 재설정 화면만 그린다 — 로그인한 뒤의 실패를 거기에만 적으면 아무도 못 보고, 사용자는
     /// 된 줄 안다(마케팅을 끈 줄 아는데 서버는 켜진 채 등). 같은 동작을 다시 시작하면 지운다.
     enum SignedInAction: Equatable {
-        case profile, accountDeletion, consent, sensitiveConsent, marketing, withdrawal
+        case accountDeletion, consent, sensitiveConsent, marketing, withdrawal
     }
 
     struct SignedInActionError: Equatable {
@@ -120,6 +120,44 @@ final class AuthViewModel: ObservableObject {
     /// 판정은 `AuthEmailFormat.isEmailFormatErrorCode` 하나다. 안드로이드도 같은 방식이다
     /// (`ui/main/MainViewModel.kt` 의 `loginErrorCode`).
     @Published private(set) var loginErrorCode: String?
+
+    /// **가입에서 로그인으로 넘어간 이유.** 이미 가입된 이메일(`AUTH_EMAIL_TAKEN`)로 가입을 시도하면 화면을 로그인으로
+    /// 돌리고 이 문장을 로그인 제목 아래에 띄운다 — 안드로이드 `ui/main/MainViewModel.kt` 의 `authNotice` 와 같은 자리·같은 말이다.
+    /// 예전 iOS 는 이 코드를 몰라 "인증 코드를 보내지 못했어요" 라고만 해서, 이미 가입한 사람이 다시 받기만 눌렀다(2026-10-29 두 앱 비교).
+    @Published private(set) var authNotice: String?
+    /// 화면을 로그인으로 돌리라는 신호(`LoginView` 가 받는다). 문장이 아니라 숫자로 준다 — 같은 이메일로 두 번 와도 다시 돌린다.
+    @Published private(set) var redirectToLoginTick: UInt = 0
+
+    func clearAuthNotice() {
+        authNotice = nil
+    }
+
+    /// 이미 가입된 이메일로 가입을 시도했을 때의 답 — 그 밖의 실패면 nil(호출부가 원래 문장을 쓴다).
+    /// 비밀번호 계정이면 로그인으로 돌리고, 소셜 계정이면 그 자리에서 말한다. 소셜은 어느 쪽인지 말하지 않는다 —
+    /// 이 앱의 소셜 로그인은 애플뿐인데 구글로 가입한(안드로이드) 사람도 같은 코드를 받는다.
+    nonisolated static func duplicateEmailOutcome(for error: Error) -> (message: String, redirectsToLogin: Bool)? {
+        switch (error as? APIError)?.serverErrorCode {
+        case "AUTH_EMAIL_TAKEN":
+            return (String(localized: "이미 가입된 이메일이에요. 로그인해 주세요."), true)
+        case "AUTH_EMAIL_SOCIAL":
+            return (String(localized: "Apple 또는 Google로 가입된 이메일이에요. 처음 가입한 방법으로 로그인해 주세요."), false)
+        default:
+            return nil
+        }
+    }
+
+    /// [duplicateEmailOutcome] 을 화면에 옮긴다. 처리했으면 true.
+    private func showDuplicateEmailIfNeeded(_ error: Error) -> Bool {
+        guard let outcome = Self.duplicateEmailOutcome(for: error) else { return false }
+        if outcome.redirectsToLogin {
+            statusMessage = nil
+            authNotice = outcome.message
+            redirectToLoginTick &+= 1
+        } else {
+            showEmailCodeError(outcome.message, refused: false)
+        }
+        return true
+    }
 
     /// 문구와 코드를 **함께** 지운다.
     ///
@@ -220,14 +258,13 @@ final class AuthViewModel: ObservableObject {
     func registerWithEmail(
         email: String,
         password: String,
-        name: String,
         verificationCode: String
     ) async {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         await serializeAuthServerMutation { [weak self] in
-            await self?.performRegisterWithEmail(email: email, password: password, name: name, verificationCode: verificationCode)
+            await self?.performRegisterWithEmail(email: email, password: password, verificationCode: verificationCode)
         }
     }
 
@@ -765,14 +802,14 @@ final class AuthViewModel: ObservableObject {
             return
         }
 
-        let displayName = credential.fullName.flatMap(Self.displayName)
+        // 이름은 보내지 않는다(2026-10-29 닉네임 삭제 — 애플이 처음 한 번 주는 이름도 받지 않는다).
         // 탈퇴 시 애플 연결 해제에 쓸 authorization code. 매 로그인마다 새로 오고
         // 5분·1회용이라 그대로 흘려보낸다.
         let authorizationCode = credential.authorizationCode
             .flatMap { String(data: $0, encoding: .utf8) }
         await loginWithApple(
             idToken: idToken,
-            name: displayName,
+            name: nil,
             email: credential.email,
             rawNonce: rawNonce,
             authorizationCode: authorizationCode,
@@ -858,6 +895,7 @@ final class AuthViewModel: ObservableObject {
             return true
         } catch {
             reportFailure("Email verification request failed", error)
+            if showDuplicateEmailIfNeeded(error) { return false }
             // 실패도 인라인 자리로 보낸다 — 다시 받기를 누르는 사람은 대개 방금 "…다시 받아 주세요"
             // 를 읽은 사람이다. 그 답이 하단 상태 줄(키패드 뒤)로 가면 눌러도 아무 반응이 없는 것처럼
             // 보인다(2026-10-11 리뷰). 안드로이드도 같은 실패를 인라인 `registerError` 에 둔다.
@@ -920,6 +958,7 @@ final class AuthViewModel: ObservableObject {
     private func performLoginWithEmail(email: String, password: String) async {
 
         clearLoginError()
+        authNotice = nil
         do {
             // 보낸 진입·순번을 응답까지 들고 간다(`recordAccountAnswer`).
             let accountRequest = beginAccountRequest()
@@ -944,7 +983,6 @@ final class AuthViewModel: ObservableObject {
     private func performRegisterWithEmail(
         email: String,
         password: String,
-        name: String,
         verificationCode: String
     ) async {
 
@@ -955,7 +993,6 @@ final class AuthViewModel: ObservableObject {
             let nextSession = try await emailCodeAPI.register(
                 email: email,
                 password: password,
-                name: name,
                 verificationCode: verificationCode
             )
             // 가입 응답이 곧 서버 값이다 — 가입 경로는 `/auth/me` 를 따로 부르지 않는다.
@@ -965,6 +1002,7 @@ final class AuthViewModel: ObservableObject {
             await checkConsentStatus()
         } catch {
             reportFailure("Email registration failed", error)
+            if showDuplicateEmailIfNeeded(error) { return }
             // ⚠ **가입은 같은 코드를 한 번 더 판정한다** — 인증을 통과하고도 가입 버튼을 누를 때
             // 코드를 받은 지 10분이 지났으면 여기서 만료로 거절된다. 그때는 문장만 바꾸고 끝내지
             // 않는다: 신호를 올리면 화면이 '인증 완료' 를 내려 코드 줄과 다시 받기를 되돌린다
@@ -1549,8 +1587,8 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    /// 계정 설정(지역·사주)을 올린다. 닉네임은 2026-10-29 에 없앴다 — 이 요청은 이름을 싣지 않는다.
     func updateProfile(
-        name: String? = nil,
         dynamicPromptSettings: DynamicPromptSettings? = nil
     ) async {
         guard let token else {
@@ -1562,7 +1600,6 @@ final class AuthViewModel: ObservableObject {
             if dynamicPromptSettings != nil { promptSettingsRetryPending = true }
             return
         }
-        if name != nil { clearActionError(.profile) }
         isBusy = true
         defer {
             isBusy = false
@@ -1578,7 +1615,7 @@ final class AuthViewModel: ObservableObject {
         do {
             let response = try await api.updateProfile(
                 UpdateProfileRequest(
-                    name: name,
+                    name: nil,
                     dynamicPromptSettings: dynamicPromptSettings
                 ),
                 token: token
@@ -1593,11 +1630,9 @@ final class AuthViewModel: ObservableObject {
             guard sessionRevision == requestSessionRevision else { return }
             // ⚠ **바꾼 칸만, 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05 — 안드로이드 `saveProfileEdit` 와 같은 규칙).
             //   요청 전에 잡은 사본을 저장하면 그 사이 반영된 plan·프로모(결제 전 조회·세션 밖 `/auth/me`)와 다른 칸을
-            //   되돌린다 — 프로필 저장은 plan 답이 아니다. 이름도 곧바로 적는다: 확인 조회(`refreshUser`)가
-            //   실패해도 방금 저장한 값이 보이게(예전에는 확인 조회만 기다려, 실패하면 저장된 이름이 옛 이름으로 보였다).
+            //   되돌린다 — 프로필 저장은 plan 답이 아니다.
             if let current = session, current.user.id == requestUserID {
                 var updated = current
-                if let name { updated.user.name = name.trimmingCharacters(in: .whitespacesAndNewlines) }
                 if let dynamicPromptSettings {
                     // ⚠ **표시를 내리기 전에 울타리를 세운다**(Codex #837). 지금 떠 있는 `/auth/me` 는 올리기 **전의**
                     // 설정을 읽었을 수 있다 — 그 응답이 아래 확인 조회보다 늦게 오면 옛 설정으로 세션을 되돌리고, 표시가
@@ -1616,9 +1651,7 @@ final class AuthViewModel: ObservableObject {
         } catch {
             // 끝난 세션의 실패를 새 세션에 띄우지 않는다(위 `requestSessionRevision`).
             guard sessionRevision == requestSessionRevision else { return }
-            let message = userFacingErrorMessage(error, fallback: String(localized: "프로필을 저장하지 못했어요"))
-            // 닉네임을 바꾼 저장만 닉네임 행에 남긴다 — 계정 설정(지역·사주)만 올린 것은 그 행과 무관하다.
-            if name != nil { failAction(.profile, message) } else { failStatus(message) }
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "프로필을 저장하지 못했어요")))
         }
     }
 
@@ -1648,7 +1681,12 @@ final class AuthViewModel: ObservableObject {
             statusMessage = String(localized: "로그인이 필요해요.")
             return
         }
-        guard !isBusy else { return }
+        // ⚠ **말없이 돌아가지 않는다**(2026-10-29 두 앱 비교). 확인 알럿은 누르는 순간 이미 닫혔다 — 여기서 그냥 돌아가면
+        //   탈퇴를 누른 사람에게 아무 일도 일어나지 않는다. 안드로이드는 같은 때 확인 창을 연 채 버튼만 잠근다.
+        guard !isBusy else {
+            failAction(.accountDeletion, String(localized: "잠시 후 다시 시도해 주세요."))
+            return
+        }
         clearActionError(.accountDeletion)
         isBusy = true
         defer { isBusy = false }
@@ -1901,19 +1939,21 @@ final class AuthViewModel: ObservableObject {
     ///    있는 일은 업데이트뿐이다 → 업데이트 게이트로 보낸다.
     ///  - **이 빌드가 앞서면**(백엔드 배포가 아직 안 끝난 구간) 업데이트해도 안 풀린다.
     ///    그때 "업데이트하세요" 라고 하면 거짓말이므로 일반 실패 메시지만 낸다.
-    private func handleConsentVersionMismatch(_ error: Error) -> Bool {
-        guard case let APIError.server(status, _, errorCode) = error else { return false }
+    private func handleConsentVersionMismatch(_ error: Error, action: SignedInAction) -> Bool {
+        // ⚠ **두 버전 코드만 본다**(2026-10-29 두 앱 비교 — 안드로이드 `ui/main/MainViewModelAuthActions.kt` 의 같은 판정 짝). 예전에는 409 면
+        //   무엇이든 버전 불일치로 읽어, 다른 409 가 '업데이트 필요' 차단 화면으로 갔다.
+        guard case let APIError.server(_, _, errorCode) = error else { return false }
         let isVersionError =
             errorCode == "POLICY_VERSION_MISMATCH"
             || errorCode == "DOCUMENT_VERSION_REQUIRED"
-            || status == 409
         guard isVersionError else { return false }
 
         // 서버가 게시 중인 버전을 알 수 없으면(구 응답 등) 보수적으로 업데이트 게이트.
         let bundled = Int(LegalPolicy.bundledVersion)
         let server = serverPolicyVersionHint.flatMap(Int.init)
         if let server, let bundled, server <= bundled {
-            statusMessage = String(localized: "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요")
+            // 그 동작 자리에 빨간 글자로 말한다 — `statusMessage` 는 로그인한 동안 아무도 그리지 않는다.
+            failAction(action, String(localized: "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요"))
             return true
         }
         consentUnsupported = true
@@ -1974,7 +2014,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = String(localized: "동의가 완료됐어요")
             consentSubmitGeneration &+= 1
         } catch {
-            if handleConsentVersionMismatch(error) { return }
+            if handleConsentVersionMismatch(error, action: .consent) { return }
             failAction(.consent, userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
         }
     }
@@ -2013,7 +2053,7 @@ final class AuthViewModel: ObservableObject {
             pendingSensitiveConsent = nil
             return true
         } catch {
-            if handleConsentVersionMismatch(error) { return false }
+            if handleConsentVersionMismatch(error, action: .sensitiveConsent) { return false }
             failAction(.sensitiveConsent, userFacingErrorMessage(error, fallback: String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요")))
             return false
         }
@@ -2078,7 +2118,7 @@ final class AuthViewModel: ObservableObject {
             guard session?.user.id == ownerUserID, generation == marketingConsentGeneration else { return }
             marketingConsentWriteInFlight = false
             marketingConsentAgreed = previous
-            if handleConsentVersionMismatch(error) { return }
+            if handleConsentVersionMismatch(error, action: .marketing) { return }
             failAction(.marketing, userFacingErrorMessage(error, fallback: String(localized: "마케팅 수신 설정을 변경하지 못했어요")))
         }
     }
@@ -2125,7 +2165,7 @@ final class AuthViewModel: ObservableObject {
                 token: token
             )
         } catch {
-            if handleConsentVersionMismatch(error) { return false }
+            if handleConsentVersionMismatch(error, action: .withdrawal) { return false }
             failAction(.withdrawal, userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
             return false
         }
@@ -2144,6 +2184,10 @@ final class AuthViewModel: ObservableObject {
             consentSensitiveMissing.append("voice_biometric")
         }
         statusMessage = String(localized: "음성 생체정보 처리 동의를 철회했어요.")
+        // 3) 서버가 방금 지운 내 목소리를 목록에서도 걷는다 — 안드로이드는 같은 자리에서 목록을 다시 받는다
+        //    (`ui/main/MainViewModelAuthActions.kt`). 예전 iOS 는 푸시나 다음 진입 갱신(60초 창이면 건너뛴다)까지 지운 목소리를
+        //    그대로 보여 줬다(2026-10-29 두 앱 비교). 진행 중인 갱신에 막히지 않게 `force` 로 받는다.
+        await voiceStudio?.refresh(session: session, force: true)
         return true
     }
 
@@ -2460,9 +2504,6 @@ final class AuthViewModel: ObservableObject {
         lastNetworkError = nil
     }
 
-    private static func displayName(from components: PersonNameComponents) -> String? {
-        PersonNameComponentsFormatter().string(from: components).nilIfBlank
-    }
 
 
     // MARK: - Testing support

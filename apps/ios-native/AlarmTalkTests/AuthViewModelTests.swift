@@ -1334,8 +1334,8 @@ final class AuthViewModelTests: XCTestCase {
     /// **프로필 저장은 plan 답이 아니다 — 바꾼 칸만 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05,
     /// `docs/spec/session-and-auth.md` 「프로필 저장은 바꾼 칸만 세션에 적는다」). 저장이 떠 있는 사이 결제 전 조회·세션 밖
     /// `/auth/me`(`applyFreshPlan` — 토큰을 굴리지 않는다)가 plus + 개인 프로모를 반영했으면 저장 뒤에도 그 짝이 남고,
-    /// 확인 조회가 실패해도 방금 저장한 이름은 곧바로 보인다(예전에는 확인 조회만 기다려 옛 이름이 보였다).
-    func testNicknameSaveKeepsThePlanAnsweredMeanwhileAndShowsTheNewNameWithoutConfirmation() async {
+    /// 닉네임 저장은 2026-10-29 에 없앴다 — 남은 프로필 저장(계정 설정)이 같은 규칙을 지킨다.
+    func testProfileSaveKeepsThePlanAnsweredMeanwhile() async {
         let api = MockAuthAPI()
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
         let session = makeEmailSession()
@@ -1351,39 +1351,12 @@ final class AuthViewModelTests: XCTestCase {
         // 확인 조회는 실패한다(저장 직후 연결이 끊겼다).
         api.meResult = .failureRaw(URLError(.notConnectedToInternet))
 
-        await vm.updateProfile(name: "새 이름")
+        await vm.updateProfile(dynamicPromptSettings: .empty)
 
-        XCTAssertEqual(vm.session?.user.name, "새 이름", "확인 조회가 실패하자 저장한 이름이 안 보였다")
         XCTAssertEqual(vm.session?.user.plan, "plus", "요청 전의 사본이 plus 를 되돌렸다")
         XCTAssertEqual(vm.session?.user.personalPromo?.endsAt, promo.endsAt)
         XCTAssertEqual(vm.session?.token, session.token)
-        XCTAssertEqual(KeychainStore.readSession()?.user.name, "새 이름")
         XCTAssertEqual(KeychainStore.readSession()?.user.plan, "plus")
-    }
-
-    /// 회귀(2026-10-05 리뷰): **저장 전에 떠난 조회가 먼저 와 토큰을 굴려도, 확인 조회가 저장한 이름을 남긴다.** 서버는
-    /// `/auth/me` 마다 토큰을 굴린다(`routes/auth.ts`). 그래서 옛 답(옛 이름)이 먼저 오면 세션 토큰이 바뀌어 있고, 확인
-    /// 조회의 답은 '토큰만 구른 같은 로그인' 갈래(`isTokenRolledWithinSignIn`)로 온다 — 예전에는 그 갈래가 plan·프로모만
-    /// 적어, 저장도 확인 조회도 성공했는데 세션·키체인에 옛 이름이 다음 `/auth/me` 까지 남았다. 확인 조회가 먼저 오면
-    /// 옛 답은 확인 조회가 굴린 토큰에 걸려 밀린 답이 된다. 안드로이드
-    /// `ProfileSaveKeepsAccountAnswerTest` 의 `저장_전에_떠난_조회가_늦게_와도_확인_조회가_새_이름을_남긴다` 와 같은 두 순서다.
-    func testConfirmationRefreshKeepsTheSavedNameWhicheverOrderTheOlderRefreshArrives() async throws {
-        for olderArrivesFirst in [true, false] {
-            let order = olderArrivesFirst ? "옛 답이 먼저" : "확인 조회가 먼저"
-            let vm = try await saveRacingAnOlderRefresh(olderArrivesFirst: olderArrivesFirst) { server in
-                server.name = "새 이름"
-            } save: { vm in
-                await vm.updateProfile(name: "새 이름")
-            }
-
-            XCTAssertEqual(vm.session?.user.name, "새 이름", "확인 조회가 성공했는데 옛 이름이 남았다(\(order))")
-            XCTAssertEqual(KeychainStore.readSession()?.user.name, "새 이름", order)
-            XCTAssertEqual(
-                vm.session?.token, olderArrivesFirst ? "rolled-by-older" : "rolled-by-confirm",
-                "토큰은 먼저 반영된 답이 굴린 것을 지킨다(\(order))"
-            )
-            XCTAssertEqual(KeychainStore.readSession()?.token, vm.session?.token, order)
-        }
     }
 
     /// 토큰만 구른 갈래는 프로필 칸을 적어도 **탈퇴 유예는 건드리지 않는다** — 복구는 토큰이 그대로인 갈래만
@@ -2165,17 +2138,6 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNotNil(vm.actionErrorMessage(for: .marketing))
         vm.signOut(revokeOnServer: false)
         XCTAssertNil(vm.actionError, "계정을 떠나면 앞 계정의 실패 표시도 내린다")
-    }
-
-    func test_닉네임_저장_실패는_닉네임_자리에_남는다() async {
-        let api = MockAuthAPI()
-        api.updateProfileResult = .failure(APIError.invalidResponse)
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        vm._setSessionForTesting(makeEmailSession())
-
-        await vm.updateProfile(name: "새 이름")
-
-        XCTAssertNotNil(vm.actionErrorMessage(for: .profile))
     }
 
     /// 쓰는 사이 계정이 바뀌었다 — 앞 계정 쓰기의 실패가 '직전 값' 으로 되돌리면 그 값이 다음 계정 화면에 남는다.

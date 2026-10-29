@@ -286,6 +286,9 @@ final class VoiceStudioViewModel: ObservableObject {
         preparedAlarm = nil
         draftQuota = nil
         monthlyLimitRejected = false
+        // 직접 입력 요청 id 도 계정 것이다 — 계정이 바뀌면 잊는다(`voice-and-message.md` §8, 안드로이드 `ManualRequestIds` 짝).
+        manualRequestKey = nil
+        manualRequestID = nil
     }
 
     func clearPaidVoiceState() {
@@ -709,8 +712,10 @@ final class VoiceStudioViewModel: ObservableObject {
             // 계속 진행하면 끝났다고 통보한 사이클이 상태를 더 만진다.
             // ⚠ 권위 플래그는 이미 false 다(성공 경로에서만 세운다) — 강등은 스스로 물러선다.
             if error is CancellationError || Task.isCancelled { return }
-            guard activeUserID == userID else { return }
-            statusMessage = mapVoiceError(error)
+            // ⚠ **목록 갱신의 실패는 말하지 않는다**(2026-10-29 두 앱 비교 — 안드로이드 `fetchVoiceProfiles(showMessage = false)` 짝).
+            //   이 갱신은 전부 저절로 돈다(진입·푸시·백그라운드·동작 뒤). 예전에는 실패 문장을 목소리 탭 맨 위에 남겼는데, 다음
+            //   갱신이 성공해도 지우지 않아 네트워크가 돌아온 뒤에도 "네트워크가 불안정해요" 가 떠 있었다. 신선도 창은 성공해야만
+            //   열리므로 다음 진입이 곧바로 다시 받는다.
         }
     }
 

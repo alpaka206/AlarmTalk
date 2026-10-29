@@ -8,7 +8,6 @@ import { listPlanGrants, mergedGrantEnd, type PlanGrantRow } from '../plan-grant
 export interface UserDetail {
   id: string;
   email: string;
-  name: string;
   rawPlan: string;
   createdAt: string;
   deletionStatus: string;
@@ -32,7 +31,7 @@ export async function loadUserDetail(db: Client, userPk: string, now: Date): Pro
   const [userRes, subsRes, retentionRes, usageRes] = await db.batch(
     [
       {
-        sql: `SELECT id, email, name, plan, created_at, deletion_status, google_id FROM users WHERE id = ? LIMIT 1`,
+        sql: `SELECT id, email, plan, created_at, deletion_status, google_id FROM users WHERE id = ? LIMIT 1`,
         args: [userPk],
       },
       {
@@ -57,7 +56,6 @@ export async function loadUserDetail(db: Client, userPk: string, now: Date): Pro
   return {
     id: String(u.id),
     email: String(u.email ?? ''),
-    name: String(u.name ?? ''),
     rawPlan: String(u.plan ?? 'free'),
     createdAt: String(u.created_at ?? ''),
     deletionStatus: String(u.deletion_status ?? 'active'),

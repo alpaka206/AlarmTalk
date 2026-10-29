@@ -104,9 +104,7 @@ export function renderUserDetail(
 </form>`;
   const body = `
 <header class="page-head reveal">
-  <div><h1 translate="no">${escapeHtml(detail.email || '이메일 없음')}</h1><p class="muted">${escapeHtml(detail.name || '이름 없음')} · 가입 ${escapeHtml(
-    fmtDate(detail.createdAt),
-  )}</p></div>
+  <div><h1 translate="no">${escapeHtml(detail.email || '이메일 없음')}</h1><p class="muted">가입 ${escapeHtml(fmtDate(detail.createdAt))}</p></div>
   <a class="btn btn-secondary btn-sm" href="/admin/users">사용자 목록</a>
 </header>
 ${flash ? `<p class="note" role="status">${badge(flash.tone === 'good' ? '완료' : '안 됨', flash.tone)} ${escapeHtml(flash.text)}</p>` : ''}

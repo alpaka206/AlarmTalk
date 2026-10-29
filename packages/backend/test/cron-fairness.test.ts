@@ -41,7 +41,7 @@ describe('만료 크론 — 결제 보류 행이 배치를 차지하지 않는�
   it('먼저 만료된 보류 구독이 배치 자리만큼 있어도 다른 사람의 만료가 같은 틱에 돈다', async () => {
     const held = ['h1', 'h2', 'h3', 'h4', 'h5'];
     for (const id of [...held, 'plain']) {
-      await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, 'u', ?)`, [id, `${id}@t.test`, id === 'plain' ? 'plus' : 'free']);
+      await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, ?)`, [id, `${id}@t.test`, id === 'plain' ? 'plus' : 'free']);
     }
     // 보류 행: 살아 있고 만료는 지났다. 스토어 재확인은 매번 '아직 모름' 이라 건너뛴다.
     for (const id of held) {
@@ -100,7 +100,7 @@ function failingOn(sql: string): Client {
 }
 
 async function seedExpiredVoiceOwner(user: string, deleteAfter: string, clips: number) {
-  await run(`INSERT INTO users (id, email, name, plan) VALUES (?, ?, 'u', 'free')`, [user, `${user}@t.test`]);
+  await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, 'free')`, [user, `${user}@t.test`]);
   await run(`INSERT INTO paid_voice_retention (user_id, delete_after) VALUES (?, ?)`, [user, deleteAfter]);
   await run(`INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id) VALUES (?, ?, 'v', ?)`, [`vp-${user}`, user, `el-${user}`]);
   await run(

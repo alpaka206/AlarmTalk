@@ -67,8 +67,8 @@ beforeEach(async () => {
   for (const table of ['store_transactions', 'subscriptions']) await db.execute(`DELETE FROM ${table}`);
   await db.execute({ sql: `DELETE FROM users WHERE id IN (?, ?)`, args: [A, B] });
   await db.execute({
-    sql: `INSERT INTO users (id,email,name) VALUES (?,?,?),(?,?,?)`,
-    args: [A, 'a@example.test', 'a', B, 'b@example.test', 'b'],
+    sql: `INSERT INTO users (id,email) VALUES (?,?),(?,?)`,
+    args: [A, 'a@example.test', B, 'b@example.test'],
   });
   info = {
     transactionId: 'tx-new', originalTransactionId: 'chain-1',

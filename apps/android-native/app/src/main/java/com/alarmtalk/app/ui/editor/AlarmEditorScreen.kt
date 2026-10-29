@@ -301,6 +301,8 @@ internal fun AlarmEditorScreen(
     lastFreeBucket: String? = null,
     // 마지막에 쓴 직접 입력 문구. 차 있으면 마지막 선택이 직접 입력이었다는 뜻이다.
     lastManualText: String? = null,
+    // 옛 키의 닉네임을 세션에서 못 찾을 때 쓰는 값 — 이 계정의 기본 목소리 알람에 남은 호칭(`legacyNicknameFromAlarms`).
+    legacyNicknameFallback: String? = null,
     // ⚠ 유료 안내 모달의 코드 입력(`onRegisterCode`·`redeemBusy`)은 2026-10-14 에 지웠다 — 되살리지 말 것
     // (선물 코드 폐지, App Store 3.1.1 두 번째 반려 — `PlanGateDialog` 머리말).
     onCancel: () -> Unit,
@@ -394,6 +396,7 @@ internal fun AlarmEditorScreen(
         ?: appVoiceLanguage
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
+    val legacyNicknameKeys = remember(appContext) { com.alarmtalk.app.data.LegacyNicknameKeyStore(appContext) }
     val dynamicPromptPreferenceStore = remember(appContext) { DynamicPromptPreferenceStore(appContext) }
     // 계정별 값이다 — 계정이 바뀌면 다시 읽는다(앞 사람의 사주를 물려받지 않게).
     val promptOwnerUserId = authSession?.user?.id
@@ -876,8 +879,12 @@ internal fun AlarmEditorScreen(
                 profileId = profileId,
                 voiceProfiles = voiceProfiles,
             ).trimmedOrNull()
-            // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다.
-            ?: authSession?.user?.name?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
+            // ⚠ 기본(시스템) 목소리는 호칭이 없다 — 서버는 직접 입력 문구에 호칭을 붙이지 않는다(적은 그대로 말한다). 예전에는 여기서
+            //   계정 닉네임을 넣었는데 소리가 아니라 **폰 안 재사용 키**에만 들어갔다. 닉네임을 지운 뒤에도 그 키로 저장된 음성을 다시
+            //   찾도록 처음 본 닉네임을 얼려 키에만 쓴다(`LegacyNicknameKeyStore`). iOS 는 처음부터 넣지 않았다.
+            ?: authSession?.user?.id?.takeIf { isSelectedSystemVoice }?.let { userId ->
+                legacyNicknameKeys.titleFor(userId, authSession?.user?.name, legacyNicknameFallback)
+            }
     }
 
     /** 저장이 막힌 이유를 알럿으로 말한다 — 저장 버튼과 저장 흐름이 같은 표를 쓴다([saveBlockAlertStrings]). */
@@ -1340,12 +1347,6 @@ internal fun AlarmEditorScreen(
     LaunchedEffect(saving) {
         if (saving) focusManager.clearFocus()
     }
-    LaunchedEffect(resaveAfterChange, busy) {
-        if (resaveAfterChange && !busy) {
-            resaveAfterChange = false
-            saveEditor()
-        }
-    }
 
     val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -1619,6 +1620,17 @@ internal fun AlarmEditorScreen(
                 // 빈 문구 — 등록 목소리면 '빈 직접 입력', 스톡 클립 목소리면 클립 과도기.
                 else -> emptyMessageBlockReason(editor, usesStockClips)
             }
+        }
+    }
+
+    // 다시 저장도 **누르는 순간과 같은 검사**를 지난다(2026-10-29 두 앱 비교). 바꾼 사이 날짜 알람의 시각이 지났거나, 테마를
+    // 날씨로 바꿨는데 지역이 없으면 누를 때처럼 이유를 말한다 — 예전에는 `saveEditor()` 를 곧바로 불러 그 검사를 건너뛰었다.
+    // 선언 순서 때문에 여기 둔다(사유 판정이 위에 있어야 본다 — 저장 버튼의 `onSave` 주석).
+    LaunchedEffect(resaveAfterChange, busy) {
+        if (resaveAfterChange && !busy) {
+            resaveAfterChange = false
+            val reason = datedSaveBlockReason(editor, otherAlarmTimes) ?: editorSaveBlockReason
+            if (reason == null) saveEditor() else showSaveBlockAlert(reason)
         }
     }
 

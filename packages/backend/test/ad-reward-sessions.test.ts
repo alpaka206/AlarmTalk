@@ -184,7 +184,7 @@ beforeEach(async () => {
   await db.execute({ sql: `DELETE FROM users WHERE id IN (?, ?)`, args: [USER, OTHER] });
   for (const id of [USER, OTHER]) {
     await db.execute({
-      sql: `INSERT INTO users (id, email, name, plan) VALUES (?, ?, '무료', 'free')`,
+      sql: `INSERT INTO users (id, email, plan) VALUES (?, ?, 'free')`,
       args: [id, `${id}@example.com`],
     });
   }

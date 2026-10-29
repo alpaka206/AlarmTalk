@@ -114,8 +114,8 @@ beforeEach(async () => {
     [OTHER_USER, 'other@example.test'],
   ] as const) {
     await db.execute({
-      sql: 'INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, ?)',
-      args: [id, email, 'g', 'plus'],
+      sql: 'INSERT INTO users (id, email, plan) VALUES (?, ?, ?)',
+      args: [id, email, 'plus'],
     });
   }
   for (const type of ['voice_biometric', 'overseas_transfer']) {

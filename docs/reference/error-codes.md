@@ -105,8 +105,7 @@
 |---|---|---|---|
 | `CONSENT_REQUIRED` | 필수 동의 미이행 | 403 | `middleware/consent.ts`, `routes/tts.ts`, `voice-profile.ts` |
 | `CONSENT_STATE_UNAVAILABLE` | 동의 상태 조회 불가 | 500 | `middleware/consent.ts` |
-| `INVALID_NAME` | name 이 문자열이 아님 | 400 | `routes/user.ts` |
-| `INVALID_NAME_LENGTH` | 닉네임 길이 규칙 위반(1~30자) | 400 | `routes/user.ts`, `voice-profile.ts` |
+| `INVALID_NAME_LENGTH` | 목소리 이름 길이 규칙 위반 | 400 | `voice-profile.ts` |
 | `INVALID_DYNAMIC_PROMPT_SETTINGS` | 동적 프롬프트 설정 형식 오류 | 400 | `routes/user.ts` |
 | `NO_FIELDS_TO_UPDATE` | 변경할 필드 없음(프로필) | 400 | `routes/user.ts` |
 | `INVALID_CONSENT_TYPE` | 알 수 없는 동의 type | 400 | `routes/user.ts` |

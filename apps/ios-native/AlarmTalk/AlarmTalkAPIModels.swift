@@ -879,10 +879,10 @@ struct VerifyEmailCodeResponse: Decodable, Equatable {
     var verified: Bool?
 }
 
+/// 닉네임은 받지 않는다(2026-10-29 — 서버는 옛 앱이 보낸 이름만 받아 둔다). 안드로이드 `RegisterRequest` 와 같다.
 struct EmailRegisterRequest: Encodable {
     var email: String
     var password: String
-    var name: String
     var emailVerificationCode: String
 }
 
@@ -915,7 +915,7 @@ struct PasswordResetConfirmResponse: Decodable, Equatable {
 }
 
 // MARK: - 동의 목록 (GET user/consents)
-// Android `AuthApi.kt:165-174`, 백엔드 user.ts:401-431.
+// Android `AuthApi.kt` 의 `ConsentRecord`, 백엔드 `routes/user.ts` 의 `GET /consents`.
 
 /// 동의 기록 1건(유형별 최신값). 백엔드는 snake_case 로 보내며 decoder 의
 /// convertFromSnakeCase 로 camelCase 에 매핑된다. Android `ConsentRecord`.

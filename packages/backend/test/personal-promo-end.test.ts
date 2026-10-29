@@ -166,8 +166,8 @@ function seedPromoUser(
   const vp = `vp-${id}`;
   const out: InStatement[] = [
     {
-      sql: `INSERT INTO users (id, google_id, email, name, plan) VALUES (?, ?, ?, ?, 'free')`,
-      args: [id, loginId, `${id}@t.test`, id],
+      sql: `INSERT INTO users (id, google_id, email, plan) VALUES (?, ?, ?, 'free')`,
+      args: [id, loginId, `${id}@t.test`],
     },
     {
       sql: `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft)
@@ -573,8 +573,8 @@ async function simulatePromoEnd(
         args: [`sub-${hold}`, hold, PERSONAL],
       },
       {
-        sql: `INSERT INTO users (id, google_id, email, name, plan) VALUES (?, ?, ?, ?, 'free')`,
-        args: [`novoice${i}`, `novoice${i}`, `nv${i}@t.test`, 'nv'],
+        sql: `INSERT INTO users (id, google_id, email, plan) VALUES (?, ?, ?, 'free')`,
+        args: [`novoice${i}`, `novoice${i}`, `nv${i}@t.test`],
       },
     );
   }

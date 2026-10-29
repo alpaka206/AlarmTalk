@@ -27,8 +27,11 @@ export interface Audience {
   includeUnknownVersion: boolean;
   /** 필수 동의가 모자라 서버가 막고 있는 사람만. */
   reconsentOnly: boolean;
-  /** 켜진 알람이 하나라도 있는 사람만. */
-  activeAlarmOnly: boolean;
+  /**
+   * 최근 7일 안에 알람이 울린 사람만(사용 기록의 울림·해제·다시 알림). 예전 '켜진 알람이 있는 사람' 은 서버 알람 사본을 봤다 —
+   * 켜 둔 수는 쓰임을 말하지 못한다(2026-10-29 오너).
+   */
+  recentRingOnly: boolean;
   /** 광고성 정보 수신에 동의한 사람만 — 광고 알림이면 언제나 켜진다. */
   marketingOnly: boolean;
 }
@@ -39,7 +42,7 @@ export const DEFAULT_AUDIENCE: Audience = {
   iosBelow: null,
   includeUnknownVersion: false,
   reconsentOnly: false,
-  activeAlarmOnly: false,
+  recentRingOnly: false,
   marketingOnly: false,
 };
 
@@ -63,7 +66,8 @@ export function parseAudience(raw: Record<string, unknown>): Audience {
     iosBelow: platform === 'android' ? null : buildNumber(raw.iosBelow),
     includeUnknownVersion: flag(raw.includeUnknownVersion),
     reconsentOnly: flag(raw.reconsentOnly),
-    activeAlarmOnly: flag(raw.activeAlarmOnly),
+    // 옛 이름으로 저장된 발송 조건도 읽는다 — 이어 보내기가 조건을 잃지 않게.
+    recentRingOnly: flag(raw.recentRingOnly ?? raw.activeAlarmOnly),
     marketingOnly: flag(raw.marketingOnly),
   };
 }
@@ -104,10 +108,11 @@ export function candidateQuery(
   };
   versionClause('android', audience.androidBelow);
   versionClause('ios', audience.iosBelow);
-  if (audience.activeAlarmOnly) {
-    // 알람 행의 user_id 는 통일 이전 행이면 로그인 id 다(`fcm.getTokensForUser` 주석).
+  if (audience.recentRingOnly) {
     where.push(
-      `EXISTS (SELECT 1 FROM alarms a WHERE a.is_active = 1 AND a.user_id IN (u.id, COALESCE(u.google_id, u.id)))`,
+      `EXISTS (SELECT 1 FROM usage_events e
+               WHERE e.user_id = u.id AND e.type IN ('alarm_rang', 'alarm_dismissed', 'alarm_snoozed')
+                 AND julianday(e.occurred_at) >= julianday('now') - 7)`,
     );
   }
   args.push(options.limit);

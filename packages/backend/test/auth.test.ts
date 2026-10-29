@@ -238,7 +238,7 @@ describe('POST /auth/email-code', () => {
   });
 
   it('이미 소셜로 가입된 이메일은 409 AUTH_EMAIL_SOCIAL(+provider)로 안내한다', async () => {
-    mockDB.pushResult([{ password_hash: null }]); // 비번 없음 → google 소셜
+    mockDB.pushResult([{ password_hash: null, google_id: 'g-1', apple_id: null }]); // 비번 없음 → google 소셜
 
     const app = buildApp();
     const res = await app.request(
@@ -253,6 +253,22 @@ describe('POST /auth/email-code', () => {
     expect(body.provider).toBe('google');
     const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
     expect(insertCall).toBeUndefined();
+  });
+
+  it('애플로만 가입된 이메일은 provider apple 로 답한다 — 구글로 안내하지 않는다', async () => {
+    mockDB.pushResult([{ password_hash: null, google_id: null, apple_id: 'a-1' }]);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'apple@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_EMAIL_SOCIAL');
+    expect(body.provider).toBe('apple');
   });
 
   it('쿨다운 내 재요청은 새 코드를 보내지 않고 동일 응답을 반환한다', async () => {
@@ -649,6 +665,38 @@ describe('POST /auth/register', () => {
     expect(insertCall?.args[0]).toBe(body.user.id);
   });
 
+  // 2026-10-29 닉네임 삭제 — `users.name` 칸째 없다(#146). 옛 앱이 읽는 칸이라 응답에는 빈 문자열로 싣는다(빠지면 옛
+  //   안드로이드가 로그인 직후 멈춘다). 옛 앱이 보낸 이름은 받기만 하고 버린다.
+  it('이름 없이 가입한다 — 이름은 저장하지 않고 응답에는 빈 문자열로 싣는다', async () => {
+    await pushValidEmailVerification('noname@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const { name: _omitted, ...withoutName } = registerBody('noname@test.com');
+
+    const res = await buildApp().request(jsonReq('POST', '/auth/register', withoutName), undefined, ENV);
+
+    expect(res.status).toBe(201);
+    expect((await res.json()).user.name).toBe('');
+    const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
+    expect(insertCall?.sql).not.toMatch(/\bname\b/);
+  });
+
+  it('옛 앱이 보낸 이름도 저장하지 않는다', async () => {
+    await pushValidEmailVerification('legacy@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(jsonReq('POST', '/auth/register', registerBody('legacy@test.com')), undefined, ENV);
+
+    expect(res.status).toBe(201);
+    expect((await res.json()).user.name).toBe('');
+    const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
+    expect(insertCall?.sql).not.toMatch(/\bname\b/);
+    expect(insertCall?.args).toHaveLength(3);
+  });
+
   // 가입은 같은 코드를 **한 번 더** 판정한다 — 인증 확인만 고치면 인증은 통과하고 가입에서 막힌다.
   it('아라비아-인도 숫자로 친 코드로도 가입한다(인증 확인과 같은 스키마)', async () => {
     await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
@@ -876,9 +924,10 @@ describe('POST /auth/google', () => {
     const body = await res.json();
     expect(body.token).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
     // users.id 는 서버 생성 UUID 다 — 더 이상 구글 sub 을 PK 로 쓰지 않는다.
+    // 구글이 준 이름은 받지 않는다(2026-10-29 닉네임 삭제) — 옛 앱이 읽는 칸이라 빈 문자열로 싣는다.
     expect(body.user).toMatchObject({
       email: 'user@gmail.com',
-      name: 'Google User',
+      name: '',
       plan: 'free',
     });
     expect(body.user.id).toMatch(/^[0-9a-f-]{36}$/);
@@ -926,145 +975,44 @@ describe('POST /auth/google', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(res.status).toBe(200);
-    // **저장된 닉네임이 이긴다.** 예전엔 구글 프로필 이름이 덮어써서, 앱에서 고친 닉네임이
-    // 다음 로그인마다 되돌아갔다. 응답·JWT·DB 가 같은 값을 쓰는지도 함께 본다 —
-    // 갈라지면 로그인 직후에만 구글 이름이 보이다가 새로고침하면 바뀐다.
+    // 이름은 읽지도 쓰지도 않는다(2026-10-29 닉네임 삭제) — 응답은 옛 앱이 읽는 빈 문자열이다.
     expect(body.user).toMatchObject({
       id: 'existing-user-id',
       email: 'linked@gmail.com',
-      name: 'Old Name',
+      name: '',
       plan: 'plus',
     });
-    expect(mockDB.calls[1]?.args).toEqual([
-      'google-user-2',
-      'linked@gmail.com',
-      'Old Name',
-      'existing-user-id',
-    ]);
+    expect(mockDB.calls[0]?.sql).not.toMatch(/\bname\b/);
+    expect(mockDB.calls[1]?.sql).not.toMatch(/\bname\b/);
+    expect(mockDB.calls[1]?.args).toEqual(['google-user-2', 'linked@gmail.com', 'existing-user-id']);
   });
 
-  it('저장된 이름이 없으면 구글 이름으로 채운다', async () => {
-    const googlePayload = {
-      sub: 'google-user-3',
-      email: 'noname@gmail.com',
-      name: 'Google Name',
-      aud: ENV.GOOGLE_CLIENT_ID,
-      iss: 'accounts.google.com',
-      email_verified: true,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-
+  it('새 구글 가입도 구글이 준 이름을 저장하지 않는다', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => googlePayload,
-    }) as unknown as typeof fetch;
-    mockDB.pushResult([
-      {
-        id: 'noname-user-id',
-        google_id: 'google-user-3',
+      json: async () => ({
+        sub: 'google-user-3',
         email: 'noname@gmail.com',
-        name: null,
-        plan: 'free',
-      },
-    ]);
-    mockDB.pushResult([], 1);
-
-    const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }),
-      undefined,
-      ENV,
-    );
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.user.name).toBe('Google Name');
-    expect(mockDB.calls[1]?.args?.[2]).toBe('Google Name');
-  });
-
-  it('옛 스키마로 저장된 이름도 규칙을 통과시킨다', async () => {
-    // 가입이 max(64)·trim 없음이던 시절 행에는 공백뿐인 이름·보이지 않는 문자·64자가
-    // 남아 있다. '저장된 이름이 이긴다' 를 그대로 적용하면 이 문으로 다시 실려 나간다.
-    const googlePayload = {
-      sub: 'google-user-5',
-      email: 'legacy@gmail.com',
-      name: 'Google Name',
-      aud: ENV.GOOGLE_CLIENT_ID,
-      iss: 'accounts.google.com',
-      email_verified: true,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => googlePayload,
+        name: 'Google Name',
+        aud: ENV.GOOGLE_CLIENT_ID,
+        iss: 'accounts.google.com',
+        email_verified: true,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }),
     }) as unknown as typeof fetch;
-    mockDB.pushResult([
-      {
-        id: 'legacy-user-id',
-        google_id: 'google-user-5',
-        email: 'legacy@gmail.com',
-        // 공백뿐 + 제로폭 → 정리하면 아무것도 안 남는다.
-        name: '  ​ ',
-        plan: 'free',
-      },
-    ]);
+    mockDB.pushResult([]);
     mockDB.pushResult([], 1);
 
-    const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }),
-      undefined,
-      ENV,
-    );
+    const res = await buildApp().request(jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }), undefined, ENV);
 
     expect(res.status).toBe(200);
-    const body = await res.json();
-    // 남는 게 없으면 구글 이름으로 고쳐 준다.
-    expect(body.user.name).toBe('Google Name');
-    expect(mockDB.calls[1]?.args?.[2]).toBe('Google Name');
+    expect((await res.json()).user.name).toBe('');
+    const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
+    expect(insertCall?.sql).not.toMatch(/\bname\b/);
+    expect(insertCall?.args).not.toContain('Google Name');
   });
 
-  it('저장된 이름이 규칙을 넘기면 다듬어서 쓴다', async () => {
-    const googlePayload = {
-      sub: 'google-user-6',
-      email: 'long@gmail.com',
-      name: 'Google Name',
-      aud: ENV.GOOGLE_CLIENT_ID,
-      iss: 'accounts.google.com',
-      email_verified: true,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => googlePayload,
-    }) as unknown as typeof fetch;
-    mockDB.pushResult([
-      {
-        id: 'long-user-id',
-        google_id: 'google-user-6',
-        email: 'long@gmail.com',
-        name: `  ${'가'.repeat(40)}  `,
-        plan: 'free',
-      },
-    ]);
-    mockDB.pushResult([], 1);
-
-    const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }),
-      undefined,
-      ENV,
-    );
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    // 사용자가 고른 이름이라 유지하되, 30자로 잘라 규칙 안으로 들인다.
-    expect(body.user.name).toBe('가'.repeat(30));
-    expect(mockDB.calls[1]?.args?.[2]).toBe('가'.repeat(30));
-  });
-
-  it('구글이 준 이름도 우리 규칙(길이·보이지 않는 문자)을 통과시킨다', async () => {
+  it('새 구글 계정도 구글이 준 이름을 저장하지 않는다', async () => {
     // 외부에서 온 값이라고 검증을 건너뛰면, 앱·PATCH 경로에만 있는 규칙이 이 문으로 샌다.
     const googlePayload = {
       sub: 'google-user-4',
@@ -1092,8 +1040,7 @@ describe('POST /auth/google', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.user.name).not.toContain('​');
-    expect(body.user.name.length).toBe(30);
+    expect(body.user.name).toBe('');
   });
 
   it('Google 검증 실패 시 401을 반환한다', async () => {
