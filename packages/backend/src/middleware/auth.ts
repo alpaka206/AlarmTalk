@@ -76,7 +76,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     c.set('userName', verified.name || '');
 
     // `userId`(JWT sub)와 `userIdPK`(users.id)는 이제 같은 값이다 — sub 이 users.id 로
-    // 통일됐다(auth.ts). FK 참조(voice_profiles.user_id, alarms.user_id, ...)에는
+    // 통일됐다(auth.ts). FK 참조(voice_profiles.user_id, messages.user_id, ...)에는
     // `userIdPK` 를 쓴다.
     try {
       const { getDB } = await import('../lib/db');

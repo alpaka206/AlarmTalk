@@ -11,14 +11,6 @@ final class LocalAlarmStore: ObservableObject {
     private let writer: LocalAlarmFileWriter
     /// 스냅샷을 뜰 때마다 올라가는 순번. 늦게 도착한 옛 스냅샷을 가려내는 기준이다.
     private var saveSeq: UInt64 = 0
-    /// 교체 확정 전 임시 편집본은 서버에 보내지 않는다. synced로 위장해 디스크에 남기면
-    /// 앱 종료 뒤에도 영구히 push되지 않으므로, 진행 중인 작업의 수명으로만 보류한다.
-    private var deferredServerSyncIDs: Set<String> = []
-
-    func deferServerSync(id: String) { deferredServerSyncIDs.insert(id) }
-    func resumeServerSync(id: String) { deferredServerSyncIDs.remove(id) }
-    func isServerSyncDeferred(id: String) -> Bool { deferredServerSyncIDs.contains(id) }
-
     /// 저장 위치를 지정하지 않았을 때 쓰는 기본 파일.
     ///
     /// ⚠ 기본 생성자를 쓰는 테스트가 사용자의 알람 파일을 그대로 잡지 않게 가른다
@@ -101,33 +93,6 @@ final class LocalAlarmStore: ObservableObject {
 
     func record(id: String) -> LocalAlarmRecord? {
         alarms.first { $0.id == id }
-    }
-
-    /// 화면에 보이는 레거시 행도 전송 전에는 소유자가 확정돼야 한다.
-    static func isOutboundSyncCandidate(_ record: LocalAlarmRecord, ownerUserID: String) -> Bool {
-        guard let owner = ownerUserID.nilIfBlank,
-              record.syncStateEnum != .synced,
-              !PendingSignOutStore.isPending(owner) else { return false }
-        if let recordedOwner = record.ownerUserId?.nilIfBlank { return recordedOwner == owner }
-        // 앞 계정의 소유자 새기기가 밀려 있을 수 있다. 기존 세션 정리가 확정할 때까지 보류한다.
-        return PendingSignOutStore.pendingUserIds.isEmpty
-            && (SessionExpiryStore.expiredOwnerUserId == nil || SessionExpiryStore.expiredOwnerUserId == owner)
-    }
-
-    /// 요청 직전 최신 행을 다시 확인한다. 최초 귀속은 await 없이 디스크에 남긴다.
-    func outboundSyncRecord(id: String, ownerUserID: String) -> LocalAlarmRecord? {
-        guard hasLoadedFromDisk, !isServerSyncDeferred(id: id),
-              let index = alarms.firstIndex(where: { $0.id == id }),
-              Self.isOutboundSyncCandidate(alarms[index], ownerUserID: ownerUserID) else { return nil }
-        if alarms[index].ownerUserId?.nilIfBlank == nil {
-            let original = alarms[index]
-            alarms[index].ownerUserId = ownerUserID
-            guard saveNow() else {
-                alarms[index] = original
-                return nil
-            }
-        }
-        return alarms[index]
     }
 
     func record(alarmKitID: String) -> LocalAlarmRecord? {
@@ -676,39 +641,13 @@ final class LocalAlarmStore: ObservableObject {
         return true
     }
 
-    // MARK: Sync transitions (Phase 2-B3 가 사용)
-
-    /// 전송한 스냅샷과 같은 행만 완료 처리한다. 동시 편집은 내용·시각을 보존하고 다시 보낸다.
-    /// 생성 성공의 서버 ID는 취소 확인 전에 디스크까지 기록해야 중복 POST를 막을 수 있다.
-    @discardableResult
-    func markRemote(snapshot: LocalAlarmRecord,
-                    remoteID: String,
-                    lastSyncedAtMillis: Int64) -> Bool {
-        guard let index = alarms.firstIndex(where: { $0.id == snapshot.id }) else { return false }
-        // 같은 밀리초 안의 편집도 잡기 위해 시각뿐 아니라 행 전체를 비교한다.
-        let unchanged = alarms[index] == snapshot
-        alarms[index].remoteAlarmId = remoteID
-        alarms[index].lastSyncedAtMillis = lastSyncedAtMillis
-        alarms[index].syncState = (unchanged ? AlarmSyncState.synced : .dirty).rawValue
-        guard saveNow() else {
-            // 응답 ID는 메모리에도 유지해 같은 실행의 재시도가 PATCH로 이어지게 한다.
-            alarms[index].syncState = AlarmSyncState.syncFailed.rawValue
-            return false
-        }
-        return true
-    }
-
-    /// 동기화 실패 시 호출.
-    func markSyncFailed(id: String) {
-        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
-        alarms[index].syncState = AlarmSyncState.syncFailed.rawValue
-        alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
-        persist()
-    }
+    // MARK: Sync transitions
 
     /// Android `AlarmRepository.nextLocalSyncState` 동일.
     /// - remoteAlarmId 없으면 local_only
     /// - 그 외엔 dirty
+    /// ⚠ **2026-10-29 부터 이 값을 읽는 곳이 없다** — 서버 알람 사본을 지웠고 올리는 코드도 지웠다. 칸은 디스크 형식을
+    ///   그대로 두려고 남긴다(안드로이드 `AlarmSyncStates` 짝).
     func nextLocalSyncState(for record: LocalAlarmRecord) -> AlarmSyncState {
         if record.remoteAlarmId == nil { return .localOnly }
         return .dirty

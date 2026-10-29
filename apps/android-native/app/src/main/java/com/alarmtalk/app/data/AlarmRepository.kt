@@ -121,7 +121,6 @@ class AlarmRepository(
      */
     internal val alarmMutationLock: Mutex get() = restoreMutex
 
-    private val alarmSyncService = AlarmSyncService(alarmDao)
 
     /**
      * 이 계정에 보여줄 알람만 흘린다. 같은 기기에 다른 계정이 로그인하면 앞 계정 알람이
@@ -621,6 +620,9 @@ class AlarmRepository(
             alarmId = alarm.id,
             voiceProfileId = alarm.voiceProfileId,
             messageId = alarm.ttsMessageId,
+            // 만들고 고칠 때는 **문구 종류**를 함께 남긴다(`usage-events.md` §1 — 관리자 콘솔의 '알람 문구 종류'). 서버 알람 사본을
+            // 지운 뒤(2026-10-29) 그 표가 볼 곳이 이 기록뿐이다. 원문이 아니라 종류만이다.
+            detail = if (type == UsageEvents.ALARM_CREATED || type == UsageEvents.ALARM_UPDATED) alarm.messageKindForUsage() else null,
         )
         // 직접 입력 문구가 붙은 알람이면 그 문구가 이 기기에서 **사용중**이 됐다고 남긴다.
         // 판정은 저장 갈래와 같은 모양이다 — 랜덤도 아니고 테마 클립도 아닌데 문구 id 가
@@ -1166,9 +1168,8 @@ class AlarmRepository(
                 clips = binding?.clips,
                 nowMillis = System.currentTimeMillis(),
             ).copy(
-                // 서버 알람은 이미 P0-1/P0-2(취소·un-share·목소리 삭제) 경로에서 sound-only 로 강등되므로,
-                // 이 로컬 정리는 push 하지 않는다(SYNCED). 뒤에 켜기·끄기가 올리면 기본 목소리 + 비운
-                // 문구·테마를 명시적 null 로 싣는다(`RemoteAlarmMapper.toWriteRequest` 의 `clearsMissingVoiceReferences`).
+                // 서버에는 알람이 없다(2026-10-29, #147) — 이 로컬 정리로 끝난다. 동기화 상태 칸은 더 읽는 곳이 없어
+                // 예전 값(SYNCED)을 그대로 적는다(`AlarmSyncStates`).
                 syncState = AlarmSyncStates.SYNCED,
             )
             if (updated.enabled) alarmScheduler.schedule(updated)
@@ -1942,22 +1943,6 @@ class AlarmRepository(
     }
 
     /**
-     * 아직 못 올린 내 알람을 서버에 올린다. **이 세션이 소유한 행만** 올린다 — 이유는
-     * [AlarmSyncService.syncWithBackend] 의 ownerUserId 설명 참고.
-     */
-    suspend fun syncWithBackend(api: AlarmTalkApi, token: String): AlarmSyncResult {
-        // 올리기 전에 임자 미정 행을 확정한다. 확정 전의 null 은 앞 계정 것일 수 있는데,
-        // 그걸 '내 것'으로 보고 올리면 이 계정 서버에 남의 알람이 생긴다.
-        val ownershipSettled = settlePendingAlarmOwnership()
-        return alarmSyncService.syncWithBackend(
-            api = api,
-            token = token,
-            ownerUserId = currentUserIdProvider()?.takeIf { it.isNotBlank() },
-            adoptOwnerlessAlarms = ownershipSettled,
-        )
-    }
-
-    /**
      * 사전렌더 '날씨' 버킷 알람의 조건 인덱스를 서버로 resolve 해 contextVariantIndex 를 갱신한다.
      * 저장 위치로 서버가 그 지역의 실제 예보(서버가 지역마다 미리 계산 — 원천은 서버가 정한다)를 판정→
      * CLONE_WEATHER_CONDITIONS 순서 인덱스를 반환.
@@ -2477,6 +2462,18 @@ internal fun nextWeatherVariantState(
  * 모으겠다면서 세 번째 철자를 만든 셈이다. 여기서 더하는 것은 문구 id 하나뿐이다
  * (기록에 실을 id 가 없으면 적을 것도 없다).
  */
+/**
+ * 사용 기록에 남기는 **문구 종류** — `alarm_only`(알람음) · `recording`(직접 녹음) · 테마(`cheer`·`weather` …) · 생성형 종류
+ * (`preset`·`wake` …) · `manual`(직접 입력). iOS 짝은 `LocalAlarmRecord.messageKindForUsage`. 원문은 싣지 않는다.
+ */
+internal fun AlarmEntity.messageKindForUsage(): String = when {
+    playMode == AlarmPlayModes.ALARM_ONLY -> "alarm_only"
+    voiceSource == VoiceSources.LOCAL_AUDIO -> "recording"
+    !bucketId.isNullOrBlank() -> bucketId.trim()
+    voiceRandomPrompt -> voiceRandomContext?.takeIf { it.isNotBlank() }?.trim() ?: "preset"
+    else -> "manual"
+}
+
 internal fun AlarmEntity.isManualMessageAlarm(): Boolean =
     usesCustomMessageVoice() && !ttsMessageId.isNullOrBlank()
 

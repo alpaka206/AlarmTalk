@@ -168,18 +168,16 @@
 
 ## 5. 알람
 
-`routes/alarm-mutation.ts`, `alarm-helpers.ts`(생성/수정 입력 검증). `alarm-query.ts` 는 에러 코드를 내지 않는다.
+`routes/alarm-mutation.ts`(옛 앱의 알람 올리기를 **저장 없이** 받는 호환 경로 — 2026-10-29 서버 알람 사본 삭제), `alarm-helpers.ts`(입력 검증).
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
 | `INVALID_ALARM_ID` | 알람 ID 형식 오류 | 400 | `routes/alarm-mutation.ts` |
-| `ALARM_NOT_FOUND` | 알람 미존재(또는 소유 아님) | 404 | `routes/alarm-mutation.ts` |
 | `REQUIRED_FIELDS_MISSING` | 필수 필드(time 등) 누락 | 400 | `routes/alarm-mutation.ts` |
-| `NO_UPDATE_FIELDS` | 수정할 필드 없음 | 400 | `routes/alarm-mutation.ts` |
 | `NOT_CONNECTED` | `POST /alarm` 의 `target_user_id` 가 호출자가 아닌 사용자(남에게 보내는 알람은 없앴다 — 옛 앱의 가족 알람 보내기가 받는 거절. 그 밖의 값은 무시한다) | 403 | `routes/alarm-mutation.ts` |
-| `VOICE_FEATURE_REQUIRES_PAID_PLAN` | 음성 기능은 유료 플랜 필요 | 403 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts` |
-| `VOICE_PROFILE_NOT_FOUND` | 음성 프로필 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts` |
-| `MESSAGE_NOT_FOUND` | 메시지 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts` |
+| `VOICE_FEATURE_REQUIRES_PAID_PLAN` | 음성 기능은 유료 플랜 필요 | 403 | `tts.ts`, `voice-profile.ts` |
+| `VOICE_PROFILE_NOT_FOUND` | 음성 프로필 미존재 | 404 | `tts.ts`, `voice-profile.ts` |
+| `MESSAGE_NOT_FOUND` | 메시지 미존재 | 404 | `tts.ts` |
 | `INVALID_MESSAGE_ID` | message_id 형식 오류 | 400 | `routes/alarm-helpers.ts`, `tts.ts` |
 | `INVALID_BUCKET_ID` | bucket_id 형식 오류 | 400 | `routes/alarm-mutation.ts`, `alarm-helpers.ts` |
 | `INVALID_ALARM_MODE` | mode 값 허용 밖 | 400 | `routes/alarm-helpers.ts` |

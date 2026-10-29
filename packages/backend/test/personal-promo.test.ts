@@ -32,7 +32,6 @@ vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 
 const { default: voiceProfile, replaceVoiceInPlace } = await import('../src/routes/voice-profile');
 const { default: tts } = await import('../src/routes/tts');
-const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
 const { default: billingQuery } = await import('../src/routes/billing-query');
 const { default: billingAll } = await import('../src/routes/billing');
 const { resolvePersonalPromo, resolvePersonalPromoWindow, personalPromoField, computedUserPlan } =
@@ -101,7 +100,6 @@ function appFor(user: Caller) {
   });
   app.route('/voice', voiceProfile);
   app.route('/tts', tts);
-  app.route('/alarms', alarmMutation);
   app.route('/billing', billingQuery);
   return app;
 }
@@ -242,7 +240,7 @@ describe('prod 설정 잠금 — 리허설 끝은 운영에 올라가지 않는�
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 게이트 픽스처 — 한 DB 를 두 시점이 같이 쓴다(열림 시점이 만든 알람은 닫힘 시점과 무관하다).
+// 게이트 픽스처 — 한 DB 를 두 시점이 같이 쓴다(열림 시점에 통과한 요청은 닫힘 시점과 무관하다).
 const FREE = { pk: 'pp-free' };
 /** 공식 목소리가 아직 없는 원시 free — 승격이 한도(1개)에 걸리지 않는다. */
 const FREE_NEW = { pk: 'pp-free-new' };
@@ -398,41 +396,14 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         }
       });
 
-      it('내 알람 저장·수정 — 계산값', async () => {
-        atMoment(moment.at);
-        const create = await call(FREE, 'POST', '/alarms', {
-          time: '07:00',
-          timezone: 'Asia/Seoul',
-          mode: 'tts',
-          message_id: MSG_FREE,
-          voice_profile_id: VP_FREE,
-        });
-        if (moment.open) expect(create.status).toBe(201);
-        else expectGate(create, false);
-
-        // 목소리 없는 알람은 누구나 만든다 — 그걸 목소리 알람으로 바꾸는 PATCH 가 게이트다.
-        const plain = await call(FREE, 'POST', '/alarms', {
-          time: '08:00',
-          timezone: 'Asia/Seoul',
-        });
-        expect(plain.status).toBe(201);
-        const alarmId = (plain.body.alarm as { id: string }).id;
-        const patch = await call(FREE, 'PATCH', `/alarms/${alarmId}`, {
-          mode: 'tts',
-          message_id: MSG_FREE,
-          voice_profile_id: VP_FREE,
-        });
-        if (moment.open) expect(patch.status).toBe(200);
-        else expectGate(patch, false);
-      });
-
-      it('결제 보류 계정 — 원시 free 라 내 목소리 기능(등록·오디오·알람 저장)이 시점을 따른다', async () => {
+      // 알람 저장은 더 게이트가 아니다 — 서버 알람 사본을 지웠다(#147, `alarm-compat.test.ts`).
+      it('결제 보류 계정 — 원시 free 라 내 목소리 기능(등록·오디오)이 시점을 따른다', async () => {
         atMoment(moment.at);
         const form = new FormData();
         form.set('isDraft', 'true');
         expectGate(await call(HOLD_OWNER, 'POST', '/voice/clone', form), moment.open);
 
-        // 오디오(읽기)와 알람 저장(쓰기)이 같은 답이다 — 둘 다 내 목소리라 계산값으로 본다.
+        // 오디오(읽기)도 내 목소리라 계산값으로 본다.
         const audio = await call(HOLD_OWNER, 'GET', `/tts/messages/${MSG_HOLD_OWN}/audio`);
         if (moment.open) {
           expect(audio.status).toBe(404);
@@ -441,15 +412,6 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
           expect(audio.status).toBe(403);
           expect(audio.body.error_code).toBe('VOICE_LOCKED_FREE_PLAN');
         }
-        const save = await call(HOLD_OWNER, 'POST', '/alarms', {
-          time: '07:30',
-          timezone: 'Asia/Seoul',
-          mode: 'tts',
-          message_id: MSG_HOLD_OWN,
-          voice_profile_id: VP_HOLD,
-        });
-        if (moment.open) expect(save.status).toBe(201);
-        else expectGate(save, false);
       });
 
       it('/billing/subscription — user_plan 계산값, personal_promo, 가짜 구독 없음', async () => {

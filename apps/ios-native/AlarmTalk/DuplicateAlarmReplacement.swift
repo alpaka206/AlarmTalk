@@ -1,15 +1,14 @@
 import Foundation
 
-/// 서버의 영구 삭제에 성공한 충돌만 로컬에서 정리한다. 실패 이후 행은 건드리지 않는다.
+/// 충돌 알람을 차례로 지운다 — 하나라도 실패하면 거기서 멈추고 그 뒤 행은 건드리지 않는다. 서버에는 알람 사본이 없어
+/// (2026-10-29) 지울 것은 기기의 예약과 행뿐이다.
 @MainActor
 func removeReplacementConflicts<Conflict>(
     _ conflicts: [Conflict],
     // 함수뿐 아니라 콜백도 같은 actor에 묶어야 Conflict를 격리 밖으로 보내지 않는다.
-    deleteRemote: @MainActor (Conflict) async -> Bool,
     deleteLocal: @MainActor (Conflict) async -> Bool
 ) async -> Bool {
     for conflict in conflicts {
-        guard !Task.isCancelled, await deleteRemote(conflict) else { return false }
         guard !Task.isCancelled, await deleteLocal(conflict) else { return false }
     }
     return !Task.isCancelled
@@ -23,7 +22,7 @@ private func sameStagedEdit(_ lhs: LocalAlarmRecord, _ rhs: LocalAlarmRecord) ->
         copy.remoteAlarmId = nil
         copy.lastSyncedAtMillis = nil
         copy.syncState = AlarmSyncState.localOnly.rawValue
-        copy.updatedAtMillis = 0 // markRemote/markSyncFailed도 이 시각을 바꾼다.
+        copy.updatedAtMillis = 0
         return copy
     }
     return snapshot(lhs) == snapshot(rhs)

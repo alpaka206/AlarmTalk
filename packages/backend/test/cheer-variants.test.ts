@@ -2,8 +2,10 @@
 //
 //  - 공개 표식(`stock_content_releases`, #143)이 매니페스트 목록·`expected_variants`·표지를 **한 회차에** 정한다.
 //  - 옛 응원(`cheer` 0..2)은 그대로 나가고 새로 고르는 목록에서만 빠진다(`selectable: false`).
-//  - 알람 행이 '다양하게 / 이 문구로 고정' 을 왕복 보존하고, 모르는 값은 400 `INVALID_CHEER_SETTING` 이다.
-//  - 클론은 **응원을 고른 것만** 보충한다 — 보충 회차는 우선순위 맨 뒤이고, 진행 조회는 그 목소리를 막지 않는다.
+//  - 옛 앱의 알람 올리기는 '다양하게 / 이 문구로 고정' 을 그대로 되돌려 받는다(서버는 저장하지 않는다 — #147).
+//    모르는 값은 400 `INVALID_CHEER_SETTING` 이다.
+//  - 클론은 **응원을 고른 것만** 보충한다 — 앱이 `POST /voice/:id/content-supplement` 로 알린다(알람 올리기는 보충을
+//    열지 않는다). 보충 회차는 우선순위 맨 뒤이고, 진행 조회는 그 목소리를 막지 않는다.
 //  - 비용 dry-run 은 합성하지 않는다.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClient } from '@libsql/client';
@@ -35,6 +37,7 @@ const SYSTEM_USER = '70000000-0000-4000-9000-000000000001';
 const SYSTEM_VOICE = '14300000-0000-4000-9000-000000000101';
 const CLONE = '14300000-0000-4000-9000-000000000201';
 const OTHER_CLONE = '14300000-0000-4000-9000-000000000202';
+const OTHER_USER = '14300000-0000-4000-9000-000000000002';
 
 const ENV = {
   TURSO_DATABASE_URL: 'x',
@@ -173,8 +176,8 @@ describe('공개 표식 — 매니페스트·expected_variants·표지를 한 �
   });
 });
 
-describe('알람 행의 응원 저장값', () => {
-  it('다양하게 / 고정을 저장하고 응답에 되돌려 준다', async () => {
+describe('옛 앱의 알람 올리기 — 응원 저장값', () => {
+  it('다양하게 / 고정을 응답에 되돌려 준다 — 서버에는 저장하지 않는다', async () => {
     const app = buildApp();
     const created = await app.request(
       '/alarm',
@@ -195,8 +198,6 @@ describe('알람 행의 응원 저장값', () => {
     const body = (await created.json()) as { alarm: { id: string; cheer_mode: string; cheer_pinned_content_id: string } };
     expect(body.alarm.cheer_mode).toBe('pinned');
     expect(body.alarm.cheer_pinned_content_id).toBe('cheer_v2_05');
-    const row = await db.execute({ sql: 'SELECT cheer_mode, cheer_pinned_content_id FROM alarms WHERE id = ?', args: [body.alarm.id] });
-    expect(row.rows[0]).toMatchObject({ cheer_mode: 'pinned', cheer_pinned_content_id: 'cheer_v2_05' });
 
     const patched = await app.request(
       `/alarm/${body.alarm.id}`,
@@ -246,19 +247,97 @@ describe('알람 행의 응원 저장값', () => {
   });
 });
 
+function requestSupplement(voiceProfileId: string, body: unknown = { theme: 'cheer' }) {
+  return buildApp().request(
+    `/voice/${voiceProfileId}/content-supplement`,
+    { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
+    ENV,
+  );
+}
+
+async function cloneQueue() {
+  return (
+    await db.execute({
+      sql: 'SELECT status, supplement, refresh_existing, attempts, content_sets FROM voice_prerender_queue WHERE voice_profile_id = ?',
+      args: [CLONE],
+    })
+  ).rows[0];
+}
+
+// 앱이 그 클론으로 응원 알람을 **저장한 뒤** 부른다(서버 알람 사본을 지운 뒤로는 알람 올리기가 이 일을 하지 않는다 — #147).
+// 막힌 요청은 큐를 건드리지 않는다.
+describe('POST /voice/:id/content-supplement — 막히는 요청', () => {
+  it('id 형식이 틀리면 400 INVALID_VOICE_PROFILE_ID', async () => {
+    const res = await requestSupplement('not-a-uuid');
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error_code: string }).error_code).toBe('INVALID_VOICE_PROFILE_ID');
+  });
+
+  it.each([[{ theme: 'wake' }], [{ theme: 'weather' }], [{ theme: 'cheer_v2' }], [{}], [{ theme: 1 }]])(
+    '응원이 아닌 테마는 400 INVALID_BUCKET_ID — %j',
+    async (body) => {
+      const res = await requestSupplement(CLONE, body);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error_code: string }).error_code).toBe('INVALID_BUCKET_ID');
+      expect(await cloneQueue()).toMatchObject({ status: 'done', supplement: 0 });
+    },
+  );
+
+  it('개인 목소리 권한이 없으면 403 VOICE_FEATURE_REQUIRES_PAID_PLAN', async () => {
+    await db.execute({ sql: `UPDATE users SET plan = 'free' WHERE id = ?`, args: [USER] });
+    try {
+      const res = await requestSupplement(CLONE);
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { error_code: string }).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+      expect(await cloneQueue()).toMatchObject({ status: 'done', supplement: 0 });
+    } finally {
+      await db.execute({ sql: `UPDATE users SET plan = 'plus' WHERE id = ?`, args: [USER] });
+    }
+  });
+
+  it('내 확정·ready 클론이 아니면 404 VOICE_PROFILE_NOT_FOUND — 남의 클론·기본 목소리·초안·준비 중·지운 목소리', async () => {
+    const foreign = crypto.randomUUID();
+    const draft = crypto.randomUUID();
+    const processing = crypto.randomUUID();
+    const deleted = crypto.randomUUID();
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, plan) VALUES (?, ?, 'other@test', 'plus')`,
+      args: [OTHER_USER, OTHER_USER],
+    });
+    await db.execute({
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_system, is_draft, elevenlabs_voice_id, deleted_at) VALUES
+              (?, ?, '남의 클론', 'ready', 0, 0, 'el-foreign', NULL),
+              (?, ?, '초안', 'ready', 0, 1, 'el-draft', NULL),
+              (?, ?, '준비 중', 'processing', 0, 0, NULL, NULL),
+              (?, ?, '지운 목소리', 'ready', 0, 0, 'el-deleted', datetime('now'))`,
+      args: [foreign, OTHER_USER, draft, USER, processing, USER, deleted, USER],
+    });
+    // 남의 클론에 끝난 큐가 있어도 열리지 않는다.
+    await db.execute({
+      sql: `INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language, status) VALUES (?, ?, 'ko', 'done')`,
+      args: [foreign, OTHER_USER],
+    });
+    for (const id of [foreign, SYSTEM_VOICE, draft, processing, deleted, crypto.randomUUID()]) {
+      const res = await requestSupplement(id);
+      expect(res.status, id).toBe(404);
+      expect(((await res.json()) as { error_code: string }).error_code).toBe('VOICE_PROFILE_NOT_FOUND');
+    }
+    const foreignQueue = await db.execute({
+      sql: 'SELECT status, supplement FROM voice_prerender_queue WHERE voice_profile_id = ?',
+      args: [foreign],
+    });
+    expect(foreignQueue.rows[0]).toMatchObject({ status: 'done', supplement: 0 });
+    await db.execute({ sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?', args: [foreign] });
+    expect(await cloneQueue()).toMatchObject({ status: 'done', supplement: 0 });
+  });
+});
+
 describe('클론은 응원을 고른 것만 보충한다', () => {
-  it('클론으로 응원 알람을 저장하면 끝난 큐가 보충 회차로 다시 열린다 — 직접 입력 장부는 그대로다', async () => {
+  it('내 클론의 응원 보충을 요청하면 끝난 큐가 보충 회차로 다시 열린다 — 직접 입력 장부는 그대로다', async () => {
     const usageBefore = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM manual_tts_usage', args: [] });
-    const res = await buildApp().request(
-      '/alarm',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ time: '06:30', bucket_id: 'cheer', voice_profile_id: CLONE, cheer_mode: 'vary' }),
-      },
-      ENV,
-    );
-    expect(res.status).toBe(201);
+    const res = await requestSupplement(CLONE);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ result: 'queued' });
     const queue = await db.execute({
       sql: 'SELECT status, supplement, refresh_existing, attempts, content_sets FROM voice_prerender_queue WHERE voice_profile_id = ?',
       args: [CLONE],
@@ -267,6 +346,12 @@ describe('클론은 응원을 고른 것만 보충한다', () => {
     expect(JSON.parse(String(queue.rows[0]!.content_sets))).toEqual(['cheer_v2']);
     const usageAfter = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM manual_tts_usage', args: [] });
     expect(usageAfter.rows[0]!.n).toBe(usageBefore.rows[0]!.n);
+
+    // 다시 불러도 회차를 새로 열지 않는다 — 대기 중인 회차에 묶음만 적는다.
+    const again = await requestSupplement(CLONE);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ result: 'requested' });
+    expect(await cloneQueue()).toMatchObject({ status: 'pending', supplement: 1 });
   });
 
   it('보충 회차는 진행 조회에서 done 이고 개수는 기본 세트만 센다 — 목소리를 막지 않는다', async () => {
@@ -314,50 +399,47 @@ describe('클론은 응원을 고른 것만 보충한다', () => {
     expect(await requestCloneContentSupplement(db, { voiceProfileId: CLONE, ownerUserId: USER, theme: 'cheer' })).toBe('not_released');
   });
 
-  // ⚠ 2026-10-29 — 안드로이드 동기화는 켜고 끌 때마다 테마·목소리를 그대로 보낸다. 그 PATCH 가 실패로 접힌 보충을 다시 열면
-  //   켜고 끄기마다 유료 합성을 다섯 번씩 다시 시도한다. 고른 것이 그대로인 수정은 보충을 요청하지 않는다.
-  it('켜고 끄기만 한 수정은 접힌 보충을 다시 열지 않고, 테마를 새로 고른 수정은 연다', async () => {
+  // ⚠ 2026-10-29 — 서버 알람 사본을 지웠다(#147). 옛 앱은 켜고 끌 때마다 테마·목소리를 그대로 올리는데, 그 올리기가
+  //   실패로 접힌 보충을 다시 열면 켜고 끄기마다 유료 합성을 다섯 번씩 다시 시도한다. 이제 보충을 여는 것은 앱의 보충
+  //   요청뿐이고(테마나 목소리를 새로 골랐을 때만 부른다), 알람 올리기는 아무것도 열지 않는다.
+  it('알람 올리기(옛 앱의 POST·PATCH /alarm)는 접힌 보충을 열지 않는다 — 여는 것은 보충 요청뿐이다', async () => {
     // 앞 테스트들이 바꿔 둔 상태를 되돌린다 — 공개된 보충 묶음이 있고, 이 클론은 아직 덜 구웠다.
     await db.execute({ sql: `INSERT OR IGNORE INTO stock_content_releases (content_set) VALUES ('cheer_v2')`, args: [] });
     await db.execute({ sql: `DELETE FROM messages WHERE voice_profile_id = ? AND category = 'cheer_v2'`, args: [CLONE] });
+    await db.execute({
+      sql: `UPDATE voice_prerender_queue SET status = 'done', supplement = 0, attempts = 0, claimed_at = NULL, claim_token = NULL
+            WHERE voice_profile_id = ?`,
+      args: [CLONE],
+    });
     const app = buildApp();
     const created = await app.request(
       '/alarm',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ time: '06:40', bucket_id: 'weather', voice_profile_id: CLONE }),
+        body: JSON.stringify({ time: '06:40', bucket_id: 'cheer', voice_profile_id: CLONE }),
       },
       ENV,
     );
     expect(created.status).toBe(201);
     const id = ((await created.json()) as { alarm: { id: string } }).alarm.id;
-    const fold = () =>
-      db.execute({
-        sql: `UPDATE voice_prerender_queue SET status = 'done', supplement = 0, attempts = 0, claimed_at = NULL, claim_token = NULL
-              WHERE voice_profile_id = ?`,
-        args: [CLONE],
-      });
-    const queue = async () =>
-      (await db.execute({ sql: 'SELECT status, supplement FROM voice_prerender_queue WHERE voice_profile_id = ?', args: [CLONE] }))
-        .rows[0];
-    const patch = (fields: Record<string, unknown>) =>
-      app.request(
+    for (const fields of [
+      { bucket_id: 'cheer', voice_profile_id: CLONE },
+      { is_active: false, bucket_id: 'cheer', voice_profile_id: CLONE },
+    ]) {
+      const patched = await app.request(
         `/alarm/${id}`,
         { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(fields) },
         ENV,
       );
+      expect(patched.status).toBe(200);
+    }
+    expect(await cloneQueue()).toMatchObject({ status: 'done', supplement: 0 });
 
-    // 날씨 → 응원으로 새로 고른다 — 보충이 열린다.
-    await fold();
-    expect((await patch({ bucket_id: 'cheer', voice_profile_id: CLONE })).status).toBe(200);
-    expect(await queue()).toMatchObject({ status: 'pending', supplement: 1 });
-
-    // 그 보충이 다섯 번 실패해 접혔다. 켜고 끄기(테마·목소리를 그대로 실어 보낸다)는 다시 열지 않는다.
-    await fold();
-    expect((await patch({ is_active: false, bucket_id: 'cheer', voice_profile_id: CLONE })).status).toBe(200);
-    expect((await patch({ is_active: true, bucket_id: 'cheer', voice_profile_id: CLONE })).status).toBe(200);
-    expect(await queue()).toMatchObject({ status: 'done', supplement: 0 });
+    // 앱이 응원을 새로 고른 저장 뒤에 알리면 그때 열린다.
+    const res = await requestSupplement(CLONE);
+    expect(await res.json()).toEqual({ result: 'queued' });
+    expect(await cloneQueue()).toMatchObject({ status: 'pending', supplement: 1 });
   });
 });
 

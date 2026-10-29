@@ -2,7 +2,7 @@ import Foundation
 
 // 모든 stored property 가 `let` 이고 URLSession / JSONDecoder / JSONEncoder 는
 // 사실상 thread-safe 이므로 `@unchecked Sendable` 로 노출해 async 컨텍스트에서
-// main actor 격리된 RemoteAlarmSyncViewModel.api 를 캡처할 수 있게 한다.
+// main actor 격리된 뷰모델이 공유 인스턴스를 캡처할 수 있게 한다.
 final class AlarmTalkAPI: @unchecked Sendable {
     static let shared = AlarmTalkAPI()
 
@@ -129,31 +129,15 @@ final class AlarmTalkAPI: @unchecked Sendable {
         let _: EmptyResponse = try await request("auth/logout", method: "POST", token: token)
     }
 
-    func createAlarm(_ requestBody: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm {
-        let response: RemoteAlarmResponse = try await request(
-            "alarm",
+    /// 클론 응원 보충 요청 — 그 클론으로 응원 알람을 저장한 뒤 부른다(`CheerVariety.needsCloneSupplement`). 답을 기다리지
+    /// 않는다. 예전에는 서버 알람 사본의 쓰기가 이 일을 함께 했다 — 사본을 없앤 뒤(2026-10-29)로는 앱이 직접 알린다.
+    func requestVoiceContentSupplement(id: String, theme: String, token: String) async throws {
+        let _: VoiceContentSupplementResponse = try await request(
+            "voice/\(id)/content-supplement",
             method: "POST",
             token: token,
-            body: requestBody
+            body: VoiceContentSupplementRequest(theme: theme)
         )
-        if response.alarm.creationReplayed == true {
-            return try await updateAlarm(id: response.alarm.id, requestBody: requestBody, token: token)
-        }
-        return response.alarm
-    }
-
-    func updateAlarm(id: String, requestBody: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm {
-        let response: RemoteAlarmResponse = try await request(
-            "alarm/\(id)",
-            method: "PATCH",
-            token: token,
-            body: requestBody
-        )
-        return response.alarm
-    }
-
-    func deleteAlarm(id: String, token: String) async throws {
-        let _: EmptyResponse = try await request("alarm/\(id)", method: "DELETE", token: token)
     }
 
     func listVoiceProfiles(token: String) async throws -> [VoiceProfile] {

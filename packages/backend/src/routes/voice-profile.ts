@@ -28,10 +28,15 @@ import {
   excludeSupplementCategoriesSql,
   PrerenderSupersededError,
   releasePrerenderClaim,
+  requestCloneContentSupplement,
   retiredIsNullClause,
   SPEECH_STYLE_ANALYSIS_WAIT_SQL,
 } from '../lib/stock-clips';
-import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
+import {
+  enqueueExternalDeletion,
+  enqueueExternalDeletionsBatch,
+  externalDeletionsFromSelectStatement,
+} from '../lib/audio-retention';
 import { revokeDeletedVoices } from '../lib/voice-revocation';
 import { notifyDowngradedAlarms } from '../lib/fcm';
 import {
@@ -798,9 +803,7 @@ type ReplaceResult =
   | {
       ok: true;
       profile: Record<string, unknown>;
-      /** 강등된 직접 입력(custom) 알람 — 소유자 본인 알람이다. */
-      revokedCustomAlarms: Array<{ alarmId: string; ownerUserId: string }>;
-      /** 알람 행과 무관하게 깨워야 할 계정. 아직 서버에 없는 로컬 알람 때문에 소유자는 항상 넣는다. */
+      /** 깨워야 할 계정 — 소유자다. 그 기기가 이 목소리의 직접 입력 알람을 내린다(서버에는 알람 행이 없다). */
       voiceAccessRevokedUserIds: string[];
       /** 이번 교체의 세대(`custom_audio_invalidated_at`). 푸시가 이 값을 함께 실어 보낸다. */
       customAudioInvalidatedAt: string | null;
@@ -1015,36 +1018,23 @@ export async function replaceVoiceInPlace(
     // 대상을 `category = 'custom'` 으로 좁힌다는 것뿐이다 — 교체에서는 프리셋 알람이
     // 살아남아야 한다.
     //
-    // ⚠ **서버 행만 내리고 끝내지 말 것**(Codex #703 P1). 알람은 기기가 원본이라 서버 행만 내려 봐야
-    // 그 기기의 로컬 행·캐시된 음원·OS 예약은 그대로다 — 등록 기기와 다른 기기 양쪽에서 **지운 목소리가
-    // 계속 울린다.** 그래서 대상 알람을 모아 커밋 뒤 주인 기기에 알린다(아래 `revokedCustomAlarms`).
-    const liveCustom = await tx.execute({
-      // `users` 조인은 레거시 google_id 를 users.id 로 정규화하기 위한 것이다(신호가 같은
-      // 계정에 두 번 나가지 않게).
-      sql: `SELECT a.id AS alarm_id,
-                   COALESCE(owner_u.id, a.user_id) AS row_owner_user_id
-            FROM alarms a
-            JOIN messages m ON m.id = a.message_id
-            LEFT JOIN users owner_u ON owner_u.id = a.user_id OR owner_u.google_id = a.user_id
-            WHERE m.voice_profile_id = ? AND m.category = 'custom'`,
-      args: [targetId],
-    });
-    const revokedCustomAlarms = new Map<string, { alarmId: string; ownerUserId: string }>();
-    for (const row of liveCustom.rows) {
-      const alarmId = String(row.alarm_id);
-      const ownerUserId = String(row.row_owner_user_id);
-      revokedCustomAlarms.set(`${alarmId}:${ownerUserId}`, { alarmId, ownerUserId });
-    }
-
+    // ⚠ **서버에는 알람 행이 없다**(2026-10-29, #147). 그 목소리의 직접 입력 알람은 기기가 내린다 — 등록 기기는 응답의
+    //   `replaced: true` 로 곧바로, 다른 기기는 커밋 뒤 주인 계정에 보내는 `voice_access_revoked`(scope `custom_messages`)로.
+    //
+    // ⚠ **그 음원은 지금 지운다**(2026-10-29 오너: 직접 입력 음성은 목소리가 지워질 때만 지운다 — 교체는 옛 목소리를 지우는
+    //   일이다). 직접 입력 음성은 이제 보존 기한이 없어(`audio-retention.ts`) 참조만 끊으면 R2 에 영영 남는다. 지울 키를 행보다
+    //   먼저 큐에 적는다(드레인이 커밋 뒤에 지운다 — `pending_external_deletions` 는 outbox 다).
+    await tx.execute(
+      externalDeletionsFromSelectStatement('r2_object', {
+        sql: `SELECT trim(g.audio_object_key) AS ref FROM generated_audio_assets g
+              WHERE g.audio_object_key IS NOT NULL
+                AND g.message_id IN (SELECT id FROM messages WHERE voice_profile_id = ? AND category = 'custom')`,
+        args: [targetId],
+      }),
+    );
     await tx.execute({
-      sql: `UPDATE alarms
-            SET mode = 'sound-only',
-                wake_mode = 'sound_then_voice',
-                message_id = NULL,
-                voice_profile_id = NULL
-            WHERE message_id IN (
-              SELECT id FROM messages WHERE voice_profile_id = ? AND category = 'custom'
-            )`,
+      sql: `DELETE FROM generated_audio_assets
+            WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id = ? AND category = 'custom')`,
       args: [targetId],
     });
     // 못 쓰게 된 음원은 참조를 끊는다. 행 자체는 남겨 사용량 집계를 보존한다
@@ -1084,7 +1074,6 @@ export async function replaceVoiceInPlace(
     return {
       status: 'ok' as const,
       targetId,
-      revokedCustomAlarms: Array.from(revokedCustomAlarms.values()),
     };
   });
 
@@ -1159,7 +1148,6 @@ export async function replaceVoiceInPlace(
           custom_audio_invalidated_at: refreshedRow.custom_audio_invalidated_at ?? null,
         }
       : {},
-    revokedCustomAlarms: replacementState.revokedCustomAlarms,
     // 행이 하나도 안 잡혀도 소유자는 깨운다 — 아직 서버에 올라오지 않은 로컬 custom 알람이 다른
     // 기기에 있을 수 있고, 그 기기의 캐시된 음원은 이미 못 쓰는 것이다(`revokeDeletedVoices` 가
     // 소유자를 항상 넣는 것과 같은 이유).
@@ -1411,7 +1399,7 @@ voiceProfile.patch('/:id', async (c) => {
         notifyDowngradedAlarms(
           db,
           c.env,
-          replaced.revokedCustomAlarms,
+          [],
           replaced.voiceAccessRevokedUserIds,
           {
             replacedVoiceProfileId: String(replaced.profile.id ?? '') || undefined,
@@ -2723,6 +2711,64 @@ voiceProfile.post('/:id/prerender-retry', async (c) => {
     await enqueuePrerender(db, id, userPk, String(profileRes.rows[0]!.preview_language ?? 'ko'));
   }
   return c.json({ success: true });
+});
+
+/**
+ * **클론 보충 요청**(스펙 voice-and-message §5-4 「클론은 고른 것만 보충한다」). 앱이 그 클론으로 그 테마 알람을
+ * **저장한 뒤** 부른다 — 테마나 목소리를 새로 골랐을 때만(켜고 끄기·시각만 고친 저장은 부르지 않는다).
+ *
+ * ⚠ 예전에는 서버 알람 사본의 쓰기(`POST/PATCH /alarm`)가 이 일을 함께 했다. 사본을 없앤 뒤(2026-10-29, 마이그레이션 #147)
+ *   알람은 기기에만 있으므로 앱이 직접 알린다. 실패해도 잃는 것은 보충이 한 번 늦는 것뿐이라 앱은 답을 기다리지 않는다.
+ *
+ * 대상은 내 확정·ready 클론뿐(다른 것은 404)이고, 개인 목소리 권한(계산값)이 있어야 한다. 큐의 주인 확인은
+ * `requestCloneContentSupplement` 가 한 번 더 한다.
+ */
+voiceProfile.post('/:id/content-supplement', async (c) => {
+  const ids = ownerIds(c);
+  const userId = c.get('userId') as string;
+  const userPk = (c.get('userIdPK') as string | undefined) || userId;
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+  const body = await c.req.json<{ theme?: unknown }>().catch(() => ({}) as { theme?: unknown });
+  const theme = typeof body?.theme === 'string' ? body.theme.trim() : '';
+  if (theme !== 'cheer') {
+    return c.json({ error: 'Unsupported theme', error_code: 'INVALID_BUCKET_ID' }, 400);
+  }
+
+  const plan = await db.execute({
+    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? LIMIT 1`,
+    args: [userPk],
+  });
+  if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan, resolvePersonalPromo(c.env))) {
+    return c.json(
+      { error: 'Voice alarms require a paid plan.', error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN' },
+      403,
+    );
+  }
+  const ph = ids.map(() => '?').join(',');
+  const profileRes = await db.execute({
+    sql: `SELECT id FROM voice_profiles
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_system, 0) = 0 AND COALESCE(is_draft, 0) = 0
+            AND status = 'ready'`,
+    args: [id, ...ids],
+  });
+  if (profileRes.rows.length === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
+  const result = await requestCloneContentSupplement(db, { voiceProfileId: id, ownerUserId: userPk, theme });
+  if (result === 'queued' || result === 'requested') {
+    logStructured('info', { at: 'voice.prerender.supplement_requested', voice_profile_id: id, result });
+  }
+  return c.json({ result });
 });
 
 // 사전렌더 전진(owner-driven). promote 직후 앱이 done 까지 반복 호출해 cron(5분 틱,

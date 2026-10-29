@@ -9,6 +9,7 @@ import com.alarmtalk.app.data.AlarmDatabase
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.bucketTheme
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.data.lockedPaidVoice
 import com.alarmtalk.app.data.encodeBucketClipKeys
@@ -43,6 +44,27 @@ import kotlinx.coroutines.withContext
  *
  * iOS 짝은 `StockClipLanguageRebinder.swift` 다 — **한쪽만 고치지 말 것.**
  */
+/**
+ * **버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트**(messageId → 테마) — 서버가 준 은퇴 클립 힌트와, 지금 목록에 실린
+ * 기본 목소리 클립의 테마를 합친다(서버 힌트가 이긴다).
+ *
+ * ⚠ 예전에는 서버가 그 사용자의 **서버 알람 사본**이 문 클립까지 힌트로 줬다. 사본을 지운 뒤(2026-10-29)로는 기본 목소리의
+ *   무료 테마 프리셋 전부를 주지만, 그중 지금 것은 옛 앱(1.2.16)을 위해서라 1.3 강제 업데이트 뒤 빠진다 — 은퇴하지 않은 클립은
+ *   목록에 테마와 함께 이미 실려 있어 여기서 찾는다. iOS 짝은 `VoiceStudioViewModel.legacyBucketHints(from:)`.
+ * ⚠ **무료 테마([FreeBucketOrder])만 힌트가 된다 — `greeting` 은 빠진다.** 기본 목소리의 `greeting` 은 목소리 소개
+ *   클립이라 테마가 아니다. 예전에는 서버가 같은 목록(`FREE_BUCKET_CATEGORIES`)으로 걸렀다 — 거르지 않으면 그 클립을 문
+ *   '기본 인사말' 알람이 `greeting` 테마로 다시 묶여 소개 문구로 운다. 카테고리가 아니라 테마로 본다(`cheer_v2` → `cheer`).
+ */
+internal fun legacyBucketHintsOf(manifest: com.alarmtalk.app.network.StockClipListResponse): Map<String, String> =
+    manifest.clips
+        .mapNotNull { clip ->
+            clip.bucketTheme
+                ?.takeIf { com.alarmtalk.app.data.isSystemVoiceId(clip.voiceProfileId) && it in FreeBucketOrder }
+                ?.let { theme -> clip.messageId to theme }
+        }
+        .toMap() +
+        manifest.legacyBucketHints.associate { hint -> hint.messageId to hint.category }
+
 object StockClipLanguageRebinder {
 
     /** 다시 묶은 알람 수. */

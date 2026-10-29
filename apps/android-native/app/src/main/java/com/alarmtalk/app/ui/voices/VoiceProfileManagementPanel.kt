@@ -426,6 +426,8 @@ internal fun VoiceProfileManagementPanel(
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
     var profileName by remember { mutableStateOf("") }
+    // 이름 상한을 넘겨 쳤다(`boundedNameInput`) — 등록 창의 이름 칸 아래에 이유를 띄운다.
+    var profileNameTooLong by remember { mutableStateOf(false) }
     var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
     // 인라인 동의 체크. 등록 요청이 나가기 전 단계에서만 의미가 있으므로 다이얼로그를 닫을 때
@@ -489,6 +491,7 @@ internal fun VoiceProfileManagementPanel(
     var systemSectionExpanded by remember { mutableStateOf(true) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
+    var renameNameTooLong by remember { mutableStateOf(false) }
     var renameSubmitAttempted by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -1462,6 +1465,7 @@ internal fun VoiceProfileManagementPanel(
         createPreparing = false
         createSubmitAttempted = false
         profileName = ""
+        profileNameTooLong = false
         profileVoiceLanguage = defaultVoiceLanguage
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
@@ -2171,6 +2175,7 @@ internal fun VoiceProfileManagementPanel(
                             onRename = {
                                 renameTarget = profile
                                 renameName = profile.name
+                                renameNameTooLong = false
                                 renameSubmitAttempted = false
                             },
                             onDelete = { deleteTarget = profile },
@@ -2567,18 +2572,26 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Details -> {
                                 OutlinedTextField(
                                     value = profileName,
-                                    onValueChange = { profileName = sanitizeDisplayName(it, maxLength = VoiceNameMaxLength) },
+                                    onValueChange = { raw ->
+                                        val (bounded, tooLong) = boundedNameInput(raw, VoiceNameMaxLength, profileNameTooLong)
+                                        profileName = bounded
+                                        profileNameTooLong = tooLong
+                                    },
                                     label = { Text(stringResource(R.string.voices_name_label)) },
                                     placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
                                     singleLine = true,
-                                    isError = nameRequiredError,
+                                    isError = nameRequiredError || profileNameTooLong,
                                     // supportingText 람다를 항상 넘기면 에러가 없어도 그 자리(약 16dp)가
                                     // 예약돼 이름↔관계 간격만 넓어진다 — 에러일 때만 붙여 3개 필드의
                                     // 간격(부모 spacedBy 14dp)을 균일하게 유지한다.
-                                    supportingText = if (nameRequiredError) {
-                                        { Text(stringResource(R.string.voices_required_field)) }
-                                    } else {
-                                        null
+                                    supportingText = when {
+                                        nameRequiredError -> {
+                                            { Text(stringResource(R.string.voices_required_field)) }
+                                        }
+                                        profileNameTooLong -> {
+                                            { Text(stringResource(R.string.voices_name_too_long, VoiceNameMaxLength)) }
+                                        }
+                                        else -> null
                                     },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
@@ -3077,7 +3090,12 @@ internal fun VoiceProfileManagementPanel(
             description = stringResource(R.string.voices_edit_name_desc),
             name = renameName,
             nameError = renameNameError,
-            onNameChange = { renameName = sanitizeDisplayName(it, maxLength = VoiceNameMaxLength) },
+            onNameChange = { raw ->
+                val (bounded, tooLong) = boundedNameInput(raw, VoiceNameMaxLength, renameNameTooLong)
+                renameName = bounded
+                renameNameTooLong = tooLong
+            },
+            nameTooLong = renameNameTooLong,
             onDismiss = { renameTarget = null },
             onConfirm = {
                 renameSubmitAttempted = true

@@ -8,7 +8,6 @@ struct MainTabsView: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
-    @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var store: LocalAlarmStore
@@ -20,12 +19,6 @@ struct MainTabsView: View {
     @State private var voicesNotReadyAlert = false
 
     @State private var selectedTab: NativeTab = UIPreviewSeed.initialTab ?? .alarms
-
-    /// 알람 탭 동기화의 60초 스로틀 표 — 키는 탭 + 계정(`tabRefreshThrottleKey`, 토큰이 아니다).
-    /// 완결되지 않은 회차는 칸을 지워 다음 진입이 곧바로 다시 돈다(`AlarmTabSyncThrottle`).
-    /// Android `lastTabRefreshAt`(`ui/app/AlarmTalkApp.kt`) 대응. 목소리·더보기 탭은 이 표가 아니라
-    /// 뷰모델의 신선도 창(`refreshOnEntry`)으로 가른다.
-    @State private var alarmTabSyncThrottle = AlarmTabSyncThrottle()
 
     /// `editorTarget` 이 nil 이 아니면 알람 편집 시트가 뜬다.
     @State private var editorTarget: AlarmEditorTarget?
@@ -317,35 +310,16 @@ struct MainTabsView: View {
 
     /// 계정이 정해졌을 때 한 번(콜드 스타트·로그인·계정 전환).
     ///
-    /// ⚠ **알람 동기화는 여기서 부르지 않는다**(2026-09-29). 같은 순간 앱의 계정 키 `.task`
-    ///   (`AlarmTalkApp` — `remoteSync.runFullSync()`)와 알람 탭 진입(`refreshForSelectedTab`)이
-    ///   이미 돈다. 예전에는 여기서 한 번 더 돌려 콜드 스타트에 `/alarm` 요청이 3~4번 나갔고,
-    ///   그 사이 토글의 단건 push 가 `isBusy` 가드에 걸려 건너뛰어졌다.
+    /// (알람을 서버로 올리는 동기화는 2026-10-29 에 없앴다 — 서버 알람 사본을 지웠다.)
     private func refreshAll() async {
         await voiceStudio.refreshOnEntry(session: auth.session)
         await socialFeatures.refreshOnEntry(session: auth.session)
         alarmKit.refreshAuthorizationState()
     }
 
-    /// 알람 탭 동기화 스로틀의 키 — **탭 + 계정**이다.
-    ///
-    /// ⚠ **토큰을 넣지 말 것**(2026-09-29). `/auth/me` 는 부를 때마다 토큰을 굴리는데, 이용권
-    ///   새로고침(`SocialFeatureViewModel.refreshAll`)이 그걸 부른다 — 메뉴·목소리 탭에 한 번
-    ///   들르면 토큰이 바뀌어 **스로틀 표가 통째로 무효**가 됐다. 같은 계정의 재로그인은
-    ///   이 화면이 새로 만들어져(`RootView`) 표가 비워지므로 계정 id 로 충분하다.
-    static func tabRefreshThrottleKey(tab: NativeTab, userID: String) -> String {
-        "\(tab).\(userID)"
-    }
-
     private func refreshForSelectedTab(_ tab: NativeTab) async {
-        // 세션이 없으면 알람 탭은 로그인 안내를 띄우고(Android syncNow parity),
-        // 나머지 탭은 조용히 빠진다. (각 refresh 는 session nil 이면 자체 no-op)
-        guard let userID = auth.session?.user.id else {
-            if tab == .alarms {
-                remoteSync.statusMessage = String(localized: "동기화하려면 먼저 로그인해 주세요")
-            }
-            return
-        }
+        // 세션이 없으면 조용히 빠진다(각 refresh 는 session nil 이면 자체 no-op).
+        guard auth.session != nil else { return }
 
         switch tab {
         // ⚠ **목소리·더보기 탭은 탭 스로틀 표를 쓰지 않는다**(2026-09-29, 스펙 plan-gates §4).
@@ -363,19 +337,11 @@ struct MainTabsView: View {
             await voiceStudio.refreshOnEntry(session: auth.session)
             await socialFeatures.refreshOnEntry(session: auth.session)
         case .alarms:
-            // 권한 상태 새로고침은 로컬-only 라 저렴하다 — 스로틀 판정 전에 둔다.
+            // 권한 상태 새로고침은 로컬-only 라 저렴하다.
             alarmKit.refreshAuthorizationState()
-            // 탭+계정 키로 60초 스로틀(`tabRefreshThrottleKey` — 토큰이 아니다).
-            // (Android lastTabRefreshAt parity)
-            let throttleKey = Self.tabRefreshThrottleKey(tab: tab, userID: userID)
-            let admittedAt = Date()
-            guard alarmTabSyncThrottle.admit(key: throttleKey, now: admittedAt) else { return }
-            // Android: NativeTab.Alarms -> viewModel.syncNow(). 로컬 변경을 서버에 올린다.
-            let completed = await remoteSync.runFullSync()
-            // ⚠ **완결되지 않은 회차(오프라인·저장소 로드 전·탭을 떠나 취소)는 칸을 지운다**
-            //   (코덱스 #823 7차) — 남기면 60초 동안 알람 탭에 다시 들어와도 재시도하지 않아,
-            //   못 올린 알람 변경을 다시 올리는 자리가 늦어진다.
-            alarmTabSyncThrottle.settle(key: throttleKey, admittedAt: admittedAt, completed: completed)
+            // 알람 홈의 머리 카드가 이용권을 쓴다 — 안드로이드 알람 탭 진입의 `refreshBilling` 짝. 건너뛸지는 신선도 창이
+            // 가른다(목소리·더보기 탭과 같다). 예전에는 여기서 알람을 서버로 올렸다 — 그 사본을 2026-10-29 에 지웠다.
+            await socialFeatures.refreshOnEntry(session: auth.session)
         }
     }
 }

@@ -206,19 +206,7 @@ final class VoicePackTests: XCTestCase {
         XCTAssertEqual(packs.held.count, 1)
     }
 
-    // MARK: - 서버 사본 · 접근권 · 무료
-
-    func test_서버_사본에_팩_목소리와_클립_id_를_싣지_않는다() {
-        var local = alarm(id: "p", voiceProfileId: packVoiceID)
-        local.ttsMessageId = "clip-1"
-        local.bucketId = "cheer"
-        let req = RemoteAlarmMapper.toRemoteRequest(local)
-        XCTAssertNil(req.voiceProfileId)
-        XCTAssertNil(req.messageId)
-        XCTAssertEqual(req.mode, "sound-only")
-        XCTAssertEqual(req.bucketId, "cheer")
-        XCTAssertTrue(req.clearsMissingVoiceReferences)
-    }
+    // MARK: - 접근권 · 무료
 
     func test_접근권_대조가_팩_알람을_강등하지_않는다() {
         let store = makeStore()

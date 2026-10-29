@@ -8,8 +8,9 @@
 //  1. **직접 식별자**(계정 id·로그인 id·이메일·애플 id·푸시 토큰·이름)가 남은 행 어디에도 없다.
 //     예외는 외부 삭제 큐(`pending_external_deletions`) 하나다 — R2 키가 `voices/<id>/…` 처럼
 //     사람 id 로 시작하는데, 그 행은 **지울 파일의 주소**이고 크론이 지우는 순간 사라진다.
-//  2. 남은 행이 가리키는 옛 id(내 목소리·알람·결제)는 **더는 풀리지 않는다** — 그 id 의
+//  2. 남은 행이 가리키는 옛 id(내 목소리·결제)는 **더는 풀리지 않는다** — 그 id 의
 //     주인 행이 전부 없어졌다. 가명 보존 기록은 pepper 없이는 계정 id 로 되짚을 수 없다.
+//     알람은 기기에만 있다 — 서버 사본(`alarms`)은 #147 에서 지웠다.
 //
 // ⚠ 원래 잡은 잔존물(2026-09-30) — `manual_tts_usage`(직접 입력 월 한도 장부). 개인 풀의 키가
 // **계정 id 그대로**라, 파기 뒤에도 사람 id 가 남았다. 가명 보존 기록의 pseudonym 은
@@ -31,7 +32,6 @@ import {
 /** 표마다 파기에서 어떤 대접을 받는가. 새 표는 여기서 분류해야 테스트가 통과한다. */
 const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudonymized' | 'deletion-queue'> = {
   users: 'per-user',
-  alarms: 'per-user',
   messages: 'per-user',
   message_library: 'per-user',
   generated_audio_assets: 'per-user',
@@ -108,7 +108,6 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['messages', 'id', 'msg-a'],
   ['generated_audio_assets', 'id', 'ga-a'],
   ['message_library', 'id', 'ml-a'],
-  ['alarms', 'id', 'al-a-own'],
   ['subscriptions', 'id', 'sub-a'],
   ['store_transactions', 'id', 'st-a'],
   ['store_transactions', 'id', 'st-a-gift'],
@@ -317,12 +316,6 @@ async function seed(): Promise<void> {
     [A_PK, B_PK],
   );
 
-  // ── 알람 ─────────────────────────────────────────────────────────────────
-  await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-a-own', ?, 'msg-a', 'vp-a', '07:00')`, [A_PK]);
-  // B 가 A 의 클론 문구로 맞춰 둔 자기 알람, 그리고 A 와 무관한 B 의 알람.
-  await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-b-own', ?, 'msg-b-on-a', 'vp-a', '06:30')`, [B_PK]);
-  await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-b-own2', ?, 'msg-b', 'vp-b', '06:00')`, [B_PK]);
-
   // ── 기록·동의·인증·푸시 ───────────────────────────────────────────────────
   await run(
     `INSERT INTO usage_events (id, user_id, type, occurred_at, alarm_id, voice_profile_id, message_id)
@@ -434,12 +427,13 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(bVoice.rows.map((row) => [row.elevenlabs_voice_id, row.evicted_at])).toEqual([['el-voice-b', null]]);
     });
 
-    it('A 의 클론을 쓰던 B 의 알람만 알린다 — 떠나는 사람에게는 보내지 않는다', () => {
-      // 알람은 남기고 목소리만 내린다(아래 알람 검사). 철회 신호는 그 알람의 주인이 받고,
+    it('철회 신호는 A 의 목소리로 문구를 만든 B 가 받고, 떠나는 사람은 받지 않는다', () => {
+      // 알람은 기기에만 있어(#147) 서버가 내릴 알람 행이 없다. 그래서 그 목소리를 썼던 B 를 계정 단위로 깨우고(예전에는
+      // B 의 알람 행 `al-b-own` 을 내리고 그 주인에게 보냈다), B 의 기기가 제 알람을 기본 목소리로 내린다.
       // 떠나는 사람의 기기는 곧 사라지므로 아무 신호도 받지 않는다.
       expect(purged).toEqual({
-        downgradedAlarms: [{ alarmId: 'al-b-own', ownerUserId: B_PK }],
-        voiceAccessRevokedUserIds: [],
+        downgradedAlarms: [],
+        voiceAccessRevokedUserIds: [B_PK],
       });
     });
 
@@ -498,18 +492,6 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       ).toEqual([
         ['st-b-play', B_PK, 'google', 'apple-tx-a-gift'],
         ['st-c-gift', C_PK, 'apple', 'apple-tx-c-gift'],
-      ]);
-    });
-
-    it('B 의 알람은 남고, A 의 목소리를 쓰던 것만 목소리를 잃는다', async () => {
-      const alarms = await db.execute(
-        `SELECT id, message_id, voice_profile_id, mode, is_active FROM alarms ORDER BY id`,
-      );
-      expect(
-        alarms.rows.map((row) => [row.id, row.message_id, row.voice_profile_id, row.mode, Number(row.is_active)]),
-      ).toEqual([
-        ['al-b-own', null, null, 'sound-only', 1],
-        ['al-b-own2', 'msg-b', 'vp-b', 'tts', 1],
       ]);
     });
 

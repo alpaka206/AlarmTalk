@@ -182,7 +182,7 @@ final class CheerVarietyTests: XCTestCase {
                        ["cheer_v2_01", "cheer_v2_02"])
     }
 
-    func test_cheerFieldsRoundTripThroughDiskAndUploadOnlyModeAndPin() throws {
+    func test_cheerFieldsRoundTripThroughDisk() throws {
         var record = CheerVariety.prepared(
             cheerAlarm(mode: CheerMode.pinned.rawValue, pinned: "cheer_v2_02"),
             occurrence: occurrence,
@@ -196,23 +196,7 @@ final class CheerVarietyTests: XCTestCase {
         XCTAssertEqual(decoded.cheerSelection, record.cheerSelection)
         XCTAssertEqual(decoded.cheerHistory, record.cheerHistory)
 
-        let request = RemoteAlarmMapper.toRemoteRequest(decoded)
-        XCTAssertEqual(request.cheerMode, "pinned")
-        XCTAssertEqual(request.cheerPinnedContentId, "cheer_v2_02")
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(request)) as? [String: Any])
-        XCTAssertEqual(body["cheer_mode"] as? String, "pinned")
-        XCTAssertEqual(body["cheer_pinned_content_id"] as? String, "cheer_v2_02")
-        XCTAssertFalse(body.keys.contains { $0.contains("history") || $0.contains("selection") })
-
-        var weather = decoded
-        weather.bucketId = "weather"
-        XCTAssertNil(RemoteAlarmMapper.toRemoteRequest(weather).cheerMode)
-        var vary = decoded
-        vary.cheerMode = nil
-        XCTAssertEqual(RemoteAlarmMapper.toRemoteRequest(vary).cheerMode, "vary")
-        XCTAssertNil(RemoteAlarmMapper.toRemoteRequest(vary).cheerPinnedContentId)
+        // 서버로 올리는 본문은 없다(2026-10-29 서버 알람 사본 삭제) — 디스크 왕복만 본다.
     }
 
     func test_wakeIsAStockOnlyThemeThatMapsBothWays() {

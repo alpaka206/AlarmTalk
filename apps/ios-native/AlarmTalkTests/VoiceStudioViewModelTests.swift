@@ -61,10 +61,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "RATE_LIMITED"),
             "요청이 너무 많아요. 잠시 후 다시 시도해 주세요."
         )
-        XCTAssertEqual(
-            VoiceStudioViewModel.localizedVoiceMessage(forCode: "ALARM_NOT_FOUND"),
-            "이미 사라진 알람이에요."
-        )
     }
 
     /// 목소리 높이 두 코드(등록 확정 — 스펙 voice-and-message §4-3)는 공용 표가 받는다. 본문에만 코드가 실린 응답도

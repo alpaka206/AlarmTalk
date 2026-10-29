@@ -777,9 +777,9 @@ internal val FreeBucketOrder: List<String> = EditorMessageContexts
     //    1. **내용이 다르다.** 스톡 `greeting` 은 목소리 미리듣기용 자기소개다
     //       ("만나서 반가워요, 앞으로 매일 깨워 드릴게요") — 매일 아침 울릴 문구가 아니다.
     //       클론의 `preset` 은 **생성된 기상 인사**라 같은 이름의 다른 것이다.
-    //    2. **서버가 막는다.** `alarm-mutation.ts` 가 시스템 보이스 + greeting 을
-    //       `INVALID_BUCKET_ID`(400) 로 거절한다 — 미리듣기 클립을 알람으로 돌려 쓰는
-    //       우회를 막는 정책이다. 그대로 뒀으면 알람이 로컬에만 남고 서버 sync 가 영영 실패한다.
+    //    2. **미리듣기 클립을 알람으로 돌려 쓰지 않는다.** 예전에는 서버 알람 쓰기(`alarm-mutation.ts`)도
+    //       시스템 보이스 + greeting 을 `INVALID_BUCKET_ID`(400) 로 거절했다. 서버 알람 사본을 지운 뒤
+    //       (2026-10-29, #147)로는 **막는 곳이 이 목록뿐이다** — 옛 알람 테마 힌트(`legacyBucketHintsOf`)도 이걸로 거른다.
     //   기본 목소리에도 '기본 인사말' 을 주려면 **기상 인사 스톡 클립을 따로 구워야** 한다
     //   (미리듣기 클립을 재사용하는 것이 아니라). 그건 콘텐츠 작업이라 별도로 다룬다.
     .filterNot { (context, _) -> context == ManualMessageContext || context == DefaultRandomPromptContext }

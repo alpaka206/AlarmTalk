@@ -532,6 +532,35 @@ describe('POST /events — 사용 기록 배치 수집', () => {
       expect(mockDB.calls.some((c) => c.sql.includes('AS has_subscription'))).toBe(false);
     });
 
+    it('고지 전이면 알람 저장의 문구 종류(detail)는 비우고, 1판부터 있던 detail(해제 사유)은 그대로 둔다', async () => {
+      detailGate.closed = true;
+      preNoticeConsents();
+      const response = await buildApp().request(jsonReq('POST', '/events', {
+        events: [
+          event({ detail: 'cheer' }),
+          event({ type: 'alarm_updated', detail: 'manual' }),
+          event({ type: 'alarm_dismissed', detail: 'screen_off' }),
+        ],
+      }));
+      expect(await response.json()).toEqual({ accepted: 3 });
+      const call = insertCall();
+      const columns = /\(([^)]*)\)\s*VALUES/.exec(call.sql)![1]!.split(',').map((x) => x.trim());
+      const rows = Array.from({ length: call.args.length / columns.length }, (_, row) =>
+        Object.fromEntries(columns.map((column, i) => [column, call.args[row * columns.length + i]])),
+      );
+      expect(rows.map((row) => [row.type, row.detail])).toEqual([
+        ['alarm_created', null],
+        ['alarm_updated', null],
+        ['alarm_dismissed', 'screen_off'],
+      ]);
+    });
+
+    it('2판에 동의했으면 알람 저장의 문구 종류를 그대로 받는다', async () => {
+      const response = await buildApp().request(jsonReq('POST', '/events', { events: [event({ detail: 'cheer' })] }));
+      expect(await response.json()).toEqual({ accepted: 1 });
+      expect(firstRow()).toMatchObject({ type: 'alarm_created', detail: 'cheer' });
+    });
+
     it('전부 고지 전 2판 종류면 쓰기 없이 200', async () => {
       detailGate.closed = true;
       preNoticeConsents();

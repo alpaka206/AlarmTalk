@@ -15,7 +15,8 @@ import alarmMutation from '../src/routes/alarm-mutation';
 
 /**
  * **날짜 지정 알람(한 번)** — `docs/spec/alarm-lifecycle.md` §4-7.
- * 서버 행은 기기의 사본이다: 날짜를 왕복 보존하고, 형식·조합만 본다(지난 날짜는 거절하지 않는다).
+ * 서버는 알람 사본을 두지 않는다(#147). 옛 앱이 올리는 날짜는 형식·조합만 보고(지난 날짜는 거절하지 않는다)
+ * 받은 그대로 되돌려 준다 — DB 는 보지 않는다(`alarm-compat.test.ts`).
  */
 function buildApp(userId = 'user-1') {
   const app = new Hono<AppEnv>();
@@ -71,11 +72,9 @@ describe('마이그레이션 #140', () => {
   });
 });
 
-describe('POST /alarms — target_date', () => {
-  it('날짜 알람을 저장한다 — INSERT 에 날짜와 확인한 시간대가 실리고 응답이 날짜를 돌려준다', async () => {
-    mockDB.pushResult([{ plan: 'personal' }]);
-    mockDB.pushResult([], 1);
-    const res = await buildApp().request(
+describe('POST·PATCH /alarms — target_date(저장 없이 되돌려 준다)', () => {
+  it('날짜 알람은 응답에 날짜를 돌려주고, 날짜가 없으면 null 이다', async () => {
+    const dated = await buildApp().request(
       jsonReq('POST', '/alarms', {
         time: '07:00',
         repeat_days: [],
@@ -83,27 +82,18 @@ describe('POST /alarms — target_date', () => {
         timezone: 'Asia/Seoul',
       }),
     );
-    expect(res.status).toBe(201);
-    const insert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO alarms'))!;
-    expect(insert.sql).toContain('target_date');
-    expect(insert.args).toContain('2026-10-27');
-    expect(insert.args).toContain('Asia/Seoul');
-    expect((await res.json()).alarm.target_date).toBe('2026-10-27');
+    expect(dated.status).toBe(201);
+    expect((await dated.json()).alarm).toMatchObject({ target_date: '2026-10-27', timezone: 'Asia/Seoul' });
+
+    const undated = await buildApp().request(jsonReq('POST', '/alarms', { time: '07:00' }));
+    expect(undated.status).toBe(201);
+    expect((await undated.json()).alarm.target_date).toBeNull();
+    expect(mockDB.calls).toHaveLength(0);
   });
 
-  it('날짜 없는 알람도 그 칸에 NULL 을 쓴다(fail-closed — 마이그레이션 전이면 500)', async () => {
-    mockDB.pushResult([{ plan: 'personal' }]);
-    mockDB.pushResult([], 1);
-    const res = await buildApp().request(jsonReq('POST', '/alarms', { time: '07:00' }));
-    expect(res.status).toBe(201);
-    const insert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO alarms'))!;
-    expect(insert.sql).toContain('target_date');
-    expect(insert.args.at(-1)).toBeNull();
-  });
-
-  it('반복 요일과 날짜를 함께 보내면 400 — DB 를 보지 않는다', async () => {
+  it.each(['POST', 'PATCH'] as const)('%s — 반복 요일과 날짜를 함께 보내면 400 INVALID_TARGET_DATE', async (method) => {
     const res = await buildApp().request(
-      jsonReq('POST', '/alarms', {
+      jsonReq(method, method === 'POST' ? '/alarms' : `/alarms/${ID.alarm}`, {
         time: '07:00',
         repeat_days: [1, 2],
         target_date: '2026-10-27',
@@ -113,120 +103,5 @@ describe('POST /alarms — target_date', () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('INVALID_TARGET_DATE');
     expect(mockDB.calls).toHaveLength(0);
-  });
-});
-
-function pushPatchExisting(overrides: Record<string, unknown> = {}) {
-  mockDB.pushResult([
-    {
-      id: ID.alarm,
-      time: '07:00',
-      repeat_days: '[]',
-      is_active: 1,
-      message_id: null,
-      mode: 'sound-only',
-      wake_mode: 'sound_then_voice',
-      voice_profile_id: null,
-      bucket_id: null,
-      target_date: null,
-      user_plan: 'personal',
-      ...overrides,
-    },
-  ]);
-}
-
-function pushPatchResultRow(overrides: Record<string, unknown> = {}) {
-  mockDB.pushResult([], 1);
-  mockDB.pushResult([
-    {
-      id: ID.alarm,
-      user_id: 'user-1',
-      message_id: null,
-      time: '07:00',
-      repeat_days: '[]',
-      is_active: 1,
-      snooze_minutes: 5,
-      mode: 'sound-only',
-      vibration_pattern: 'default',
-      wake_mode: 'sound_then_voice',
-      voice_profile_id: null,
-      bucket_id: null,
-      timezone: 'Asia/Seoul',
-      target_date: '2026-10-27',
-      ...overrides,
-    },
-  ]);
-}
-
-describe('PATCH /alarms/:id — target_date', () => {
-  it('날짜를 실어 보내면 그대로 적고 응답에 날짜·시간대를 돌려준다', async () => {
-    pushPatchExisting();
-    pushPatchResultRow();
-    const res = await buildApp().request(
-      jsonReq('PATCH', `/alarms/${ID.alarm}`, {
-        repeat_days: [],
-        target_date: '2026-10-27',
-        timezone: 'Asia/Seoul',
-        is_active: false,
-      }),
-    );
-    expect(res.status).toBe(200);
-    const update = mockDB.calls.find((call) => call.sql.startsWith('UPDATE alarms'))!;
-    expect(update.sql).toContain('target_date = ?');
-    expect(update.args).toContain('2026-10-27');
-    const body = await res.json();
-    expect(body.alarm.target_date).toBe('2026-10-27');
-    expect(body.alarm.timezone).toBe('Asia/Seoul');
-  });
-
-  it('null 을 보내면 날짜를 지운다(날짜 알람 → 반복 알람)', async () => {
-    pushPatchExisting({ target_date: '2026-10-27' });
-    pushPatchResultRow({ repeat_days: '[1,2]', target_date: null });
-    const res = await buildApp().request(
-      jsonReq('PATCH', `/alarms/${ID.alarm}`, { repeat_days: [1, 2], target_date: null }),
-    );
-    expect(res.status).toBe(200);
-    const update = mockDB.calls.find((call) => call.sql.startsWith('UPDATE alarms'))!;
-    expect(update.sql).toContain('target_date = ?');
-    expect(update.args).toContain(null);
-  });
-
-  it('날짜를 싣지 않는 PATCH(옛 앱·토글)는 날짜를 건드리지 않는다', async () => {
-    pushPatchExisting({ target_date: '2026-10-27' });
-    pushPatchResultRow();
-    const res = await buildApp().request(
-      jsonReq('PATCH', `/alarms/${ID.alarm}`, { is_active: false }),
-    );
-    expect(res.status).toBe(200);
-    const update = mockDB.calls.find((call) => call.sql.startsWith('UPDATE alarms'))!;
-    expect(update.sql).not.toContain('target_date');
-  });
-
-  it('반복 요일만 실어 보내면 저장된 날짜를 지운다 — 보낸 기기에서는 반복 알람이다', async () => {
-    pushPatchExisting({ target_date: '2026-10-27' });
-    pushPatchResultRow({ repeat_days: '[1]', target_date: null });
-    const res = await buildApp().request(
-      jsonReq('PATCH', `/alarms/${ID.alarm}`, { repeat_days: [1] }),
-    );
-    expect(res.status).toBe(200);
-    const update = mockDB.calls.find((call) => call.sql.startsWith('UPDATE alarms'))!;
-    expect(update.sql).toContain('target_date = NULL');
-  });
-
-  it('날짜만 보냈는데 저장된 반복 요일이 있으면 400', async () => {
-    pushPatchExisting({ repeat_days: '[1,3]' });
-    const res = await buildApp().request(
-      jsonReq('PATCH', `/alarms/${ID.alarm}`, { target_date: '2026-10-27', timezone: 'Asia/Seoul' }),
-    );
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_TARGET_DATE');
-    expect(mockDB.calls.some((call) => call.sql.startsWith('UPDATE alarms'))).toBe(false);
-  });
-
-  it('기존 행 조회가 날짜 칸을 읽는다(fail-closed — 마이그레이션 전이면 500)', async () => {
-    pushPatchExisting();
-    pushPatchResultRow();
-    await buildApp().request(jsonReq('PATCH', `/alarms/${ID.alarm}`, { is_active: true }));
-    expect(mockDB.calls[0]!.sql).toContain('a.target_date');
   });
 });

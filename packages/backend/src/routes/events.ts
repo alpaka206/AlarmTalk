@@ -62,6 +62,13 @@ const ROW_PLACEHOLDERS = `(${INSERT_COLUMNS.map(() => '?').join(', ')})`;
 const V1_TYPES: ReadonlySet<string> = new Set(USAGE_EVENT_V1_TYPES);
 
 /**
+ * 1판 종류인데 `detail` 이 **8판이 고지한 값**인 것 — 알람 저장의 문구 종류(2026-10-29, 서버 알람 사본 삭제와 함께 실었다).
+ * 7판 본문은 "사건 시각과 식별자만" 이라, 그 전 동의자의 기록에서는 이 값을 비운다. 해제 사유처럼 1판부터 있던 `detail` 은
+ * 그대로 둔다.
+ */
+const V2_DETAIL_TYPES: ReadonlySet<string> = new Set(['alarm_created', 'alarm_updated']);
+
+/**
  * 고지 전(처리방침 2판 범위 미동의) 기록을 **1판 모양으로** 줄인다 — 2판 칸을 비우고, 2판에만 있는 종류는 버린다(null).
  * `docs/spec/usage-events.md` §7.5.
  */
@@ -74,7 +81,7 @@ function toV1(event: UsageEvent): UsageEvent | null {
     alarm_id: event.alarm_id,
     voice_profile_id: event.voice_profile_id,
     message_id: event.message_id,
-    detail: event.detail,
+    detail: V2_DETAIL_TYPES.has(event.type) ? null : event.detail,
   };
 }
 

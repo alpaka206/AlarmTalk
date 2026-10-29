@@ -207,7 +207,12 @@ struct VoiceProfileManagementPanel: View {
         // 실패했다.** 등록이 끝난 뒤엔 알람 클립이 이미 그 페르소나로 전부 렌더돼 있어
         // 바꿀 수 있는 값이 아니다. 관계·호칭 입력은 등록 플로우에만 둔다.
         .alert(String(localized: "이름 수정"), isPresented: renameAlertBinding) {
-            TextField(String(localized: "목소리 이름"), text: $editName)
+            // 상한(`InputSanitizer.voiceNameMaxLength`)에서 입력을 막는다 — 알럿 본문이 그 상한을 말한다(시스템 알럿이라 칸 아래에
+            // 경고를 띄울 수 없다). 예전에는 저장할 때 말없이 잘랐다(2026-10-29 두 앱 비교).
+            TextField(String(localized: "목소리 이름"), text: Binding(
+                get: { editName },
+                set: { editName = InputSanitizer.boundedVoiceName($0, wasTooLong: false).value }
+            ))
                 .textInputAutocapitalization(.never)
             Button(String(localized: "닫기"), role: .cancel) { editTarget = nil }
             // ⚠ **빈 이름을 조용히 삼키지 말 것.** 예전에는 `editTarget = nil` 로
@@ -229,7 +234,7 @@ struct VoiceProfileManagementPanel: View {
                     .isEmpty
             )
         } message: {
-            Text(String(localized: "알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없어요."))
+            Text(String(localized: "알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없고 \(InputSanitizer.voiceNameMaxLength)자까지 쓸 수 있어요."))
         }
         // ⚠ **확인형 모달은 시스템 `.alert` 다**(CLAUDE.md 「iOS 는 안드로이드를 원본으로
         // 삼는다」의 플랫폼 표준 갈래). 예전에는 커스텀 시트였고, 거기에 안드로이드에

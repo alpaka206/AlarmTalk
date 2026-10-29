@@ -14321,6 +14321,40 @@
           }
         }
       }
+    },
+    "%@ (광고 보상 %lld번)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (%lld from ads)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（広告特典 %lld回）"
+          }
+        }
+      }
+    },
+    "알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없고 %lld자까지 쓸 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the name shown in the alarm list and the Voices tab. It can't be left empty and can be up to %lld characters."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラーム一覧と声タブに表示される名前です。名前は空にできず、%lld文字まで入力できます。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

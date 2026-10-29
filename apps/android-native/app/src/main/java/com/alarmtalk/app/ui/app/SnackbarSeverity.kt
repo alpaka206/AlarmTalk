@@ -52,6 +52,7 @@ internal object SnackbarSeverities {
         R.string.msg_register_email_taken,
         R.string.msg_register_email_social_google,
         R.string.msg_register_email_social_apple,
+        R.string.msg_try_again_shortly,
         R.string.msg_verification_code_mismatch,
         R.string.msg_register_failed,
         R.string.msg_password_reset_failed,
@@ -130,7 +131,6 @@ internal object SnackbarSeverities {
         R.string.api_error_voice_cloning_failed,
         R.string.api_error_invalid_voice_pitch,
         R.string.api_error_voice_pitch_locked,
-        R.string.api_error_alarm_not_found,
         R.string.api_error_tts_generation_failed,
     )
 

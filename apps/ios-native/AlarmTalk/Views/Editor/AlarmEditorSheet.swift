@@ -16,7 +16,6 @@ struct AlarmEditorSheet: View {
     @EnvironmentObject var auth: AuthViewModel
     @EnvironmentObject var store: LocalAlarmStore
     @EnvironmentObject var alarmKit: AlarmKitViewModel
-    @EnvironmentObject var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject var prefetcher: StockClipPrefetcher
     @EnvironmentObject var socialFeatures: SocialFeatureViewModel
@@ -430,6 +429,7 @@ struct AlarmEditorSheet: View {
                 // ⚠ nil 로 하드코딩하지 말 것 — 그러면 '이번 달 남은 횟수' 가 영영 안 뜬다.
                 manualRemaining: manualQuota?.remaining,
                 manualLimit: manualQuota?.limit,
+                manualAdCredits: manualQuota?.adReward?.credits,
                 savedWeatherCountry: voiceStudio.weatherCountry,
                 savedWeatherCity: voiceStudio.weatherCity,
                 savedFortuneGender: voiceStudio.fortuneGender,
@@ -522,6 +522,17 @@ struct AlarmEditorSheet: View {
         // ⚠ **게이트에 코드 입력 시트(`RedeemCodeSheet`)를 되살리지 말 것**(2026-10-14, App Store 지침
         // 3.1.1 두 번째 반려 — 선물 코드 폐지). 할인·무료 이용은 스토어 오퍼 코드로 준다.
         // 목소리 탭 게이트도 같다.
+        // 결제 안내가 떴다(`paywall_viewed`, surface `editor_gate` — `docs/spec/usage-events.md` §7.1). 무료가 유료 기능에
+        // 막혀 이용권 화면으로 가는 길을 본 순간이다 — 안드로이드 `AlarmEditorScreen` 의 `VoiceGateReason.PLAN_REQUIRED` 짝
+        // (2026-10-29 두 앱 비교 — 예전 iOS 는 이용권 탭에서만 적었다).
+        .onChange(of: voiceGateAlert?.id) { _, newID in
+            guard newID != nil, voiceGateAlert?.offersPlanActions == true, planAccess == .free else { return }
+            UsageEventQueue.shared.record(
+                .paywallViewed,
+                props: UsageEventProps(surface: "editor_gate"),
+                userID: auth.session?.user.id
+            )
+        }
         // 검증/실패 알림이 뜰 때 한 번 error 햅틱을 울려 저장 실패를 촉각으로 알린다.
         .onChange(of: validationAlert?.id) { _, newID in
             if newID != nil {
@@ -785,6 +796,7 @@ struct AlarmEditorSheet: View {
         ) {
         case .offerAd:
             // 보상과 쓰는 범위를 먼저 말한다(§3 「흐름」 1).
+            AdRewardAttempts.offered(surface: "editor_gate", userID: auth.session?.user.id)
             voiceGateAlert = VoiceGateAlertContent(
                 title: String(localized: "이번 달 무료 만들기를 다 썼어요"),
                 message: String(localized: "광고를 끝까지 한 번 보면 기본 목소리로 직접 입력 문구를 한 번 더 만들 수 있어요. 받은 보상은 이 계정에서만 쓰여요. 플러스는 한 달에 30번 만들 수 있어요."),
@@ -822,18 +834,25 @@ struct AlarmEditorSheet: View {
         defer { adRewardBusy = false }
         let creditsBefore = manualQuota?.adReward?.credits ?? 0
         let authModel = auth
+        let userID = auth.session?.user.id
         let flow = RewardedAdFlow<RewardedAdHandle>(
             client: LiveAdRewardSessionClient(token: { @MainActor in authModel.session?.token }),
             adUnit: RewardedAds.shared.adUnitID,
             load: { userID, customData in
                 await RewardedAds.shared.load(ssvUserID: userID, ssvCustomData: customData)
             },
-            show: { handle in await RewardedAds.shared.show(handle) },
+            show: { handle in
+                // 시청 시작은 광고가 **실제로 뜨는 순간**이다(`AdRewardAttempts.viewStarted`) — 띄우기 전에 적으면 표시 실패도
+                // 시청으로 세진다(코덱스 #977). 안드로이드 `RewardedAds.show` 의 `onShown` 과 같다.
+                await RewardedAds.shared.show(handle) { AdRewardAttempts.viewStarted(userID: userID) }
+            },
             errorCode: { ($0 as? APIError)?.serverErrorCode }
         )
         let result = await flow.watch()
         switch result {
         case .earned:
+            // 끝까지 봤다 — 서버 확인(SSV)을 기다린다. 적립은 서버만 한다.
+            AdRewardAttempts.pending(userID: userID)
             var credited = false
             for _ in 0..<8 {
                 try? await Task.sleep(for: .seconds(1))
@@ -843,6 +862,8 @@ struct AlarmEditorSheet: View {
                     break
                 }
             }
+            // 이 화면이 지켜보는 동안 서버가 적립을 확인했을 때만 '지급' 이다. 못 봤으면 대기로 남는다.
+            if credited { AdRewardAttempts.granted(userID: userID) }
             validationAlert = credited
                 ? ValidationAlertContent(
                     title: String(localized: "광고 보상을 받았어요"),
@@ -3035,11 +3056,6 @@ struct AlarmEditorSheet: View {
             )
             return false
         }
-        // ⚠ 편집 커밋은 전용 진입점을 쓴다. 화면 진입 시점의 스냅샷으로 전체 행을 덮으면,
-        // TTS 생성(수 초~수십 초) 사이에 push 가 새긴 remoteAlarmId 를 nil 로 되돌려
-        // 다음 push 가 같은 알람을 또 create 한다(서버에 두 행).
-        if beforeCompletion != nil { store.deferServerSync(id: merged.id) }
-        defer { if beforeCompletion != nil { store.resumeServerSync(id: merged.id) } }
         store.upsertPreservingServerSyncFields(merged)
         let scheduled = await alarmKit.schedule(record: merged, store: store)
         guard scheduled else {
@@ -3068,19 +3084,21 @@ struct AlarmEditorSheet: View {
             }
             validationAlert = ValidationAlertContent(
                 title: String(localized: "저장할 수 없어요"),
-                message: remoteSync.statusMessage ?? String(localized: "알람 삭제에 실패했어요")
+                message: String(localized: "알람 삭제에 실패했어요")
             )
             return false
-        }
-        if beforeCompletion != nil, var committed = store.record(id: merged.id) {
-            committed.syncState = store.nextLocalSyncState(for: committed).rawValue
-            store.upsert(committed)
         }
         if let existing {
             await alarmKit.cancelScheduledAlarm(record: existing)
         }
         rememberChoicesUsed(merged)
         recordSaveUsageEvent(record: merged, previous: existing)
+        // 내 클론으로 응원을 새로 골랐으면 서버에 보충을 알린다 — 답을 기다리지 않고, 실패해도 저장은 그대로다(잃는 것은 보충이
+        // 한 번 늦는 것뿐이고 다음 응원 저장이 다시 알린다). 안드로이드 `MainViewModelAlarmActions` 의 `requestCloneCheerSupplementIfNeeded` 짝.
+        if CheerVariety.needsCloneSupplement(saved: merged, previous: existing),
+           let voiceID = merged.voiceProfileId, let token = auth.session?.token {
+            Task { try? await AlarmTalkAPI.shared.requestVoiceContentSupplement(id: voiceID, theme: CheerVariety.bucketID, token: token) }
+        }
         // 응원 선택(`content_selected`) — 저장에 성공했을 때만, 저장을 **시작한** 계정으로(예약을 기다리는 사이 바뀌어도).
         if let props = CheerVariety.contentSelectionProps(for: merged) {
             UsageEventQueue.shared.record(
@@ -3124,6 +3142,8 @@ struct AlarmEditorSheet: View {
             alarmID: record.id,
             voiceProfileID: record.voiceProfileId,
             messageID: record.ttsMessageId,
+            // 문구 종류(`usage-events.md` §1) — 관리자 콘솔의 '알람 문구 종류' 가 센다. 원문이 아니라 종류만이다.
+            detail: record.messageKindForUsage,
             userID: userID
         )
         if record.isManualMessageAlarm {
@@ -3141,7 +3161,7 @@ struct AlarmEditorSheet: View {
         //
         // ⚠ **문구가 같으면 적지 않는다.** 오디오만 다시 만든 경우까지 적으면 해제와
         //   붙임이 같은 시각에 찍혀 순서가 뒤집히고, 붙어 있는 문구가 비사용중이 된다.
-        // ⚠ **파일은 지우지 않는다** — 30일 sweep 이 회수하고, 그 사이 같은 문구를 다시
+        // ⚠ **파일은 지우지 않는다** — 기기의 30일 sweep 이 회수하고, 그 사이 같은 문구를 다시
         //   고르면 서버 호출도 월 한도 차감도 없이 재사용된다.
         // ⚠ 판정은 **놓는 쪽**(`previous`)으로 한다 — `record` 로 하면 직접 입력 → 테마
         //   편집에서 앞 문구를 영영 안 놓아 준다.
@@ -3231,12 +3251,7 @@ struct AlarmEditorSheet: View {
         defer { isWorking = false }
         let ownerID = auth.session?.user.id
         await finishScheduling(merged: content.merged, existing: content.existing) {
-            await removeReplacementConflicts(content.conflicts, deleteRemote: { conflict in
-                guard auth.session?.user.id == ownerID else { return false }
-                // 확인 창을 띄운 사이 push가 새긴 서버 ID를 버리지 않는다.
-                guard let current = store.record(id: conflict.id) else { return true }
-                return await remoteSync.deleteRemote(record: current, session: auth.session)
-            }, deleteLocal: { conflict in
+            await removeReplacementConflicts(content.conflicts, deleteLocal: { conflict in
                 guard auth.session?.user.id == ownerID else { return false }
                 guard let current = store.record(id: conflict.id) else { return true }
                 return await alarmKit.cancel(record: current, store: store)

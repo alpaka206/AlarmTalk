@@ -3701,6 +3701,17 @@ export const migrations: Migration[] = [
     name: 'drop-users-name',
     statements: [`ALTER TABLE users DROP COLUMN name`],
   },
+  {
+    // **서버 알람 사본을 지운다**(2026-10-29 오너 — "서버 사본은 필요 없다, 이번에 같이 지워"). 알람의 원본은 언제나 기기였고
+    // 서버 행은 사본이었다. 사본을 읽던 곳은 같은 배포에서 모두 걷었다 — 목소리 회수 대상(계정 단위 신호만 남았다), 직접 입력
+    // 음원 보존 예외(직접 입력 음성은 이제 목소리를 지울 때까지 둔다), 응원 보충 신호(앱이 `POST /voice/:id/content-supplement`
+    // 로 알린다), 스톡 클립 삭제·은퇴 힌트, 관리자 테마 표(사용 기록에서 센다), 탈퇴·이용권 정리의 행 삭제. 옛 앱의 올리기
+    // (`POST/PATCH/DELETE /alarm`)는 저장 없이 되돌려 준다 — 배포 → 마이그레이션 창에 이 표를 부르는 코드가 없다.
+    // 이 표를 가리키는 외래 키·트리거는 없다(`alarm_creation_order` 와 그 트리거는 #131 에서 지웠다). 색인은 표와 함께 지워진다.
+    id: 147,
+    name: 'drop-alarms',
+    statements: [`DROP TABLE IF EXISTS alarms`],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

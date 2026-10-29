@@ -249,56 +249,6 @@ class AlarmOwnerScopedOperationsTest {
         assertEquals(systemVoiceId, voiceOf("b-1"))
     }
 
-    // ------------------------------------------------------------ 아웃바운드 동기화
-
-    @Test
-    fun outboundSyncSkipsRowsOwnedByAnotherAccount() {
-        val a = voiceAlarm("a-1", owner = "user-a", syncState = AlarmSyncStates.LOCAL_ONLY)
-
-        assertFalse(
-            isOutboundSyncCandidate(a, ownerUserId = "user-b", adoptOwnerlessAlarms = true),
-        )
-    }
-
-    @Test
-    fun outboundSyncSendsTheActiveAccountsDirtyRows() {
-        val mine = voiceAlarm("b-1", owner = "user-b", syncState = AlarmSyncStates.DIRTY)
-
-        assertTrue(
-            isOutboundSyncCandidate(mine, ownerUserId = "user-b", adoptOwnerlessAlarms = false),
-        )
-    }
-
-    @Test
-    fun outboundSyncAdoptsOwnerlessRowsOnlyWhenOwnershipIsSettled() {
-        val legacy = voiceAlarm("legacy-1", owner = null, syncState = AlarmSyncStates.FAILED)
-
-        assertTrue(
-            isOutboundSyncCandidate(legacy, ownerUserId = "user-b", adoptOwnerlessAlarms = true),
-        )
-        assertFalse(
-            "임자 미정인 행을 이 계정 서버에 올리면 안 된다",
-            isOutboundSyncCandidate(legacy, ownerUserId = "user-b", adoptOwnerlessAlarms = false),
-        )
-    }
-
-    @Test
-    fun outboundSyncWithoutASessionOnlyConsidersOwnerlessRows() {
-        val owned = voiceAlarm("a-1", owner = "user-a", syncState = AlarmSyncStates.LOCAL_ONLY)
-        val legacy = voiceAlarm("legacy-1", owner = null, syncState = AlarmSyncStates.LOCAL_ONLY)
-
-        assertFalse(isOutboundSyncCandidate(owned, ownerUserId = null, adoptOwnerlessAlarms = true))
-        assertTrue(isOutboundSyncCandidate(legacy, ownerUserId = null, adoptOwnerlessAlarms = true))
-    }
-
-    @Test
-    fun outboundSyncStillIgnoresSyncedRows() {
-        // 회귀 방지: 소유자 게이트를 넣으면서 원래 조건(미반영 상태)이 느슨해지면 안 된다.
-        val synced = voiceAlarm("b-1", owner = "user-b", syncState = AlarmSyncStates.SYNCED)
-
-        assertFalse(isOutboundSyncCandidate(synced, "user-b", adoptOwnerlessAlarms = true))
-    }
-
     // ------------------------------------------------- 같은 시각(HH:mm) 충돌 판정
 
     @Test
@@ -368,8 +318,7 @@ class AlarmOwnerScopedOperationsTest {
 
     @Test
     fun ownerlessRowsStayPendingInsteadOfBeingClaimedByTheSyncPath() = runBlocking {
-        // syncWithBackend 는 올리기 전에 임자를 확정한다. 확정에 성공하면 그 행은 주인 것이 되고,
-        // 이번 세션의 후보에서 빠진다(위 isOutboundSyncCandidate 판정과 이어지는 부분).
+        // 임자 미정 행은 지금 세션이 가져가지 않고 앞 계정으로 확정된다(서버로 올리는 길은 2026-10-29 에 지웠다).
         seedVoiceAlarm(id = "legacy-1", owner = null, syncState = AlarmSyncStates.LOCAL_ONLY)
         currentUser = "user-b"
         pendingOwner = "user-a"
@@ -378,8 +327,5 @@ class AlarmOwnerScopedOperationsTest {
 
         assertEquals("user-a", dao.getById("legacy-1")?.ownerUserId)
         assertNotNull(dao.getById("legacy-1"))
-        assertFalse(
-            isOutboundSyncCandidate(dao.getById("legacy-1")!!, "user-b", adoptOwnerlessAlarms = true),
-        )
     }
 }

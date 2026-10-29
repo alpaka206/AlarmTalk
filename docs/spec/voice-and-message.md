@@ -37,9 +37,10 @@
    **앱을 고치지 않아도** 줄이 나타난다.
 2. **'기본 인사말' 은 기본(시스템) 목소리에서 빠진다.** 스톡 `greeting` 은 목소리
    **미리듣기용 자기소개**("만나서 반가워요…")라 매일 아침 울릴 문구가 아니다 —
-   클론의 `preset` 은 **생성된 기상 인사**라 같은 이름의 다른 것이다. 서버도 시스템
-   보이스 + greeting 을 `INVALID_BUCKET_ID` 로 거절한다(`alarm-mutation.ts`,
-   미리듣기 클립을 알람으로 돌려 쓰는 우회 차단).
+   클론의 `preset` 은 **생성된 기상 인사**라 같은 이름의 다른 것이다. 막는 곳은 **앱의 목록**이다
+   (기본 목소리에는 그 줄이 없다). (2026-10-29 전에는 서버의 알람 쓰기도 시스템 보이스 + greeting 을
+   `INVALID_BUCKET_ID` 로 거절했다 — 미리듣기 클립을 알람으로 돌려 쓰는 우회 차단. 서버 알람 사본을 지워 그 검사도
+   없어졌다 — 옛 앱의 올리기는 형식만 본다, [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」.)
    ⚠ 기본 목소리에도 주려면 **기상 인사 스톡 클립을 따로 구워야 한다** — 미리듣기
    클립을 재사용하는 것으로는 안 된다. 2026-09-02 에 그렇게 했다가 되돌렸다.
    → 2026-10-26 그 클립이 **'기상 인사'(`wake`)** 다(§5-4). 기본 목소리는 '기본 인사말' 대신 그 줄을 본다.
@@ -319,9 +320,15 @@
   치우고 물러난다 — **새 렌더의 음원을 지우지 않고, 큐를 done 으로 끝내지도 않는다**(끝내면
   그 목소리는 영영 다시 만들어지지 않는다). 실패가 아니므로 attempts 도 올리지 않는다.
 - **직접 입력 custom은 재렌더하지 않는다.** 그 문구를 쓰던 알람은 아래처럼 내린다.
-- **직접 입력 알람은 기기에서 내린다.** 서버 행을 내려도 그 기기의 로컬 행·캐시된 음원·OS 예약에는
-  닿지 않는다(앱은 서버에서 알람을 다시 받아오지 않는다). 교체는 프로필 **id 를 그대로 재사용**하므로
-  클라의 '접근 가능 목록 대조' 로도 영원히 안 걸린다. 그래서 두 경로로 알린다:
+- **옛 목소리의 직접 입력 음원은 교체 트랜잭션에서 지운다**(2026-10-29 오너 — 직접 입력 음성은 그 목소리가 지워질 때만
+  지우고, 교체는 옛 목소리를 지우는 일이다). 그 목소리의 직접 입력 문구(`category = 'custom'`)가 가리키는 R2 키를 삭제
+  큐(`pending_external_deletions`)에 먼저 적고, `generated_audio_assets` 행을 지운 뒤 문구의 `audio_url` 을 비운다(문구
+  행은 사용량 집계를 위해 남긴다). 직접 입력 음성에는 이제 보존 기한이 없어(§11) 참조만 끊으면 R2 에 영영 남기 때문이다.
+  프리셋 음원은 건드리지 않는다(재렌더가 같은 message id 에 덮는다). 회귀 `voice-profile.test.ts` 「교체(replace_existing)
+  시 직접 입력 음원 처리」·`old-app-compat.test.ts`.
+- **직접 입력 알람은 기기에서 내린다.** 서버에는 알람이 없다(2026-10-29 — 그 전에는 서버 사본의 행도 내렸지만, 그것으로는
+  그 기기의 로컬 행·캐시된 음원·OS 예약에 닿지 않았다. 앱은 서버에서 알람을 다시 받아오지 않는다). 교체는 프로필 **id 를
+  그대로 재사용**하므로 클라의 '접근 가능 목록 대조' 로도 영원히 안 걸린다. 그래서 두 경로로 알린다:
   - **등록한 기기**는 교체 성공(`replaced: true`) 즉시 그 프로필의 직접 입력 알람을 내리고 예약을
     다시 맞춘다. 확정 화면이 `이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요.` 로 교체를 알리므로 별도 안내는
     띄우지 않는다(직접 입력 알람이 기본 목소리로 바뀐다는 설명은 2026-10-08 사용자 지시로 화면에서 뺐다). '내린다' 는 알람음이 아니라 **기본
@@ -2155,22 +2162,37 @@ iOS `selectedBucketDraft`).
 스톡 문구·목소리를 전면 교체할 때, 옛 프리셋 행을 **지우지 않는다.** `messages.retired_at`
 에 시각을 찍어 **목록에서만** 뺀다.
 
-**왜 지우면 안 되는가.** 옛 행을 지우고 참조 알람을 `message_id = NULL` 로 떼면 셋이 깨진다:
+**왜 지우면 안 되는가.** 옛 행을 지우면 셋이 깨진다(2026-10-29 전에는 서버 알람 사본의 참조도 `message_id = NULL` 로
+뗐다 — 사본은 지웠고, 지금 그 클립을 무는 것은 기기의 알람뿐이다):
 
 | 깨지는 것 | 결과 |
 | --- | --- |
-| 되살릴 수 없는 알람 | 버킷 없이 클립 하나만 물린 **옛 행**은 재바인더 두 갈래 **어디에도** 안 걸린다(하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구하는데 그 행은 둘 다 없다) → 영구 sound-only |
+| 되살릴 수 없는 알람 | 버킷 없이 클립 하나만 물린 **옛 행**은 재바인더 두 갈래 **어디에도** 안 걸린다(하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구하는데 그 행은 둘 다 없다) — 그 행의 테마를 알려 줄 힌트(아래)도 지운 클립에는 없다 → 영구 sound-only |
 | R2 미아 | `generated_audio_assets` 행이 R2 키의 **유일한 원장**이다. 지우면 목소리 삭제·**생체정보 동의 철회**에도 그 오디오를 찾아 지울 수 없다 |
 | 배포 직후 공백 | 기본 목소리 클립이 0개가 된다(게시는 뒤에 온다 — 위 ⑤) |
 
-⚠ **은퇴 수단으로 `is_preset` 을 내리지 말 것.** 그 값은 '목록에 뜨는가' 가 아니라 **세 가지를
-동시에** 뜻한다:
-1. **쓰기 인가** — `messageBelongsToCaller` 의 시스템 프리셋 갈래,
-2. **읽기 인가** — `GET /tts/messages/:id/audio` 의 같은 갈래(알람이 참조한다는 이유로 여는 갈래는 없다),
-3. **TTL 면제** — `audio-retention.ts` 가 프리셋을 보존 스윕에서 제외한다.
+**버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트**(매니페스트의 `legacy_bucket_hints` — 서버 `findLegacyBucketHints`)는
+2026-10-29 부터 **기본 목소리의 무료 테마 프리셋 전부 — 지금 것(①)과 은퇴한 것(②)** 을 싣는다. 예전 ①은 그 사용자의 서버 알람
+사본이 문 클립이었다 — 사본이 없으니 누가 무엇을 무는지 모르고, 그래서 ①이 고를 수 있던 전부를 준다. 1.3 앱은 은퇴하지 않은
+클립을 매니페스트의 클립 목록(테마와 함께 실려 있다)에서 **스스로 힌트로 만들어 서버 힌트와 합친다**(서버 힌트가 이긴다 — 안드로이드
+`legacyBucketHintsOf`, iOS `VoiceStudioViewModel.legacyBucketHints(from:)`).
+⚠ **① 을 빼지 말 것 — 옛 앱(1.2.16)은 힌트를 서버 칸에서만 읽는다**(코덱스 #977). 빼면 그 앱의 버킷 없는 옛 알람이 언어를 바꿔도
+다시 묶이지 않는다. ①은 1.3 강제 업데이트(`minSupported`) 뒤에 지운다 — 그때부터 서버에서만 올 수 있는 것은 목록에서 빠진 ②뿐이다.
+②는 최근에 은퇴한 것부터 상한(400)까지다. `retired_at` 이 없는 배포 창(#110 전)에는 전부가 ①이다 — 매니페스트를 500 으로 만들지
+않는다.
+⚠ **앱이 만드는 힌트도 무료 테마만 담는다 — 기본 목소리의 `greeting` 은 빠진다**(안드로이드 `FreeBucketOrder`, iOS
+`FreeBucket.order`). 그 클립은 목소리 소개라 테마가 아니다 — 서버 힌트는 같은 이유로 `FREE_BUCKET_CATEGORIES` 로 걸렀다. 거르지
+않으면 그 클립을 문 '기본 인사말' 알람이 `greeting` 테마로 다시 묶여 소개 문구로 운다. 클립은 카테고리가 아니라 테마로 본다
+(`cheer_v2` → `cheer`).
 
-내리면 그 알람은 **저장도 안 되고, 재다운로드도 안 되고, 30일 뒤 오디오까지 지워진다** —
-지키려던 호환성이 정확히 반대로 깨진다. 그래서 표식을 따로 둔다.
+⚠ **은퇴 수단으로 `is_preset` 을 내리지 말 것.** 그 값은 '목록에 뜨는가' 가 아니라 **두 가지를
+동시에** 뜻한다:
+1. **읽기 인가** — `GET /tts/messages/:id/audio` 의 시스템 프리셋 갈래(알람이 참조한다는 이유로 여는 갈래는 없다),
+2. **TTL 면제** — `audio-retention.ts` 가 프리셋을 보존 스윕에서 제외한다.
+
+내리면 그 알람은 **재다운로드가 안 되고, 30일 뒤 오디오까지 지워진다** — 지키려던 호환성이 정확히 반대로 깨진다. 그래서
+표식을 따로 둔다. (2026-10-29 전에는 셋이었다 — 알람 쓰기의 인가 `messageBelongsToCaller` 의 시스템 프리셋 갈래도 이 값을
+봐서, 내리면 그 알람의 **저장**도 막혔다. 서버 알람 사본과 함께 그 판정을 지웠다.)
 
 **`retired_at` 을 봐야 하는 곳은 「살아 있는 프리셋이 있는가」를 묻는 전부다.** 하나라도
 빠지면 조용히 깨진다 — 특히 `generateStockClip` 의 INSERT 가드를 빠뜨리면 **교체가 아무 일도
@@ -2205,7 +2227,8 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
 
 - 시스템 스톡: `npm run publish:stock` 의 교체 갈래가 살아 있는 행의 `audio_url` 이 지금 문구·모델로 계산한 키와
   다르면 바꾼다(비교 후 교체 — 겹친 게시가 서로를 덮지 않는다. 원장 행을 남기고 옛 키는 삭제 큐로).
-  `--dry-run` 이 `[교체]` 로 보여 준다. ⚠ `seed-stock-clips?reset` 은 쓰지 않는다 — 행을 지우고 알람을 뗀다.
+  `--dry-run` 이 `[교체]` 로 보여 준다. ⚠ `seed-stock-clips?reset` 은 쓰지 않는다 — 행을 지운다(위 「왜 지우면 안 되는가」.
+  2026-10-29 전에는 서버 알람 사본의 참조도 뗐다).
 - 클론: 마이그레이션 #124 가 굽혀 있는 클론을 교체 회차(`refresh_existing`)로 큐에 다시 넣는다 — 서버 cron 이
   같은 message_id 에 덮어쓴다(§5-2 의 교체 경로와 같다). 새 등록은 그 대기열 앞에 선다(claim 이 `refresh_existing
   = 0` 을 먼저 잡는다).
@@ -2293,16 +2316,17 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
 
 ### 응원 — 다양하게 / 이 문구로 고정
 
-**저장값**(알람 행, 두 앱 + 서버 사본이 왕복 보존):
+**저장값**(알람 행 — 두 앱의 기기 저장소에만 있다):
 
-| 값 | 뜻 | 서버 칼럼(#143) |
+| 값 | 뜻 | 옛 앱 API 칸 |
 | --- | --- | --- |
-| `cheerMode` | `vary`(다양하게) / `pinned`(이 문구로 고정). 없으면 `vary` | `alarms.cheer_mode` |
-| `cheerPinnedContentId` | 고정한 문구의 ID | `alarms.cheer_pinned_content_id` |
+| `cheerMode` | `vary`(다양하게) / `pinned`(이 문구로 고정). 없으면 `vary` | `cheer_mode` |
+| `cheerPinnedContentId` | 고정한 문구의 ID | `cheer_pinned_content_id` |
 
-응원 테마가 아닌 알람은 둘 다 보내지 않는다. 서버는 값을 검사한다(모드는 둘 중 하나, ID 는 카탈로그에 있는 응원 ID) —
-어긋나면 400 `INVALID_CHEER_SETTING`. 칼럼을 쓰는 것은 **값이 왔을 때뿐**이다(배포 창에 새 칼럼을 참조하는 요청은
-통째로 실패한다 — fail-closed. 값이 없는 요청은 지금과 같은 행을 남기므로 칼럼을 건드리지 않는다).
+서버에는 알람이 없다(2026-10-29 — [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」). 옛 앱의 올리기에 두
+칸이 오면 서버는 값만 검사하고(모드는 둘 중 하나, ID 는 카탈로그에 있는 응원 ID — 어긋나면 400 `INVALID_CHEER_SETTING`)
+받은 그대로 되돌려 준다. (그 전에는 서버 사본의 `alarms.cheer_mode`·`cheer_pinned_content_id`(#143)에 값이 왔을 때만 적었다 —
+표와 함께 지웠다.)
 
 **기기 로컬 상태**(서버로 가지 않는다 — 회전 자리와 같은 층위):
 
@@ -2364,8 +2388,9 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
   그래서 한 목소리에는 둘 중 하나만 보인다: 기본 목소리는 '기상 인사', 클론은 '기본 인사말'.
 - 줄이 나오는 조건은 §2 의 규칙 1 그대로다 — 그 (목소리 · 언어)로 `wake` 클립이 매니페스트에 있을 때. 공개 전에는 없다.
 - ⚠ **목소리 미리듣기 `greeting`(자기소개)을 알람에 다시 노출하지 않는다.** 기상 인사는 따로 구운 다른 클립이다
-  (§2 규칙 2 의 "기상 인사 스톡 클립을 따로 구워야 한다" 가 이것이다). 서버는 지금처럼 시스템 보이스 + `greeting` 을
-  `INVALID_BUCKET_ID` 로 거절하고, `wake` 는 받는다.
+  (§2 규칙 2 의 "기상 인사 스톡 클립을 따로 구워야 한다" 가 이것이다). 막는 곳은 앱의 목록이다 — 서버의 알람 쓰기가 시스템
+  보이스 + `greeting` 을 `INVALID_BUCKET_ID` 로 거절하던 검사는 서버 알람 사본과 함께 없어졌다(2026-10-29, §2). 버킷 id
+  `wake` 는 옛 앱 올리기의 칸 검사(`validateAlarmFields`)도 받는다.
 - 고르는 방법은 약과 같은 **순차 회전**이다(§5). 다양하게/고정은 응원에만 있다.
 - 기본 목소리의 '처음 폴백'(§4 — 추가 입력이 필요 없는 첫 테마)은 목록 순서상 공개 뒤 `wake` 가 된다.
 
@@ -2373,9 +2398,20 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
 
 등록 목소리의 기본 세트(21개)는 그대로다 — 등록 시간도 그대로다. 새 응원 14개는 **보충**이다.
 
-- **언제**: 사용자가 그 클론으로 **응원 알람을 저장할 때**(서버 `POST`·`PATCH /alarm`, 저장이 끝난 뒤 — 실패해도 저장은
-  성공으로 둔다). 개인 목소리 권한이 있고(`hasPersonalVoiceAccess`) 그 묶음이 공개됐을 때만. 그 언어로 이미 다 있으면
-  아무것도 하지 않는다. 기존 프로필 전체를 한꺼번에 다시 굽지 않는다.
+- **언제**: 사용자가 그 클론으로 **응원 알람을 저장한 뒤** 앱이 알린다 — `POST /voice/:id/content-supplement`
+  `{ "theme": "cheer" }`(2026-10-29. 그 전에는 서버 알람 사본의 `POST`·`PATCH /alarm` 이 저장 뒤에 함께 요청했다 — 사본을 지워
+  앱이 직접 알린다). **테마나 목소리를 새로 골랐을 때만** 부른다 — 새 알람, 다른 테마에서 응원으로, 다른 목소리에서 그
+  클론으로. 켜고 끄기·시각만 고친 저장, 기본 목소리·추가 팩, 알람 모드·직접 녹음은 부르지 않는다(판정 안드로이드
+  `needsCloneCheerSupplement`, iOS `CheerVariety.needsCloneSupplement`). 답을 기다리지 않고 실패해도 저장은 그대로다 — 잃는
+  것은 보충이 한 번 늦는 것뿐이고, 다음 응원 저장이 다시 알린다.
+- **서버**: 응원 말고는 400 `INVALID_BUCKET_ID`, 개인 목소리 권한(`hasPersonalVoiceAccess`)이 없으면 403
+  `VOICE_FEATURE_REQUIRES_PAID_PLAN`, 내 확정·ready 클론이 아니면 404 `VOICE_PROFILE_NOT_FOUND`(남의 클론·기본 목소리·
+  초안·준비 중·지운 목소리). 통과하면 200 `{ result }` — `requestCloneContentSupplement` 의 답(`queued`·`requested`·
+  `already_complete`·`not_released` 등)이다. 그 묶음이 공개됐을 때만 보충하고, 그 언어로 이미 다 있으면 아무것도 하지 않는다.
+  기존 프로필 전체를 한꺼번에 다시 굽지 않는다. 큐의 새 칸(#143)이 없는 배포 창에는 500 이다 — 앱이 답을 기다리지 않으므로
+  잃는 것이 없다.
+- ⚠ **옛 앱의 알람 올리기(`POST`·`PATCH /alarm`)는 보충을 열지 않는다** — 여는 것은 보충 요청뿐이다(회귀
+  `cheer-variants.test.ts`).
 - **어떻게**: 사전렌더 큐에 요청한 묶음을 적고(`voice_prerender_queue.content_sets`), 끝난 큐면 **보충 회차**
   (`supplement = 1`)로 다시 연다. 보충 회차는 줄 맨 뒤다 — 새 등록 > 다시 굽기 > 보충. 같은 틱 예산(`maxClips`) 안에서
   남는 몫만 쓴다.
@@ -2383,8 +2419,10 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
   기본 세트만 센다 — 그렇지 않으면 두 앱이 그 목소리를 '준비 중' 으로 보고 고를 수 없게 한다(§「준비 페이지」).
   `prerender/advance` 의 개수도 기본 세트만 센다.
 - 보충이 다섯 번 진전 없이 실패하면 `failed` 가 아니라 `done` 으로 접는다(기본 세트는 멀쩡하다). 다음 응원 저장이 다시 요청한다.
-- ⚠ **`PATCH` 는 테마나 목소리를 새로 고른 수정에서만 요청한다**(2026-10-29). 안드로이드 동기화는 켜고 끌 때마다 테마·목소리를
-  그대로 보낸다 — 가르지 않으면 접힌 보충을 켜고 끄기마다 다시 열어(시도 0) 유료 합성을 다섯 번씩 다시 시도했다. `POST` 는 언제나 요청한다.
+- ⚠ **새로 고르지 않은 저장은 요청하지 않는다**(2026-10-29). 가르지 않으면 접힌 보충을 켜고 끄기마다 다시 열어(시도 0) 유료
+  합성을 다섯 번씩 다시 시도한다 — 서버 사본이 있던 동안 안드로이드 동기화가 켜고 끌 때마다 테마·목소리를 그대로 보내 실제로
+  그랬다(그때는 서버가 `PATCH` 의 바뀐 값만 보고 갈랐다). 지금 그 판정은 앱의 `needsCloneCheerSupplement`·
+  `CheerVariety.needsCloneSupplement` 하나다 — 고치기 전 행과 견준다.
 - 다시 굽는 회차(목소리 교체·모델 전환)는 요청된 보충 묶음까지 같이 굽는다 — 안 그러면 보충 클립만 옛 목소리로 남아
   교체가 끝나지 않는다(§5-2).
 - ⚠ **다시 굽기를 여는 문장은 보충 표시를 내린다**(`supplement = 0`, Codex #961 P2). 보충 회차가 대기 중일 때 목소리
@@ -2423,15 +2461,17 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
 3일 안에 앱을 한 번도 안 여는 사람이 정확히 잃는 쪽이라, 예고만은 표시용 푸시를 보낸다
 (`sendVoiceDeletionWarningPush` ← `notifyVoiceDeletionScheduled`, 커밋 뒤 호출).
 
-⚠ **목소리 직접 삭제의 DB 작업은 한 트랜잭션이다.** 프로필 tombstone·원본 업로드 정리와
-그 목소리를 쓰는 서버 알람의 철회를 따로 커밋하지 않는다. 배포 직후 새 철회 컬럼의
+⚠ **목소리 직접 삭제의 DB 작업은 한 트랜잭션이다.** 프로필 tombstone·원본 업로드 정리·그 목소리의 생성 음성 정리와
+깨울 계정 판정(`revokeDeletedVoices`)을 따로 커밋하지 않는다(2026-10-29 전에는 그 목소리를 쓰는 서버 알람의 철회도 같은
+트랜잭션이었다 — 사본을 지웠다). 배포 직후 새 철회 컬럼의
 마이그레이션이 아직이면 전체를 롤백해 재시도 가능하게 해야 한다. 프로필만 먼저 사라지면
 재시도는 404가 되고, 다른 기기의 캐시 음성을 철회할 근거가 영구히 남지 않는다. 외부
 ElevenLabs 삭제와 푸시 전송만 DB 커밋 뒤에 실행한다.
 
 목소리 삭제 푸시는 **삭제한 계정 자신의 다른 기기**에 보낸다. 현재 기기가 로컬 정리를 했어도 다른
-기기의 아직 미동기화된 알람은 서버 알람 조회로 찾을 수 없다. 단 계정 탈퇴는 그 계정의 기기가 곧
-정리되므로 `excludeOwnerUserIds`로 본인 통지를 제외한다.
+기기의 알람은 서버가 알 수 없다(서버에는 알람이 없다 — 2026-10-29. 그 전에도 아직 안 올라간 알람은 서버 알람 조회로 못
+찾았다). 그 목소리로 문구를 만든 **다른 계정**도 함께 깨운다([alarm-lifecycle.md](alarm-lifecycle.md) §1-1). 단 계정
+탈퇴는 그 계정의 기기가 곧 정리되므로 `excludeOwnerUserIds`로 본인 통지를 제외한다.
 
 업데이트 전에 받아 둔 가족 알람은 내 알람으로 바뀐다([billing-lifecycle.md](billing-lifecycle.md) 「받은 알람은 내 알람으로 바뀐다」).
 
@@ -2492,7 +2532,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 같은 요청 재시도·중복 탭(`request_id`) | 한 번 — 결과가 캐시 히트든, 서비스가 설정을 바꿔 새로 굽든. 단 그 결과를 지운 뒤(그 알람을 지웠다) 같은 id 로 다시 만드는 것은 재시도가 아니라 1회 |
 | 생성·검증·저장이 기술적으로 실패 | 예약을 **원래 사용월로** 돌려준다(광고 보상이면 그 보상을) |
 | 만든 뒤 알람 저장을 취소하거나 알람·문구를 지움 | 돌려주지 않는다 |
-| 30일 미사용 정리·명시적 삭제로 파일이 없어 다시 만들어야 함 | 1회 |
+| 폰의 30일 미사용 정리·알람 삭제로 폰에 파일이 없다 — 서버에 남아 있으면 다시 받기(위 행), 서버에서도 지워졌으면(그 목소리 삭제·교체·탈퇴 — §11) 새로 만든다 | 1회 |
 | 같은 요청인데 **서비스가 합성 설정을 바꿔**(모델·음량·합성 옵션 등) 또는 LRU 재등록으로 서버가 다시 굽는다 | **1회** — 2026-10-27 개정(#954 의 '세지 않음' 을 되돌렸다, [tts-render-and-budget.md](tts-render-and-budget.md) §2) |
 
 - **기기 안의 재사용은 서버가 알 수 없다 — 그래서 세지 않는다.** 안드로이드 `AlarmAudioStore` 입력 캐시(`findReusableTtsAudio`),
@@ -2766,7 +2806,7 @@ TTS 는 웃음 글자를 **글자로 읽는다**(2026-09-29 v3·v4·v4 Turbo 비
 | 대상 | 기한 | 거두지 않는 것 |
 | --- | --- | --- |
 | 클론 학습용 업로드 원본(`voice_uploads`) | 7일 | 확정(살아 있고 draft 가 아닌) 목소리에 묶인 원본 — 재클론 소스라 그 목소리를 지울 때까지 보관 |
-| 생성 음성 캐시(`generated_audio_assets`) | 30일 | 알람이 쓰는 음원 · 프리셋 클립(§5-3) |
+| 생성 음성 캐시(`generated_audio_assets`) | 30일 | **직접 입력 음성**(살아 있는 직접 입력 문구가 가리키는 오브젝트 — 아래) · 프리셋 클립(§5-3) |
 | 화자 분리 후보 draft 보이스 | 1시간 | promote 된 보이스 |
 
 R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므로 **삭제 큐(`pending_external_deletions`)에 예약**하고
@@ -2776,7 +2816,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
   커밋하고 예약을 **따로** 커밋해, 그 사이가 끊기면(워커 subrequest 한도·네트워크) 파일·클론이 참조도 예약도 없이
   영구히 남았다 — 처리방침의 파기 약속 위반이다. 실패하면 **통째로 롤백**하고 다음 회차(5분)가 다시 한다.
 - **쓰기 문장은 고를 때의 조건을 다시 본다.** 고른 id 로 범위를 묶되 같은 조건을 걸어, 고른 뒤 promote 된 원본·
-  새로 알람이 붙은 음원은 예약도 삭제도 하지 않는다. 예약은 `INSERT … SELECT` 로 DELETE **앞에** 둔다 — 같은
+  그 사이 직접 입력 문구가 가리키게 된 음원은 예약도 삭제도 하지 않는다. 예약은 `INSERT … SELECT` 로 DELETE **앞에** 둔다 — 같은
   트랜잭션이라 둘이 같은 상태를 보고, 지운 행과 예약한 키가 어긋날 수 없다.
 - **독약 행은 없다**(따져 본 근거). 쓰기는 전부 집합 단위라 행 값에 따라 터질 자리가 없다 — 큐 충돌은
   `ON CONFLICT` 가 흡수하고(위 §10 의 id 갱신), 빈 키는 예약에서 거르고, 지우는 표를 참조하는 FK 도 없다. 남는
@@ -2784,6 +2824,24 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
   줄었다(예전에는 행마다 2~3 왕복이라 그것만으로 한도 ~50 에 닿을 수 있었다).
 - 탈퇴 파기·음성 동의 철회가 **문구의 업로드 키**도 다시 예약하는 것(`enqueueUploadKeysReferencedByMessagesStatement`)
   은 그대로 둔다. 이 규칙 전에 따로 커밋하다 끊긴 녹음은 그 키를 아는 곳이 문구뿐이라, 그 잔재를 거두는 길이다.
+
+### 직접 입력 음성은 **그 목소리를 지울 때까지** 둔다 (2026-10-29)
+
+오너 결정: "직접 입력 음성은 지우지 말고 보관, 목소리가 지워질 때만 지운다." 같은 문구를 다시 받을 때 다시 만들지 않고,
+보관이 재합성보다 훨씬 싸다.
+
+- **기한이 없다.** 30일 정리(`cleanupExpiredAudio`)는 살아 있는 직접 입력 문구(`messages.category = 'custom'`)의
+  `audio_url` 이 가리키는 오브젝트를 건너뛴다. 기본 목소리로 만든 직접 입력도 같다 — 기본 목소리는 지워지지 않으므로 탈퇴할
+  때까지 남는다.
+- **지우는 문은 그 목소리가 사라지는 길뿐이다** — 목소리 삭제(`DELETE /voice/:id`), 제자리 교체(옛 목소리의 직접 입력
+  음원을 교체 트랜잭션이 곧바로 지운다 — §4-1), 음성 동의 철회(그 사람의 클론을 지운다), 유료 목소리 보관 정리(무료 전환 뒤
+  3일 — §6, `paid-voice-cleanup.ts`), 탈퇴 파기(`purgeUserAccount`). 다른 경로가 참조만 끊은 것(문구의 `audio_url` 이
+  비었다)은 기한이 지나면 30일 정리가 지운다.
+- 날씨·운세처럼 회차마다 새로 만드는 문구(직접 입력이 아닌 생성 음성)는 그대로 30일 뒤 지운다(지역·생년월일에서 나온 글이
+  담긴다). 기기는 받은 파일을 로컬에 두고 운다.
+- 차감은 바뀌지 않는다 — 서버에 남은 결과를 다시 받는 것도 1회다(§8, 2026-10-27).
+- ⚠ 예전(2026-10-29 전)에는 '서버 알람 사본이 이 음원을 쓰는가' 로 남겼다 — 사본을 지웠다([alarm-lifecycle.md](alarm-lifecycle.md)
+  「서버에는 알람이 없다」). 그 가드로 되돌리지 말 것: 알람은 기기에만 있어 서버가 볼 수 없다.
 
 ## 구현 지도
 
@@ -2832,7 +2890,9 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 준비 페이지 폴링은 준비가 끝나면 멈춘다(실패·소유자 대기는 계속) | — | `ClipPreparationView.pollingCanStop`; 회귀 `StockClipRefetchGuardTests` | `GET /voice/:id/prerender-status` |
 | 대사 교체 = 은퇴 | — | — | `messages.retired_at` (마이그레이션 #110) |
 | 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips`(`retiredIsNullClause`) · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 의 `GET /:id/prerender-status`(진행률)와 `POST /:id/prerender/advance`(게시 개수) (**일곱 곳** = `retired_at IS NULL` 가드 전부) |
-| 은퇴해도 그대로 두는 것 | — | — | `is_preset` = 쓰기 인가(`messageBelongsToCaller`) · 읽기 인가(`/tts/messages/:id/audio`) · TTL 면제(`audio-retention.ts`) |
+| 은퇴해도 그대로 두는 것 | — | — | `is_preset` = 읽기 인가(`/tts/messages/:id/audio`) · TTL 면제(`audio-retention.ts`). (쓰기 인가 `messageBelongsToCaller` 는 2026-10-29 서버 알람 사본과 함께 지웠다) |
+| 버킷 없는 옛 알람의 테마 힌트 — 서버는 기본 목소리 무료 테마 프리셋(지금 것은 옛 앱용 — 1.3 강제 업데이트 뒤 뺀다 · 은퇴한 것) · 앱이 매니페스트 클립 목록의 기본 목소리 클립으로 채운다(서버 힌트가 이긴다 · 무료 테마만, `greeting` 제외)(§5-3) | `sync/StockClipLanguageRebinder.kt` 의 `legacyBucketHintsOf` ← `StockClipPrefetchWorker`(재바인딩·정리가 같은 힌트) — 회귀 `ServerCopyRemovalTest` | `VoiceStudioViewModel.legacyBucketHints(from:)` ← `adoptStockClipManifest` | `lib/stock-clips.ts` 의 `findLegacyBucketHints`(사용자 인자 없음 · `retired_at` 이 없으면 빈 목록) ← `GET /tts/stock-clips` — 회귀 `legacy-bucket-hints.test.ts` |
+| 스톡 클립 삭제는 알람을 건드리지 않는다(서버에 알람이 없다 — 기기가 매니페스트에서 빠진 것을 보고 다시 묶는다) | — | — | `lib/stock-clips.ts` 의 `deleteStockClips`(2026-10-29 전에는 문 알람 행을 `sound-only` 로 내렸다) |
 | 스톡 게시 | — | — | `scripts/prerender-stock-preview.ts` → `scripts/publish-stock-clips.ts`. cron(`index.ts` 의 `scheduled`)의 **시스템 드레인은 꺼져 있다** — 클론 드레인만 산다 |
 | 소리만 바꾸는 회차 = 제자리 교체(은퇴 아님) | 매니페스트 `audio_url` 이 바뀌면 다시 받는다(`StockClipPrefetchWorker` 의 낡음 판정) | `VoiceStudioViewModel.refreshChangedCachedStockClips` | 시스템: `scripts/publish-stock-clips.ts` 의 교체 갈래 → `replaceStockClipInPlace`(`lib/stock-clip-replace.ts`, 회귀 `stock-clip-replace.test.ts`) · 문구 함수 `systemStockTexts`(`lib/stock-clips.ts`) · 클론: 마이그레이션 #124(회귀 `migrations-v4-turbo-requeue.test.ts`) → `generateStockClip` 의 교체 갈래 · 새 등록 먼저 `claimPendingPrerenderVoices`(`ORDER BY refresh_existing`) |
 | 재바인딩이 편집을 안 덮는다 | `applyClipFields` (`sync/StockClipLanguageRebinder.kt`) | `applyClipFields` (`StockClipLanguageRebinder.swift`) | — |
@@ -2925,17 +2985,18 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 합성 모델 = `eleven_v4_turbo`(코드 상수) · 설정은 stability·similarity 둘 · 말끝 가공 없음 | — | — | `lib/tts-model.ts` 의 `TTS_MODEL_ID`·`TTS_VOICE_SETTINGS` ← `lib/elevenlabs.ts` `textToSpeech`·`lib/voice-provider.ts`·`scripts/prerender-stock-preview.ts`·`scripts/publish-stock-clips.ts`(회귀 `voice-provider-model.test.ts`·`elevenlabs.test.ts`·`publish-stock-clips-contract.test.ts`·`stock-clip-provider-text.test.ts`) · 시청본 지문 세대 `PIPELINE_VERSION`(`scripts/stock-preview-fingerprint.ts`) |
 | 캐시 키 범위(스톡 / 직접 입력은 그 사람) · 삭제 예약은 다시 넣으면 id 가 바뀐다 | — | — | `lib/audio-cache.ts` 의 `STOCK_TTS_CACHE_SCOPE`·`manualTtsCacheScope` ← `lib/stock-clips.ts` `generateStockClip`·`scripts/publish-stock-clips.ts`·`routes/tts.ts`(`isManualGeneration`) · `lib/audio-retention.ts` 의 `REFRESH_RESERVATION_ON_CONFLICT`(회귀 `publish-stock-clips-contract.test.ts`·`tts.test.ts`·`audio-retention.test.ts`) |
 | 보관 만료 — 행 삭제와 삭제 예약은 한 batch · 쓰기 문장이 고를 때의 조건을 다시 본다(§11) | — | — | `lib/audio-retention.ts` 의 `cleanupExpiredAudio`·`cleanupStaleDraftVoices` ← 예약 문장 `externalDeletionsFromSelectStatement`(`enqueueUploadKeysReferencedByMessagesStatement` 도 같은 문장) · 회귀 `audio-retention-atomic.test.ts`(트리거로 중간 실패 → 롤백)·`audio-retention-source-keep.test.ts` |
+| 직접 입력 음성은 기한 없이 둔다 — 지우는 것은 그 목소리가 사라질 때(삭제·교체·음성 동의 철회·유료 보관 정리)와 탈퇴뿐 · 날씨·운세 등은 30일(§11, 2026-10-29) | — (기기는 자기 30일 정리를 따로 한다) | — (같음) | `cleanupExpiredAudio` 의 직접 입력 가드(살아 있는 `messages.category = 'custom'` 문구가 가리키는 키는 지우지 않는다) · 교체 `replaceVoiceInPlace`(옛 목소리의 직접 입력 음원 — 삭제 큐 → `generated_audio_assets` 삭제 → `audio_url` 비우기) · 목소리 삭제 `DELETE /voice/:id` · `lib/paid-voice-cleanup.ts` · `lib/account-deletion.ts` 의 `purgeUserAccount` — 회귀 `audio-retention-atomic.test.ts` 「직접 입력 음성은 기한 없이 둔다」·`voice-profile.test.ts` 「교체(replace_existing) 시 직접 입력 음원 처리」 |
 | 녹음 품질 판정 — 임계값·판정 셋·정규화(16 kHz)·VAD 꽂는 자리(§4-1 「녹음 품질 판정」) | `data/RecordingQuality.kt`(`RecordingQualityThresholds`·`MonoPcmNormalizer`·`RecordingQualityAnalyzer`·`VoiceActivityDetector`·`diagnostics`) ← 디코더 `data/VoiceAudioDecoder.kt`; 회귀 `data/RecordingQualityAnalyzerTest` | `RecordingQuality.swift`(`RecordingQualityThresholds`·`MonoPcmNormalizer`·`RecordingQualityAnalyzer`·`VoiceActivityDetecting`·`diagnostics`) ← 디코더 `VoiceTuningAnalyzer.decodeMono`; 회귀 `AlarmTalkTests/RecordingQualityAnalyzerTests` | — |
 | 녹음을 멈춘 뒤 — 거절 줄 / 알럿(`다시 녹음`·`그래도 쓰기`) / 말 없음 · 판정 중 `다음` 잠금 · 진단은 수치만 | `ui/voices/RecordingReview.kt`(`reviewRecording`·`recordingReviewMessage`) ← `VoiceProfileManagementPanel` 의 `reviewRecordedAudio`·`discardRecordedAudio`·`recordingReview` 알럿, `AlarmTalkLog.breadcrumb`; 회귀 `RecordingReviewTest` | `RecordingReview.decide`·`alertMessage`(`RecordingQuality.swift`) ← `Views/Voices/VoiceCloneUploadFlow.swift` 의 `reviewFinishedRecording`·`discardRecording`·`.alert`, `AlarmTalkLog.breadcrumb`; 회귀 `RecordingReviewTests` | — |
 | 멈춘 사정 — 안드로이드 `stop()` 실패 갈래·포커스 상실·복구 / iOS 중단·블루투스·백그라운드·녹음기 실패 | `data/AlarmVoiceRecorder.kt`(`classifyRecordingStopFailure`·`RecordingResult`·`interruption`·`requestAudioFocus`) · 브레드크럼 판정 `AlarmTalkLog.isRecordingEndedByUserOrDevice`; 녹음 루프 `VoiceProfileManagementPanel`·`AlarmEditorScreen` 의 `LaunchedEffect(isRecording)`; 회귀 `RecordingReviewTest`·`TransientFailureClassificationTest`, 기기 `AlarmVoiceRecorderInstrumentedTest` | `VoiceRecorder.swift`(`lastStopReason`·`observeSession`·`routeChangeEndsRecording`·`markRecorderFailure`), `RecordingStopReason`; 회귀 `RecordingReviewTests` | — |
 | 응원·기상 인사 문구 원본 하나 · 검수표 · 비용 dry-run(§5-4) | — (매니페스트로 받는다) | — (매니페스트로 받는다) | 원본 `packages/shared/src/stock-content.json` ← `stock-content.ts`(`STOCK_CONTENT_SETS`·`stockContentInfo`·`CHEER_CONTENT_IDS`) → `lib/stock-clips.ts` 의 `presetFromContentSet`(`STOCK_CLIP_PRESETS`)·`cloneSeedsOf`·`CLONE_CONTENT_SUPPLEMENTS` · 검수표 `scripts/gen-stock-content.py`(→ `docs/product/stock-content-review.md`, CI `--check`) · `npm run cost:stock`(`scripts/stock-content-cost.ts`, 합성 없음). 회귀 `packages/shared/test/stock-content.test.ts`(지시서 원문·줄표·금지어·옛 응원 고정)·`cheer-variants.test.ts` |
 | 공개 표식 — 매니페스트 목록·`expected_variants`·표지(`theme`·`content_id`·`selectable`)를 한 요청에서(§5-4) | `network/TtsApi.kt` 의 `StockClip.theme`·`contentId`·`selectable`, `data/CheerVariety.kt` 의 `bucketTheme` | `StockClip.theme`·`contentId`·`selectable`·`bucketTheme`(`AlarmTalkAPIModels.swift`) | `stock_content_releases`(#143) ← `releasedStockContentSets`·`stockCategoryReleased`(`lib/stock-clips.ts`) ← `GET /tts/stock-clips`·`expectedVariantCounts(released)`(`routes/tts.ts`) · 대상 계산 `findMissingStockTargets` · 게시 `scripts/publish-stock-clips.ts` 의 `categoryIncluded`·`releaseContentSet`(`--category`·`--all`·`--release`). 회귀 `cheer-variants.test.ts`·`stock-clips.test.ts`·`spec-doc-counts.test.ts` |
 | 새 응원은 따로 카테고리(`cheer_v2`) · 버킷은 테마 · 선다운로드·준비도는 테마로 센다(§5-4) | `sync/StockClipPrefetchWorker.kt` 의 `isDefaultVoiceTarget`·`ui/main/MainViewModelClipReadiness.kt` 의 `themeByCategory`·`MainViewModelVoiceActions.kt` 의 무료 테마 받기 | `StockClipPrefetcher.isDefaultVoiceTarget`·`ClipReadinessModel` 의 `themeByCategory` | `FREE_BUCKET_CATEGORIES`(테마만, `lib/stock-clips.ts`) ← `validateAlarmFields`(`routes/alarm-helpers.ts`) |
-| 응원 다양하게 / 이 문구로 고정 — 저장값·서버 사본 왕복(§5-4) | `AlarmEntity.cheerMode`·`cheerPinnedContentId`(Room 28→29 `MIGRATION_28_29`) · `AlarmEditorState.cheerMode`·`toDraft` · `network/RemoteAlarmMapper.kt`·`RemoteAlarmApi.kt`. 회귀 `RemoteAlarmMapperTest`·`AlarmEditorStateTest` | `LocalAlarmRecord.cheerMode`·`cheerPinnedContentId` · `AlarmEditDraft.cheerMode`·`toRecord` · `RemoteAlarmMapper.toRemoteRequest`·`RemoteAlarmWriteRequest`. 회귀 `CheerVarietyTests.test_cheerFieldsRoundTripThroughDiskAndUploadOnlyModeAndPin` | `alarms.cheer_mode`·`cheer_pinned_content_id`(#143) ← `cheerFieldsOf`·`validateAlarmFields`(`INVALID_CHEER_SETTING`) ← `POST`·`PATCH /alarm`(`routes/alarm-mutation.ts`). 회귀 `cheer-variants.test.ts` |
+| 응원 다양하게 / 이 문구로 고정 — 저장값은 기기에만(§5-4 — 서버 사본 왕복은 2026-10-29 에 지웠다) | `AlarmEntity.cheerMode`·`cheerPinnedContentId`(Room 28→29 `MIGRATION_28_29`) · `AlarmEditorState.cheerMode`·`toDraft`. 회귀 `AlarmEditorStateTest` | `LocalAlarmRecord.cheerMode`·`cheerPinnedContentId` · `AlarmEditDraft.cheerMode`·`toRecord`. 회귀 `CheerVarietyTests.test_cheerFieldsRoundTripThroughDisk` | 옛 앱 올리기의 칸 검사만 `cheerFieldsOf`·`validateAlarmFields`(`INVALID_CHEER_SETTING`) ← `POST`·`PATCH /alarm`(`routes/alarm-mutation.ts` — 저장 없이 되돌려 준다). 회귀 `cheer-variants.test.ts` 「옛 앱의 알람 올리기 — 응원 저장값」 |
 | 응원 선택 — 후보·최근 7개 제외·가장 오래된 것·회차에 묶기·이력은 준비한 것·**고른 목소리에 묶기**(§5-4) | `data/CheerVariety.kt`(`cheerCandidatesFrom`·`pickCheerContent`·`cheerSeedIndex`·`preparedCheer`·`activeCheerSelection`·`isCheerSelectionFor`) ← 저장 `AlarmRepository.createAlarm`·`updateAlarm`, 해제 `AlarmRepository.dismiss`, 울림 `AlarmRepository.resolveBucketClipSelection`(`BucketClipSelection.text` → `ringing/RingingActivity.kt`). 회귀 `CheerVarietyTest`(`downgradedAlarmDoesNotPlayTheOldVoiceSelection`·`editingTheVoiceForTheSameOccurrencePicksTheNewVoiceClip`) | `CheerVariety.swift`(같은 셈, `isSelection(_:for:)`·`needsPreparation`) ← 저장 `AlarmEditorSheet.saveFlow`, 관측된 해제 `LocalAlarmStore.markStopped`·지나간 회차 `prepareForScheduleRecovery`(`prepareCheerForNextOccurrence`), 앱 복귀 `LocalAlarmStore.prepareCheerSelections` ← `AlarmTalkApp.refreshWeatherVariantsAndReconcile`, 예약 `AlarmSoundResolver.rotatedBucketClipKey`. 회귀 `CheerVarietyTests`(`test_downgradedAlarmDoesNotPlayTheOldVoiceSelection`·`test_editingTheVoiceForTheSameOccurrencePicksTheNewVoiceClip`) | — |
 | 응원 카드 — 매니페스트에 새 응원이 없으면 그리지 않는다(§5-4) | `ui/editor/AlarmRandomPromptSettings.kt`(`cheerPhrases`) ← `AlarmEditorScreen.kt`(`cheerPhrasesFrom`)·`applyRandomPromptSettings` | `MessageSettingsPane.cheerVarietyCard`·`onCheerSettingsChange` ← `AlarmEditorSheet.cheerPhrases`·`applyMessageSettings` | — |
-| 기상 인사(`wake`) — 기본 목소리 전용 · 클론 목록에서 뺀다 · greeting 은 여전히 알람이 아니다(§5-4) | `EditorMessageContexts`·`RandomPromptContexts`(`WakeMessageContext`)·`clonePrerenderBucketCategoryFor`·`randomPromptContextForBucket` · `AlarmEditorScreen.kt` 의 클론 `availableContexts`. 회귀 `AlarmEditorStateTest.wakeIsAStockOnlyThemeThatMapsBothWays`·`freeBucketOrderIsDerivedFromTheOneMessageList` | `RandomPromptContext.wake`·`FreeBucket.wake` · `AlarmEditorSheet` 의 클론 `availableContexts`. 회귀 `CheerVarietyTests.test_wakeIsAStockOnlyThemeThatMapsBothWays` | `FREE_BUCKET_CATEGORIES`(`wake` 포함) · 시스템 보이스 + `greeting` 은 그대로 `INVALID_BUCKET_ID`(`routes/alarm-mutation.ts`) |
-| 클론 보충 — 응원을 고른 클론만 · 줄 맨 뒤 · 진행 조회는 done · 실패해도 failed 아님 · 교체 회차가 같이 굽는다 · 다시 굽기가 보충 표시를 내린다 · 직접 입력 장부 무관(§5-4) | — (서버가 한다) | — (서버가 한다) | 다시 굽기 `replaceVoiceInPlace`·`runSpeechStyleAnalysis`(`routes/voice-profile.ts`, `supplement = 0`; 회귀 `voice-replace-in-place.test.ts`·`voice-profile-speech-style.test.ts`) · `requestCloneContentSupplement` ← `requestCheerSupplementAfterSave`(`routes/alarm-mutation.ts`) · `voice_prerender_queue.content_sets`·`supplement`(#143) ← `claimPendingPrerenderVoices`(순서)·`markPrerenderDone`·`markPrerenderFailed`·`listReadyCloneVoices`(`parseContentSets`)·`findMissingStockTargets`·`runPrerenderBatch`(알림) · `GET /voice/:id/prerender-status`(`prerenderSupplementColumnReady`·`excludeSupplementCategoriesSql`)·`prerender/advance`. 회귀 `cheer-variants.test.ts` |
+| 기상 인사(`wake`) — 기본 목소리 전용 · 클론 목록에서 뺀다 · greeting 은 여전히 알람이 아니다(§5-4) | `EditorMessageContexts`·`RandomPromptContexts`(`WakeMessageContext`)·`clonePrerenderBucketCategoryFor`·`randomPromptContextForBucket` · `AlarmEditorScreen.kt` 의 클론 `availableContexts`. 회귀 `AlarmEditorStateTest.wakeIsAStockOnlyThemeThatMapsBothWays`·`freeBucketOrderIsDerivedFromTheOneMessageList` | `RandomPromptContext.wake`·`FreeBucket.wake` · `AlarmEditorSheet` 의 클론 `availableContexts`. 회귀 `CheerVarietyTests.test_wakeIsAStockOnlyThemeThatMapsBothWays` | `FREE_BUCKET_CATEGORIES`(`wake` 포함). 시스템 보이스 + `greeting` 의 `INVALID_BUCKET_ID` 는 2026-10-29 서버 알람 사본과 함께 없어졌다 — 막는 곳은 앱의 목록이다(§2) |
+| 클론 보충 — 응원을 고른 클론만(테마·목소리를 새로 고른 저장 뒤 앱이 알린다) · 줄 맨 뒤 · 진행 조회는 done · 실패해도 failed 아님 · 교체 회차가 같이 굽는다 · 다시 굽기가 보충 표시를 내린다 · 직접 입력 장부 무관(§5-4) | 판정 `data/CheerVariety.kt` 의 `needsCloneCheerSupplement` ← `ui/main/MainViewModelAlarmActions.kt` 의 `requestCloneCheerSupplementIfNeeded`(`createAlarm`·`updateAlarm` 의 성공 — 고치기 전 행과 견준다, 답을 기다리지 않는다) → `network/VoiceProfileApi.kt` 의 `requestVoiceContentSupplement`. 회귀 `ServerCopyRemovalTest` | 판정 `CheerVariety.needsCloneSupplement` ← `AlarmEditorSheet.finishScheduling`(저장 성공 뒤, 답을 기다리지 않는다) → `AlarmTalkAPI.requestVoiceContentSupplement` | `POST /voice/:id/content-supplement`(`routes/voice-profile.ts` — 응원만 400 `INVALID_BUCKET_ID` · 권한 403 · 내 ready 클론만 404) → `requestCloneContentSupplement`. 옛 앱의 알람 올리기는 보충을 열지 않는다(2026-10-29 전에는 `routes/alarm-mutation.ts` 가 저장 뒤 요청했다) · 다시 굽기 `replaceVoiceInPlace`·`runSpeechStyleAnalysis`(`routes/voice-profile.ts`, `supplement = 0`; 회귀 `voice-replace-in-place.test.ts`·`voice-profile-speech-style.test.ts`) · `voice_prerender_queue.content_sets`·`supplement`(#143) ← `claimPendingPrerenderVoices`(순서)·`markPrerenderDone`·`markPrerenderFailed`·`listReadyCloneVoices`(`parseContentSets`)·`findMissingStockTargets`·`runPrerenderBatch`(알림) · `GET /voice/:id/prerender-status`(`prerenderSupplementColumnReady`·`excludeSupplementCategoriesSql`)·`prerender/advance`. 회귀 `cheer-variants.test.ts` |
 | 제공자 장애를 녹음 탓으로 말하지 않는다(`VOICE_CLONING_FAILED`) | `api_error_voice_cloning_failed`(`res/values{,-en,-ja}/strings.xml`); 회귀 `RecordingReviewTest.cloningFailureDoesNotBlameTheRecording` | `APIErrorMessages.message(for:)`; 회귀 `RecordingReviewTests.test_cloningFailureDoesNotBlameTheRecording` | `POST /voice/clone` 의 마지막 catch(`routes/voice-profile.ts`) |
 
 ## 검증 방법

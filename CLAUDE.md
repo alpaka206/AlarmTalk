@@ -111,13 +111,13 @@
 ### 입력/SQL 보안 규약 (백엔드)
 2026-07-01 입력·SQL 인젝션 전면 감사 결과 현행 코드는 이미 안전. 아래 패턴을 **회귀 방지 규약**으로 고정한다(신규 라우트 추가 시 코드리뷰 체크):
 - **SQL은 항상 `?`-바인딩.** `db.execute({ sql, args })` 의 `sql` 문자열에 사용자 값을 `${}`/문자열 결합으로 넣지 **말 것**. 값은 예외 없이 `args` 배열로.
-  - 동적 `${}`가 허용되는 경우는 **개발자 고정 조각뿐**: IN 절 플레이스홀더 생성기(`alarm-query.ts`의 `inPlaceholders` 등, 값 개수만큼 `?` 생성), 화이트리스트 컬럼 조각(`alarm-mutation.ts`의 `updates.push('col = ?')`), 고정 리터럴 절/테이블명. 컬럼/테이블명을 사용자 입력에서 파생하지 말 것.
+  - 동적 `${}`가 허용되는 경우는 **개발자 고정 조각뿐**: IN 절 플레이스홀더 생성기(`lib/caller-ids.ts`의 `inPlaceholders` 등, 값 개수만큼 `?` 생성), 화이트리스트 컬럼 조각(`voice-profile.ts`의 `updates.push('name = ?')`), 고정 리터럴 절/테이블명. 컬럼/테이블명을 사용자 입력에서 파생하지 말 것.
   - LIKE 검색: 절은 `LIKE ?`, 패턴 `%${q}%`는 **값으로만** 만들어 `args`에 push하고, 와일드카드(`%`,`_`)는 `ESCAPE`로 이스케이프.
 - **필터/식별자 검증 후 바인딩**: 식별자·날짜는 `lib/validate.ts`의 `UUID_RE`(`alarm-helpers.ts`·`tts.ts`·`voice-profile.ts`), `holiday.ts`의 `DATE_RE`처럼 형식 검증 후 `?`-바인딩.
 - **페이지네이션 상한**: `limit`/`offset`은 `Math.min(...,100)`/`Math.max(...,0)`로 클램프 후 바인딩(신규 리스트 엔드포인트 필수).
 - **요청 입력 검증**: 바디는 `@alarmtalk/shared` zod 스키마로 `safeParse`, 경로/쿼리 파라미터도 검증·바운드.
-- **IDOR 방어**: 클라 제공 id/code는 조회·수정·삭제 전 소유권 확인(`WHERE ... AND user_id = ?` 게이트, cross-tenant 참조는 `*BelongsToCaller` 헬퍼). 예: `alarm-mutation.ts`의 `voiceProfileBelongsToCaller`/`messageBelongsToCaller`.
-- ⚠ **`messageBelongsToCaller`(쓰기 허용)와 `GET /tts/messages/:id/audio`(읽기 허용)는 한 쌍이다 — 항상 같이 고친다.** 어긋나면 양방향으로 사고가 난다: 쓰기가 좁으면 **들리는데 저장이 안 되고**(2026-08-05 실기기 재현 — 알람이 로컬에만 남고 서버 sync 가 계속 404), 쓰기가 넓으면 **저장은 되는데 받을 수 없는** 알람이 생긴다(Codex #685). 허용 갈래는 **둘**이다: **내 문구**(그 목소리가 내 목소리이거나 시스템 목소리) / **시스템 스톡 프리셋**(초안 목소리의 문구는 어느 갈래로도 못 지난다). 오디오 라우트는 거기에 플랜을 더 본다 — 시스템 목소리는 누구나, 내 목소리는 `hasPersonalVoiceAccess`(계산값 — 기간 한정 개인 플랜 반영)일 때. 판정은 SQL 에 목록을 베끼지 말고 헬퍼로. `voiceProfileBelongsToCaller` 도 같은 둘(내 목소리·시스템 목소리)이다. 같은 플랜 그룹이 공유한 목소리의 갈래와 그 주인의 원시 플랜 규칙은 2026-10-20 커플·가족 이용권과 함께 지웠다 — 되살리지 말 것. 단 `PATCH /alarm` 은 `voice_profile_id`·`message_id` 가 **저장된 값에서 바뀔 때만** `voiceProfileBelongsToCaller`·`messageBelongsToCaller` 를 본다(POST 는 언제나) — 안드로이드 동기화는 토글마다 두 값을 그대로 보낸다. 그대로 보낸 값은 새 참조가 아니다(저장할 때 이미 본 값이고, 알람 소유는 조회 조건이 확인한다). 다 보면 그 사이 판정이 바뀐 값(허용 갈래를 좁혔을 때 등)을 든 알람이 켜고 끌 때마다 404 로 동기화에 실패한다. 허용 갈래(쌍 규칙)는 그대로다 — 막힌 클립의 **재생**은 오디오 라우트가 막는다. "IDOR 검사를 빠짐없이" 로 되돌리지 말 것(스펙 D8·D13). 상세: `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
+- **IDOR 방어**: 클라 제공 id/code는 조회·수정·삭제 전 소유권 확인(`WHERE ... AND user_id = ?` 게이트, cross-tenant 참조는 조회 조건 안에서 판정). 예: `voice-profile.ts`의 목소리 조회·수정·삭제(`WHERE id = ? AND user_id = ?`).
+- ⚠ **문구 오디오를 누가 받는가는 `GET /tts/messages/:id/audio` 한 곳이 정한다**(2026-10-29). 예전에는 알람 쓰기의 `messageBelongsToCaller`·`voiceProfileBelongsToCaller` 와 한 쌍이라 항상 같이 고쳤다(어긋나면 **들리는데 저장이 안 되거나**(2026-08-05 실기기) **저장은 되는데 받을 수 없는** 알람이 생겼다, Codex #685). 서버 알람 사본(마이그레이션 #147)과 함께 쓰기 쪽을 지워 이제 이 라우트가 유일한 판정이다. 허용 갈래는 **둘**이다: **내 문구**(그 목소리가 내 목소리이거나 시스템 목소리) / **시스템 스톡 프리셋**(초안 목소리의 문구는 어느 갈래로도 못 지난다). 거기에 플랜을 더 본다 — 시스템 목소리는 누구나, 내 목소리는 `hasPersonalVoiceAccess`(계산값 — 기간 한정 개인 플랜 반영)일 때. 판정은 SQL 에 목록을 베끼지 말고 헬퍼로. 같은 플랜 그룹이 공유한 목소리의 갈래와 그 주인의 원시 플랜 규칙은 2026-10-20 커플·가족 이용권과 함께 지웠다 — 되살리지 말 것. 옛 앱이 부르는 `POST/PATCH /alarm` 은 **저장 없이 받은 그대로 되돌려 준다**(`routes/alarm-mutation.ts`) — 지킬 행이 없으니 거기서 소유권 검사를 되살리지 말 것. 막을 것은 재생이고 재생은 오디오 라우트가 막는다. 상세: `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
 - **R2 object key**: 사용자 파생 세그먼트는 `encodeURIComponent`+새니타이즈 또는 JWT `sub`+`crypto.randomUUID()`로 생성(경로 조작 차단).
 - **길이 상한은 서버에도 둔다.** 클라의 `take(n)` 은 앱을 거칠 때만 유효하다 — 직접 호출하면
   거대한 문자열이 조회·쓰기 트랜잭션까지 그대로 흘러간다(`POST /code/register` 가 실제로 그랬다).
@@ -501,7 +501,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | [`docs/spec/ad-rewards.md`](docs/spec/ad-rewards.md) | 광고 보상 — 무료는 기본 목소리 직접 입력 **월 3회**, 다 쓰면 **보상형 광고 한 번 = 한 번 더**(광고로 월 10번), 적립은 **AdMob 서버 확인(SSV)으로만**, **울림 화면에는 광고를 넣지 않는다** |
 | [`docs/spec/consent.md`](docs/spec/consent.md) | 동의 화면 — **미체크 ≠ 철회**, 재동의 레버 |
 | [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md) | 게이트·1회성 오버레이의 **준비 신호** |
-| [`docs/spec/alarm-lifecycle.md`](docs/spec/alarm-lifecycle.md) | 알람의 **행 vs 예약** 두 겹, 서버 행은 **사본**, 계정을 떠날 때 끄기, `.failed` 낙인 규칙 |
+| [`docs/spec/alarm-lifecycle.md`](docs/spec/alarm-lifecycle.md) | 알람의 **행 vs 예약** 두 겹, 서버에는 **알람이 없다**(2026-10-29 사본 삭제), 계정을 떠날 때 끄기, `.failed` 낙인 규칙 |
 | [`docs/spec/usage-events.md`](docs/spec/usage-events.md) | 사용 기록 — **울릴 때 네트워크 금지**(로컬에 적고 나중에 전송), 재전송 멱등, 보관 1년 |
 | [`docs/spec/error-codes.md`](docs/spec/error-codes.md) | 에러 코드 — **목록은 하나**(shared), 나간 코드는 **바꾸지 않는다**, 기록은 전부·경보는 골라서, 앱 Sentry 묶음 키(코드 + 호출 자리) |
 | [`docs/spec/localization.md`](docs/spec/localization.md) | 앱 화면 번역 — 용어·저장값과 표시·오류·언어 변경 |

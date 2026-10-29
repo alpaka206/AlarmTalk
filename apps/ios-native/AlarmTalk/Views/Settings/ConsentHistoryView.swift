@@ -115,8 +115,6 @@ struct ConsentHistoryView: View {
             ConsentToggleRow(
                 label: "광고성 정보 수신 동의",
                 agreed: auth.marketingConsentAgreed,
-                // 잠금은 뷰모델이 든다 — 이 화면을 나갔다 들어와도 앞 쓰기가 끝나기 전에는 다시 보내지 않는다.
-                busy: auth.marketingConsentWriteInFlight,
                 loadFailed: auth.marketingConsentLoadFailed,
                 onRetry: { Task { await auth.loadMarketingConsent() } },
                 onChange: { next in
@@ -296,7 +294,6 @@ private struct ConsentToggleRow: View {
     /// nil = 아직 못 읽음. **false 로 뭉뚱그리지 말 것** — 안 읽힌 값을 '거절' 로 그리면
     /// 동의해 둔 사람에게 꺼진 스위치를 보여주게 된다.
     let agreed: Bool?
-    let busy: Bool
     let loadFailed: Bool
     let onRetry: () -> Void
     let onChange: (Bool) -> Void
@@ -319,8 +316,8 @@ private struct ConsentToggleRow: View {
                 Toggle("", isOn: Binding(get: { agreed == true }, set: onChange))
                     .labelsHidden()
                     .alarmTalkSwitch()
-                    // 로드 전(nil)엔 비활성, 쓰기 중(busy)엔 연속 토글로 인한 opt-out 유실 방지.
-                    .disabled(agreed == nil || busy)
+                    // 로드 전(nil)엔 비활성. 쓰는 동안에도 누를 수 있다 — 마지막 값을 뷰모델이 이어 보낸다(`MarketingConsentNext`).
+                    .disabled(agreed == nil)
             }
         }
         .padding(.horizontal, 12)

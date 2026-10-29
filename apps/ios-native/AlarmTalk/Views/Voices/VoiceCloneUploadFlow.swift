@@ -51,6 +51,8 @@ struct VoiceCloneUploadFlow: View {
     @State private var registrationStep: RegistrationStep = .source
     @State private var sourceMode: VoiceCloneSourceMode = .record
     @State private var profileName: String = ""
+    /// 이름 상한을 넘겨 쳤다(`InputSanitizer.boundedVoiceName`) — 이름 칸 아래에 이유를 띄운다.
+    @State private var profileNameTooLong = false
     @State private var relationshipSelection = VoiceRelationshipSelection()
     /// Android 생성 플로우처럼 이 목소리가 나를 부를 호칭을 함께 저장한다.
     @State private var listenerTitle: String = ""
@@ -303,15 +305,21 @@ struct VoiceCloneUploadFlow: View {
             TextField(String(localized: "예: 엄마 목소리"), text: $profileName)
                 .onChange(of: profileName) { _, newValue in
                     voice.cloneName = newValue
-                    let cleaned = InputSanitizer.clampVoiceName(newValue)
-                    if cleaned != newValue {
-                        profileName = cleaned
+                    let bounded = InputSanitizer.boundedVoiceName(newValue, wasTooLong: profileNameTooLong)
+                    profileNameTooLong = bounded.tooLong
+                    if bounded.value != newValue {
+                        profileName = bounded.value
                         voice.cloneName = profileName
                     }
                 }
                 .alarmTalkFieldStyle()
             if submitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(String(localized: "목소리 이름을 입력해 주세요."))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(AlarmTalkTheme.error)
+            } else if profileNameTooLong {
+                // 상한에서 입력을 막은 이유 — 말없이 자르지 않는다(안드로이드 `voices_name_too_long` 짝).
+                Text(String(localized: "이름은 \(InputSanitizer.voiceNameMaxLength)자까지 쓸 수 있어요."))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
             }

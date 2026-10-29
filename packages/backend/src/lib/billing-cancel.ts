@@ -380,8 +380,7 @@ export async function sweepPaidVoiceRetention(
 }> {
   // 이 정리로 강등된 알람들 — 호출자가 커밋 후 신호를 보낸다.
   const downgraded = new Map<string, DowngradedAlarm>();
-  // 실제로 음성 데이터를 정리한 사용자들. 알람 행을 못 찾아도 이 계정에는 접근권 상실을
-  // 알려야 한다(서버에 아직 동기화되지 않은 로컬 알람이 있을 수 있다).
+  // 실제로 음성 데이터를 정리한 사용자들 — 이 계정에 접근권 상실을 알린다(알람은 기기에만 있다, #147).
   const cleanedUserPks: string[] = [];
   const voiceAccessRevokedUserIds = new Set<string>();
   // 유예가 끝난 사용자의 남은 음성 데이터(원본 업로드·생성 오디오)를 정리한다.
@@ -927,8 +926,8 @@ export async function processSubscriptionExpiry(
   // 유예가 걸린 사람에게는 **눈에 보이는** 삭제 예고를 함께 보낸다(나머지는 무음 신호).
   await notifyBillingStateChanged(db, env, Array.from(notifyUserPks));
 
-  // 보관 정리가 서버에서 바꾼 '알람 행'은 plan_changed 로는 안 따라온다 — 이유는
-  // notifyDowngradedAlarms 참고. 강등된 알람마다 알람 동기화 신호를 보낸다.
+  // 보관 정리로 목소리를 잃은 계정은 plan_changed 로는 기기 알람이 안 내려간다 — 이유는
+  // buildDowngradeSignals 참고. 계정마다 voice_access_revoked 를 보낸다.
   await notifyDowngradedAlarms(
     db,
     env,

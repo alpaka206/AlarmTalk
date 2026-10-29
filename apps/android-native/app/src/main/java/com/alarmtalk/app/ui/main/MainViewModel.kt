@@ -541,15 +541,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         signedInActionError = SignedInActionError(action, text)
     }
 
-    /**
-     * 지금 회차가 도는 동안 sync 요청이 또 들어왔는가. 겹쳐 돌리면 서버에 같은 알람이 두 개
-     * 생기지만(`syncNow` 주석), 그렇다고 버리면 앞 회차가 목록을 스냅샷한 뒤 저장된 알람이
-     * 다음 트리거까지 안 올라간다. 그래서 표시만 남기고 회차가 끝난 뒤 한 번 더 돈다.
-     */
-    internal var syncRequestedWhileBusy = false
-
-    var syncBusy by mutableStateOf(false)
-        internal set
 
     /**
      * 교체 정리(강등·재예약)가 끝나지 않아 **아직 고를 수 없는** 목소리들.
@@ -613,6 +604,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     var voiceProfileBusy by mutableStateOf(false)
         internal set
+
+    /**
+     * **목소리 탭에서 한 일이 안 됐다는 이유** — 이름 변경·삭제·다시 시도(사전렌더·말투)의 실패와, 다른 요청이 도는 사이 눌러
+     * 받지 못한 경우. 목소리 탭 맨 위에 빨간 글자로 그린다(2026-10-29 오너: 실패는 알림이 아니라 그 자리 빨간 글자 — iOS
+     * `VoiceStudioViewModel.statusMessage` 짝). 같은 동작을 다시 시작하거나 목소리 탭에 다시 들어오면 지운다.
+     */
+    var voiceTabError by mutableStateOf<String?>(null)
 
     var voiceProfileLoadFinished by mutableStateOf(false)
         internal set
@@ -1641,6 +1639,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         marketingConsentLoadFailed = false
         // 앞 계정에서 실패한 동작의 이유를 다음 계정 화면에 남기지 않는다.
         signedInActionError = null
+        voiceTabError = null
         manualRequestIds.completed()
         // 같은 시각 알람 교체 확인도 앞 계정의 것이다. 떠 있는 채로 계정을 떠난 뒤 '교체' 를 누르면 주인 없는 알람이
         // 로그인 화면 뒤에서 켜진 채 예약된다(`docs/spec/alarm-lifecycle.md` §1-1 — 종료 중에는 아무도 예약하지 못한다).

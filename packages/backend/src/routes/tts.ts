@@ -1168,8 +1168,8 @@ tts.post('/generate', async (c) => {
         const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey, {
           // ⚠ **직접 입력은 사용자끼리 캐시를 공유하지 않는다.**
           // 공유하면 남의 `messages` 행 id 를 그대로 돌려주는데, 그 행은 `is_preset` 이
-          // 0이라 `messageBelongsToCaller` 가 나중에 거절한다 — **들리는데 저장이 안 되는**
-          // 그 사고다(CLAUDE.md 「messageBelongsToCaller」 절). 게다가 캐시 히트가
+          // 0이라 오디오 라우트(`GET /tts/messages/:id/audio`)가 내 문구로 보지 않는다 — **들리는데
+          // 다시 받을 수 없는** 음성이 된다. 게다가 캐시 히트가
           // `reserveManualTtsQuota` 보다 앞이라, 남의 문구에 얹히면 **월 한도가 안 깎인다.**
           // 프리셋(랜덤) 문구는 문구 자체가 우리 것이라 예전처럼 공유한다.
           anyUser: isSystemVoice && !isManualGeneration,
@@ -1777,8 +1777,9 @@ tts.get('/messages/:id/audio', async (c) => {
     return c.json({ error: 'Invalid message ID format', error_code: 'INVALID_MESSAGE_ID' }, 400);
   }
 
-  // 받는 갈래는 `messageBelongsToCaller`(routes/alarm-mutation.ts)와 **같다** — 내 문구(그 목소리가 내 목소리이거나
-  // 시스템 목소리) / 시스템 스톡 프리셋. 초안 목소리의 문구는 어느 쪽으로도 못 지난다(아래 JOIN).
+  // 받는 갈래는 둘이다 — 내 문구(그 목소리가 내 목소리이거나 시스템 목소리) / 시스템 스톡 프리셋. 초안 목소리의 문구는
+  // 어느 쪽으로도 못 지난다(아래 JOIN). (알람 쓰기 쪽의 짝 `messageBelongsToCaller` 는 서버 알람 사본과 함께 2026-10-29 에
+  // 지웠다 — 이 라우트가 유일한 판정이다.)
   const result = await db.execute({
     sql: `SELECT messages.id, messages.user_id, messages.voice_profile_id, messages.text,
                  messages.synthesis_text, messages.delivery_tags_json, messages.audio_url,
@@ -1933,7 +1934,7 @@ tts.get('/stock-clips', async (c) => {
     args: [userPk, userLoginId],
   });
   // 버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트 — 규칙과 이유는 그 함수 주석에 있다.
-  const legacyHints = await findLegacyBucketHints(db, userPk);
+  const legacyHints = await findLegacyBucketHints(db);
   // ⚠ **공개 표식은 이 요청에서 한 번만 읽는다**(스펙 §5-4 「공개 순서」). 클립 목록·`expected_variants`·표지가
   //   같은 값을 봐야 '목록에는 있는데 개수표에는 없는' 회차가 생기지 않는다.
   const released = await releasedStockContentSets(db);

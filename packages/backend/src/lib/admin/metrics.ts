@@ -33,7 +33,8 @@ export interface Overview {
   versions: Array<{ platform: 'android' | 'ios'; version: number; users: number }>;
   /** 알람이 울린 사람 — 사용 기록의 울림·해제·다시 알림(iOS 는 울림 순간을 못 봐 해제·다시 알림만 보인다). `rangD7` 은 안드로이드의 울림 횟수다. */
   rings: { usersD7: number; usersD30: number; rangD7: number };
-  alarmThemes: Array<{ theme: string; total: number; active: number }>;
+  /** 최근 30일 저장된 알람의 문구 종류별 개수(알람마다 마지막 저장). */
+  alarmThemes: Array<{ theme: string; total: number }>;
   ringsByDay: DayPoint[];
   eventTotals: Array<{ type: string; count: number }>;
   plus: { users: number; activeSubscriptions: number };
@@ -135,10 +136,22 @@ export async function loadOverview(db: Client, range: RangeDays, nowMs: number =
               AND julianday(occurred_at) >= julianday('now') - 30`,
       args: [],
     },
-    // 6 테마
+    // 6 문구 종류 — ⚠ **서버 알람 사본에서 읽지 않는다**(2026-10-29 사본을 지웠다, #147). 앱이 알람을 저장할 때 남기는
+    //   사용 기록(`alarm_created`·`alarm_updated` 의 `detail` = 문구 종류, `usage-events.md` §1)에서 센다. 알람마다 30일 안의
+    //   **마지막** 저장만 센다 — 그 뒤에 다시 고치거나 지웠으면 그 기록이 이긴다. 켜짐 여부는 기록에 없다.
     {
-      sql: `SELECT COALESCE(bucket_id, '') AS theme, COUNT(*) AS total, COALESCE(SUM(is_active), 0) AS active
-            FROM alarms GROUP BY theme ORDER BY total DESC`,
+      sql: `SELECT e.detail AS theme, COUNT(*) AS total
+            FROM usage_events e
+            WHERE e.type IN ('alarm_created', 'alarm_updated') AND e.detail IS NOT NULL AND e.alarm_id IS NOT NULL
+              AND julianday(e.occurred_at) >= julianday('now') - 30
+              AND NOT EXISTS (
+                SELECT 1 FROM usage_events n
+                WHERE n.user_id = e.user_id AND n.alarm_id = e.alarm_id
+                  AND n.type IN ('alarm_created', 'alarm_updated', 'alarm_deleted')
+                  -- 같은 시각이면 id 로 가른다 — 둘 다 세거나, 같은 시각의 삭제가 빼지 못하는 일이 없게.
+                  AND (n.occurred_at > e.occurred_at OR (n.occurred_at = e.occurred_at AND n.id > e.id))
+              )
+            GROUP BY e.detail ORDER BY total DESC`,
       args: [],
     },
     // 7 날짜별 울림
@@ -242,7 +255,7 @@ export async function loadOverview(db: Client, range: RangeDays, nowMs: number =
       users: num(x.n),
     })),
     rings: { usersD7: num(row(5).users_d7), usersD30: num(row(5).users_d30), rangD7: num(row(5).rang_d7) },
-    alarmThemes: rows(6).map((x) => ({ theme: String(x.theme ?? ''), total: num(x.total), active: num(x.active) })),
+    alarmThemes: rows(6).map((x) => ({ theme: String(x.theme ?? ''), total: num(x.total) })),
     ringsByDay: fillDays(dayMap(7), range, nowMs),
     eventTotals: rows(8).map((x) => ({ type: String(x.type), count: num(x.n) })),
     plus: { users: num(row(9).plus_users), activeSubscriptions: num(row(9).active_subs) },

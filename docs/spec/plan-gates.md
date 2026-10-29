@@ -114,8 +114,9 @@ freeVoiceTier = 로그인함 && !유료
 다시 받으면 같은 응답을 몇 번씩 기다린다. 다시 받는 때는 넷이다.
 
 - **진입 갱신** — 탭·화면에 들어갈 때. 같은 계정의 **완결된** 갱신이 같은 앱 진입 안에서
-  **60초** 안에 있었으면 다시 받지 않는다. 목소리·더보기 탭과 화면(편집기·이용권)이
-  모두 같은 창을 본다.
+  **60초** 안에 있었으면 다시 받지 않는다. 알람·목소리·더보기 탭과 화면(편집기·이용권)이
+  모두 같은 창을 본다. 알람 탭은 **이용권만** 다시 받는다(홈의 머리 카드가 쓴다 — 안드로이드 `refreshBilling`,
+  iOS `socialFeatures.refreshOnEntry`). (2026-10-29 전 iOS 알람 탭은 이 창이 아니라 알람 올리기를 돌았다 — 아래.)
   - ⚠ **목소리 탭의 진입 갱신은 빼지 말 것**(2026-08-24 실기기). 예전에는 목소리 탭이 앱
     시작의 캐시 스냅샷에만 기대, 다른 기기에서 플랜이 바뀌면 유료 사용자가 '추가' 를
     눌렀는데 이용권 안내 모달이 떴다. 창은 그 낡음을 60초 이하로 묶을 뿐 없애지 않는다.
@@ -125,9 +126,9 @@ freeVoiceTier = 로그인함 && !유료
     쪽은 세션 세대를 함께 넣는다).
   - **실패했거나 반쪽인 갱신은 창을 열지 않는다** — 다음 진입이 곧바로 다시 받는다. 그래서
     '건너뛰기 표' 를 갱신 **전에** 적지 않는다. 먼저 적으면 실패한 뒤 60초 동안 재시도가 막힌다.
-    도는 동안의 중복을 막으려고 먼저 적는 표(알람 탭 동기화)는, 회차가 **완결되지 않으면
-    자기가 적은 칸을 지운다**(오프라인·저장소 로드 전·탭을 떠나 취소 — 올리지 못한 알람을
-    다시 올리는 자리다).
+    (2026-10-29 전에는 iOS 알람 탭 동기화가 도는 동안의 중복을 막으려고 먼저 적는 표(`AlarmTabSyncThrottle`)를 썼고,
+    회차가 완결되지 않으면 자기가 적은 칸을 지웠다 — 올리지 못한 알람을 다시 올리는 자리였다. 서버 알람 사본을 지워
+    알람을 올리지 않으므로 그 표도 지웠다 — [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」.)
   - 창에 적는 진입·시각은 **요청을 보낼 때의 것**이다. 응답이 백그라운드를 건너 다음 진입에
     도착했을 때의 값을 적으면, 떠나 있는 동안 받은 옛 답이 돌아온 진입의 창을 연다.
   - 앱에 다시 들어오면(백그라운드를 거쳐) 창은 닫힌다.
@@ -196,8 +197,8 @@ freeVoiceTier = 로그인함 && !유료
 | 파는 상품은 개인 월간 구독 하나(코드를 발급하는 1회성·소모성 상품 없음 · 커플·가족 상품 없음) | `PlayBillingProducts.all`(`billing/PlayBillingManager.kt`) | `SubscriptionProduct`(`Services/IAP/SubscriptionProduct.swift`) · `Configuration/StoreKitConfiguration.storekit` | `APPLE_PRODUCT_TO_PLAN_KEY`(`lib/apple-storekit.ts`) · `googlePlanKeyFromProductId`(`lib/play-subscriptions.ts`) — `personal_monthly` 하나, 목록 밖 상품은 400 `UNKNOWN_PRODUCT` |
 | 강제 — 무엇이 막는가(CI lint 는 필수 체크, 두 앱의 단위 테스트는 각 빌드 워크플로 — 필수 체크가 아니다) | CI lint `scripts/check-paid-unlock-codes.py` 의 (a) 화면 문구·(b) 코드·(e) 게이트 모양 + 단위 테스트 `GiftCodeRemovalTest`(`android-build.yml`) | 같은 검사의 (a)·(b)·(e) + 단위 테스트 `GiftRemovalTests`(`ios-build.yml`) | 같은 검사의 (b) 코드·라우트 경로·(d) 초대 코드 형식이 남지 않았는지 + `gift-codes-retired.test.ts`·`code.test.ts`(필수 `test` 잡). 스토어 문구 원본은 같은 검사의 (c) |
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
-| 진입 갱신 — 목소리·이용권(완결된 갱신만 · 60초 · 같은 계정·같은 앱 진입 · 보낼 때 적는다) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(키는 `tab to sessionEffectKey` — 계정 + 세션 세대라 규칙과 같다. ⚠ 표를 갱신 **전에** 적는다 — 실패 뒤 재시도 규칙은 아직 다르다) | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` — 부르는 자리 `MainTabsView.refreshForSelectedTab`(목소리·더보기)·`MainTabsView.refreshAll`·`AlarmEditorSheet`·`BillingPanel` | — |
-| 알람 탭 동기화 스로틀(키 = 탭 + 계정 — 토큰 아님 · 완결되지 않은 회차는 칸을 지운다) | 같은 `lastTabRefreshAt`(`tab to sessionEffectKey` — ⚠ 실패해도 칸을 지우지 않는다) | `MainTabsView.tabRefreshThrottleKey` · `AlarmTabSyncThrottle`(완결 판정은 `RemoteAlarmSyncViewModel.runFullSync` 의 반환값. 재로그인은 `MainTabsView` 가 새로 만들어져 표가 비워진다) | — |
+| 진입 갱신 — 목소리·이용권(완결된 갱신만 · 60초 · 같은 계정·같은 앱 진입 · 보낼 때 적는다) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(키는 `tab to sessionEffectKey` — 계정 + 세션 세대라 규칙과 같다. ⚠ 표를 갱신 **전에** 적는다 — 실패 뒤 재시도 규칙은 아직 다르다) | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` — 부르는 자리 `MainTabsView.refreshForSelectedTab`(알람 — 이용권만 · 목소리·더보기)·`MainTabsView.refreshAll`·`AlarmEditorSheet`·`BillingPanel` | — |
+| 알람 탭 진입 = 이용권만(알람 올리기 없음 — 2026-10-29 iOS 의 알람 탭 동기화 스로틀 `AlarmTabSyncThrottle`·`tabRefreshThrottleKey` 를 지웠다) | 같은 `lastTabRefreshAt` 의 `NativeTab.Alarms` → `refreshBilling`(+ 매니페스트 `loadStockClips(ManifestNeed.RECENT)`) | `MainTabsView.refreshForSelectedTab` 의 `.alarms` → `alarmKit.refreshAuthorizationState` · `socialFeatures.refreshOnEntry`(위 행의 창) | — |
 | 쓰기·푸시 뒤 이용권 + plan(`/auth/me` 한 번 — 끝까지 못 가면 사용자 새로고침) | — | `SocialFeatureViewModel.refreshAllThenUserIfIncomplete` — 부르는 자리 `plan_changed`(`AlarmTalkApp` 의 `onPlanChanged`)·`BillingPanel` 의 구매·복원·구독 관리 시트 닫힘 | — |
 | 이용권 새로고침의 조회는 한꺼번에(쓰는 순서·가드는 그대로 · 수위·계정 표는 보내기 전에) | `MainViewModelBillingActions.refreshBillingData`(구독 하나) | `SocialFeatureViewModel.refreshAll`(`async let`); 회귀 `EntryRefreshFreshnessTests`(두 조회가 한꺼번에·표는 보내기 전에·구독 실패에도 계정 답을 이 진입의 결과로) | — |
 
@@ -373,7 +374,8 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
 - **목소리·문구 접근이 두 갈래로 줄었다**(쌍 규칙 — CLAUDE.md). 쓰기(`messageBelongsToCaller`·
   `voiceProfileBelongsToCaller`)와 읽기(`GET /tts/messages/:id/audio`)가 똑같이 **내 문구(내 목소리·시스템
   목소리) 또는 시스템 스톡 프리셋**만 받는다. 남의 목소리 갈래와 그 주인의 원시 플랜 규칙, 받은 알람의 음원
-  갈래를 함께 지웠다.
+  갈래를 함께 지웠다. (2026-10-29 쓰기 쪽은 서버 알람 사본과 함께 없어졌다 — 저장하지 않으니 볼 것이 없다. 지금은 오디오
+  라우트가 유일한 판정이다, [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」.)
   `PATCH /voice/:id/relationship` 은 남의 목소리(공유 보기) 갈래만 지우고 내 초안 갈래는 둔다(1.2.10 호환 —
   [voice-and-message.md](voice-and-message.md) 구현 지도의 '클론 문구의 결' 행).
 - **무료 강등·목소리 삭제가 남의 알람을 건드리지 않는다.** 남의 계정 알람이 내 목소리·문구를 가리킬 길이
@@ -448,10 +450,10 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | 상품 매핑 = `personal_monthly` 하나 | `APPLE_PRODUCT_TO_PLAN_KEY`(`lib/apple-storekit.ts`) · `googlePlanKeyFromProductId`(`lib/play-subscriptions.ts`) — 목록 밖은 400 `UNKNOWN_PRODUCT` | `PlayBillingProducts.all`(`billing/PlayBillingManager.kt`) | `SubscriptionProduct`(`Services/IAP/SubscriptionProduct.swift`) · `Configuration/StoreKitConfiguration.storekit` |
-| 옛 앱 호환 응답(상태 없음 · DB 를 보지 않음) | `routes/family.ts`(`GET /groups/current`) · `routes/billing-query.ts`(`GET /vouchers` · `GET /subscription` 의 `max_members: 1`) · `routes/voice-profile.ts`(`GET /family`) · `routes/alarm-query.ts`(`GET /` · `GET /declined`) · `routes/alarm-mutation.ts`(`POST /:id/decline` · `target_user_id` 의 403) · `routes/code.ts`(`POST /register`) — 회귀 `test/code.test.ts` 와 각 라우트 테스트 | 부르지 않는다 | 부르지 않는다 |
+| 옛 앱 호환 응답(상태 없음 · DB 를 보지 않음) — 그룹·공유·받은 알람 조회와 `POST /code/register` 는 2026-10-26 에 지웠다(404 `NOT_FOUND`, 위 「옛 앱에 남겼던 응답」) | 남은 것: `routes/alarm-mutation.ts`(`POST /`·`PATCH /:id`·`DELETE /:id` — 2026-10-29 부터 저장 없이 되돌려 준다 · `target_user_id` 의 403, [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」) — 회귀 `test/alarm-compat.test.ts`·`test/old-app-compat.test.ts` | 부르지 않는다 | 부르지 않는다 |
 | 서버 표·컬럼 삭제(원자적 하나) | `lib/migrations.ts` #131 `drop-couple-family-plans` — 회귀 `test/migrations.test.ts` | — | — |
 | 개인 경로의 그룹 문장 제거(같은 배포) | `lib/store-billing.ts`(같은 플랜 갱신) · `lib/billing-cancel.ts`(해지 행 문장 · 무료 강등) · `routes/voice-profile.ts`(목소리 삭제) · `lib/voice-slots.ts` | — | — |
-| 목소리·문구 접근 = 내 문구(내 목소리·시스템 목소리) 또는 시스템 스톡 프리셋(쌍 규칙) | `routes/alarm-mutation.ts` 의 `messageBelongsToCaller`·`voiceProfileBelongsToCaller` ↔ `routes/tts.ts` 의 `GET /messages/:id/audio`·`findUsableVoiceProfile` | — | — |
+| 목소리·문구 접근 = 내 문구(내 목소리·시스템 목소리) 또는 시스템 스톡 프리셋 | `routes/tts.ts` 의 `GET /messages/:id/audio`·`findUsableVoiceProfile` — 2026-10-29 부터 유일한 판정(알람 쓰기 쪽 짝 `messageBelongsToCaller`·`voiceProfileBelongsToCaller` 는 서버 알람 사본과 함께 지웠다) | — | — |
 | Room 27→28 재생성 + 받은 알람 변환(같은 트랜잭션) | — | `data/AlarmDatabase.kt` 의 `MIGRATION_27_28` — 회귀 `AlarmDatabaseMigrationSafetyTest` 와 27→28 마이그레이션 테스트 | — |
 | 저장소 변환(로드 뒤 · 던지지 않는 디코드) | — | — | `LocalAlarmStore` · `LocalAlarmRecord` — 회귀 `LocalAlarmRecordCodableTests` |
 | 강제 업데이트(두 스토어 게재 확인 뒤 — 2026-10-26 Android 36·iOS 14 로 올렸다) | `lib/app-version.ts` 의 `minSupported` — 회귀 `test/app-version.test.ts` | — | — |

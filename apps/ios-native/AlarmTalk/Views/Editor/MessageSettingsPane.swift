@@ -24,6 +24,8 @@ struct MessageSettingsPane: View {
     /// 이번 달 직접 입력 여유 — limit > 0 이면 보여 준다(무료 3·플러스 30, 2026-10-26 부터 무료도).
     var manualRemaining: Int?
     var manualLimit: Int?
+    /// 무료가 기본분을 다 쓰고 남은 광고 보상 — 있으면 '(0/3)' 대신 보상 수를 말한다(안드로이드 `editorp_random_manual_ad_credits` 짝).
+    var manualAdCredits: Int? = nil
     /// 저장된 날씨·운세 값(없으면 고르는 순간 입력창을 띄운다).
     let savedWeatherCountry: String
     let savedWeatherCity: String
@@ -502,6 +504,10 @@ struct MessageSettingsPane: View {
         guard option.id == MessageSettingsResult.manualContext,
               let remaining = manualRemaining, let limit = manualLimit, limit > 0
         else { return option.label }
+        // 무료가 기본분을 다 쓰고 광고 보상이 남았으면 '(0/3)' 대신 보상 수를 말한다 — "직접 입력 (광고 보상 1번)".
+        if remaining <= 0, let credits = manualAdCredits, credits > 0 {
+            return String(localized: "\(String(option.label)) (광고 보상 \(Int(credits))번)")
+        }
         // 이번 달 남은 만들기 횟수 — 고르기 전에 몇 번 남았는지 먼저 보인다.
         return "\(option.label) (\(max(remaining, 0))/\(limit))"
     }

@@ -73,6 +73,22 @@ internal fun String.takeWithoutSplittingPairs(maxLength: Int): String {
  * 들어가는지 모른 채 지웠다 다시 치는데, 그럴 바엔 넘치게 두고 밑에 이유를 적어 주는
  * 편이 낫다(위험 문자 제거는 상한과 무관하게 언제나 한다).
  */
+/**
+ * 이름 칸의 `onValueChange` 한 번 — 정리한 값과 **상한을 넘겨 친 경고**를 함께 정한다(CLAUDE.md 「말없이 자르지 말 것」).
+ * 상한에서 입력은 막고, 넘겨 치는 순간 경고를 켠다. ⚠ **정확히 상한일 때는 경고를 건드리지 않는다** — 잘라서 돌려준 값을
+ * IME 가 그대로 되돌려 보내므로, 거기서 끄면 켜자마자 꺼진다. 상한보다 짧아지면 끈다.
+ */
+internal fun boundedNameInput(raw: String, maxLength: Int, wasTooLong: Boolean): Pair<String, Boolean> {
+    val cleaned = sanitizeDisplayName(raw)
+    val clamped = cleaned.takeWithoutSplittingPairs(maxLength)
+    val tooLong = when {
+        clamped.length < cleaned.length -> true
+        clamped.length < maxLength -> false
+        else -> wasTooLong
+    }
+    return clamped to tooLong
+}
+
 internal fun sanitizeDisplayName(raw: String, maxLength: Int = Int.MAX_VALUE): String =
     sanitizeUserText(raw, allowNewlines = false)
         // 연속 공백을 하나로 — 공백만으로 이름을 다르게 보이게 하는 것도 막는다.

@@ -22,15 +22,21 @@ import {
   sparkline,
 } from './ui';
 
+/** 알람 저장 기록의 문구 종류(`usage-events.md` §1 — `alarm_created`·`alarm_updated` 의 `detail`). */
 const THEME_LABELS: Record<string, string> = {
   weather: '날씨',
+  wake_weather: '날씨',
   fortune: '운세',
+  wake_fortune: '운세',
   cheer: '응원',
   love: '응원',
   medication: '약',
   greeting: '기본 인사말',
+  preset: '기본 인사말',
   wake: '기상 인사',
-  '': '테마 없음',
+  manual: '직접 입력',
+  recording: '직접 녹음',
+  alarm_only: '알람음',
 };
 
 const EVENT_LABELS: Record<string, string> = {
@@ -234,8 +240,7 @@ export function renderOverview(nonce: string, o: Overview, nowMs: number, store:
   const themes = hbarList(
     o.alarmThemes.map((t) => ({
       label: THEME_LABELS[t.theme] ?? t.theme,
-      value: t.active,
-      sub: `전체 ${fmtNum(t.total)}개 중 켜짐`,
+      value: t.total,
     })),
     '개',
   );
@@ -322,9 +327,9 @@ export function renderOverview(nonce: string, o: Overview, nowMs: number, store:
 
 <div class="grid grid-2 section-gap">
   <section class="panel reveal" style="--d:10" aria-labelledby="s-theme">
-    <div class="panel-head"><h2 id="s-theme">켜진 알람의 문구 테마</h2></div>
-    ${themes || emptyState('알람이 없어요', '아직 서버에 올라온 알람이 없어요.')}
-    <p class="note">'테마 없음' 은 직접 입력·직접 녹음·알람음만 쓰는 알람이에요.</p>
+    <div class="panel-head"><h2 id="s-theme">알람 문구 종류 (30일)</h2></div>
+    ${themes || emptyState('기록이 없어요', '최근 30일 안에 저장된 알람이 없어요.')}
+    <p class="note">앱이 알람을 저장할 때 남긴 기록으로 세요. 알람마다 마지막 저장 하나만 세고, 켜져 있는지는 몰라요. 1.3 앞 앱과 처리방침 8판에 동의하기 전의 기록에는 종류가 없어요.</p>
   </section>
   <section class="panel reveal" style="--d:11" aria-labelledby="s-month">
     <div class="panel-head"><h2 id="s-month">이번 달</h2></div>

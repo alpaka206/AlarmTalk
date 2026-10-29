@@ -808,10 +808,26 @@ final class VoiceStudioViewModel: ObservableObject {
     private func adoptStockClipManifest(_ manifest: StockClipListResponse) {
         stockClips = manifest.clips
         expectedVariants = manifest.expectedVariants
-        legacyBucketHints = Dictionary(
-            (manifest.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
-            uniquingKeysWith: { first, _ in first },
-        )
+        legacyBucketHints = Self.legacyBucketHints(from: manifest)
+    }
+
+    /// **버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트**(messageId → 테마) — 서버가 준 은퇴 클립 힌트와, 지금 목록에 실린
+    /// 기본 목소리 클립의 테마를 합친다(서버 힌트가 이긴다).
+    ///
+    /// ⚠ 예전에는 서버가 그 사용자의 **서버 알람 사본**이 문 클립까지 힌트로 줬다. 사본을 지운 뒤(2026-10-29)로는 기본 목소리의
+    ///   무료 테마 프리셋 전부를 주지만, 그중 지금 것은 옛 앱(1.2.16)을 위해서라 1.3 강제 업데이트 뒤 빠진다 — 은퇴하지 않은 클립은
+    ///   목록에 테마와 함께 이미 실려 있어 여기서 찾는다. 안드로이드 짝은 `sync/StockClipLanguageRebinder.kt` 의 `legacyBucketHintsOf`.
+    /// ⚠ **무료 테마(`FreeBucket.order`)만 힌트가 된다 — `greeting` 은 빠진다.** 기본 목소리의 `greeting` 은 목소리 소개
+    ///   클립이라 테마가 아니다. 예전에는 서버가 같은 목록(`FREE_BUCKET_CATEGORIES`)으로 걸렀다 — 거르지 않으면 그 클립을 문
+    ///   '기본 인사말' 알람이 `greeting` 테마로 다시 묶여 소개 문구로 운다. 카테고리가 아니라 테마로 본다(`cheer_v2` → `cheer`).
+    static func legacyBucketHints(from manifest: StockClipListResponse) -> [String: String] {
+        let freeThemes = Set(FreeBucket.order.map(\.rawValue))
+        var hints: [String: String] = [:]
+        for clip in manifest.clips where isSystemVoiceId(clip.voiceProfileId) {
+            if let theme = clip.bucketTheme.nilIfBlank, freeThemes.contains(theme) { hints[clip.messageId] = theme }
+        }
+        for hint in manifest.legacyBucketHints ?? [] { hints[hint.messageId] = hint.category }
+        return hints
     }
 
     /// 이번 실행에서 서버 매니페스트를 받았는가. 디스크 시드와 구분하기 위한 값이다.
@@ -1353,6 +1369,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 ),
                 userID: track.ownerUserID
             )
+            if response.chargedSource == UsageEventProps.ChargedSource.ad.rawValue {
+                AdRewardAttempts.spent(requestID: track.requestID, userID: track.ownerUserID)
+            }
             return
         }
         UsageEventQueue.shared.record(
@@ -1372,6 +1391,9 @@ final class VoiceStudioViewModel: ObservableObject {
             ),
             userID: track.ownerUserID
         )
+        if response.chargedSource == UsageEventProps.ChargedSource.ad.rawValue {
+            AdRewardAttempts.spent(requestID: track.requestID, userID: track.ownerUserID)
+        }
     }
 
     /// 서버가 답하기 전에 실패했다(거절·연결 실패). 서버가 거절했으면 세지 않았다(`none` — 실패는 환불된다),

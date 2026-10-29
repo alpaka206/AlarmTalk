@@ -150,7 +150,6 @@ extension VoiceStudioViewModel {
         "INVALID_VOICE_PITCH",
         "VOICE_PITCH_LOCKED",
         "CONSENT_REQUIRED",
-        "ALARM_NOT_FOUND",
         "TTS_GENERATION_FAILED",
     ]
 }

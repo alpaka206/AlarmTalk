@@ -779,8 +779,14 @@ internal fun MainViewModel.renameVoiceProfile(
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
         return
     }
+    voiceTabError = null
     viewModelScope.launch {
-        if (voiceProfileBusy) return@launch
+        // ⚠ **말없이 버리지 않는다**(2026-10-29 두 앱 비교). 이름 바꾸기 창은 목록을 받는 동안에도 열려 있을 수 있다 — 그때
+        //   눌러 그냥 돌아가면 아무 일도 없는 것처럼 보인다.
+        if (voiceProfileBusy) {
+            voiceTabError = getApplication<android.app.Application>().getString(R.string.msg_try_again_shortly)
+            return@launch
+        }
         voiceProfileBusy = true
         runCatching {
             api.updateVoiceProfile(
@@ -804,7 +810,7 @@ internal fun MainViewModel.renameVoiceProfile(
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to rename voice profile id=$profileId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_info_update_failed))
+            voiceTabError = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_info_update_failed))
         }
         voiceProfileBusy = false
     }
@@ -813,8 +819,13 @@ internal fun MainViewModel.renameVoiceProfile(
 internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
     val session = sessionOrMessage(R.string.msg_voice_delete_login_required) ?: return
 
+    voiceTabError = null
     viewModelScope.launch {
-        if (voiceProfileBusy) return@launch
+        // 이름 바꾸기와 같은 이유로 말없이 버리지 않는다.
+        if (voiceProfileBusy) {
+            voiceTabError = getApplication<android.app.Application>().getString(R.string.msg_try_again_shortly)
+            return@launch
+        }
         voiceProfileBusy = true
         val originalProfile = voiceProfiles.firstOrNull { it.id == profileId }
         if (originalProfile != null) {
@@ -845,7 +856,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
                     }
                 }
                 AlarmTalkLog.reportError("Failed to delete voice profile id=$profileId", error)
-                message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_delete_failed))
+                voiceTabError = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_delete_failed))
             }
         }
         voiceProfileBusy = false
@@ -1212,13 +1223,14 @@ internal suspend fun MainViewModel.cacheVoiceClips(
 /** 사전렌더 실패 시 재생성 요청. true 면 재시작 수락 — 호출측이 폴링을 재개한다. */
 internal suspend fun MainViewModel.retryVoicePrerender(profileId: String): Boolean {
     val session = authSession ?: return false
+    voiceTabError = null
     return try {
         api.retryVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId).success
     } catch (error: kotlin.coroutines.cancellation.CancellationException) {
         throw error
     } catch (error: Exception) {
         AlarmTalkLog.reportError("Failed to retry voice prerender id=$profileId", error)
-        message = userFacingError(
+        voiceTabError = userFacingError(
             error,
             getApplication<android.app.Application>().getString(R.string.msg_voice_prerender_retry_failed),
         )
@@ -1229,6 +1241,7 @@ internal suspend fun MainViewModel.retryVoicePrerender(profileId: String): Boole
 /** 말투 분석 재시도. 성공하면 프로필의 speech_style_status 를 갱신해 실패 안내가 사라지게 한다. */
 internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: String): Boolean {
     val session = authSession ?: return false
+    voiceTabError = null
     return try {
         val response = api.retryVoiceSpeechStyle(AlarmTalkApiClient.bearer(session.token), profileId)
         if (response.success) {
@@ -1241,7 +1254,7 @@ internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: Stri
         throw error
     } catch (error: Exception) {
         AlarmTalkLog.reportError("Failed to retry voice speech style analysis id=$profileId", error)
-        message = userFacingError(
+        voiceTabError = userFacingError(
             error,
             getApplication<android.app.Application>().getString(R.string.msg_voice_speech_style_retry_failed),
         )

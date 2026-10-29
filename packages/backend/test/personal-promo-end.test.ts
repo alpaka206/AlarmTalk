@@ -153,8 +153,8 @@ async function insertMany(db: Client, statements: InStatement[]) {
 
 /**
  * 기간 중 목소리를 만든 원시 무료 계정 하나 — 운영에서 흔한 모양대로: 클론 하나(제공자 id 있음),
- * 원본 업로드 하나, 사전렌더 클립 `clips` 개(메시지 + 생성 오디오), 내 알람 둘, 안드로이드 기기
- * `devices` 대. 절반은 구글 계정(PK ≠ 로그인 id).
+ * 원본 업로드 하나, 사전렌더 클립 `clips` 개(메시지 + 생성 오디오), 안드로이드 기기 `devices` 대.
+ * 절반은 구글 계정(PK ≠ 로그인 id). 알람은 기기에만 있다(서버 사본은 #147 에서 지웠다).
  */
 function seedPromoUser(
   id: string,
@@ -204,13 +204,6 @@ function seedPromoUser(
         ],
       },
     );
-  }
-  for (let a = 0; a < 2; a++) {
-    out.push({
-      sql: `INSERT INTO alarms (id, user_id, message_id, time, mode, voice_profile_id)
-            VALUES (?, ?, ?, '07:00', 'tts', ?)`,
-      args: [`al-${id}-${a}`, id, clips > 0 ? `msg-${id}-0` : null, vp],
-    });
   }
   for (let d = 0; d < devices; d++) {
     out.push({
@@ -410,7 +403,7 @@ describe('전용 크론 한 실행의 subrequest — 푸시를 켠 운영 조건
     expect(run.sweep?.cleanedUserPks.length).toBeGreaterThan(0);
     expect(run.sweep?.cleanedUserPks.length).toBeLessThanOrEqual(PROMO_END_SWEEP_BATCH);
     expect(used).toBeLessThanOrEqual(PROMO_END_RUN_BUDGET);
-    // 지운 사람: 목소리·클립·업로드·알람 행이 없고, 파일은 삭제 큐에 있다. 보관 행도 없다.
+    // 지운 사람: 목소리·클립·업로드 행이 없고, 파일은 삭제 큐에 있다. 보관 행도 없다.
     const gone = run.sweep!.cleanedUserPks[0]!;
     for (const [table, col] of [
       ['voice_profiles', 'id'],

@@ -221,9 +221,8 @@ user.post('/consents', async (c) => {
         voiceAccessRevokedUserIds = revocation.voiceAccessRevokedUserIds;
       }
     });
-    // 철회했으면 알람 행을 못 찾았어도 이 계정에 목소리 접근권 상실을 알린다 — 서버에 아직
-    // 동기화되지 않은 로컬 알람은 여기서 안 잡히는데, 발사는 로컬이고 울림 시점 동의 게이트도
-    // 없어 그 기기는 지워진 녹음으로 계속 울린다.
+    // 철회했으면 이 계정에 목소리 접근권 상실을 알린다 — 알람은 기기에만 있고(#147) 발사는 로컬이며 울림 시점 동의
+    // 게이트도 없어, 알리지 않으면 그 기기는 지워진 녹음으로 계속 울린다.
     await notifyDowngradedAlarms(db, c.env, downgradedAlarms, voiceAccessRevokedUserIds);
     return c.json({ success: true, recorded: rows.length });
   } catch (err) {

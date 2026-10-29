@@ -168,30 +168,6 @@ final class DatedAlarmTests: XCTestCase {
         XCTAssertEqual(back.first?.targetTimezone, "Europe/London")
     }
 
-    // MARK: - 서버 본문
-
-    private func body(_ record: LocalAlarmRecord) throws -> [String: Any] {
-        let data = try AlarmTalkAPI.makeJSONEncoder().encode(RemoteAlarmMapper.toRemoteRequest(record))
-        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-    }
-
-    func testMapperSendsTargetDateAndConfirmedTimeZone() throws {
-        let sent = try body(dated("2026-10-27", zone: "Europe/London"))
-        XCTAssertEqual(sent["target_date"] as? String, "2026-10-27")
-        XCTAssertEqual(sent["timezone"] as? String, "Europe/London")
-        XCTAssertEqual(sent["repeat_days"] as? [Int], [])
-    }
-
-    func testMapperSendsExplicitNullWhenUndated() throws {
-        var record = dated("2026-10-27")
-        record.targetDate = nil
-        record.targetTimezone = nil
-        let sent = try body(record)
-        XCTAssertTrue(sent.keys.contains("target_date"), "PATCH 가 지우게 null 로 싣는다")
-        XCTAssertTrue(sent["target_date"] is NSNull)
-        XCTAssertEqual(sent["timezone"] as? String, TimeZone.current.identifier)
-    }
-
     // MARK: - 예약 모양
 
     func testDatedAlarmIsScheduledFixedNotRelative() {

@@ -847,7 +847,8 @@ export type CloneSupplementRequestResult =
 
 /**
  * **클론 보충을 요청한다**(스펙 §5-4 「클론은 고른 것만 보충한다」). 사용자가 그 클론으로 그 테마 알람을 저장한 뒤
- * 부른다(`routes/alarm-mutation.ts`). 기존 프로필 전체를 한꺼번에 다시 굽지 않는 것이 이 함수의 존재 이유다.
+ * 앱이 알린다(`POST /voice/:id/content-supplement` — `routes/voice-profile.ts`). 기존 프로필 전체를 한꺼번에 다시 굽지 않는 것이
+ * 이 함수의 존재 이유다.
  *
  * - 그 테마의 보충 묶음이 공개됐을 때만 한다(`not_released`).
  * - 그 언어로 이미 다 있으면 아무것도 하지 않는다(`already_complete`).
@@ -855,8 +856,8 @@ export type CloneSupplementRequestResult =
  *   (`requested`) — 진행 중이면 그 회차가 함께 굽고, 실패면 사용자가 다시 시도할 때 함께 굽는다.
  * - 직접 입력 장부는 건드리지 않는다 — 사전렌더는 횟수를 차감하지 않는다.
  *
- * ⚠ 큐의 새 컬럼(#143)을 쓰는 경로다. 배포 창에는 던진다 — 호출자는 알람 저장을 이미 끝냈으므로 이 실패를 삼키고
- *   다음 저장이 다시 요청한다(잃는 것은 보충이 한 번 늦는 것뿐이다).
+ * ⚠ 큐의 새 컬럼(#143)을 쓰는 경로다. 배포 창에는 던진다 — 라우트가 500 으로 답하고, 앱은 알람 저장을 이미 끝냈으므로 이
+ *   실패를 기다리지 않는다. 다음 응원 저장이 다시 요청한다(잃는 것은 보충이 한 번 늦는 것뿐이다).
  */
 export async function requestCloneContentSupplement(
   db: Pick<DbExecutor, 'execute'>,
@@ -1344,14 +1345,7 @@ export async function deleteStockClips(
   }
 
   const ph = ids.map(() => '?').join(',');
-  // 이 클립을 쓰던 알람은 음성 떼고 sound-only 로 (FK·런타임 안전).
-  await db.execute({
-    sql: `UPDATE alarms
-          SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-              message_id = NULL, voice_profile_id = NULL
-          WHERE message_id IN (${ph})`,
-    args: ids,
-  });
+  // 서버에는 알람 행이 없다(#147) — 이 클립을 물던 기기의 알람은 매니페스트에서 빠진 것을 보고 다시 묶는다.
   await db.execute({ sql: `DELETE FROM message_library WHERE message_id IN (${ph})`, args: ids });
   await db.execute({
     sql: `DELETE FROM generated_audio_assets WHERE message_id IN (${ph})`,
@@ -1427,19 +1421,16 @@ export interface LegacyBucketHint {
  * 무엇으로 갈아탈지는 **서버가 이미 안다** — 그 알람이 문 message 의 `category` 다.
  * 앱에 다시 물을 필요가 없어서 매니페스트에 실어 보낸다.
  *
- * ⚠ **서버 알람 행만 보면 부족하다**(2026-09-03 리뷰 15차). 아직 서버에 올라가지 않은
- *   알람(`LOCAL_ONLY`·`FAILED`)은 조인에 걸리지 않아 힌트를 못 받고, 그 알람은 **영영**
- *   옛 목소리로 운다. 그래서 **은퇴한 시스템 스톡 프리셋**도 함께 준다 — 힌트가 필요한
- *   알람이 가리키는 것이 정확히 그 집합이다.
- *   시스템 스톡은 전역 카탈로그(소유자가 `SYSTEM_VOICE_LIBRARY_USER_ID`)라 남의 개인정보가
- *   아니고, 은퇴한 것만 담으므로 무한정 늘지 않는다(상한도 둔다).
- * ⚠ **호출자 알람 갈래는 그대로 본인 것만**이다(IDOR). id 를 받지 않으므로 남의 알람을
- *   지목할 방법 자체가 없다.
- * ⚠ **`greeting` 은 버킷이 아니다** — 목소리 미리듣기용 자기소개라 알람 테마가 될 수 없고,
- *   서버도 시스템 보이스+greeting 을 `INVALID_BUCKET_ID` 로 거절한다. 힌트로 주면 앱이
- *   그 값을 `bucketId` 에 적고, 그 알람은 저장할 때마다 400 을 맞는다.
- * ⚠ **은퇴 여부를 보지 않는다.** 힌트가 필요한 알람은 정확히 '은퇴한 클립을 물고 있는'
- *   알람이므로, 여기서 `retired_at IS NULL` 을 걸면 아무것도 안 나온다.
+ * **기본 목소리의 무료 테마 프리셋을 준다 — 지금 것(①)과 은퇴한 것(②)**(2026-10-29 — 서버 알람 사본을 지웠다, #147).
+ *   예전 ①은 그 사용자의 서버 알람이 문 클립이었다. 사본이 없으니 누가 무엇을 무는지 모른다 — 그래서 ①이 고를 수 있던 전부를
+ *   준다. ⚠ **① 을 빼지 말 것 — 옛 앱(1.2.16)은 힌트를 이 칸에서만 읽는다**(코덱스 #977). 1.3 앱은 매니페스트의 클립 목록에서
+ *   스스로 만들어 합치므로(안드로이드 `legacyBucketHintsOf`, iOS `VoiceStudioViewModel.legacyBucketHints(from:)`) ①은 1.3 강제
+ *   업데이트(`lib/app-version.ts` 의 `minSupported`) 뒤에 지운다. 서버에서만 올 수 있는 것은 목록에서 빠진 ②뿐이다.
+ *   시스템 스톡은 전역 카탈로그(소유자가 `SYSTEM_VOICE_LIBRARY_USER_ID`)라 남의 개인정보가 아니다. ①은 목록 크기를 넘지
+ *   않고, ②는 상한을 둔다.
+ * ⚠ **`greeting` 은 버킷이 아니다** — 목소리 미리듣기용 자기소개라 알람 테마가 될 수 없다
+ *   (`FREE_BUCKET_CATEGORIES` 로 거른다). 힌트로 주면 앱이 그 값을 `bucketId` 에 적고 그 알람이 소개 문구로 운다.
+ *   앱이 목록에서 만드는 힌트도 같은 이유로 무료 테마만 담는다(`FreeBucketOrder` / `FreeBucket.order`).
  */
 /**
  * `messages.retired_at`(#110)이 이미 있는가. **읽기 경로의 배포 창 방어에만 쓴다.**
@@ -1507,10 +1498,7 @@ export async function prerenderSupplementColumnReady(db: DbExecutor): Promise<bo
   return prerenderSupplementColumnReadyFlag;
 }
 
-export async function findLegacyBucketHints(
-  db: Client,
-  userPk: string,
-): Promise<LegacyBucketHint[]> {
+export async function findLegacyBucketHints(db: Client): Promise<LegacyBucketHint[]> {
   const categories = [...FREE_BUCKET_CATEGORIES];
   const placeholders = categories.map(() => '?').join(', ');
   // 은퇴 프리셋 갈래의 상한. 교체 회차 하나가 (버킷 4종 × 목소리 4 × 언어 3) ≈ 228개다.
@@ -1519,46 +1507,33 @@ export async function findLegacyBucketHints(
   const RETIRED_HINT_LIMIT = 400;
   // ⚠ **배포 창에는 `retired_at` 이 없다**(#110, CLAUDE.md 「배포가 마이그레이션보다 먼저」).
   //   그냥 참조하면 매니페스트 응답이 통째로 500 이 된다 — 읽기 경로라 그럴 이유가 없다.
-  //   컬럼이 없으면 ② 갈래를 통째로 뺀다.
+  //   컬럼이 없으면 줄 힌트가 없다(은퇴한 행도 없다).
   //   ⚠ 프로브와 아래 조회는 **각각 왕복**이라, 그 사이에 마이그레이션이 끝나면 이미
   //   은퇴한 클립이 한 번 더 목록에 실릴 수 있다. 받아들이는 이유는 그 응답이 같은 창에서
   //   조금 전에 보낸 것과 **글자 그대로 같기** 때문이다(#110 은 행을 표시만 하고 새로 만들지
   //   않는다). 재바인더가 다음 회차의 `liveKeys` 로 갈아탄다 — 그게 원래 설계다.
   //   이 동등성을 **쓰기 경로나 과다 목록에 안전하지 않은 소비자에 기대지 말 것.**
-  const retiredReady = await messagesRetiredColumnReady(db);
-  const retiredArm = retiredReady
-    ? `UNION
-            -- ② 은퇴한 시스템 스톡 전부(아직 서버에 안 올라간 로컬 알람이 이걸 가리킨다)
-            SELECT m.id, m.category, m.language, 1 AS ord, m.retired_at
-              FROM messages m
-              JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-             WHERE m.retired_at IS NOT NULL
-               AND COALESCE(m.is_preset, 0) = 1
-               AND COALESCE(vp.is_system, 0) = 1
-               AND m.category IN (${placeholders})`
-    : '';
-  const result = await db.execute({
-    sql: `SELECT message_id, category, language FROM (
-            -- ① 이 사용자의 서버 알람이 가리키는 것(버킷이 비어 있는 옛 행)
-            SELECT a.message_id AS message_id, m.category AS category, m.language AS language,
-                   0 AS ord, NULL AS retired_at
-              FROM alarms a
-              JOIN messages m ON m.id = a.message_id
-              JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-             WHERE a.user_id = ?
-               AND (a.bucket_id IS NULL OR TRIM(a.bucket_id) = '')
-               AND COALESCE(m.is_preset, 0) = 1
-               AND COALESCE(vp.is_system, 0) = 1
-               AND m.category IN (${placeholders})
-            ${retiredArm}
-          )
-          ORDER BY ord ASC, retired_at DESC
-          LIMIT ?`,
-    args: retiredReady
-      ? [userPk, ...categories, ...categories, RETIRED_HINT_LIMIT]
-      : [userPk, ...categories, RETIRED_HINT_LIMIT],
+  const systemPresets = `SELECT m.id AS message_id, m.category AS category, m.language AS language
+            FROM messages m
+            JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+           WHERE COALESCE(m.is_preset, 0) = 1
+             AND COALESCE(vp.is_system, 0) = 1
+             AND m.category IN (${placeholders})`;
+  // ① 지금 쓰는 것(옛 앱용 — 위 머리말). 컬럼이 없으면(배포 창) 전부가 지금 것이다.
+  const active = await db.execute({
+    sql: `${systemPresets} ${await retiredIsNullClause(db)} ORDER BY m.category, m.language, m.id`,
+    args: categories,
   });
-  return result.rows.map((row) => ({
+  // ② 은퇴한 것 — 최근 것부터 상한까지. 컬럼이 없으면(배포 창) 은퇴한 행도 없다.
+  const retired = (await messagesRetiredColumnReady(db))
+    ? (
+        await db.execute({
+          sql: `${systemPresets} AND m.retired_at IS NOT NULL ORDER BY m.retired_at DESC LIMIT ?`,
+          args: [...categories, RETIRED_HINT_LIMIT],
+        })
+      ).rows
+    : [];
+  return [...active.rows, ...retired].map((row) => ({
     messageId: String(row.message_id),
     category: String(row.category),
     language: String(row.language ?? 'ko'),

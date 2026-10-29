@@ -1004,10 +1004,6 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
                     .write(ownerUserId, row.agreed)
             }
             consentChecked = true
-            // 동의를 기다리는 동안 막혔던 알람 전송을 지금 다시 돈다(`docs/spec/consent.md`). 게이트가 떠 있던 동안의
-            // 전송은 403 `CONSENT_REQUIRED` 를 받고 '동의 대기' 로 조용히 접혔다 — 다시 걸지 않으면 그 사이 저장한
-            // 알람이 다음 회차까지 서버에 오르지 않는다. iOS 는 `consentSubmitGeneration` → `runFullSync` 가 같은 일을 한다.
-            syncNow()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
             if (authSession?.user?.id != ownerUserId) return@onFailure
@@ -1343,71 +1339,6 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
                 false
             },
         )
-    }
-}
-
-internal fun MainViewModel.syncNow() {
-    if (authSession == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_sync_login_required)
-        return
-    }
-    // ⚠ **두 회차를 겹쳐 돌리지 않는다.** syncNow 는 알람 탭 진입·시작·푸시 등 여러 곳에서
-    // 불려 짧은 간격으로 두 번 들어온다. 두 회차가 같은 '아직 안 올린' 목록을 읽으면
-    // (remoteAlarmId 는 응답이 와야 커밋된다) 둘 다 create 로 가서 **서버에 같은 알람이 두 개**
-    // 생긴다. 2026-08-06 실기기 재현(운세 알람 1개가 서버에 2행).
-    //
-    // 다만 **버리지는 않고 미뤄 둔다.** 그냥 return 하면, 앞 회차가 목록을 이미 스냅샷한 뒤에
-    // 저장된 알람이 다음 트리거(탭 재진입·앱 재실행)까지 서버에 안 올라간다 — repository.
-    // syncWithBackend 를 부르는 곳은 여기뿐이고 워커는 알람을 올리지 않는다(Codex #686). 그래서
-    // 요청이 겹치면 표시만 남기고, 지금 회차가 끝난 뒤 한 번 더 돈다.
-    //
-    // 켜는 건 반드시 launch **밖**이어야 한다. 안에서 켜면 두 코루틴이 모두 예약된 뒤에
-    // 켜져 아무것도 못 막는다.
-    if (syncBusy) {
-        syncRequestedWhileBusy = true
-        return
-    }
-    syncBusy = true
-    viewModelScope.launch {
-        try {
-        do {
-        // 이번 회차가 시작될 때 표시를 내린다. 도는 도중에 다시 켜지면 한 번 더 돈다.
-        syncRequestedWhileBusy = false
-        // ⚠ **세션은 회차마다 다시 읽는다.** 미뤄 둔 회차는 앞 회차의 네트워크 왕복이 끝난
-        // 뒤에 도는데, 그 사이 토큰이 바뀔 수 있다(로그인·롤링 갱신 — 알람 탭 효과는 계정·세션
-        // 세대가 바뀔 때 다시 돈다). 처음 잡아 둔 토큰을 계속 쓰면 옛 자격증명으로
-        // 나가고, 더 나쁘게는 repository.syncWithBackend 가 **소유자를 지금 세션 저장소에서**
-        // 가져오므로 재로그인 직후엔 새 계정의 로컬 행이 옛 계정 토큰으로 올라간다(Codex #686).
-        // 로그아웃됐으면 이번 회차는 돌리지 않고 끝낸다.
-        val session = authSession ?: break
-        // 올리기 실패는 **그 알람 행이 직접 말한다**(syncState=FAILED → `AlarmStates.FAILED` 배지) —
-        // 위에서 같은 말을 한 번 더 하지 않는다.
-        runCatching {
-            repository.syncWithBackend(api, session.token)
-        }.onFailure { error ->
-            // syncNow 는 알람 탭 진입 시 자동 실행되고(사용자 조치가 아님) 다음 진입·주기 sync 가
-            // 자동 재시도한다. 그래서 전체 실패는 겁주는 토스트 대신 로그만 남긴다 — 특히 첫
-            // 로그인 직후 동의 정착 전 알람 올리기가 잠깐 CONSENT_REQUIRED 로 막히는 게
-            // 흔한데(면제 경로 아님), 이건 정상 재시도로 곧 풀린다. 사용자에게 뜨던
-            // "알람 정보를 주고받지 못했어요" 토스트를 제거한다.
-            if (error is kotlin.coroutines.cancellation.CancellationException) throw error
-            // 403 이라도 error_code 로 정확히 CONSENT_REQUIRED 만 여기서 강등한다 — CONSENT_STATE_UNAVAILABLE
-            // 같은 실제 인증/동의 파손은 모니터링에 남겨야 한다. (탈퇴 유예 403 `ACCOUNT_PENDING_DELETION` 은
-            // `reportError` 가 스스로 브레드크럼으로 낮춘다 — 복구 화면이 이미 그 상태를 말한다,
-            // `AlarmTalkLog.isAccountPendingDeletion`.)
-            if (com.alarmtalk.app.network.apiErrorCode(error) == "CONSENT_REQUIRED") {
-                Log.i(TAG, "Auto-sync deferred: consent not settled yet, will retry")
-            } else {
-                AlarmTalkLog.reportError("Backend sync failed", error)
-            }
-        }
-        } while (syncRequestedWhileBusy)
-        } finally {
-            // 취소·예외로 빠져나가도 반드시 푼다 — 안 그러면 이 세션 동안 sync 가 영영 막힌다.
-            // 미뤄 둔 요청 표시도 함께 내린다(다음 트리거가 정상적으로 새 회차를 연다).
-            syncRequestedWhileBusy = false
-            syncBusy = false
-        }
     }
 }
 

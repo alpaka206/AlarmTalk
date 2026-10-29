@@ -30,6 +30,8 @@ final class RewardedAds: NSObject {
     private var started = false
     private var showContinuation: CheckedContinuation<RewardedAdOutcome, Never>?
     private var earnedDuringShow = false
+    /// 이번 표시가 실제로 뜰 때 한 번 부를 것(`show` 의 `onPresented`).
+    private var presentedHandler: (@MainActor () -> Void)?
 
     // MARK: 동의(UMP)
 
@@ -98,12 +100,15 @@ final class RewardedAds: NSObject {
         }
     }
 
-    /// 불러온 광고를 띄우고 닫힐 때까지 기다린다.
-    func show(_ handle: RewardedAdHandle) async -> RewardedAdOutcome {
+    /// 불러온 광고를 띄우고 닫힐 때까지 기다린다. `onPresented` 는 광고가 **실제로 뜰 때** 한 번 불린다(SDK 의
+    /// `adWillPresentFullScreenContent`) — 띄울 화면이 없거나 표시에 실패하면 불리지 않는다. 안드로이드 `RewardedAds.show` 의
+    /// `onShown` 짝.
+    func show(_ handle: RewardedAdHandle, onPresented: @escaping @MainActor () -> Void = {}) async -> RewardedAdOutcome {
         let ad = handle.ad
         guard let presenter = Self.topViewController() else { return .showFailed }
         return await withCheckedContinuation { continuation in
             showContinuation = continuation
+            presentedHandler = onPresented
             earnedDuringShow = false
             ad.fullScreenContentDelegate = self
             ad.present(from: presenter) { [weak self] in
@@ -115,6 +120,7 @@ final class RewardedAds: NSObject {
     private func finishShow(_ outcome: RewardedAdOutcome) {
         showContinuation?.resume(returning: outcome)
         showContinuation = nil
+        presentedHandler = nil
     }
 
     /// 지금 맨 위 화면 — 시트·알럿이 떠 있으면 그 위에 띄운다.
@@ -127,8 +133,13 @@ final class RewardedAds: NSObject {
     }
 }
 
-// 두 콜백은 SDK 가 메인 스레드에서 부른다(헤더의 `NS_SWIFT_UI_ACTOR`) — 이 클래스의 격리와 같다.
+// 세 콜백은 SDK 가 메인 스레드에서 부른다(헤더의 `NS_SWIFT_UI_ACTOR`) — 이 클래스의 격리와 같다.
 extension RewardedAds: FullScreenContentDelegate {
+    func adWillPresentFullScreenContent(_ ad: FullScreenPresentingAd) {
+        presentedHandler?()
+        presentedHandler = nil
+    }
+
     func adDidDismissFullScreenContent(_ ad: FullScreenPresentingAd) {
         finishShow(earnedDuringShow ? .earned : .dismissed)
     }
