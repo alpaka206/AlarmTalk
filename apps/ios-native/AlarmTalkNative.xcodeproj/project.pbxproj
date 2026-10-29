@@ -287,6 +287,7 @@
 		A8DA56D284DCBD52901B903C /* VoicePlanGateAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85400A4CF4E2B95059A0EE71 /* VoicePlanGateAlert.swift */; };
 		A98BAC75D5B210C60A0A5F69 /* DefaultVoicePreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */; };
 		AB049D79EABC198B5DE731CD /* SectionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6B972EFA8543A20D363BEE /* SectionCard.swift */; };
+		AB10314499EE2F14EA6B1FE6 /* AlarmToggleCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DADD9209411D63E0D6812E /* AlarmToggleCoalescer.swift */; };
 		AB6952C6C2E757ECEF15B909 /* VoiceSegmentPreviewPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E25753B97B6CFEAA8E709FB /* VoiceSegmentPreviewPlayer.swift */; };
 		ABA75892A6D29B0D0D5632DC /* EditorPromptPreferenceUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7F41137892438F0CB642340 /* EditorPromptPreferenceUpdateTests.swift */; };
 		AC2D607D698A02FF2BE124A1 /* AlarmLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 715631AD8DB550734A8E0C0E /* AlarmLiveActivity.swift */; };
@@ -299,6 +300,7 @@
 		AE3A84A0F4DE15D657B8FEDB /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 113301E9251EE3A26158F72C /* Sentry */; };
 		AF6A6C53BDDC3906B5EBDEBD /* TimeWheelFlingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378F22445FC4E2D5C2F90CB4 /* TimeWheelFlingUITests.swift */; };
 		B14CB6AD209E2484243B0A27 /* ClipPrefetchActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A97FE45704A372DD0F4F048 /* ClipPrefetchActivityAttributes.swift */; };
+		B19AA2B6C305A755524DA4A2 /* AlarmToggleCoalescerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 410BCD09D1A09E64C54432CB /* AlarmToggleCoalescerTests.swift */; };
 		B2390FEB4CE3DCDD5DAFD6F0 /* WeatherRegionPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60C0FC9B153DE3DD281BC233 /* WeatherRegionPickerSheet.swift */; };
 		B2BA1F5E24C411AE2B0B0F51 /* voice_greeting_narin_en.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 06DCDC8ABCA0B6C9B1CF740A /* voice_greeting_narin_en.mp3 */; };
 		B338DD5CB47A0804212972C9 /* DefaultVoiceSubstituteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4BDB8DF58BF17A4873E7AD /* DefaultVoiceSubstituteTests.swift */; };
@@ -540,6 +542,7 @@
 		3FCA7503F6CC47A566E564C5 /* AsyncTimeout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncTimeout.swift; sourceTree = "<group>"; };
 		4028869EEA0A313C4D673E6B /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
 		4061A001D00A305855EE9206 /* AlarmSoundPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundPlanTests.swift; sourceTree = "<group>"; };
+		410BCD09D1A09E64C54432CB /* AlarmToggleCoalescerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmToggleCoalescerTests.swift; sourceTree = "<group>"; };
 		431B4F1B68A4F2AD65B924D9 /* RememberChoicesGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RememberChoicesGuardTests.swift; sourceTree = "<group>"; };
 		434ADC6E3657D5F86AA2B43C /* UsageEventUploaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageEventUploaderTests.swift; sourceTree = "<group>"; };
 		43D26B874EF55767FFEE03E9 /* ScreenProbeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenProbeUITests.swift; sourceTree = "<group>"; };
@@ -638,6 +641,7 @@
 		783543645669523E589D0B1A /* RemoteAlarmMapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmMapperTests.swift; sourceTree = "<group>"; };
 		7852F38851FD534519D941EB /* privacy-policy.ko.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "privacy-policy.ko.md"; sourceTree = "<group>"; };
 		78725192A752A19FE6B362B1 /* StockClipPrefetcherRestartTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockClipPrefetcherRestartTests.swift; sourceTree = "<group>"; };
+		78DADD9209411D63E0D6812E /* AlarmToggleCoalescer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmToggleCoalescer.swift; sourceTree = "<group>"; };
 		7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPushNavigationUITests.swift; sourceTree = "<group>"; };
 		7A617D3C8750DA731625DF6E /* ClipReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipReadiness.swift; sourceTree = "<group>"; };
 		7A97FE45704A372DD0F4F048 /* ClipPrefetchActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipPrefetchActivityAttributes.swift; sourceTree = "<group>"; };
@@ -1169,6 +1173,7 @@
 				D508DD8CC6CDA986BF91DBA0 /* AlarmSoundVolumeTests.swift */,
 				B524352E39EC2BE4750F07EB /* AlarmStoreColdLoadTests.swift */,
 				59FFCC8AFC12D1CB8AD6A44F /* AlarmTimeCalculatorTests.swift */,
+				410BCD09D1A09E64C54432CB /* AlarmToggleCoalescerTests.swift */,
 				DEA4053147240A726E543944 /* AlarmUserCopyTests.swift */,
 				53F74ECE9BEB717AE2FAA2A3 /* AlarmVoicePlayerTests.swift */,
 				BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */,
@@ -1360,6 +1365,7 @@
 				A537812556462EBCB324CD35 /* AlarmTalkTheme.swift */,
 				AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */,
 				F2BD54D0D21050EB9BBA9364 /* AlarmTimeCalculator.swift */,
+				78DADD9209411D63E0D6812E /* AlarmToggleCoalescer.swift */,
 				0CE60628CC826194C627674A /* AlarmVoicePlayer.swift */,
 				AF3E03716A45AD4CC387DBEE /* APIErrorMessages.swift */,
 				034A8047D121E7FF08703642 /* AppVersionGate.swift */,
@@ -1748,6 +1754,7 @@
 				89084CF8D39ABECD33772866 /* AlarmTalkTheme.swift in Sources */,
 				0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */,
 				8D2BACFDF9ECF6FAB7E9883D /* AlarmTimeCalculator.swift in Sources */,
+				AB10314499EE2F14EA6B1FE6 /* AlarmToggleCoalescer.swift in Sources */,
 				770FB03D2E3917E515FF9241 /* AlarmVoicePlayer.swift in Sources */,
 				FDF7FCD6E8BA38D1DCD2F161 /* AlarmsListView.swift in Sources */,
 				2818E8AD2FDB6E08A568E080 /* AppGroup.swift in Sources */,
@@ -1937,6 +1944,7 @@
 				23A18B7FED2AF1A1788EC37D /* AlarmSoundVolumeTests.swift in Sources */,
 				867B14C46A8D6B961DECE85F /* AlarmStoreColdLoadTests.swift in Sources */,
 				1F91FD72D98E3051B4FD6BD7 /* AlarmTimeCalculatorTests.swift in Sources */,
+				B19AA2B6C305A755524DA4A2 /* AlarmToggleCoalescerTests.swift in Sources */,
 				90D4B576DF0594E4B87266A4 /* AlarmUserCopyTests.swift in Sources */,
 				42F0D9521755F54DDF582883 /* AlarmVoicePlayerTests.swift in Sources */,
 				D46D09E78B1AEE5C9E99BB38 /* AlarmVoiceStopOwnershipTests.swift in Sources */,
