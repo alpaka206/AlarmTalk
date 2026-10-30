@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { authRateLimitMiddleware } from '../middleware/rateLimit';
+import { adminPasswordRetryAfter, recordAdminPasswordFailure } from '../middleware/rateLimit';
 import { jsonError } from '../lib/api-error';
 import { countAudience, parseAudience } from '../lib/admin/audience';
 import { listPushJobs, loadOverview, parseRange, searchUsers } from '../lib/admin/metrics';
@@ -178,12 +178,21 @@ admin.get('/login', async (c) => {
   return c.html(html, 200, securityHeaders(nonce));
 });
 
-// 비밀번호만 검증(아이디/이메일 없음). 무차별 대입은 authRateLimitMiddleware(IP당 15/분)로 좁힌다.
-admin.post('/login', authRateLimitMiddleware, async (c) => {
+// 비밀번호만 검증(아이디/이메일 없음). 틀린 횟수는 Basic 과 한 통으로 센다(`adminPasswordRetryAfter`).
+admin.post('/login', async (c) => {
   const secret = c.env.ADMIN_SECRET!;
+  const retryAfter = adminPasswordRetryAfter(c);
+  if (retryAfter > 0) {
+    const nonce = newNonce();
+    return c.html(renderLogin(nonce, '비밀번호를 너무 많이 틀렸어요. 잠시 뒤에 다시 해 주세요.'), 429, {
+      ...securityHeaders(nonce),
+      'Retry-After': String(retryAfter),
+    });
+  }
   const form = await c.req.parseBody();
   const password = String(form.password ?? '');
   if (!safeEqual(password, secret)) {
+    recordAdminPasswordFailure(c);
     return c.redirect('/admin/login?err=1', 303);
   }
   const token = await makeSessionToken(secret, Date.now());
@@ -211,6 +220,11 @@ admin.use('*', async (c, next) => {
   }
   const header = c.req.header('Authorization') || '';
   if (header.startsWith('Basic ')) {
+    const retryAfter = adminPasswordRetryAfter(c);
+    if (retryAfter > 0) {
+      c.header('Retry-After', String(retryAfter));
+      return jsonError(c, 429, 'RATE_LIMITED', '비밀번호를 너무 많이 틀렸어요. 잠시 뒤에 다시 해 주세요.', { retryAfter });
+    }
     try {
       const decoded = atob(header.slice(6));
       const pass = decoded.slice(decoded.indexOf(':') + 1);
@@ -218,6 +232,7 @@ admin.use('*', async (c, next) => {
     } catch {
       /* 잘못된 Basic 헤더 → 아래 로그인 리다이렉트로 폴백 */
     }
+    recordAdminPasswordFailure(c);
   }
   // 화면 안에서 부르는 JSON 요청(세션이 만료된 뒤)은 리다이렉트 대신 401 로 — 스크립트가 문구를 띄운다.
   if (c.req.method === 'POST') {
