@@ -67,7 +67,6 @@ export function renderLogin(nonce: string, error: string | null): string {
     body: `<div class="login reveal">
   <span class="brand" translate="no"><span class="brand-mark" aria-hidden="true"></span><span>알람톡 <b>관리</b></span></span>
   <h1>관리자 로그인</h1>
-  <p class="muted" style="margin-top:6px">관리자 비밀번호로 들어와요. 12시간 동안 유지돼요.</p>
   <form method="post" action="/admin/login">
     <div class="field">
       <label class="field-label" for="password">비밀번호</label>

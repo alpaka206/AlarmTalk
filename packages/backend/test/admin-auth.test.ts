@@ -151,3 +151,79 @@ describe('admin 비밀번호 전용 로그인', () => {
     expect(res.headers.get('Set-Cookie')).toContain('Max-Age=0');
   });
 });
+
+// 같은 비밀번호를 맞춰 보는 길이 둘이다. 예전에는 폼만 15/분이고 Basic 은 전역 300/분이라 Basic 이 실질 한도였다.
+describe('비밀번호를 틀린 횟수 — 폼과 Basic 이 한 통이다', () => {
+  const MAX_FAILURES = 10;
+  const basic = (pass: string) => 'Basic ' + Buffer.from('x:' + pass).toString('base64');
+  const tryBasic = (ip: string, pass: string) =>
+    request('http://localhost/admin/users', { headers: { Authorization: basic(pass), 'cf-connecting-ip': ip } });
+  const tryForm = (ip: string, pass: string) =>
+    request('http://localhost/admin/login', {
+      method: 'POST',
+      headers: { Origin: ORIGIN, ...FORM, 'cf-connecting-ip': ip },
+      body: 'password=' + encodeURIComponent(pass),
+    });
+
+  it('틀린 Basic 을 다 쓰면 맞는 비밀번호도 보지 않고 막는다 — 막힌 동안 계속 맞춰 볼 수 없다', async () => {
+    const ip = '203.0.113.1';
+    for (let i = 0; i < MAX_FAILURES; i++) {
+      expect((await tryBasic(ip, 'wrong-pass')).status).toBe(302);
+    }
+    const res = await tryBasic(ip, SECRET);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect((await res.json()).error_code).toBe('RATE_LIMITED');
+  });
+
+  it('틀린 폼을 다 쓰면 맞는 비밀번호도 쿠키 없이 로그인 화면으로 막는다', async () => {
+    const ip = '203.0.113.2';
+    for (let i = 0; i < MAX_FAILURES; i++) {
+      expect((await tryForm(ip, 'wrong-pass')).status).toBe(303);
+    }
+    const res = await tryForm(ip, SECRET);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Set-Cookie')).toBeNull();
+    expect(res.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect(await res.text()).toContain('type="password"');
+  });
+
+  it('폼과 Basic 은 같은 횟수를 나눠 쓴다', async () => {
+    const ip = '203.0.113.3';
+    for (let i = 0; i < MAX_FAILURES / 2; i++) {
+      await tryForm(ip, 'wrong-pass');
+      await tryBasic(ip, 'wrong-pass');
+    }
+    expect((await tryForm(ip, SECRET)).status).toBe(429);
+    expect((await tryBasic(ip, SECRET)).status).toBe(429);
+  });
+
+  it('맞는 Basic 은 세지 않는다 — 스크립트가 클립 수만큼 불러도 막히지 않는다', async () => {
+    const ip = '203.0.113.4';
+    for (let i = 0; i < MAX_FAILURES * 3; i++) {
+      mockDB.pushResult([]);
+      expect((await tryBasic(ip, SECRET)).status).toBe(200);
+    }
+  });
+
+  it('다른 IP 는 막히지 않는다', async () => {
+    const ip = '203.0.113.5';
+    for (let i = 0; i < MAX_FAILURES; i++) await tryBasic(ip, 'wrong-pass');
+    expect((await tryForm('203.0.113.6', SECRET)).status).toBe(303);
+  });
+
+  it('10분이 지나면 다시 시도할 수 있다', async () => {
+    const ip = '203.0.113.7';
+    const start = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(start);
+      for (let i = 0; i < MAX_FAILURES; i++) await tryBasic(ip, 'wrong-pass');
+      expect((await tryForm(ip, SECRET)).status).toBe(429);
+      vi.setSystemTime(start + 10 * 60_000 + 1);
+      expect((await tryForm(ip, SECRET)).status).toBe(303);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -12,6 +12,11 @@
 
 - 비밀번호(`ADMIN_SECRET`) 하나로 로그인하고 12시간 세션 쿠키(HttpOnly·Secure·SameSite=Strict, Path=/admin)를 받는다.
   스크립트용 HTTP Basic 도 받는다.
+- **비밀번호를 틀린 횟수는 IP 당 10분에 10번이다**(폼·Basic 한 통). 다 쓰면 맞는 값도 보지 않고 막고(폼은 로그인 화면에 안내, Basic 은 429
+  `RATE_LIMITED`), 맞는 요청은 세지 않는다. ⚠ 워커 메모리 한도라 IP 를 바꾸면 피할 수 있다 — **진짜 방어는 비밀번호 세기다.** `ADMIN_SECRET` 은
+  무작위 32자 이상으로 두고 dev·prod 를 다르게 한다.
+- 주소를 별도 서브도메인으로 옮기지 않는다(2026-10-30). 인증서 공개 기록으로 찾을 수 있어 숨기는 효과뿐이고 시도를 막지 못한다. 더 막아야 하면
+  이 앞에 Cloudflare Access(이메일 인증)를 건다. 그때 Basic 스크립트에는 서비스 토큰이 필요하다.
 - 모든 POST 는 같은 출처만 받는다(Origin, 없으면 Referer). ⚠ 응답의 `Referrer-Policy` 를 `no-referrer` 로 바꾸지
   말 것 — 같은 출처 POST 의 Origin 이 `null` 이 되어 이 검사가 콘솔 자신을 막는다.
 - 화면은 응답마다 새 nonce 를 붙인 인라인 스크립트만 실행된다(CSP, `connect-src 'self'`). 캐시하지 않는다.
