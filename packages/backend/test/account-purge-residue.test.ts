@@ -75,6 +75,8 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   store_download_sync: 'no-personal-data', // 스토어 받아 오기 상태(#138)
   store_report_instances: 'no-personal-data', // 받은 App Store 보고서 인스턴스 id(#138)
   _migrations: 'no-personal-data',
+  // 관리자 비밀번호를 맞춰 본 횟수 — 앱 사용자와 무관하고 IP 는 해시로만 적으며 10분 뒤 지운다(#148).
+  admin_password_attempts: 'no-personal-data',
   sqlite_sequence: 'no-personal-data',
 };
 
