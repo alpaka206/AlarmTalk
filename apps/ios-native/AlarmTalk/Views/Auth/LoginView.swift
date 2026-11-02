@@ -550,7 +550,8 @@ struct LoginView: View {
             SignInWithAppleButton(.signIn) { request in
                 let raw = NonceGenerator.makeNonce()
                 pendingRawNonce = raw
-                request.requestedScopes = [.fullName, .email]
+                // 이름은 묻지 않는다(2026-10-29 닉네임 삭제 — 받아도 쓰지 않는다).
+                request.requestedScopes = [.email]
                 request.nonce = NonceGenerator.sha256(raw)
             } onCompletion: { result in
                 let raw = pendingRawNonce

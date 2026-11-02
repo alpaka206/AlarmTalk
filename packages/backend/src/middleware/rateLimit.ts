@@ -186,6 +186,42 @@ export const authRateLimitMiddleware = createRateLimitMiddleware({
 });
 
 /**
+ * 관리자 비밀번호를 **틀린 횟수**의 한도 — IP 당 10분에 10번. 로그인 폼과 스크립트용 Basic 이 한 통으로 쓴다. 같은 비밀번호를 맞춰
+ * 보는 길이 둘인데 한쪽만 조이면 느슨한 쪽이 실질 규칙이 된다(Basic 은 전역 300/분만 받고 있었다).
+ *
+ * 맞는 요청은 세지 않는다 — `scripts/import-voice-pack.ts` 는 맞는 비밀번호로 클립 수만큼 부른다. 다 쓰면 **맞는 값도 보지 않고**
+ * 막는다. 값을 먼저 보면 막힌 동안에도 계속 맞춰 볼 수 있다.
+ *
+ * 위 버킷들과 같은 isolate 메모리라 IP 를 바꾸면 피할 수 있다. 진짜 방어는 비밀번호 세기다(`docs/spec/admin-console.md`).
+ */
+const ADMIN_PASSWORD_FAILURE_WINDOW_MS = 10 * 60_000;
+const ADMIN_PASSWORD_MAX_FAILURES = 10;
+
+function adminPasswordKey(c: Context): string {
+  return `admin-pw:${getKey(c)}`;
+}
+
+/** 막혀 있으면 남은 초, 아니면 0. */
+export function adminPasswordRetryAfter(c: Context): number {
+  const entry = store.get(adminPasswordKey(c));
+  const now = Date.now();
+  if (!entry || entry.resetAt <= now || entry.count < ADMIN_PASSWORD_MAX_FAILURES) return 0;
+  return Math.ceil((entry.resetAt - now) / 1000);
+}
+
+export function recordAdminPasswordFailure(c: Context): void {
+  cleanup();
+  const key = adminPasswordKey(c);
+  const now = Date.now();
+  const entry = store.get(key);
+  if (entry && entry.resetAt > now) {
+    entry.count++;
+  } else {
+    store.set(key, { count: 1, resetAt: now + ADMIN_PASSWORD_FAILURE_WINDOW_MS });
+  }
+}
+
+/**
  * 랜딩 이벤트 좋아요(공개, 인증 없음) 전용 한도. 손가락으로 연타하는 정도(분당 30)는 받고,
  * 스크립트로 수를 부풀리는 것은 좁힌다. isolate 메모리 버킷이라 완전한 방어는 아니다.
  */
