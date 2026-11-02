@@ -1,7 +1,11 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { adminPasswordRetryAfter, recordAdminPasswordFailure } from '../middleware/rateLimit';
+import {
+  ADMIN_PASSWORD_RETRY_AFTER_SECONDS,
+  chargeAdminPasswordAttempt,
+  clearAdminPasswordAttempts,
+} from '../lib/admin/password-attempts';
 import { jsonError } from '../lib/api-error';
 import { countAudience, parseAudience } from '../lib/admin/audience';
 import { listPushJobs, loadOverview, parseRange, searchUsers } from '../lib/admin/metrics';
@@ -134,6 +138,11 @@ async function isValidSessionToken(token: string, secret: string, nowMs: number)
   return safeEqual(sig, await hmacSign(`${ver}.${expStr}`, secret));
 }
 
+// 비밀번호를 맞춰 보는 IP 의 통 — IP 를 그대로 적지 않는다. 위조할 수 없는 `cf-connecting-ip` 만 믿는다(`middleware/rateLimit.ts`).
+function adminPasswordKey(c: Context<AppEnv>, secret: string): Promise<string> {
+  return hmacSign(`admin-password:${c.req.header('cf-connecting-ip') || 'unknown'}`, secret);
+}
+
 function sessionCookieHeader(token: string): string {
   const maxAge = Math.floor(SESSION_TTL_MS / 1000);
   return `${SESSION_COOKIE}=${token}; Max-Age=${maxAge}; Path=/admin; HttpOnly; Secure; SameSite=Strict`;
@@ -178,25 +187,24 @@ admin.get('/login', async (c) => {
   return c.html(html, 200, securityHeaders(nonce));
 });
 
-// 비밀번호만 검증(아이디/이메일 없음). 틀린 횟수는 Basic 과 한 통으로 센다(`adminPasswordRetryAfter`).
+// 비밀번호만 검증(아이디/이메일 없음). 시도 횟수는 Basic 과 한 통으로 센다(`lib/admin/password-attempts.ts`).
 admin.post('/login', async (c) => {
   const secret = c.env.ADMIN_SECRET!;
-  const form = await c.req.parseBody();
-  // ⚠ 횟수는 본문을 읽은 **뒤에** 본다. 앞에서 보면 동시에 보낸 요청이 전부 빈 통을 보고 들어와 한도를 넘겨 맞춰 본다(코덱스 #978).
-  //   여기서 실패 기록까지 await 를 끼우지 말 것.
-  const retryAfter = adminPasswordRetryAfter(c);
-  if (retryAfter > 0) {
+  const db = getDB(c.env);
+  const attemptKey = await adminPasswordKey(c, secret);
+  if (!(await chargeAdminPasswordAttempt(db, attemptKey))) {
     const nonce = newNonce();
     return c.html(renderLogin(nonce, '비밀번호를 너무 많이 틀렸어요. 잠시 뒤에 다시 해 주세요.'), 429, {
       ...securityHeaders(nonce),
-      'Retry-After': String(retryAfter),
+      'Retry-After': String(ADMIN_PASSWORD_RETRY_AFTER_SECONDS),
     });
   }
+  const form = await c.req.parseBody();
   const password = String(form.password ?? '');
   if (!safeEqual(password, secret)) {
-    recordAdminPasswordFailure(c);
     return c.redirect('/admin/login?err=1', 303);
   }
+  await clearAdminPasswordAttempts(db, attemptKey);
   const token = await makeSessionToken(secret, Date.now());
   return new Response(null, {
     status: 303,
@@ -222,19 +230,25 @@ admin.use('*', async (c, next) => {
   }
   const header = c.req.header('Authorization') || '';
   if (header.startsWith('Basic ')) {
-    const retryAfter = adminPasswordRetryAfter(c);
-    if (retryAfter > 0) {
-      c.header('Retry-After', String(retryAfter));
-      return jsonError(c, 429, 'RATE_LIMITED', '비밀번호를 너무 많이 틀렸어요. 잠시 뒤에 다시 해 주세요.', { retryAfter });
+    const db = getDB(c.env);
+    const attemptKey = await adminPasswordKey(c, secret);
+    if (!(await chargeAdminPasswordAttempt(db, attemptKey))) {
+      c.header('Retry-After', String(ADMIN_PASSWORD_RETRY_AFTER_SECONDS));
+      return jsonError(c, 429, 'RATE_LIMITED', '비밀번호를 너무 많이 틀렸어요. 잠시 뒤에 다시 해 주세요.', {
+        retryAfter: ADMIN_PASSWORD_RETRY_AFTER_SECONDS,
+      });
     }
+    let passwordMatches = false;
     try {
       const decoded = atob(header.slice(6));
-      const pass = decoded.slice(decoded.indexOf(':') + 1);
-      if (safeEqual(pass, secret)) return next();
+      passwordMatches = safeEqual(decoded.slice(decoded.indexOf(':') + 1), secret);
     } catch {
       /* 잘못된 Basic 헤더 → 아래 로그인 리다이렉트로 폴백 */
     }
-    recordAdminPasswordFailure(c);
+    if (passwordMatches) {
+      await clearAdminPasswordAttempts(db, attemptKey);
+      return next();
+    }
   }
   // 화면 안에서 부르는 JSON 요청(세션이 만료된 뒤)은 리다이렉트 대신 401 로 — 스크립트가 문구를 띄운다.
   if (c.req.method === 'POST') {

@@ -3712,6 +3712,20 @@ export const migrations: Migration[] = [
     name: 'drop-alarms',
     statements: [`DROP TABLE IF EXISTS alarms`],
   },
+  {
+    // **관리자 비밀번호를 맞춰 본 횟수**(2026-11-02 — `lib/admin/password-attempts.ts`). 워커 메모리에 세면 연결마다 다른 서버로 가서
+    // 실제로는 막히지 않았다(dev 실측). key_hash 는 IP 의 HMAC 이라 IP 를 그대로 적지 않는다. 배포 → 마이그레이션 창에는 이 표가 없어
+    // 관리자 로그인이 500 이다(fail-closed) — 다시 시도하면 되고 앱 사용자와 무관하다.
+    id: 148,
+    name: 'admin-password-attempts',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS admin_password_attempts (
+        key_hash TEXT PRIMARY KEY,
+        attempts INTEGER NOT NULL,
+        reset_at INTEGER NOT NULL
+      )`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

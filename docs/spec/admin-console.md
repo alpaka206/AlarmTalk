@@ -12,8 +12,9 @@
 
 - 비밀번호(`ADMIN_SECRET`) 하나로 로그인하고 12시간 세션 쿠키(HttpOnly·Secure·SameSite=Strict, Path=/admin)를 받는다.
   스크립트용 HTTP Basic 도 받는다.
-- **비밀번호를 틀린 횟수는 IP 당 10분에 10번이다**(폼·Basic 한 통). 다 쓰면 맞는 값도 보지 않고 막고(폼은 로그인 화면에 안내, Basic 은 429
-  `RATE_LIMITED`), 맞는 요청은 세지 않는다. ⚠ 워커 메모리 한도라 IP 를 바꾸면 피할 수 있다 — **진짜 방어는 비밀번호 세기다.** `ADMIN_SECRET` 은
+- **비밀번호를 맞춰 보는 횟수는 IP 당 10분에 10번이다**(폼·Basic 한 통). DB 에 센다(#148, IP 는 해시로만 적는다). ⚠ 워커 메모리에 세지 말 것 —
+  연결마다 다른 서버로 가서 테스트는 통과하고도 실제로는 막히지 않았다(2026-11-02 dev 실측). 다 쓰면 맞는 값도 보지 않고 막고(폼은 로그인 화면에 안내,
+  Basic 은 429 `RATE_LIMITED`), 맞는 비밀번호로 들어오면 횟수를 지운다. IP 를 바꾸면 피할 수 있으니 **진짜 방어는 비밀번호 세기다.** `ADMIN_SECRET` 은
   무작위 32자 이상으로 두고 dev·prod 를 다르게 한다.
 - 주소를 별도 서브도메인으로 옮기지 않는다(2026-10-30). 인증서 공개 기록으로 찾을 수 있어 숨기는 효과뿐이고 시도를 막지 못한다. 더 막아야 하면
   이 앞에 Cloudflare Access(이메일 인증)를 건다. 그때 Basic 스크립트에는 서비스 토큰이 필요하다.
@@ -211,6 +212,7 @@
 | 규칙 | 백엔드 | 테스트 |
 | --- | --- | --- |
 | 로그인·세션·CSRF·화면 라우트 | `routes/admin.ts` | `admin-auth.test.ts`·`admin-csrf.test.ts`·`admin-console.test.ts` 「화면」 |
+| 비밀번호 시도 횟수(IP 당 10분 10번, 폼·Basic 한 통) | `lib/admin/password-attempts.ts`(#148) | `admin-password-attempts.test.ts` |
 | 빌드·접속 기록 | `middleware/appPresence.ts`(동의 검사 앞 — `index.ts`) | `admin-console.test.ts` 「앱 빌드 기록」 |
 | 기록 보관 90일 | `index.ts` 의 `APP_PRESENCE_RETENTION_DAYS` | `scheduled-prune.test.ts` |
 | 탈퇴 파기 | `lib/account-deletion.ts` 의 `purgeUserAccount` | `account-purge-residue.test.ts` |
