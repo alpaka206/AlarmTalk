@@ -181,6 +181,9 @@ admin.get('/login', async (c) => {
 // 비밀번호만 검증(아이디/이메일 없음). 틀린 횟수는 Basic 과 한 통으로 센다(`adminPasswordRetryAfter`).
 admin.post('/login', async (c) => {
   const secret = c.env.ADMIN_SECRET!;
+  const form = await c.req.parseBody();
+  // ⚠ 횟수는 본문을 읽은 **뒤에** 본다. 앞에서 보면 동시에 보낸 요청이 전부 빈 통을 보고 들어와 한도를 넘겨 맞춰 본다(코덱스 #978).
+  //   여기서 실패 기록까지 await 를 끼우지 말 것.
   const retryAfter = adminPasswordRetryAfter(c);
   if (retryAfter > 0) {
     const nonce = newNonce();
@@ -189,7 +192,6 @@ admin.post('/login', async (c) => {
       'Retry-After': String(retryAfter),
     });
   }
-  const form = await c.req.parseBody();
   const password = String(form.password ?? '');
   if (!safeEqual(password, secret)) {
     recordAdminPasswordFailure(c);

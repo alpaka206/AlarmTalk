@@ -188,6 +188,16 @@ describe('비밀번호를 틀린 횟수 — 폼과 Basic 이 한 통이다', () 
     expect(await res.text()).toContain('type="password"');
   });
 
+  it('폼을 동시에 보내도 한도를 넘겨 맞춰 볼 수 없다 — 본문을 읽은 뒤에 횟수를 본다(코덱스 #978)', async () => {
+    const ip = '203.0.113.8';
+    const results = await Promise.all([
+      ...Array.from({ length: MAX_FAILURES }, () => tryForm(ip, 'wrong-pass')),
+      tryForm(ip, SECRET),
+    ]);
+    expect(results.filter((r) => r.headers.get('Set-Cookie'))).toHaveLength(0);
+    expect(results.at(-1)?.status).toBe(429);
+  });
+
   it('폼과 Basic 은 같은 횟수를 나눠 쓴다', async () => {
     const ip = '203.0.113.3';
     for (let i = 0; i < MAX_FAILURES / 2; i++) {
