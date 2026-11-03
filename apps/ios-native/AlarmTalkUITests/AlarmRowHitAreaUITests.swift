@@ -57,4 +57,36 @@ final class AlarmRowHitAreaUITests: XCTestCase {
             "행의 빈 자리를 눌렀는데 편집기가 안 열렸다 — .contentShape(Rectangle()) 가 빠졌나?"
         )
     }
+
+    /// 스위치는 **제 폭만** 갖고, 둘째 줄("날짜 · 목소리")은 스위치 앞까지 남은 폭을 다 쓴다.
+    ///
+    /// 공용 토글 스타일(`Views/Common/AlarmTalkSwitch.swift`)의 본체가 `HStack { 라벨; Spacer; 캡슐 }` 이라,
+    /// 라벨을 숨겨도 토글이 **남는 폭을 달라고** 한다. 옆의 글자 칸도 `maxWidth: .infinity` 면 둘이
+    /// **반씩** 나눠 가져, 둘째 줄이 폭이 남는데도 잘렸다(2026-11-03 시뮬레이터 실측 — 글자 칸 ≈ 행의 절반).
+    /// 안드로이드 `AlarmRow` 는 `Column(weight(1f))` + 고유 크기 스위치다 — iOS 도 스위치에 `.fixedSize()`.
+    func test_스위치는_제_폭만_갖고_둘째_줄이_남은_폭을_쓴다() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-UIPreviewSeed", "-UIPreviewTab", "alarms"]
+        app.launch()
+
+        let sw = app.switches.firstMatch
+        XCTAssertTrue(sw.waitForExistence(timeout: 20), "알람 행의 스위치가 없다")
+        // ⚠ 스위치 요소의 프레임은 **캡슐(51)뿐**이다 — 스타일의 HStack 이 가져간 폭은 접근성에 안 보인다
+        // (고치기 전에도 w=51 로 재졌다). 그래서 판정은 둘째 줄의 폭으로 한다.
+        // 둘째 줄("날짜 · 목소리")은 **정적 글자 요소**로, 날짜로 시작하는 것을 잡는다. 합쳐진 행 요소
+        // (`children: .combine`)도 " · " 를 담지만 그건 늘 행 폭 전체(x=20..382)라 잘림을 못 보고, 위의 다음
+        // 알람 상태 카드 제목("다음 알람 · 엄마 목소리")도 " · " 를 담아 먼저 잡힌다(w≈110 으로 오판했다).
+        let second = app.staticTexts
+            .matching(NSPredicate(format: "label MATCHES %@", "^[0-9]{1,2}월 [0-9]{1,2}일 \\(.\\) · .*"))
+            .firstMatch
+        XCTAssertTrue(second.waitForExistence(timeout: 5), "'날짜 · 목소리' 줄이 없다")
+        print(String(
+            format: "둘째 줄: x=%.1f..%.1f w=%.1f / 스위치: x=%.1f..%.1f / 화면 폭 %.0f",
+            second.frame.minX, second.frame.maxX, second.frame.width, sw.frame.minX, sw.frame.maxX,
+            app.windows.firstMatch.frame.width
+        ))
+        // 시드 문장("11월 3일 (화) · 엄마 목소리 목소리")은 15pt 세미볼드로 ≈220pt 다. 스위치 앞까지 ≈260pt 가
+        // 남으니 다 그려져야 하고, 글자 칸이 반으로 갈리면 ≈158pt 에서 잘린다(iPhone 18 Pro). 그 사이 200 으로 가른다.
+        XCTAssertGreaterThan(second.frame.width, 200, "둘째 줄이 스위치 앞 폭을 다 못 쓰고 잘린다")
+    }
 }
