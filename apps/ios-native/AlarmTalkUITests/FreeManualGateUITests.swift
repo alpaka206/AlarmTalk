@@ -1,13 +1,14 @@
 import XCTest
 
-/// **무료 사용자가 문구 화면에서 '직접 입력' 을 누르면 이용권 모달이 떠야 한다.**
+/// **무료 사용자도 문구 화면에서 '직접 입력' 을 누르면 입력 알럿이 뜬다** — 이용권 게이트가 아니다.
 ///
-/// 2026-08-17 지시: "무료일 때 직접 입력 눌리게는 해줘야 해 — 대신 문구 페이지에서
-/// 이용권 모달을 띄워주는 거지." 행은 이미 눌리게 돼 있었지만, 게이트 알럿이 편집기
-/// (스택 루트)에 붙어 있어 **밀어 올린 문구 화면 위에서는 뜨지 않았다.**
+/// 2026-10-26(v1.3): 무료도 기본 목소리로 직접 입력을 월 3회 만든다 — 입력·편집은 막지 않고, 새로 만들어야
+/// 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(`docs/spec/voice-and-message.md` §8,
+/// `AlarmEditorSheet` 의 `manualLocked: false`). 그 전(2026-08-17 지시)에는 행은 눌리되 이용권 모달이
+/// 떴다 — 그 규칙으로 되돌리지 말 것. 잠긴 **목소리**를 눌렀을 때의 게이트는 아래 두 번째 테스트가 지킨다.
 final class FreeManualGateUITests: XCTestCase {
 
-    func test_무료에서_직접_입력을_누르면_이용권_모달이_뜬다() throws {
+    func test_무료에서_직접_입력을_누르면_입력_알럿이_뜬다() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-UIPreviewSeed", "-UIPreviewPlan", "free", "-UIPreviewEditor"]
         app.launch()
@@ -22,19 +23,16 @@ final class FreeManualGateUITests: XCTestCase {
         XCTAssertTrue(manual.waitForExistence(timeout: 10), "문구 화면에 '직접 입력' 행이 없다")
         manual.tap()
 
-        // 이용권 게이트 — 무료 상태의 제목과 액션(`showVoicePlanLockedAlert`).
-        let gate = app.staticTexts["유료 이용권이 필요해요"].firstMatch
+        // 「직접 입력」 알럿 — 문구 칸과 횟수 안내(`MessageSettingsPane` 의 `manualDialogOpen`).
+        let dialog = app.alerts["직접 입력"].firstMatch
         XCTAssertTrue(
-            gate.waitForExistence(timeout: 5),
-            "직접 입력을 눌렀는데 이용권 모달이 뜨지 않는다"
+            dialog.waitForExistence(timeout: 5),
+            "직접 입력을 눌렀는데 입력 알럿이 뜨지 않는다"
         )
-        XCTAssertTrue(app.buttons["이용권 보기"].exists, "게이트에 '이용권 보기' 액션이 없다")
-        // ⚠ 게이트에는 **코드 입력 액션이 없다**(2026-10-14, App Store 지침 3.1.1 두 번째 반려 — 선물 코드
-        // 폐지). 되살리지 말 것 — 코드를 넣는 화면은 앱 어디에도 없고, 할인·무료 이용은 스토어 오퍼 코드로
-        // 준다(`docs/spec/plan-gates.md` §2).
+        XCTAssertTrue(dialog.textFields.firstMatch.exists, "알럿에 문구 칸이 없다")
         XCTAssertFalse(
-            app.alerts.buttons.matching(NSPredicate(format: "label CONTAINS %@", "코드")).firstMatch.exists,
-            "유료 게이트에 코드 입력 액션이 남아 있다"
+            app.staticTexts["유료 이용권이 필요해요"].exists,
+            "무료라고 직접 입력을 이용권 게이트로 막는다 — 2026-10-26 규칙(무료도 월 3회) 전으로 되돌아갔다"
         )
     }
 
@@ -60,6 +58,14 @@ final class FreeManualGateUITests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["유료 이용권이 필요해요"].firstMatch.waitForExistence(timeout: 5),
             "잠긴 목소리를 눌렀는데 이용권 모달이 뜨지 않는다"
+        )
+        XCTAssertTrue(app.buttons["이용권 보기"].exists, "게이트에 '이용권 보기' 액션이 없다")
+        // ⚠ 게이트에는 **코드 입력 액션이 없다**(2026-10-14, App Store 지침 3.1.1 두 번째 반려 — 선물 코드
+        // 폐지). 되살리지 말 것 — 코드를 넣는 화면은 앱 어디에도 없고, 할인·무료 이용은 스토어 오퍼 코드로
+        // 준다(`docs/spec/plan-gates.md` §2).
+        XCTAssertFalse(
+            app.alerts.buttons.matching(NSPredicate(format: "label CONTAINS %@", "코드")).firstMatch.exists,
+            "유료 게이트에 코드 입력 액션이 남아 있다"
         )
     }
 }

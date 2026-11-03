@@ -42,8 +42,9 @@ final class SignUpFlowUITests: XCTestCase {
         let app = launchApp()
         XCTAssertTrue(app.staticTexts["회원가입"].waitForExistence(timeout: 20))
 
+        // 닉네임을 없애(2026-10-29) 이름 칸은 없다 — 글자 칸은 이메일 하나다.
         let fields = app.textFields
-        XCTAssertGreaterThanOrEqual(fields.count, 2, "이름·이메일 필드가 있어야 한다")
+        XCTAssertGreaterThanOrEqual(fields.count, 1, "이메일 필드가 있어야 한다")
 
         let secure = app.secureTextFields
         XCTAssertGreaterThanOrEqual(secure.count, 1, "비밀번호 필드가 있어야 한다")
