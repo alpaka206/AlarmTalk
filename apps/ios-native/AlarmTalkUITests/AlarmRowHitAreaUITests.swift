@@ -67,6 +67,10 @@ final class AlarmRowHitAreaUITests: XCTestCase {
     func test_스위치는_제_폭만_갖고_둘째_줄이_남은_폭을_쓴다() throws {
         let app = XCUIApplication()
         app.launchArguments += ["-UIPreviewSeed", "-UIPreviewTab", "alarms"]
+        // ⚠ 글자를 앱 상한(accessibility1)까지 키운다 — 그러면 둘째 줄이 **어느 날짜든** 칸을 넘쳐
+        // 잘리므로, 재는 폭이 문장의 길이가 아니라 **칸의 폭**이 된다. 기본 크기면 "1월 1일 (월) · …"
+        // 처럼 짧은 날짜는 ≈196pt 라 고쳐도 문턱에 못 미쳐 달력에 따라 결과가 갈린다(코덱스 #982).
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"]
         app.launch()
 
         let sw = app.switches.firstMatch
@@ -85,8 +89,8 @@ final class AlarmRowHitAreaUITests: XCTestCase {
             second.frame.minX, second.frame.maxX, second.frame.width, sw.frame.minX, sw.frame.maxX,
             app.windows.firstMatch.frame.width
         ))
-        // 시드 문장("11월 3일 (화) · 엄마 목소리 목소리")은 15pt 세미볼드로 ≈220pt 다. 스위치 앞까지 ≈260pt 가
-        // 남으니 다 그려져야 하고, 글자 칸이 반으로 갈리면 ≈158pt 에서 잘린다(iPhone 18 Pro). 그 사이 200 으로 가른다.
+        // 큰 글씨의 둘째 줄은 칸보다 길어 칸 폭에서 잘린다 — 그래서 잰 폭 = 칸 폭이다(iPhone 18 Pro 실측:
+        // 고친 뒤 264.3, 글자 칸이 반으로 갈린 채면 154.0). 그 사이 200 으로 가른다.
         XCTAssertGreaterThan(second.frame.width, 200, "둘째 줄이 스위치 앞 폭을 다 못 쓰고 잘린다")
     }
 }
