@@ -1,0 +1,161 @@
+{
+  "_meta": {
+    "version": 1,
+    "note": "출발점 세트다 — 벤치마크가 아니다. 2026-10-26 손으로 쓴 알람 문구(한국어 40·영어 10·일본어 10)이고 API 로 만들거나 실제 사용자 문구를 옮기지 않았다. 문항 수가 적어 통과율은 비교의 눈금일 뿐 품질 수치로 인용하지 않는다."
+  },
+  "items": [
+    { "id": "ko-001", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "7시 30분이야, 일어나서 아침 먹자", "expect": { "register": "banmal", "mustContain": ["7시 30분"] } },
+    { "id": "ko-002", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "엄마, 오늘 아침 8시에 혈압약 꼭 드세요.", "expect": { "register": "polite", "mustContain": ["8시"] } },
+    { "id": "ko-003", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "민지야 일어나! 학교 늦겠다", "expect": { "register": "banmal" } },
+    { "id": "ko-004", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "출근 준비할 시간이에요. 오늘도 화이팅!", "expect": { "register": "polite" } },
+    { "id": "ko-005", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "오후 2시 반 회의 있어요. 자료 챙기세요.", "expect": { "register": "polite", "mustContain": ["2시 반"] } },
+    { "id": "ko-006", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "물 한 잔 마시고 스트레칭 10분 하자", "expect": { "register": "banmal" } },
+    { "id": "ko-007", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "ㅋㅋ 아직도 자? 빨리 일어나", "expect": { "register": "banmal" }, "note": "글자 웃음 — 운영은 [laughs] 로 바꿔 합성한다" },
+    { "id": "ko-008", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "할머니, 점심 드시고 12시 30분에 약 드실 시간이에요.", "expect": { "register": "polite", "mustContain": ["12시 30분"] } },
+    { "id": "ko-009", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "오늘 3번 버스 타야 해. 7시 50분에 나가자.", "expect": { "register": "banmal" } },
+    { "id": "ko-010", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "[whispers] 일어날 시간이야", "expect": { "register": "banmal" }, "note": "사용자가 직접 친 대괄호 태그 — 운영은 거르지 않는다" },
+    { "id": "ko-011", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "택배 받으러 경비실 들르기 (오후 6시 전까지)" },
+    { "id": "ko-012", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "2026년 11월 3일 병원 예약 9시 20분", "expect": { "mustContain": ["9시 20분"] } },
+    { "id": "ko-013", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "내일 시험이니까 오늘은 일찍 자요.", "expect": { "register": "polite" } },
+    { "id": "ko-014", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "알바 가기 30분 전! 지갑이랑 이어폰 챙겨", "expect": { "register": "banmal" } },
+    { "id": "ko-015", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "아빠 생신 선물 사기 잊지 마 🎁", "expect": { "register": "banmal" }, "note": "사용자가 친 이모지" },
+    { "id": "ko-016", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "주말인데 그래도 9시엔 일어나자~", "expect": { "register": "banmal" } },
+    { "id": "ko-017", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "당신, 오늘 비 온대요. 우산 꼭 챙겨요.", "expect": { "register": "polite" } },
+    { "id": "ko-018", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "로또 사러 가자 ㅋㅋㅋ", "expect": { "register": "banmal" }, "note": "입력에 있던 낱말은 금지 약속으로 세지 않는다" },
+    { "id": "ko-019", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "비타민 D 1알, 오메가3 2알 먹기", "expect": { "allowedForeignTerms": ["D"] } },
+    { "id": "ko-020", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "강아지 산책 시간! 6시 15분" },
+    { "id": "ko-021", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "회의실 예약 확인하세요. 10시 회의입니다.", "expect": { "register": "polite" } },
+    { "id": "ko-022", "set": "ko", "kind": "manual", "targetLanguage": "ko", "input": "기상! 오늘 할 일: 운동, 독서, 빨래" },
+    { "id": "ko-023", "set": "ko", "kind": "manual", "targetLanguage": "en", "input": "7시 30분이야, 일어나서 아침 먹자", "note": "번역 갈래 — 숫자가 남아야 한다" },
+    { "id": "ko-024", "set": "ko", "kind": "manual", "targetLanguage": "en", "input": "엄마, 8시에 혈압약 드세요." },
+    { "id": "ko-025", "set": "ko", "kind": "manual", "targetLanguage": "ja", "input": "민지야, 6시 45분이야. 일어나!" },
+    { "id": "ko-026", "set": "ko", "kind": "manual", "targetLanguage": "ja", "input": "오늘 오후 3시 치과 예약 잊지 마세요." },
+    { "id": "ko-027", "set": "ko", "kind": "generated", "targetLanguage": "ko", "input": "시드: 오후부터 비 소식, 우산 챙기라고. 듣는 사람: 딸(엄마 목소리)", "expect": { "register": "consistent" } },
+    { "id": "ko-028", "set": "ko", "kind": "generated", "targetLanguage": "ko", "input": "시드: 미세먼지 나쁨, 마스크 챙기기. 듣는 사람: 할머니(손녀 목소리)", "expect": { "register": "polite" } },
+    { "id": "ko-029", "set": "ko", "kind": "generated", "targetLanguage": "ko", "input": "시드: 오늘의 운세 — 재물운 좋음, 작은 행운. 듣는 사람: 남자친구", "expect": { "register": "banmal" }, "note": "재물운 시드 — 수익·당첨 약속이 끼기 쉬운 자리" },
+    { "id": "ko-030", "set": "ko", "kind": "generated", "targetLanguage": "ko", "input": "시드: 오늘의 운세 — 건강운 보통, 무리하지 말기. 듣는 사람: 아빠(아들 목소리)", "expect": { "register": "polite" }, "note": "건강운 시드 — 낫는다·좋아진다 약속이 끼기 쉬운 자리" },
+    { "id": "ko-031", "set": "ko", "kind": "generated", "targetLanguage": "ko", "input": "시드: 약 먹을 시간, 8시 30분. 듣는 사람: 엄마(딸 목소리)", "expect": { "register": "polite" } },
+    { "id": "ko-032", "set": "ko", "kind": "generated", "targetLanguage": "ko", "input": "시드: 응원 — 오늘 면접 잘 보라고. 듣는 사람: 동생", "expect": { "register": "banmal" } },
+    { "id": "ko-033", "set": "ko", "kind": "preset", "targetLanguage": "ko", "input": "좋은 아침이에요. 오늘도 기분 좋게 시작해요.", "expect": { "register": "polite" } },
+    { "id": "ko-034", "set": "ko", "kind": "preset", "targetLanguage": "ko", "input": "일어날 시간이에요. 창문 열고 크게 숨 한 번 쉬어 봐요.", "expect": { "register": "polite" } },
+    {
+      "id": "ko-035", "set": "ko", "kind": "selection", "targetLanguage": "ko", "input": "날씨 테마 클립 고르기(최근 쓴 것 제외)",
+      "candidates": [
+        { "id": "ko-weather-01", "text": "오늘은 하늘이 맑대요. 산책하기 좋은 날이에요." },
+        { "id": "ko-weather-02", "text": "비 소식이 있어요. 우산 챙기는 거 잊지 마세요." },
+        { "id": "ko-weather-03", "text": "아침 공기가 쌀쌀해요. 겉옷 하나 챙기세요." },
+        { "id": "ko-weather-04", "text": "바람이 많이 분대요. 따뜻하게 입고 나가세요." },
+        { "id": "ko-weather-05", "text": "구름이 조금 끼었지만 포근한 하루래요." }
+      ],
+      "recent": ["ko-weather-03", "ko-weather-02", "ko-weather-01"], "recentWindow": 2,
+      "expect": { "register": "polite" }
+    },
+    {
+      "id": "ko-036", "set": "ko", "kind": "selection", "targetLanguage": "ko", "input": "약 테마 클립 고르기(최근 쓴 것 제외)",
+      "candidates": [
+        { "id": "ko-med-01", "text": "약 드실 시간이에요. 물이랑 같이 드세요." },
+        { "id": "ko-med-02", "text": "잊지 말고 약 챙겨 드세요." },
+        { "id": "ko-med-03", "text": "식사하셨으면 이제 약 드실 차례예요." },
+        { "id": "ko-med-04", "text": "오늘도 약 꼭 챙기세요. 건강이 먼저예요." }
+      ],
+      "recent": ["ko-med-02", "ko-med-04", "ko-med-01"], "recentWindow": 3,
+      "expect": { "register": "polite" }
+    },
+    {
+      "id": "ko-037", "set": "ko", "kind": "selection", "targetLanguage": "ko", "input": "인사 클립 고르기 — 후보가 전부 최근에 쓰였다",
+      "candidates": [
+        { "id": "ko-greet-01", "text": "좋은 아침이에요. 잘 잤어요?" },
+        { "id": "ko-greet-02", "text": "일어날 시간이에요. 오늘도 힘내요." }
+      ],
+      "recent": ["ko-greet-02", "ko-greet-01"], "recentWindow": 2,
+      "expect": { "register": "polite" },
+      "note": "최근 N개 제외를 지킬 수 없는 경우 — 규칙은 skip 이어야 한다"
+    },
+    {
+      "id": "ko-038", "set": "ko", "kind": "selection", "targetLanguage": "ko", "input": "응원 클립 고르기(최근 쓴 것 제외)",
+      "candidates": [
+        { "id": "ko-cheer-01", "text": "오늘도 잘할 수 있어. 힘내!" },
+        { "id": "ko-cheer-02", "text": "어제보다 한 걸음만 더 가 보자." },
+        { "id": "ko-cheer-03", "text": "넌 생각보다 훨씬 강해. 오늘도 파이팅!" }
+      ],
+      "recent": ["ko-cheer-01"], "recentWindow": 1,
+      "expect": { "register": "banmal" }
+    },
+    {
+      "id": "ko-039", "set": "ko", "kind": "selection", "targetLanguage": "ko", "input": "운세 클립 고르기(최근 쓴 것 제외)",
+      "candidates": [
+        { "id": "ko-fortune-01", "text": "오늘은 좋은 소식이 들려올지도 몰라요." },
+        { "id": "ko-fortune-02", "text": "작은 일에서 기쁨을 찾게 되는 하루예요." },
+        { "id": "ko-fortune-03", "text": "주변 사람에게 먼저 인사해 보세요. 기분 좋은 일이 생길 거예요." }
+      ],
+      "recent": ["ko-fortune-02", "ko-fortune-01"], "recentWindow": 2,
+      "expect": { "register": "polite" }
+    },
+    {
+      "id": "ko-040", "set": "ko", "kind": "selection", "targetLanguage": "ko", "input": "날씨 테마 클립 고르기(직전 하나만 제외)",
+      "candidates": [
+        { "id": "ko-weather-01", "text": "오늘은 하늘이 맑대요. 산책하기 좋은 날이에요." },
+        { "id": "ko-weather-04", "text": "바람이 많이 분대요. 따뜻하게 입고 나가세요." },
+        { "id": "ko-weather-05", "text": "구름이 조금 끼었지만 포근한 하루래요." }
+      ],
+      "recent": ["ko-weather-05"], "recentWindow": 1,
+      "expect": { "register": "polite" }
+    },
+
+    { "id": "en-001", "set": "en", "kind": "manual", "targetLanguage": "en", "input": "Wake up! It's 6:30 and the bus leaves at 7:05.", "expect": { "mustContain": ["6:30"] } },
+    { "id": "en-002", "set": "en", "kind": "manual", "targetLanguage": "en", "input": "Time for your blood pressure meds, Dad. Take them with water." },
+    { "id": "en-003", "set": "en", "kind": "manual", "targetLanguage": "en", "input": "Gym in 20 minutes. Don't skip leg day lol", "note": "글자 웃음(lol)" },
+    { "id": "en-004", "set": "en", "kind": "manual", "targetLanguage": "en", "input": "Meeting with Sarah at 2 PM, bring the Q3 report.", "expect": { "mustContain": ["2 PM"] } },
+    { "id": "en-005", "set": "en", "kind": "manual", "targetLanguage": "en", "input": "Rise and shine ☀️ big day today!", "note": "사용자가 친 이모지" },
+    { "id": "en-006", "set": "en", "kind": "manual", "targetLanguage": "ko", "input": "Good morning! Your flight is at 9:40, leave by 7.", "note": "번역 갈래 en→ko" },
+    { "id": "en-007", "set": "en", "kind": "generated", "targetLanguage": "en", "input": "Seed: rain later today, bring an umbrella. Listener: husband" },
+    { "id": "en-008", "set": "en", "kind": "generated", "targetLanguage": "en", "input": "Seed: daily fortune, things look up with money today. Listener: friend", "note": "재물운 시드 — 수익 약속이 끼기 쉬운 자리" },
+    {
+      "id": "en-009", "set": "en", "kind": "selection", "targetLanguage": "en", "input": "Pick a weather clip (skip recently used)",
+      "candidates": [
+        { "id": "en-weather-01", "text": "Clear skies today. Perfect for a walk." },
+        { "id": "en-weather-02", "text": "Looks like rain later, so grab an umbrella." },
+        { "id": "en-weather-03", "text": "It's chilly out there. Bring a jacket." },
+        { "id": "en-weather-04", "text": "Windy morning! Bundle up before you head out." }
+      ],
+      "recent": ["en-weather-01", "en-weather-04"], "recentWindow": 2
+    },
+    {
+      "id": "en-010", "set": "en", "kind": "selection", "targetLanguage": "en", "input": "Pick a cheer clip (skip the last one)",
+      "candidates": [
+        { "id": "en-cheer-01", "text": "You've got this. One step at a time." },
+        { "id": "en-cheer-02", "text": "Big day ahead, and you're ready for it." },
+        { "id": "en-cheer-03", "text": "Go easy on yourself today. You're doing great." }
+      ],
+      "recent": ["en-cheer-03"], "recentWindow": 1
+    },
+
+    { "id": "ja-001", "set": "ja", "kind": "manual", "targetLanguage": "ja", "input": "7時半だよ、起きて！", "expect": { "mustContain": ["7時半"] } },
+    { "id": "ja-002", "set": "ja", "kind": "manual", "targetLanguage": "ja", "input": "お母さん、8時にお薬を飲んでくださいね。" },
+    { "id": "ja-003", "set": "ja", "kind": "manual", "targetLanguage": "ja", "input": "ゴミ出しは火曜日！忘れないでね" },
+    { "id": "ja-004", "set": "ja", "kind": "manual", "targetLanguage": "ja", "input": "会議は10時15分からです。資料を忘れずに。", "expect": { "mustContain": ["10時15分"] } },
+    { "id": "ja-005", "set": "ja", "kind": "manual", "targetLanguage": "ja", "input": "おはよう♪ 今日も一日がんばろう（笑）", "note": "글자 웃음((笑))" },
+    { "id": "ja-006", "set": "ja", "kind": "manual", "targetLanguage": "ko", "input": "6時45分に起きて、ゆいちゃん。", "note": "번역 갈래 ja→ko" },
+    { "id": "ja-007", "set": "ja", "kind": "generated", "targetLanguage": "ja", "input": "シード：午後から雨、傘を持っていく。聞き手：娘" },
+    { "id": "ja-008", "set": "ja", "kind": "generated", "targetLanguage": "ja", "input": "シード：今日の運勢、金運が少し上向き。聞き手：夫", "note": "금전운 시드 — 수익·당첨 약속이 끼기 쉬운 자리" },
+    {
+      "id": "ja-009", "set": "ja", "kind": "selection", "targetLanguage": "ja", "input": "天気クリップを選ぶ（最近使ったものは除く）",
+      "candidates": [
+        { "id": "ja-weather-01", "text": "今日は晴れ。お散歩日和だね。" },
+        { "id": "ja-weather-02", "text": "午後から雨みたい。傘を持っていってね。" },
+        { "id": "ja-weather-03", "text": "朝はちょっと冷えるよ。上着を一枚持っていこう。" },
+        { "id": "ja-weather-04", "text": "風が強いみたい。暖かくして出かけてね。" }
+      ],
+      "recent": ["ja-weather-02", "ja-weather-03"], "recentWindow": 2
+    },
+    {
+      "id": "ja-010", "set": "ja", "kind": "selection", "targetLanguage": "ja", "input": "お薬クリップを選ぶ（最近使ったものは除く）",
+      "candidates": [
+        { "id": "ja-med-01", "text": "お薬の時間だよ。お水と一緒に飲んでね。" },
+        { "id": "ja-med-02", "text": "忘れずにお薬飲んでね。" },
+        { "id": "ja-med-03", "text": "ご飯のあとはお薬の時間だよ。" }
+      ],
+      "recent": ["ja-med-01", "ja-med-03", "ja-med-02"], "recentWindow": 2
+    }
+  ]
+}

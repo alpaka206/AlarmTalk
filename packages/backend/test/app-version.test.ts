@@ -68,6 +68,11 @@ describe('appVersionPolicy', () => {
     expect(appVersionPolicy('android').minSupported).toBeGreaterThanOrEqual(34);
   });
 
+  // 35 이하는 팔지 않는 커플·가족 카드와 초대 코드 칸을 그린다(2026-10-26 — Play 36 게재 확인 뒤).
+  it('android minSupported 는 1.2.16(36) 이상이다 — 커플·가족 이용권 폐지 강제 업데이트', () => {
+    expect(appVersionPolicy('android').minSupported).toBeGreaterThanOrEqual(36);
+  });
+
   // --- iOS ---
 
   it('ios 정책은 android 와 분리돼 있다', () => {
@@ -77,9 +82,9 @@ describe('appVersionPolicy', () => {
     expect(ios.latest).toBeGreaterThanOrEqual(ios.minSupported);
   });
 
-  // 문서 6을 실은 1.2.14 게재 확인 뒤 하한을 올린다. 옛 앱은 재동의를 제출할 수 없다.
-  it('ios minSupported 는 문서 6을 실은 1.2.14 빌드 12다', () => {
-    expect(appVersionPolicy('ios').minSupported).toBe(12);
+  // 1.2.16 게재 확인 뒤 하한을 올린다 — 빌드 13 이하는 커플·가족 카드와 초대 코드 칸을 그린다(2026-10-26).
+  it('ios minSupported 는 커플·가족 이용권을 지운 1.2.16 빌드 14다', () => {
+    expect(appVersionPolicy('ios').minSupported).toBe(14);
   });
 
   // iOS 클라는 `latest` 를 읽지 않는다 — `AppVersionGate.checkAppVersion()` 이

@@ -257,6 +257,10 @@ struct StockClipLanguageRebinder {
         legacyHints: [String: String] = [:]
     ) -> Bool {
         guard resolvedBucketId(record, legacyHints: legacyHints) != nil else { return false }
+        // ⚠ **추가 음성팩 알람은 다시 묶지 않는다**(`docs/spec/voice-packs.md` §2). 팩은 언어가 하나라 기기 언어를 바꿔도
+        // 그 언어로 운다 — 그 클립은 기본 목소리 매니페스트에 없어 여기서는 '사라진 클립' 으로 읽힌다.
+        // 안드로이드 `StockClipLanguageRebinder.needsRebind` 의 같은 가드와 짝이다.
+        guard !isVoicePackVoiceID(record.voiceProfileId) else { return false }
         guard record.playModeEnum != .alarmOnly else { return false }
         // 녹음 알람에는 문구 개념이 없다.
         guard record.voiceSourceEnum != .localAudio else { return false }

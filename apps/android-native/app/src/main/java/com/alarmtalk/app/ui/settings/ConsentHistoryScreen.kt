@@ -51,6 +51,9 @@ internal fun ConsentHistoryScreen(
     onLoadMarketingConsent: () -> Unit,
     onChangeMarketingConsent: (Boolean) -> Unit,
     onWithdrawVoiceBiometric: suspend () -> Boolean,
+    // 그 동작이 안 됐다는 이유 — 행 바로 아래에 빨간 글자로 그린다(2026-10-29 오너: 알림이 아니라 빨간 글자, iOS 짝).
+    withdrawError: String? = null,
+    marketingError: String? = null,
 ) {
     var records by remember { mutableStateOf<Map<String, ConsentRecord>>(emptyMap()) }
     var loadFailed by remember { mutableStateOf(false) }
@@ -167,6 +170,7 @@ internal fun ConsentHistoryScreen(
                     // 아니라 단방향 '철회' 액션이다(켜지지 않는 스위치는 버그로 보인다).
                     onWithdraw = { withdrawConfirmOpen = true }.takeIf { !withdrawBusy },
                 )
+                withdrawError?.let { ConsentActionErrorText(it) }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 // 읽기전용 이력이 아니라 실제 켜고 끄는 토글 — 설정에 있던 마케팅 카드를 이 법적 정보 화면으로 통합했다.
                 ConsentToggleRow(
@@ -177,6 +181,7 @@ internal fun ConsentHistoryScreen(
                     onRetry = onLoadMarketingConsent,
                     onChange = onChangeMarketingConsent,
                 )
+                marketingError?.let { ConsentActionErrorText(it) }
             }
         }
 
@@ -349,4 +354,15 @@ private fun formatConsentDate(value: String?): String? {
             kst.dayOfMonth,
         )
     }.getOrNull()
+}
+
+/** 동의 내역의 행 아래에 붙는 실패 이유(빨간 글자). */
+@Composable
+private fun ConsentActionErrorText(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
 }

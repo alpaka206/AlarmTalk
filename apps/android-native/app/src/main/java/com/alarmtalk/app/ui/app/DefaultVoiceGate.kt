@@ -13,7 +13,7 @@ import kotlinx.coroutines.withContext
  * 알람 설정 화면(새로 만들기·고치기)을 열기 전의 **기본 목소리 관문** — 세는 일은 메인 밖에서,
  * 한 번에 하나만 한다.
  *
- * **무엇을 막는가**는 `docs/spec/voice-and-message.md` 「기본 목소리를 다 받아야 알람을 설정한다」
+ * **무엇을 막는가**는 `docs/spec/voice-and-message.md` 「알람마다 필요한 목소리만 본다」
  * 그대로이고, 판정식은 `StockClipPrefetchWorker.defaultVoicesReady` 하나다. 이 클래스가 정하는
  * 것은 **어디서·몇 번** 세는가뿐이다 — 판정을 여기서 다시 쓰지 말 것.
  *

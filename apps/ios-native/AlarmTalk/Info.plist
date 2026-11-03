@@ -37,6 +37,12 @@
   <string>$(VOICE_ALARM_SENTRY_DSN)</string>
   <key>VOICE_ALARM_SENTRY_ENVIRONMENT</key>
   <string>$(VOICE_ALARM_SENTRY_ENVIRONMENT)</string>
+  <key>GADApplicationIdentifier</key>
+  <string>$(ADMOB_APP_ID)</string>
+  <key>ALARMTALK_ADMOB_REWARDED_AD_UNIT_ID</key>
+  <string>$(ADMOB_REWARDED_AD_UNIT_ID)</string>
+  <key>GADDelayAppMeasurementInit</key>
+  <true/>
   <key>UIApplicationSceneManifest</key>
   <dict>
     <key>UIApplicationSupportsMultipleScenes</key>

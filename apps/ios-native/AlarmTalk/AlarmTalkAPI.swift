@@ -2,7 +2,7 @@ import Foundation
 
 // 모든 stored property 가 `let` 이고 URLSession / JSONDecoder / JSONEncoder 는
 // 사실상 thread-safe 이므로 `@unchecked Sendable` 로 노출해 async 컨텍스트에서
-// main actor 격리된 RemoteAlarmSyncViewModel.api 를 캡처할 수 있게 한다.
+// main actor 격리된 뷰모델이 공유 인스턴스를 캡처할 수 있게 한다.
 final class AlarmTalkAPI: @unchecked Sendable {
     static let shared = AlarmTalkAPI()
 
@@ -129,31 +129,15 @@ final class AlarmTalkAPI: @unchecked Sendable {
         let _: EmptyResponse = try await request("auth/logout", method: "POST", token: token)
     }
 
-    func createAlarm(_ requestBody: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm {
-        let response: RemoteAlarmResponse = try await request(
-            "alarm",
+    /// 클론 응원 보충 요청 — 그 클론으로 응원 알람을 저장한 뒤 부른다(`CheerVariety.needsCloneSupplement`). 답을 기다리지
+    /// 않는다. 예전에는 서버 알람 사본의 쓰기가 이 일을 함께 했다 — 사본을 없앤 뒤(2026-10-29)로는 앱이 직접 알린다.
+    func requestVoiceContentSupplement(id: String, theme: String, token: String) async throws {
+        let _: VoiceContentSupplementResponse = try await request(
+            "voice/\(id)/content-supplement",
             method: "POST",
             token: token,
-            body: requestBody
+            body: VoiceContentSupplementRequest(theme: theme)
         )
-        if response.alarm.creationReplayed == true {
-            return try await updateAlarm(id: response.alarm.id, requestBody: requestBody, token: token)
-        }
-        return response.alarm
-    }
-
-    func updateAlarm(id: String, requestBody: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm {
-        let response: RemoteAlarmResponse = try await request(
-            "alarm/\(id)",
-            method: "PATCH",
-            token: token,
-            body: requestBody
-        )
-        return response.alarm
-    }
-
-    func deleteAlarm(id: String, token: String) async throws {
-        let _: EmptyResponse = try await request("alarm/\(id)", method: "DELETE", token: token)
     }
 
     func listVoiceProfiles(token: String) async throws -> [VoiceProfile] {
@@ -365,6 +349,14 @@ final class AlarmTalkAPI: @unchecked Sendable {
             let voice_profile_id: String?
             let message_id: String?
             let detail: String?
+            // 2판(`docs/spec/usage-events.md` §7.2). 옛 큐의 기록은 아래가 비어 1판으로 간다 — nil 은 키째 빠진다.
+            let schema_version: Int?
+            /// 1판 기록에는 싣지 않는다 — 서버가 요청 헤더로 채운다(같은 기기라 바뀌지 않는다).
+            let platform: String?
+            let app_version: String?
+            let feature_version: String?
+            let attempt_id: String?
+            let props: UsageEventProps?
         }
         struct Body: Encodable { let events: [Payload] }
         // 서버 스키마가 오프셋 있는 ISO-8601 을 요구한다(`z.string().datetime({ offset: true })`).
@@ -378,7 +370,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 alarm_id: event.alarmID,
                 voice_profile_id: event.voiceProfileID,
                 message_id: event.messageID,
-                detail: event.detail
+                detail: event.detail,
+                schema_version: event.schemaVersion,
+                platform: event.schemaVersion == nil ? nil : "ios",
+                app_version: event.appVersion,
+                feature_version: event.featureVersion,
+                attempt_id: event.attemptID,
+                props: event.props
             )
         }
         let _: EmptyResponse = try await request(
@@ -437,7 +435,38 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     func getTTSMessageAudio(id: String, token: String) async throws -> TtsMessageAudioResponse {
-        try await request("tts/messages/\(id)/audio", token: token)
+        let request = ttsMessageAudioRequest(id: id, token: token)
+        return try await send(request, token: token)
+    }
+
+    /// `getTTSMessageAudio` 가 보내는 **그 요청**(경로·공통 헤더·Bearer). 앱이 백그라운드로 갈 때 OS 백그라운드
+    /// 다운로드(`BackgroundClipDownloader`)가 같은 요청을 넘긴다 — 헤더를 거기서 다시 베끼지 않는다.
+    func ttsMessageAudioRequest(id: String, token: String) -> URLRequest {
+        baseRequest("tts/messages/\(id)/audio", method: "GET", token: token)
+    }
+
+    // MARK: 추가 음성팩(`docs/spec/voice-packs.md` §3)
+    //
+    // 받을 수 없는 팩(비게시·권리 끝·지역·빌드)은 404 `VOICE_PACK_NOT_FOUND` 다. 빌드는 공통 헤더(`X-App-Version`)로 간다.
+
+    /// 지금 받을 수 있는 팩 목록 + 게시가 끝난 팩의 기존 재생 기한.
+    func getVoicePacks(token: String) async throws -> VoicePackListResponse {
+        try await request("voice-packs", token: token)
+    }
+
+    /// 팩 상세(다운로드 상태를 셀 클립 목록).
+    func getVoicePack(packID: String, token: String) async throws -> VoicePackDetailResponse {
+        try await request("voice-packs/\(Self.pathSegment(packID))", token: token)
+    }
+
+    /// 팩 클립 하나의 오디오(base64 + 해시·크기).
+    func getVoicePackClipAudio(packID: String, clipID: String, token: String) async throws -> VoicePackAudioResponse {
+        try await request("voice-packs/\(Self.pathSegment(packID))/clips/\(Self.pathSegment(clipID))/audio", token: token)
+    }
+
+    /// 경로 한 칸 — 서버가 준 id 라도 슬래시·물음표가 경로를 바꾸지 못하게 인코딩한다.
+    private static func pathSegment(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_"))) ?? value
     }
 
     /// 사전렌더 테마(날씨)의 **어느 클립을 틀지**를 서버에 물어본다.
@@ -561,9 +590,34 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
-    /// 이번 달 직접 입력 문구 생성 여유. **유료일 때만** 의미가 있다(limit == 0 이면 표시 안 함).
+    /// 이번 달 직접 입력 문구 생성 여유. 무료도 월 3회가 있고, 무료면 광고 보상 현황(`ad_reward`)이 함께 온다.
     func manualQuota(token: String) async throws -> ManualQuotaResponse {
         try await request("tts/manual-quota", token: token)
+    }
+
+    // MARK: 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3) — 안드로이드 `AdRewardApi` 와 같은 세 요청.
+    // ⚠ 이 요청들은 보상을 주지 않는다. 적립은 AdMob 서버의 서명된 확인(SSV)으로만 한다.
+
+    func createAdRewardSession(adUnit: String, token: String) async throws -> AdRewardSessionResponse {
+        try await request(
+            "ad-rewards/sessions",
+            method: "POST",
+            token: token,
+            body: AdRewardSessionCreateRequest(adUnit: adUnit)
+        )
+    }
+
+    func startAdRewardSession(id: String, token: String) async throws -> AdRewardSessionResponse {
+        try await request("ad-rewards/sessions/\(id)/start", method: "POST", token: token)
+    }
+
+    func closeAdRewardSession(id: String, outcome: String, token: String) async throws {
+        let _: AdRewardSessionResponse = try await request(
+            "ad-rewards/sessions/\(id)/close",
+            method: "POST",
+            token: token,
+            body: AdRewardSessionCloseRequest(outcome: outcome)
+        )
     }
 
     /// Phase 4-D1: Apple StoreKit2 영수증을 백엔드로 보내 entitlement 동기화.
@@ -617,14 +671,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     /// 이메일/비밀번호 회원가입. 인증코드 검증 이후 호출되어야 한다.
-    func register(email: String, password: String, name: String, verificationCode: String) async throws -> AuthSession {
+    func register(email: String, password: String, verificationCode: String) async throws -> AuthSession {
         try await request(
             "auth/register",
             method: "POST",
             body: EmailRegisterRequest(
                 email: email,
                 password: password,
-                name: name,
                 emailVerificationCode: verificationCode
             )
         )
@@ -731,11 +784,29 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return request
     }
 
+    /// [baseRequest] 가 실은 Bearer 토큰을 되읽는다 — 백그라운드 다운로드가 받은 응답의 401 을 **그 요청의 토큰**으로 알린다.
+    static func bearerToken(of request: URLRequest?) -> String? {
+        guard let value = request?.value(forHTTPHeaderField: "Authorization"), value.hasPrefix("Bearer ") else { return nil }
+        return String(value.dropFirst("Bearer ".count)).nilIfBlank
+    }
+
     /// 보내고 응답을 해석한다. JSON·multipart 요청이 **같은 규칙**을 쓴다 — 2xx 디코드,
     /// 401 은 세션 만료 알림, 403 `CONSENT_REQUIRED` 는 동의 화면, 그 밖은 `APIError.server`.
     /// 앱에서 `APIError.server` 를 만드는 곳은 여기 하나다.
     private func send<Response: Decodable>(_ request: URLRequest, token: String?) async throws -> Response {
         let (data, response) = try await session.data(for: request)
+        return try interpret(data: data, response: response, token: token)
+    }
+
+    /// 받은 응답 하나를 `send` 와 **같은 규칙**으로 해석한다(2xx 디코드 · 401 세션 만료 · 403 탈퇴 유예·동의).
+    /// 요청을 이 클래스 밖에서 보낸 경로 — OS 백그라운드 다운로드(`BackgroundClipDownloader`)가 받은 파일 — 도 이걸 쓴다.
+    /// [token] 은 그 요청이 실은 토큰이다(늦게 온 401 이 새 세션을 끊지 않게 — `unauthorizedTokenKey`).
+    func interpret<Response: Decodable>(
+        data: Data,
+        response: URLResponse?,
+        token: String?,
+        as _: Response.Type = Response.self
+    ) throws -> Response {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }

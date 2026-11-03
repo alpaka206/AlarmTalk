@@ -58,7 +58,7 @@ final class VoiceAddButtonUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(record.frame.height, 38)
         XCTAssertGreaterThan(record.frame.width, 120)
         XCTAssertTrue(app.staticTexts["너무 짧으면 목소리가 다르게 나올 수 있어요."].exists)
-        XCTAssertTrue(app.staticTexts["원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요."].exists)
+        XCTAssertTrue(app.staticTexts["허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요."].exists)
         XCTAssertFalse(app.staticTexts["12초 이상 2분 이하로 녹음해 주세요"].exists)
 
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())

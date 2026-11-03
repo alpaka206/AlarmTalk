@@ -76,7 +76,7 @@ export const ERROR_CODES = [
   'DOCUMENT_VERSION_REQUIRED',
   'INVALID_CONSENT_TYPE',
   'INVALID_DYNAMIC_PROMPT_SETTINGS',
-  'INVALID_NAME',
+  // `INVALID_NAME` 은 2026-10-29 닉네임 삭제와 함께 빠졌다 — `PATCH /user/me` 가 이름을 받고 버린다.
   'INVALID_NAME_LENGTH',
   'NO_FIELDS_TO_UPDATE',
   'POLICY_VERSION_MISMATCH',
@@ -84,6 +84,15 @@ export const ERROR_CODES = [
   /** 키 목록을 방금 다시 받았다 — AdMob 이 1초 뒤 재시도하면 받힌다(`lib/admob-ssv.ts`). */
   'AD_REWARD_RETRY_LATER',
   'AD_REWARD_SIGNATURE_INVALID',
+  // 광고 시청 승인 세션 (ad-reward-sessions.ts) — 앱에 닿는다(`docs/spec/ad-rewards.md` §3).
+  /** 이번 달 광고로 받을 수 있는 횟수를 다 채웠다(예약 포함) — 다음 달 1일에 다시 생긴다. */
+  'AD_REWARD_MONTHLY_LIMIT',
+  /** 같은 계정의 다른 광고가 준비·시청 중이다 — 한 계정에 열린 세션은 하나다. */
+  'AD_REWARD_SESSION_OPEN',
+  /** 없는 세션·남의 세션·만료됐거나 이미 끝난 세션이다. 새 세션부터 다시 시작한다. */
+  'AD_REWARD_SESSION_INVALID',
+  /** 지금은 새 광고를 볼 수 없다 — 운영 스위치 꺼짐·이 광고 단위 미설정·유료 계정. 적립된 보상은 그대로다. */
+  'AD_REWARD_UNAVAILABLE',
   // 음성 생성(TTS) (tts.ts)
   'BASIC_VOICE_PRESET_ONLY',
   'FREE_PLAN_PRESET_ONLY',
@@ -97,7 +106,16 @@ export const ERROR_CODES = [
   'TEXT_PREPARATION_FAILED',
   'TEXT_TOO_LONG',
   'TRANSLATION_NOT_CONFIGURED',
+  /**
+   * dev 의 월 합성 예산(`TTS_DEV_MONTHLY_CHAR_BUDGET`)을 다 썼다 — **운영에서는 나지 않는다**(`lib/tts-budget.ts`).
+   * dev 앱에는 503 폴백 문구로 보인다.
+   */
+  'TTS_BUDGET_EXHAUSTED',
   'TTS_GENERATION_FAILED',
+  /** 같은 `request_id` 에 다른 입력이 왔다 — 앱의 버그다(문구를 바꾸면 새 id). */
+  'TTS_REQUEST_ID_CONFLICT',
+  /** 같은 `request_id` 가 아직 만들어지는 중이다 — 잠시 뒤 다시 보내면 그 결과를 받는다. */
+  'TTS_REQUEST_IN_PROGRESS',
   'VOICE_AND_TEXT_REQUIRED',
   'VOICE_AUTHORIZATION_CHANGED',
   'VOICE_DRAFT_NOT_USABLE',
@@ -121,23 +139,24 @@ export const ERROR_CODES = [
   // 알람 공통 검증 (alarm-helpers.ts)
   'INVALID_ALARM_MODE',
   'INVALID_BUCKET_ID',
+  // 응원 테마의 다양하게/고정 값(`cheer_mode`·`cheer_pinned_content_id`)이 어긋났다 — 스펙 voice-and-message §5-4.
+  'INVALID_CHEER_SETTING',
   'INVALID_IS_ACTIVE',
   'INVALID_MESSAGE_ID',
   'INVALID_REPEAT_DAYS',
   'INVALID_SNOOZE_MINUTES',
+  'INVALID_TARGET_DATE',
   'INVALID_TIME_FORMAT',
   'INVALID_TIME_VALUE',
   'INVALID_VIBRATION_PATTERN',
   'INVALID_VOICE_PROFILE_ID',
   'INVALID_WAKE_MODE',
-  // 알람 쓰기 (alarm-mutation.ts)
-  'ALARM_DELETE_FAILED',
-  'ALARM_NOT_FOUND',
+  // 알람 쓰기 (alarm-mutation.ts) — 옛 앱의 올리기를 저장 없이 받는 호환 경로다(2026-10-29 서버 알람 사본 삭제). 행이 없으니
+  // `ALARM_NOT_FOUND`·`ALARM_DELETE_FAILED`·`NO_UPDATE_FIELDS` 는 더 나가지 않아 뺐다.
   'INVALID_ALARM_ID',
   'MESSAGE_NOT_FOUND',
   /** `POST /alarm` 의 `target_user_id` 가 남의 계정이다 — 남에게 보내는 알람은 없다(옛 앱의 가족 알람 보내기). */
   'NOT_CONNECTED',
-  'NO_UPDATE_FIELDS',
   'REQUIRED_FIELDS_MISSING',
   'VOICE_FEATURE_REQUIRES_PAID_PLAN',
   'VOICE_PROFILE_NOT_FOUND',
@@ -213,6 +232,16 @@ export const ERROR_CODES = [
   'INVALID_DATE',
   'INVALID_RANGE',
   'RANGE_TOO_LARGE',
+  // 애플 서버 알림 V2 (billing-apple-notifications.ts) — 애플 서버만 받는다. 앱은 이 코드를 보지 않는다
+  // (`docs/spec/billing-lifecycle.md` 「애플 서버 알림 V2」).
+  /** 애플이 서명했지만 우리 앱(번들 ID)의 알림이 아니다 — App Store Connect 의 URL 설정을 봐야 한다. */
+  'APPLE_NOTIFICATION_BUNDLE_MISMATCH',
+  /** 애플이 서명했지만 이 워커가 받는 환경이 아니다(운영 = Production, dev = Sandbox) — URL 설정이 바뀌었다. */
+  'APPLE_NOTIFICATION_ENVIRONMENT_MISMATCH',
+  /** 본문 형식·서명·인증서 체인이 틀렸다. 위조 요청이면 정상 거절이다. */
+  'APPLE_NOTIFICATION_INVALID',
+  /** 기록은 남겼지만 처리(스토어 재조회·회수)가 실패했다 — 애플이 재전송하면 다시 처리한다. */
+  'APPLE_NOTIFICATION_PROCESSING_FAILED',
   // 구글 실시간 알림 (billing-google-rtdn.ts)
   'GOOGLE_PURCHASE_NOT_FOUND',
   'GOOGLE_VERIFICATION_FAILED',
@@ -227,7 +256,30 @@ export const ERROR_CODES = [
   // 푸시 (push.ts)
   'INVALID_PLATFORM',
   'INVALID_PUSH_TOKEN',
-  // 관리자 (admin.ts)
+  // 추가 음성팩 (voice-packs.ts) — `docs/spec/voice-packs.md` §3. 받을 수 없는 팩(비게시·권리 끝·지역·빌드)은 있다는 사실도
+  // 드러내지 않고 이 코드로 답한다.
+  'VOICE_PACK_CLIP_NOT_FOUND',
+  'VOICE_PACK_NOT_FOUND',
+  // 관리자 (admin.ts) — 콘솔 화면만 받는다. 앱은 이 코드를 보지 않는다(`docs/spec/admin-console.md`).
+  /** 음성팩 가져오기·권리·전이의 입력이 틀렸다(가져오기 스크립트가 받는다). */
+  'ADMIN_VOICE_PACK_INVALID',
+  /** draft 가 아니라 클립·공개 정보를 못 바꾸거나, 지금 상태에서 할 수 없는 전이다. */
+  'ADMIN_VOICE_PACK_LOCKED',
+  'ADMIN_VOICE_PACK_NOT_FOUND',
+  /** 광고 알림 스위치(`ADMIN_AD_PUSH_ENABLED`)가 꺼져 있는데 광고 알림을 보내려 했다. */
+  'ADMIN_PUSH_AD_DISABLED',
+  'ADMIN_PUSH_COPY_INVALID',
+  'ADMIN_PUSH_FAILED',
+  'ADMIN_PUSH_JOB_NOT_FOUND',
+  /** 광고 알림을 한국 시각 08:00~21:00 밖에 보내려 했다. */
+  'ADMIN_PUSH_OUTSIDE_AD_HOURS',
+  'ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE',
+  /** 광고 시험 발송을 광고성 정보 수신에 동의하지 않은 계정으로 보내려 했다. */
+  'ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT',
+  'ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND',
+  /** 같은 문구의 시험 발송(60분 안, 한 대 이상 성공) 없이 전체 발송을 만들려 했다. */
+  'ADMIN_PUSH_TEST_REQUIRED',
+  'ADMIN_UNAUTHORIZED',
   'ADMIN_UNCONFIGURED',
   // 코드 등록 (code.ts) — **받는 코드가 없다.** 옛 앱의 코드 등록 화면이 아직 부르므로 언제나 이 코드 하나로
   // 답한다(옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다).
@@ -239,7 +291,8 @@ export const ERROR_CODES = [
   //   서버가 더는 내지 않으니 옛 앱도 받을 일이 없다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
   // 초대 코드 갈래(CODE_REQUIRED·CODE_TOO_LONG·CODE_EXPIRED·CODE_ALREADY_USED·CODE_ALREADY_REDEEMED_BY_YOU·
   // INVALID_FORMAT·INVALID_INVITE_PLAN·OWNS_ACTIVE_GROUP·SELF_ISSUED)는 2026-10-20 커플·가족 이용권과 함께 지웠다.
-  'CODE_NOT_FOUND',
+  // 마지막 CODE_NOT_FOUND(옛 앱의 코드 등록 호환)는 2026-10-26 그 라우트와 함께 지웠다 — 강제 업데이트(안드로이드 36·iOS 14)가
+  // 그 화면이 있는 앱을 막았다.
   // 랜딩 이벤트 (event.ts) — 앱이 아니라 랜딩 페이지가 받는다(문구는 apps/landing 의 messages).
   'INVALID_BODY',
   'INVALID_ID',
@@ -286,6 +339,8 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   // 않는다). 그 고장은 사용자가 고칠 수 없어 경보로 올린다(`docs/spec/error-codes.md` §3).
   'VOICE_CLONE_NO_SPEECH',
   'TTS_GENERATION_FAILED',
+  // dev 합성 예산 소진 — dev 테스트가 막혔고, 예산을 올릴지 정하는 것은 운영자다(운영에서는 나지 않는다).
+  'TTS_BUDGET_EXHAUSTED',
   'PERSO_FAILED',
   // 결제 확정이 거절된 갈래. 2026-09-19 사고에서 우리는 증상(VOICE_FEATURE_REQUIRES_PAID_PLAN)만
   // 보고 원인은 한 줄도 못 봤다 — 거절이 구조화 로그에만 남아 있었다. 사용자는 이미 돈을 냈는데
@@ -295,6 +350,10 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   'TRANSACTION_ACCOUNT_MISMATCH',
   'CROSS_STORE_RENEWAL_ACTIVE',
   'APPLE_VERIFICATION_FAILED',
+  // 애플 서버 알림의 범위 불일치. 이 둘은 **애플 서명을 통과한 뒤에만** 나온다 — 위조로는 만들 수 없고, App Store
+  // Connect 의 알림 URL 이 잘못된 워커를 가리킨다는 뜻이다. 그동안 그 환경의 알림이 통째로 버려진다.
+  'APPLE_NOTIFICATION_BUNDLE_MISMATCH',
+  'APPLE_NOTIFICATION_ENVIRONMENT_MISMATCH',
   // ⚠ **이 400 은 그 기기의 사용 기록 큐를 영구히 막는다.** 두 앱 모두 2xx 가 아닌 배치를
   // 큐에서 지우지 않으므로(`UsageEventUploadWorker`·`UsageEventUploader`), 배치에 한 건이라도
   // 서버가 모르는 값이 섞이면 그 기기는 그 뒤로 **아무 기록도 올리지 못한다.** 오타가 아니라
@@ -329,7 +388,4 @@ export const CLIENT_EXPECTED_REFUSAL_CODES: readonly ErrorCode[] = [
   // 가입하려는 이메일이 이미 있다(이메일/비밀번호 계정 · 소셜 계정) — 화면이 로그인으로 안내한다.
   'AUTH_EMAIL_TAKEN',
   'AUTH_EMAIL_SOCIAL',
-  // 옛 앱의 코드 등록 — 받는 코드가 없어 언제나 이 답이다(routes/code.ts). 지났거나 이미 쓰인 코드의 갈래는
-  // 초대 코드와 함께 2026-10-20 에 지웠다.
-  'CODE_NOT_FOUND',
 ];

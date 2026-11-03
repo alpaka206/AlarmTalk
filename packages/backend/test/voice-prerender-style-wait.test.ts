@@ -47,8 +47,8 @@ beforeEach(async () => {
     await db.execute(`DELETE FROM ${table}`);
   }
   await db.execute({
-    sql: `INSERT INTO users (id,email,name,plan) VALUES (?,?,?,?)`,
-    args: [USER, 'w@example.test', 'w', 'plus'],
+    sql: `INSERT INTO users (id,email,plan) VALUES (?,?,?)`,
+    args: [USER, 'w@example.test', 'plus'],
   });
   await db.execute({
     sql: `INSERT INTO voice_profiles

@@ -111,6 +111,15 @@ data class VoicePrerenderRetryResponse(
     val success: Boolean = false,
 )
 
+/** `POST /voice/:id/content-supplement` — 그 클론으로 이 테마 알람을 저장했다고 알린다(지금은 응원만, 스펙 voice-and-message §5-4). */
+data class VoiceContentSupplementRequest(
+    val theme: String,
+)
+
+data class VoiceContentSupplementResponse(
+    val result: String? = null,
+)
+
 data class VoiceSpeechStyleRetryResponse(
     val success: Boolean = false,
     // 성공 시 "done".
@@ -220,6 +229,15 @@ interface VoiceProfileApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
     ): VoicePrerenderAdvanceResponse
+
+    // 클론 응원 보충 요청 — 그 클론으로 응원 알람을 저장한 뒤 부른다(`needsCloneCheerSupplement`). 예전에는 서버 알람 사본의
+    // 쓰기가 이 일을 함께 했다 — 사본을 없앤 뒤(2026-10-29)로는 앱이 직접 알린다.
+    @POST("voice/{id}/content-supplement")
+    suspend fun requestVoiceContentSupplement(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body body: VoiceContentSupplementRequest,
+    ): VoiceContentSupplementResponse
 
     // 말투 분석 재시도 — 실패 502 { error_code: SPEECH_STYLE_ANALYSIS_FAILED }, 소스 없음 409.
     @POST("voice/{id}/speech-style/retry")

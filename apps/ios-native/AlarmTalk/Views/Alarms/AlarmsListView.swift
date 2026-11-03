@@ -9,9 +9,13 @@ struct AlarmsListView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
-    @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
+    @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
     @State private var actionMessage: String?
+    /// 알람 스위치는 손을 멈춘 뒤의 마지막 값만 적용한다 — 누르는 동안에는 화면만 바뀐다(`AlarmToggleCoalescer`).
+    @ObservedObject private var toggles = AlarmToggleCoalescer.shared
+    /// 날짜가 지난 날짜 알람을 켜려 했다 — 켜지 않고 알럿으로 말한다(스펙 alarm-lifecycle.md §4-4).
+    @State private var datedPastAlertShown = false
 
     /// 다중 선택 삭제 — 길게 눌러 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
     /// 안드로이드 `AlarmListScreen.kt:135-148`.
@@ -21,6 +25,10 @@ struct AlarmsListView: View {
     /// FAB 가 권한 확인을 건너뛰지 않게 하는 통로다.
     var createRequest: UUID?
     let openEditor: (AlarmEditorTarget) -> Void
+
+    /// 상태 카드의 '기본 목소리 받는 중' — **기본 목소리만** 센다. 프리페처는 내 목소리 사전렌더도 같은 회차에 받아, 회차가
+    /// 돈다(`isRunning`)는 것만으로는 기본 목소리가 남았는지 모른다. 프리페처 상태가 바뀔 때마다 메인 밖에서 다시 센다.
+    @State private var defaultVoicesDownloading = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,7 +42,21 @@ struct AlarmsListView: View {
                         // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
                         // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
                         // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
-                        if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
+                        // **다음 알람 상태 카드**(2026-10-26 v1.3 W06) — 켜진 알람이 있으면 지금 할 일 하나를 말한다(권한 부족 포함).
+                        // 켜진 알람이 없는데 권한이 모자라면 예전처럼 배너만 둔다.
+                        if let next = nextAlarmForHeadline {
+                            NextAlarmStatusCard(
+                                status: NextAlarmStatus.resolve(
+                                    alarm: next,
+                                    nextFire: next.nextFireDate,
+                                    alarmAuthorized: alarmKit.alarmAuthorized,
+                                    defaultVoiceDownloadInProgress: defaultVoicesDownloading,
+                                    limitedPlanEndsAt: auth.session?.user.personalPromo?.endsAtDate
+                                ),
+                                voiceName: voiceName(for: next),
+                                onRequestPermission: { Task { await alarmKit.requestAuthorization() } }
+                            )
+                        } else if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
                             alarmPermissionBanner
                         }
                         // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
@@ -58,7 +80,26 @@ struct AlarmsListView: View {
                 }
             }
         }
+        .alert(
+            String(localized: "날짜가 지난 알람이에요"),
+            isPresented: $datedPastAlertShown
+        ) {
+            Button(String(localized: "확인"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "편집에서 날짜를 다시 골라 주세요."))
+        }
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
+        .task(id: stockClipPrefetcher.state) {
+            // ⚠ **받기가 실제로 돌고 있을 때만**이다 — 세 번 다 실패해 멈췄는데(`.failed`) 파일이 빠져 있다는 이유로 '받는 중' 을
+            //   띄우면 끝없이 받는 중이라 하고 날씨 경고까지 가린다.
+            guard stockClipPrefetcher.isRunning else {
+                defaultVoicesDownloading = false
+                return
+            }
+            let progress = await StockClipPrefetcher.progressOffMain()
+            guard !Task.isCancelled else { return }
+            defaultVoicesDownloading = progress.map { $0.total > 0 && $0.done < $0.total } ?? false
+        }
         .onChange(of: createRequest) { _, new in
             guard new != nil else { return }
             Task { await openCreateAlarm() }
@@ -66,19 +107,14 @@ struct AlarmsListView: View {
         .preference(key: AlarmSelectionActiveKey.self, value: selectionMode)
     }
 
-    /// 인라인 액션 메시지(alarmKit 유래) 우선, 없으면 동기화 상태 메시지. 둘 중 하나만.
+    /// 인라인 액션 메시지(alarmKit 유래). 알람을 서버로 올리지 않으므로(2026-10-29) 동기화 문구는 없다.
     private var displayedMessage: String? {
-        actionMessage ?? remoteSync.statusMessage
+        actionMessage
     }
 
-    /// 표시 중인 메시지를 닫는다. actionMessage 가 떠 있으면 그것을, 아니면 동기화
-    /// 상태 메시지를 지운다(둘은 동시에 뜨지 않으므로 보이는 쪽만 비운다).
+    /// 표시 중인 메시지를 닫는다.
     private func dismissDisplayedMessage() {
-        if actionMessage != nil {
-            actionMessage = nil
-        } else {
-            remoteSync.statusMessage = nil
-        }
+        actionMessage = nil
     }
 
     /// 목록 **밖에 고정**되는 헤더. 스크롤해도 '다음 알람까지' 가 남고, 무엇보다 목록을
@@ -133,7 +169,7 @@ struct AlarmsListView: View {
             VStack(alignment: .leading, spacing: 16) {
                 ForEach(sortedAlarms) { alarm in
                     AlarmRow(
-                        alarm: alarm,
+                        alarm: displayed(alarm),
                         voiceName: voiceName(for: alarm),
                         selectionMode: selectionMode,
                         selected: selectedAlarmIDs.contains(alarm.id),
@@ -147,7 +183,17 @@ struct AlarmsListView: View {
                         },
                         onTap: { openEditor(.edit(alarm.id)) },
                         onToggleEnabled: { enabled in
-                            Task { await setAlarm(alarm, enabled: enabled) }
+                            let id = alarm.id
+                            toggles.toggle(
+                                id: id,
+                                to: enabled,
+                                current: { store.record(id: id)?.enabled },
+                                // 적용할 때 행을 **다시 읽는다** — 누른 순간의 사본에는 그 사이 적힌 예약 핸들이 없다.
+                                apply: { want in
+                                    guard let fresh = store.record(id: id) else { return }
+                                    await setAlarm(fresh, enabled: want)
+                                }
+                            )
                         },
                         onDelete: {
                             Task { await deleteAlarm(alarm) }
@@ -261,6 +307,14 @@ struct AlarmsListView: View {
         .accessibilityLabel(String(localized: "첫 알람 만들기"))
     }
 
+    /// 행에 그릴 알람 — 스위치를 누른 뒤 아직 적용하지 않았으면 누른 값으로 그린다(`AlarmToggleCoalescer.shown`).
+    private func displayed(_ alarm: LocalAlarmRecord) -> LocalAlarmRecord {
+        guard let shown = toggles.shown[alarm.id], shown != alarm.enabled else { return alarm }
+        var copy = alarm
+        copy.enabled = shown
+        return copy
+    }
+
     /// 헤드라인이 셀 '다음 알람' — 켜져 있는 것 중 가장 먼저 울릴 것.
     private var nextAlarmForHeadline: LocalAlarmRecord? {
         visibleAlarms.filter(\.enabled).min { $0.nextFireDate < $1.nextFireDate }
@@ -303,6 +357,12 @@ struct AlarmsListView: View {
 
     @MainActor
     private func setAlarm(_ alarm: LocalAlarmRecord, enabled: Bool) async {
+        // 날짜가 지난 날짜 알람은 켜지 않는다 — 다음 회차가 없다. 다시 켜려면 날짜를 다시 고른다(§4-4).
+        // 권한보다 먼저 본다 — 권한을 받아도 켤 수 없는 알람이다.
+        if enabled, alarm.datedTimeHasPassed(nowMillis: Int64(Date().timeIntervalSince1970 * 1000)) {
+            datedPastAlertShown = true
+            return
+        }
         if enabled {
             // 권한이 먼저다. 켠 다음에 확인하면 schedule 실패 뒤에도 `enabled=true` 가
             // 남아 **켜진 척하는 행**이 된다 — `markFailed` 는 state 만 바꾸고 enabled 는
@@ -318,7 +378,11 @@ struct AlarmsListView: View {
                     return
                 }
             }
-            store.setEnabled(id: alarm.id, enabled: true)
+            guard store.setEnabled(id: alarm.id, enabled: true) else {
+                // 그 사이 시각이 지났다(위 판정과 이 줄 사이) — 같은 알럿으로 말한다.
+                datedPastAlertShown = alarm.isDated
+                return
+            }
             guard let updated = store.record(id: alarm.id) else { return }
             let scheduled = await alarmKit.schedule(record: updated, store: store)
             if !scheduled {
@@ -330,9 +394,6 @@ struct AlarmsListView: View {
                 actionMessage = alarmKit.statusMessage ?? String(localized: "알람 상태 변경에 실패했어요.")
                 return
             }
-            if let synced = store.record(id: updated.id), shouldPushToServer(synced) {
-                await remoteSync.push(record: synced, store: store, session: auth.session)
-            }
             actionMessage = nil
         } else {
             let canceled = await alarmKit.cancelScheduledAlarm(record: alarm)
@@ -342,46 +403,21 @@ struct AlarmsListView: View {
                 return
             }
             store.setEnabled(id: alarm.id, enabled: false)
-            if let updated = store.record(id: alarm.id), shouldPushToServer(updated) {
-                await remoteSync.push(record: updated, store: store, session: auth.session)
-            }
             actionMessage = nil
         }
-    }
-
-    /// 이 행의 변경을 곧바로 서버에 올려도 되는가 — 서버에 이미 있는 행만. 아직 없는 행은
-    /// 다음 일괄 push 가 만든다(`RemoteAlarmPushSync`).
-    private func shouldPushToServer(_ record: LocalAlarmRecord) -> Bool {
-        record.remoteAlarmId != nil
     }
 
     /// 알람 삭제 실행. 스와이프 삭제 버튼 또는 길게 누르기 메뉴에서 곧바로 호출된다
     /// (Android 즉시 삭제 미러 — 별도 확인 다이얼로그 없음, 스와이프 제스처가 안전장치).
     ///
-    /// 의도적 누락: 서버에 소프트 삭제(휴지통)가 없어 양 플랫폼 모두 실행취소/스낵바를
-    /// 제공하지 않는다. 서버 + AlarmKit + 음원 캐시가 즉시·비가역 삭제된다.
-    ///
-    /// ⚠ **서버를 기다리지 않는다**(2026-08-18 낙관적 삭제). 로컬을 먼저 지우고 서버 삭제는
-    /// 뒤에서 돈다 — 예전에는 서버 왕복을 다 기다린 뒤에야 행이 사라져서, 스와이프가 제자리로
-    /// 돌아오고 아무 일도 안 일어난 것처럼 보였다. 실패해도 **되살아나지 않는다**: 서버에서
-    /// 받아 오는 알람이 없어 서버에 고아 행이 남을 뿐 사용자에게는 보이지 않는다.
+    /// 의도적 누락: 휴지통이 없어 양 플랫폼 모두 실행취소/스낵바를 제공하지 않는다. AlarmKit 예약과 음원 캐시가
+    /// 즉시·비가역 삭제된다. 서버에는 알람 사본이 없다(2026-10-29) — 지울 서버 행도 없다.
     @MainActor
     private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
         let deleted = await alarmKit.cancel(record: alarm, store: store)
         guard deleted else {
             actionMessage = alarmKit.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
             return
-        }
-        // 서버 삭제는 뒤에서. 화면은 이미 사라졌다.
-        // ⚠ **실패를 알리지 않는다**(`announceFailure: false`). 사용자가 원한 결과(목록에서
-        // 사라짐)는 이미 이뤄졌고, 서버에 고아 행이 남아도 보이지 않는다. 여기서 배너를 띄우면
-        // **지워진 알람 옆에 "삭제에 실패했어요"** 가 뜬다.
-        Task {
-            await remoteSync.deleteRemote(
-                record: alarm,
-                session: auth.session,
-                announceFailure: false
-            )
         }
     }
 }

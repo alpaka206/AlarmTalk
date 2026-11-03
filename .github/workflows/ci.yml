@@ -123,6 +123,12 @@ jobs:
       - name: Check generated weather region files match the catalog
         run: python3 scripts/gen-weather-regions.py --check
 
+      # 응원·기상 인사 문구의 원본은 `packages/shared/src/stock-content.json` 하나다. 오너가 청취 검수 때 보는
+      # 검수표(`docs/product/stock-content-review.md`)는 생성 파일이라, JSON 만 고치고 다시 만들지 않으면 검수한
+      # 문장과 굽는 문장이 갈라진다(스펙 voice-and-message §5-4).
+      - name: Check stock content review table matches the catalog
+        run: python3 scripts/gen-stock-content.py --check
+
       # 서버는 등록 녹음 전사가 제시 대본을 읽은 것인지 글자로 가려 말투 분석의 어체를 버린다(대본은
       # 존댓말이라 읽은 사람은 누구든 정중체로 분석됐다). 대조 원본은 `packages/shared` 의 JSON 이고 두 앱은
       # 같은 글을 손으로 둔다 — 앱만 고치면 서버가 새 대본을 못 알아봐 아무 경보 없이 예전 사고로 돌아간다.

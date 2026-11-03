@@ -14,7 +14,27 @@ struct PlanCardCopyTests {
 
     @Test("개인 카드는 문구 종류가 아니라 등록한 목소리로 듣는 것을 말한다")
     func personalCardSellsTheVoice() {
-        #expect(PlanCard.features(for: .personal) == ["원하는 목소리 1개 등록", "등록한 목소리로 듣는 날씨·운세 문구"])
+        #expect(PlanCard.features(for: .personal).prefix(2) == ["원하는 목소리 1개 등록", "등록한 목소리로 듣는 날씨·운세 문구"])
+    }
+
+    /// 직접 입력은 유료 전용이 아니다(2026-10-26 — `docs/spec/voice-and-message.md` §8). 무료는 기본 목소리로 월 3회,
+    /// 플러스는 월 30회다. 안드로이드 `billing_plan_free_feature_manual`·`billing_plan_personal_feature_manual` 의 짝이다.
+    @Test("두 카드가 직접 입력 횟수를 말한다")
+    func cardsStateManualQuota() {
+        #expect(PlanCard.features(for: .free).last == "기본 목소리로 직접 입력 월 3회")
+        #expect(PlanCard.features(for: .personal).last == "직접 입력 월 30회(등록한 목소리 포함)")
+    }
+
+    @Test("직접 입력 횟수 줄이 안드로이드 values-en·values-ja 와 같다", arguments: [
+        ("en", "기본 목소리로 직접 입력 월 3회", "Type it yourself: 3 a month (default voices)"),
+        ("en", "직접 입력 월 30회(등록한 목소리 포함)", "Type it yourself: 30 a month (incl. your registered voice)"),
+        ("ja", "기본 목소리로 직접 입력 월 3회", "自分で入力 月3回(基本の声)"),
+        ("ja", "직접 입력 월 30회(등록한 목소리 포함)", "自分で入力 月30回(登録した声も)"),
+    ])
+    func manualQuotaLineIsTranslated(language: String, key: String, expected: String) throws {
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        #expect(bundle.localizedString(forKey: key, value: nil, table: nil) == expected)
     }
 
     @Test("영어·일본어 문구가 안드로이드 values-en·values-ja 와 같다", arguments: [

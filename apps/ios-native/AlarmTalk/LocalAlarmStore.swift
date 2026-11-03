@@ -11,14 +11,6 @@ final class LocalAlarmStore: ObservableObject {
     private let writer: LocalAlarmFileWriter
     /// 스냅샷을 뜰 때마다 올라가는 순번. 늦게 도착한 옛 스냅샷을 가려내는 기준이다.
     private var saveSeq: UInt64 = 0
-    /// 교체 확정 전 임시 편집본은 서버에 보내지 않는다. synced로 위장해 디스크에 남기면
-    /// 앱 종료 뒤에도 영구히 push되지 않으므로, 진행 중인 작업의 수명으로만 보류한다.
-    private var deferredServerSyncIDs: Set<String> = []
-
-    func deferServerSync(id: String) { deferredServerSyncIDs.insert(id) }
-    func resumeServerSync(id: String) { deferredServerSyncIDs.remove(id) }
-    func isServerSyncDeferred(id: String) -> Bool { deferredServerSyncIDs.contains(id) }
-
     /// 저장 위치를 지정하지 않았을 때 쓰는 기본 파일.
     ///
     /// ⚠ 기본 생성자를 쓰는 테스트가 사용자의 알람 파일을 그대로 잡지 않게 가른다
@@ -101,33 +93,6 @@ final class LocalAlarmStore: ObservableObject {
 
     func record(id: String) -> LocalAlarmRecord? {
         alarms.first { $0.id == id }
-    }
-
-    /// 화면에 보이는 레거시 행도 전송 전에는 소유자가 확정돼야 한다.
-    static func isOutboundSyncCandidate(_ record: LocalAlarmRecord, ownerUserID: String) -> Bool {
-        guard let owner = ownerUserID.nilIfBlank,
-              record.syncStateEnum != .synced,
-              !PendingSignOutStore.isPending(owner) else { return false }
-        if let recordedOwner = record.ownerUserId?.nilIfBlank { return recordedOwner == owner }
-        // 앞 계정의 소유자 새기기가 밀려 있을 수 있다. 기존 세션 정리가 확정할 때까지 보류한다.
-        return PendingSignOutStore.pendingUserIds.isEmpty
-            && (SessionExpiryStore.expiredOwnerUserId == nil || SessionExpiryStore.expiredOwnerUserId == owner)
-    }
-
-    /// 요청 직전 최신 행을 다시 확인한다. 최초 귀속은 await 없이 디스크에 남긴다.
-    func outboundSyncRecord(id: String, ownerUserID: String) -> LocalAlarmRecord? {
-        guard hasLoadedFromDisk, !isServerSyncDeferred(id: id),
-              let index = alarms.firstIndex(where: { $0.id == id }),
-              Self.isOutboundSyncCandidate(alarms[index], ownerUserID: ownerUserID) else { return nil }
-        if alarms[index].ownerUserId?.nilIfBlank == nil {
-            let original = alarms[index]
-            alarms[index].ownerUserId = ownerUserID
-            guard saveNow() else {
-                alarms[index] = original
-                return nil
-            }
-        }
-        return alarms[index]
     }
 
     func record(alarmKitID: String) -> LocalAlarmRecord? {
@@ -263,6 +228,15 @@ final class LocalAlarmStore: ObservableObject {
         }
         guard VoiceSource(rawValue: record.voiceSource) != nil else {
             throw LocalAlarmValidationError.unknownVoiceSource
+        }
+        // 날짜 알람은 실제 있는 날짜여야 하고 요일 반복·공휴일 끄기와 함께 있을 수 없다
+        // (스펙 alarm-lifecycle.md §4-1). 지난 시각은 여기서 보지 않는다 — 편집기가 누르는 순간 막는다.
+        if let targetDate = record.targetDate.nilIfBlank {
+            guard DatedAlarmTime.isValidTargetDate(targetDate),
+                  record.repeatDaysMask == 0,
+                  !record.holidayOff else {
+                throw LocalAlarmValidationError.invalidTargetDate
+            }
         }
         if record.playModeEnum != .alarmOnly {
             if record.localAudioUri?.isEmpty ?? true {
@@ -422,6 +396,46 @@ final class LocalAlarmStore: ObservableObject {
     /// 준비창 갱신(`WeatherVariantRefreshService.refreshDue`)이 새 날짜로 다시 받아 재예약한다.
     /// ⚠ 여기서 **다시 예약하지는 않는다** — 소리 지문이 바뀌므로 정지 뒤 리컨사일러
     /// (`AlarmAppContext.reconcileAfterStop`)·복구 경로가 새 소리로 건다.
+    /// **응원 — 다음 회차의 문구를 준비한다**(스펙 voice-and-message §5-4). 관측된 해제(`markStopped`)와 지나간 회차를 넘기는
+    /// 복구(`prepareForScheduleRecovery`)가 부른다. 디스크(매니페스트·캐시)만 읽는다. 다시 예약하지는 않는다 — 소리 지문이
+    /// 바뀌므로 그 뒤의 재조정이 새 소리로 건다. 안드로이드는 `AlarmRepository.dismiss` 가 같은 일을 한다.
+    static func prepareCheerForNextOccurrence(_ record: inout LocalAlarmRecord, nextFireAtMillis: Int64) {
+        guard record.bucketId == CheerVariety.bucketID else { return }
+        record = CheerVariety.prepared(
+            record,
+            occurrence: nextFireAtMillis,
+            candidates: CheerVariety.candidates(for: record, audioCache: .shared),
+            explicitChange: false
+        )
+    }
+
+    /// **앱 복귀 때 응원을 준비한다**(스펙 voice-and-message §5-4). 켜진 응원 알람 중 이번 회차(`fireAtMillis`)의 선택이
+    /// 아직 없는 것 — 그 사이 새 응원이 받아졌거나(공개·보충) 앞 회차가 해제 관측 없이 지나간 경우, 또는 목소리가 바뀌어
+    /// (무료 강등) 고른 것이 옛 목소리의 것인 경우 — 을 골라 둔다.
+    /// 울리는 중·스누즈 중이면 건너뛴다(같은 회차다). 바뀐 알람 id 를 돌려준다 — 호출자가 재조정으로 다시 예약한다.
+    @discardableResult
+    func prepareCheerSelections(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) -> [String] {
+        var changed: [String] = []
+        for index in alarms.indices {
+            let record = alarms[index]
+            guard record.enabled, record.bucketId == CheerVariety.bucketID, record.fireAtMillis > nowMillis,
+                  record.runtimeStateEnum != .ringing, record.runtimeStateEnum != .snoozed,
+                  CheerVariety.needsPreparation(record) else { continue }
+            let next = CheerVariety.prepared(
+                record,
+                occurrence: record.fireAtMillis,
+                candidates: CheerVariety.candidates(for: record, audioCache: .shared),
+                explicitChange: false
+            )
+            if next.cheerSelection != record.cheerSelection {
+                alarms[index] = next
+                changed.append(record.id)
+            }
+        }
+        if !changed.isEmpty { persist() }
+        return changed
+    }
+
     static func invalidateWeatherVariantIfFireDateChanges(
         _ record: inout LocalAlarmRecord,
         nextFireAtMillis: Int64,
@@ -450,12 +464,15 @@ final class LocalAlarmStore: ObservableObject {
         // 사라짐) 이 함수로 모이므로, 다음 회차가 다음 문구로 울린다.
         // 안드로이드 `advancedBucketRotationIndex` 와 같은 규칙이다.
         alarms[index].bucketRotationIndex = Self.advancedBucketRotationIndex(alarms[index])
-        if alarms[index].repeatDaysMask != 0,
+        // ⚠ **날짜 알람은 반복이 아니다**(`isRecurring`) — 정지하면 일회성처럼 꺼진 채 남는다. 다음 날·
+        // 다음 주로 넘기지 않는다(스펙 alarm-lifecycle.md §4-4).
+        if alarms[index].isRecurring,
            let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: now, isHoliday: isHoliday) {
             // 다음 날로 넘어가면 오늘 받아 둔 날씨 조건은 버린다 — 옛 `fireAtMillis` 로 판정하므로
             // **덮기 전에** 부른다(`invalidateWeatherVariantIfFireDateChanges` 주석).
             Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].fireAtMillis = nextFireAt
+            Self.prepareCheerForNextOccurrence(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].state = AlarmRuntimeState.armed.rawValue
             alarms[index].enabled = true
             alarms[index].snoozeCount = 0
@@ -513,12 +530,20 @@ final class LocalAlarmStore: ObservableObject {
     ) -> LocalAlarmRecord? {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return nil }
 
+        // 날짜 알람은 **그 날짜·시간대로 다시 계산한다** — 벽시계로 다시 계산하지 않는다(스펙 alarm-lifecycle.md
+        // §4-4). 스누즈 중이면 `fireAtMillis` 가 스누즈 마감이라 건드리지 않는다. 계산이 안 되는 날짜는 지난 것으로
+        // 보고 아래 '만료된 1회성' 갈래로 보낸다.
+        if alarms[index].isDated, alarms[index].runtimeStateEnum != .snoozed {
+            alarms[index].fireAtMillis = alarms[index].datedFireAtMillis ?? 0
+        }
         if alarms[index].fireAtMillis <= nowMillis {
-            if alarms[index].repeatDaysMask != 0,
+            if alarms[index].isRecurring,
                let nextFireAt = try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday) {
                 // 정지 기록 없이 지나간 회차를 넘길 때도 같다 — 날짜가 바뀌면 조건을 버린다.
                 Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
                 alarms[index].fireAtMillis = nextFireAt
+                // iOS 는 AlarmKit 이 우리 코드 없이 울리므로 지나간 회차는 울렸을 수 있다 — 응원은 다음 회차를 준비한다(스펙 §5-4).
+                Self.prepareCheerForNextOccurrence(&alarms[index], nextFireAtMillis: nextFireAt)
                 alarms[index].state = AlarmRuntimeState.armed.rawValue
                 alarms[index].enabled = true
                 alarms[index].snoozeCount = 0
@@ -577,14 +602,18 @@ final class LocalAlarmStore: ObservableObject {
     ///   ⚠ **취소가 실패했을 때만 `true`** 다(Codex #699 P1). 그 값은 OS 예약을 취소할
     ///   **유일한 손잡이**라, 취소에 실패했는데 지우면 예약은 남고 취소할 방법만 사라진다
     ///   (고아 예약). 평소에는 `false` — 남겨 두면 다음에 켤 때 옛 핸들과 어긋난다.
+    /// - Returns: 바꿨는가. ⚠ **날짜가 지난 날짜 알람은 켜지 않고 false**(스펙 alarm-lifecycle.md §4-4) — 켜면
+    ///   다음 날로 넘길 회차가 없다. 부르는 쪽(`AlarmsListView`)이 그 전에 알럿으로 막고, 여기는 그물이다.
+    @discardableResult
     func setEnabled(
         id: String,
         enabled: Bool,
         keepScheduleHandle: Bool = false,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
-    ) {
-        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
+    ) -> Bool {
+        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return false }
+        if enabled, alarms[index].datedTimeHasPassed(nowMillis: nowMillis) { return false }
         if enabled {
             let nextFireAt = (try? alarms[index].nextFireAtMillis(nowMillis: nowMillis, isHoliday: isHoliday))
                 ?? LocalAlarmRecord.fallbackFireAtMillis(
@@ -609,41 +638,16 @@ final class LocalAlarmStore: ObservableObject {
         alarms[index].syncState = nextLocalSyncState(for: alarms[index]).rawValue
         alarms[index].updatedAtMillis = nowMillis
         persist()
-    }
-
-    // MARK: Sync transitions (Phase 2-B3 가 사용)
-
-    /// 전송한 스냅샷과 같은 행만 완료 처리한다. 동시 편집은 내용·시각을 보존하고 다시 보낸다.
-    /// 생성 성공의 서버 ID는 취소 확인 전에 디스크까지 기록해야 중복 POST를 막을 수 있다.
-    @discardableResult
-    func markRemote(snapshot: LocalAlarmRecord,
-                    remoteID: String,
-                    lastSyncedAtMillis: Int64) -> Bool {
-        guard let index = alarms.firstIndex(where: { $0.id == snapshot.id }) else { return false }
-        // 같은 밀리초 안의 편집도 잡기 위해 시각뿐 아니라 행 전체를 비교한다.
-        let unchanged = alarms[index] == snapshot
-        alarms[index].remoteAlarmId = remoteID
-        alarms[index].lastSyncedAtMillis = lastSyncedAtMillis
-        alarms[index].syncState = (unchanged ? AlarmSyncState.synced : .dirty).rawValue
-        guard saveNow() else {
-            // 응답 ID는 메모리에도 유지해 같은 실행의 재시도가 PATCH로 이어지게 한다.
-            alarms[index].syncState = AlarmSyncState.syncFailed.rawValue
-            return false
-        }
         return true
     }
 
-    /// 동기화 실패 시 호출.
-    func markSyncFailed(id: String) {
-        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
-        alarms[index].syncState = AlarmSyncState.syncFailed.rawValue
-        alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
-        persist()
-    }
+    // MARK: Sync transitions
 
     /// Android `AlarmRepository.nextLocalSyncState` 동일.
     /// - remoteAlarmId 없으면 local_only
     /// - 그 외엔 dirty
+    /// ⚠ **2026-10-29 부터 이 값을 읽는 곳이 없다** — 서버 알람 사본을 지웠고 올리는 코드도 지웠다. 칸은 디스크 형식을
+    ///   그대로 두려고 남긴다(안드로이드 `AlarmSyncStates` 짝).
     func nextLocalSyncState(for record: LocalAlarmRecord) -> AlarmSyncState {
         if record.remoteAlarmId == nil { return .localOnly }
         return .dirty

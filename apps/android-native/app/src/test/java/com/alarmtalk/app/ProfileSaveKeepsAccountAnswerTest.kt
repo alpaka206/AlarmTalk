@@ -287,8 +287,8 @@ class ProfileSaveKeepsAccountAnswerTest {
 
         /** 요청 전 세션 사본을 통째로 저장하는 모양 — `session.copy(user = …)`. 공백·줄바꿈이 어디 끼어도 잡는다. */
         val SESSION_COPY_SAVE = Regex("""\bsession\s*\.\s*copy\s*\(\s*user\b""")
+        // 닉네임 저장(`updateNickname`)은 닉네임과 함께 지웠다(2026-10-29) — 남은 프로필 저장은 계정 설정 올리기뿐이다.
         val PROFILE_SAVES = listOf(
-            "internal fun MainViewModel.updateNickname(",
             "private suspend fun MainViewModel.uploadDynamicPromptSettings(",
         )
     }

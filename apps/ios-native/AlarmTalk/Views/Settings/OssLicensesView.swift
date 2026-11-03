@@ -9,7 +9,8 @@ import SwiftUI
 /// 된다. 의존성을 추가하면 여기도 함께 갱신한다.
 ///
 /// **항목이 적은 건 정상이다**(2026-08-11 전수 확인). 이 타깃이 싣는 건 이게 전부다:
-/// - `project.yml` 의 `packages:` 는 Sentry 하나뿐이고 다른 `.xcframework` 도 없다.
+/// - `project.yml` 의 `packages:` 중 오픈소스는 Sentry 하나다. Google Mobile Ads·UMP(보상형 광고, 2026-10-26)는 Google 의
+///   비공개 SDK 라 넣지 않는다 — 안드로이드 `OssLicensesScreen` 이 play-services 를 빼는 것과 같다.
 /// - 나머지 `import` 는 전부 Apple 프레임워크다(AlarmKit·StoreKit·WidgetKit …).
 /// - 베껴 온 서드파티 소스도 없다(라이선스 헤더 0건).
 /// - 번들 자산은 Pretendard 서체 4개 + **우리가 만든** 인사말 음원뿐이다.

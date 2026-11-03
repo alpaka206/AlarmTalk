@@ -21,6 +21,13 @@ data class UsageEventPayload(
     @SerializedName("voice_profile_id") val voiceProfileId: String? = null,
     @SerializedName("message_id") val messageId: String? = null,
     val detail: String? = null,
+    // ── 2판 공통 필드(`docs/spec/usage-events.md` §7.2). 1판 행은 `schema_version` 1 이고 나머지가 비어 간다. ──
+    @SerializedName("schema_version") val schemaVersion: Int? = null,
+    val platform: String? = null,
+    @SerializedName("app_version") val appVersion: String? = null,
+    @SerializedName("feature_version") val featureVersion: String? = null,
+    @SerializedName("attempt_id") val attemptId: String? = null,
+    val props: com.alarmtalk.app.data.UsageEventProps? = null,
 )
 
 data class UsageEventBatchRequest(val events: List<UsageEventPayload>)

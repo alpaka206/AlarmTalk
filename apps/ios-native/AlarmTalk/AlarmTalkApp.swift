@@ -27,7 +27,6 @@ struct AlarmTalkApp: App {
     /// (Android 단일 holidayCalendarStore parity).
     @StateObject private var holidayStore = HolidayStore()
     @StateObject private var auth = BackgroundDependencies.shared.auth
-    @StateObject private var remoteSync = RemoteAlarmSyncViewModel()
     @StateObject private var voiceStudio = BackgroundDependencies.shared.voiceStudio
     @StateObject private var socialFeatures = BackgroundDependencies.shared.socialFeatures
     /// 기본 목소리 교체가 아직 안 끝났는가 — 차단 화면과 재시도 축(`stockClipLanguageKey`).
@@ -75,7 +74,6 @@ struct AlarmTalkApp: App {
                     .environmentObject(alarmStore)
                     .environmentObject(alarmKit)
                     .environmentObject(auth)
-                    .environmentObject(remoteSync)
                     .environmentObject(voiceStudio)
                     // ⚠ **준비 화면도 프리페처를 깨울 수 있어야 한다**(Codex #703 P2).
                     // 위 `.task(id:)` 는 계정·언어로만 키가 걸려 있어, 이번 세션에
@@ -182,15 +180,9 @@ struct AlarmTalkApp: App {
                         await auth.restoreSession()
                         await alarmKit.startObserving(store: alarmStore)
 
-                        // RemoteAlarmSyncViewModel 의존성 주입.
-                        remoteSync.configure(store: alarmStore, auth: auth)
-
-                        // ⚠ **여기서 동기화 사이클을 돌리지 않는다**(2026-09-29). 로그인된 채 켜지면
-                        //   아래 계정 키 `.task(id: auth.session?.user.id)` 가 `runFullSync()` 와
-                        //   날씨 갱신을 이미 돈다 — 세션이 복원되는 순간 그 키가 바뀌거나(nil → id)
-                        //   처음부터 id 로 시작한다. 예전에는 여기서도 한 번 더 돌아, 콜드 스타트에
-                        //   `/alarm` 요청이 3~4번 나갔고 그동안 토글의 단건 push 가 `isBusy` 가드에 걸려
-                        //   건너뛰어졌다.
+                        // ⚠ **여기서 날씨 갱신을 돌리지 않는다**(2026-09-29). 로그인된 채 켜지면 아래 계정 키
+                        //   `.task(id: auth.session?.user.id)` 가 이미 돈다 — 세션이 복원되는 순간 그 키가 바뀌거나(nil → id)
+                        //   처음부터 id 로 시작한다. (알람을 서버로 올리는 사이클은 2026-10-29 에 없앴다 — 서버 알람 사본을 지웠다.)
 
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
                         // task 종료 시 재예약.
@@ -206,17 +198,9 @@ struct AlarmTalkApp: App {
                     }
                     // 위와 같은 이유로 user.id 로 건다(토큰은 갱신마다 바뀐다).
                     .task(id: auth.session?.user.id) {
-                        // 콜드 스타트(세션 복원)·로그인 직후 즉시 sync. 앱 시작의 사이클은 여기서만
-                        // 돈다 — 위 `.task` 에서 또 돌리지 않는다(전경 복귀·알람 탭 진입은 각자 돈다).
+                        // 콜드 스타트(세션 복원)·로그인 직후 즉시 돈다. 앱 시작의 날씨 갱신·정합화는 여기서만
+                        // 돈다 — 위 `.task` 에서 또 돌리지 않는다(전경 복귀는 따로 돈다).
                         guard auth.session != nil else { return }
-                        // ⚠ **동기화 의존성은 이 태스크가 스스로, 맨 먼저 꽂는다**(코덱스 #823 4차).
-                        //   키체인에 세션이 있으면 `AuthViewModel.init` 이 이미 읽어 두어 이 태스크는
-                        //   **위 `.task` 의 `restoreSession()`·`configure` 를 기다리지 않고** 첫 화면에서
-                        //   곧바로 돈다. `runFullSync()` 는 의존성이 없으면 조용히 돌아가므로, 여기서
-                        //   꽂지 않으면 앱 시작의 유일한 사이클이 빈손으로 끝날 수 있다. `configure` 는
-                        //   멱등이다(이미 꽂혀 있으면 그대로). 알람 탭 진입의 동기화도 이 덕에 대개
-                        //   꽂힌 뒤에 돈다.
-                        remoteSync.configure(store: alarmStore, auth: auth)
                         // ⚠ **계정이 바뀌면 StoreKit 을 다시 읽는다**(2026-08-31 리뷰).
                         // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
                         // 여기서 다시 읽지 않으면 새 계정이 다음 전경 진입 전까지 '모름' 으로
@@ -278,11 +262,9 @@ struct AlarmTalkApp: App {
                         push.start()
                         // ⚠ **알람 저장소가 다 읽힐 때까지 기다린 뒤 돈다**(코덱스 #823 6차). 이
                         //   태스크는 콜드 스타트 첫 화면에서 곧바로 돌아 디스크 로드보다 앞설 수 있다 —
-                        //   로드 전에 돌면 올릴 행이 없어 빈손으로 끝나고, 앱 시작의 사이클은 이것
-                        //   하나라 못 올린 변경이 다음 전경 복귀·탭 진입까지 남는다. 기다려도 막히는 것은
+                        //   로드 전에 돌면 아래 날씨 갱신·정합화가 빈손으로 끝난다. 기다려도 막히는 것은
                         //   이 태스크뿐이다(계정이 바뀌어 접히면 대기도 곧바로 물러선다).
                         await alarmStore.waitUntilLoadedFromDisk(timeout: 30)
-                        await remoteSync.runFullSync()
                         await refreshWeatherVariantsAndReconcile()
                         await storeRecovery
                         BackgroundSyncTask.scheduleNext()
@@ -294,6 +276,10 @@ struct AlarmTalkApp: App {
                     // 안드로이드는 앱 시작마다 `prefetchStockClips()` 를 부른다.
                     .task(id: stockClipLanguageKey) {
                         guard auth.session != nil else { return }
+                        // 받는 순서의 단서 — 저장된 켜진 알람(다음에 울릴 것부터). 회차가 시작할 때 읽는다.
+                        stockClipPrefetcher.savedTargets = { [alarmStore, auth] in
+                            StockClipPrefetcher.savedTargets(from: alarmStore.alarms, userID: auth.session?.user.id)
+                        }
                         stockClipPrefetcher.start(
                             session: auth.session,
                             ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
@@ -307,7 +293,17 @@ struct AlarmTalkApp: App {
                     }
                     .task(id: auth.session?.user.id) {
                         stockClipPrefetcher.cancel()
-                        remoteSync.clearUserScopedRemoteState()
+                        // 앞 계정에 넘겨 둔 백그라운드 다운로드를 버린다(로그아웃·전환·탈퇴). 같은 계정의 콜드 스타트는 그대로 둔다.
+                        BackgroundClipDownloader.shared.accountChanged(to: auth.session?.user.id)
+                        // 받은 추가 음성팩 목록도 계정 것이다 — 선다운로드보다 먼저 갈아 끼운다(그 회차의 팩 단계가 이 목록을 본다).
+                        // '받기' 는 이 프리페처 회차를 깨운다(`docs/spec/voice-packs.md` §7 — 새 프리페처를 만들지 않는다).
+                        VoicePackStore.shared.activate(userID: auth.session?.user.id)
+                        VoicePackStore.shared.wakePrefetch = {
+                            stockClipPrefetcher.start(
+                                session: auth.session,
+                                ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+                            )
+                        }
                         voiceStudio.clearUserScopedRemoteState(preservingManifestFor: auth.session?.user.id)
                         socialFeatures.restoreAccessSnapshot(session: auth.session)
                         // 이 시점의 내 목소리 목록은 대개 비어 있다(방금 지웠고 서버 응답 전) —
@@ -323,11 +319,6 @@ struct AlarmTalkApp: App {
                     //   내내 안 받아진다(다음 `start` 는 포그라운드 복귀·언어 변경뿐). `start` 는
                     //   대상이 넓어질 때만 도는 회차를 끊고 다시 시작한다(`shouldRestart`).
                     //   안드로이드는 워커가 `listVoiceProfiles` 로 대상을 스스로 정한다.
-                    // 동의를 마치면 그동안 403 으로 막혔던 동기화를 곧바로 다시 돈다(`AuthViewModel.consentSubmitGeneration`).
-                    .onChange(of: auth.consentSubmitGeneration) { _, _ in
-                        guard auth.session != nil else { return }
-                        Task { await remoteSync.runFullSync() }
-                    }
                     .onChange(of: voiceStudio.ownedVoiceProfileIDs) { _, owned in
                         guard auth.session != nil, !owned.isEmpty else { return }
                         stockClipPrefetcher.start(session: auth.session, ownedVoiceProfileIDs: owned)
@@ -547,6 +538,10 @@ struct AlarmTalkApp: App {
                 // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
                 // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.
                 Task {
+                    // ⚠ **백그라운드로 넘겨 둔 받기를 먼저 거둔다**(「앱을 닫아도 받는다」). 앞에 있는 동안은 아래 보충
+                    //   (포그라운드 프리페처)이 받는다 — 캐시를 다시 세어 빠진 것만 받으므로 백그라운드에서 이미 받은 것은 건너뛴다.
+                    //   남겨 두면 같은 클립을 두 곳이 받는다.
+                    await BackgroundClipDownloader.shared.cancelAll(forgetBatch: false)
                     guard auth.session != nil else { return }
                     // ⚠ **재바인딩도 여기서 한 번 더 돈다**(2026-09-03).
                     //   예전에는 트리거가 콜드 스타트(`.task(id: stockClipLanguageKey)`)
@@ -558,6 +553,9 @@ struct AlarmTalkApp: App {
                     //   iOS 만 한 번이었다. 전부 멱등이라 여기서 또 돌아도 안전하다.
                     await rebindStockClipsIfNeeded()
                     guard auth.session != nil else { return }
+                    // 게시 기한이 지난 추가 음성팩은 네트워크 없이 받아 둔 기한으로 미나로 대체한다(`docs/spec/voice-packs.md` §5).
+                    // 예약은 `scheduleReconcileRevision` 태스크가 다시 건다.
+                    VoicePackStore.shared.retireExpired(alarmStore: alarmStore, voiceStudio: voiceStudio)
                     // ⚠ **보충은 재바인딩 뒤에 시작한다**(2026-09-29 효율 감사 M1 — iOS). 재바인딩은
                     //   매니페스트를 **강제로** 받아 공개하므로(의도), 그 뒤에 도는 선다운로드는
                     //   신선도 창(`StockClipPrefetcher.manifestFreshnessWindow`)으로 그 공개본을 쓴다.
@@ -587,7 +585,6 @@ struct AlarmTalkApp: App {
                     // 비어 화면이 뜨지 않는다(「한 번 받은 동의는 다시 묻지 않는다」).
                     await auth.checkConsentStatus()
                     guard auth.session != nil else { return }
-                    await remoteSync.runFullSync()
                     await refreshWeatherVariantsAndReconcile()
                 }
                 // Phase 4-D1: 백엔드 entitlement 동기화가 직전에 실패했을 수 있다.
@@ -604,9 +601,24 @@ struct AlarmTalkApp: App {
             case .background:
                 // 시스템이 task 를 깨울 수 있도록 다음 사이클 재예약.
                 BackgroundSyncTask.scheduleNext()
+                handOffStockClipsToBackground()
             default:
                 break
             }
+        }
+    }
+
+    /// 아직 빠진 스톡 클립을 **OS 백그라운드 다운로드**로 넘긴다 — 앱을 닫아도 iOS 가 이어 받는다
+    /// (`StockClipPrefetcher.handOffToBackground`, 스펙 voice-and-message 「앱을 닫아도 받는다」).
+    /// 넘기는 일(디스크의 매니페스트를 읽고 캐시를 세는 몇백 ms)이 앱이 멈추기 전에 끝나도록 백그라운드 실행 시간을 빌린다.
+    private func handOffStockClipsToBackground() {
+        guard let session = auth.session else { return }
+        let grant = BackgroundExecutionGrant(name: "stock-clip-handoff")
+        let prefetcher = stockClipPrefetcher
+        let owned = voiceStudio.ownedVoiceProfileIDs
+        Task {
+            await prefetcher.handOffToBackground(session: session, ownedVoiceProfileIDs: owned)
+            grant.end()
         }
     }
 
@@ -908,6 +920,9 @@ struct AlarmTalkApp: App {
         _ = await weather.refreshDue(token: session.token, ownerUserId: session.user.id)
         // 이 대기 뒤에도 본다 — 아래 재조정이 남의 계정 위에서 돌면 안 된다.
         guard auth.session?.user.id == session.user.id else { return }
+        // 응원 다양하게 — 이번 회차의 문구를 아직 고르지 않은 알람을 골라 둔다(스펙 voice-and-message §5-4 「플랫폼 차이」).
+        // AlarmKit 은 예약할 때 받은 소리만 울리므로 앱 복귀가 다음 변주를 준비할 기회다. 바뀐 알람은 아래 재조정이 다시 건다.
+        alarmStore.prepareCheerSelections()
         // ⚠ **여기가 마지막 관문이다.** 위 두 갱신은 행의 음원을 갈아 끼우는데, 그것만으로는
         // OS 가 예약 때 받아 간 옛 파일이 그대로 울린다(동적 문구 알람은 매일 새 문구를
         // 만들어 놓고 어제 문구로 울었다 — 서버 호출과 월 한도는 매번 차감하면서).
@@ -1166,5 +1181,24 @@ private struct PreferredColorSchemeIfSet: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// `UIApplication.beginBackgroundTask` 한 번 — 끝내는 길(일을 마침·시간 만료)이 둘이라 **한 번만** 끝내게 묶는다.
+/// 시간 만료 핸들러는 UIKit 이 메인 스레드에서 부른다(문서) — 그래서 이 타입은 메인 액터다.
+@MainActor
+private final class BackgroundExecutionGrant {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    init(name: String) {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
     }
 }

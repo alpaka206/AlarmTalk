@@ -264,7 +264,7 @@ internal fun AuthScreen(
     onClearLoginError: () -> Unit = {},
     onBack: () -> Unit,
     onLogin: (String, String) -> Unit,
-    onRegister: (String, String, String, String) -> Unit,
+    onRegister: (String, String, String) -> Unit,
     onRequestEmailVerification: (String) -> Unit,
     onConfirmEmailVerification: (String, String) -> Unit,
     onSwitchMode: () -> Unit,
@@ -274,7 +274,6 @@ internal fun AuthScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") }
     var emailCode by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
@@ -326,8 +325,6 @@ internal fun AuthScreen(
     // (첫 구성에서도 한 번 돈다 — 그때 칸은 어차피 비어 있다.)
     LaunchedEffect(codeFieldClearTick) { emailCode = "" }
 
-    // 상한을 넘겨 치려 했는지. 값 자체는 30자에서 잘리므로 값만으로는 알 수 없다.
-    var nameTooLong by remember { mutableStateOf(false) }
     // 이메일을 보내는 버튼을 눌렀는데 형식에 안 맞았는가 — **누른 뒤에만** 뜬다.
     // 치는 도중에 빨갛게 만들면 아직 다 치지도 않은 주소를 틀렸다고 하는 셈이다.
     // 서버도 같은 판정을 `AUTH_EMAIL_INVALID` 로 돌려주므로 문구는 한 벌뿐이다.
@@ -344,12 +341,11 @@ internal fun AuthScreen(
     // ⚠ **형식으로 버튼을 죽이지 않는다 — 두 모드 모두**(2026-09-21 리뷰).
     // 가입 쪽에만 `emailLooksValid` 가 남아 있어서, 로그인은 눌러서 이유를 듣는데
     // 가입은 같은 주소로 버튼이 죽어 있었다. 잠그는 것은 **보낼 것이 없을 때**뿐이고
-    // (빈 이름·미인증·비밀번호 규칙), 형식은 누른 뒤에 이메일 칸 아래로 말한다.
+    // (미인증·비밀번호 규칙), 형식은 누른 뒤에 이메일 칸 아래로 말한다.
     val canSubmit = if (mode == AuthMode.Login) {
         canSubmitLogin(email, password)
     } else {
-        name.isNotBlank() &&
-            canRequestEmailCode(email) &&
+        canRequestEmailCode(email) &&
             isEmailVerified &&
             passwordPolicyValid &&
             passwordMatches
@@ -402,40 +398,6 @@ internal fun AuthScreen(
                     text = authNotice,
                     style = MaterialTheme.typography.bodyMedium,
                     color = AuthNoticeText,
-                )
-            }
-
-            if (mode == AuthMode.Register) {
-                AuthTextField(
-                    label = stringResource(R.string.auth_label_name),
-                    value = name,
-                    // 서버(`DisplayNameSchema`)와 같은 규칙을 앱에서 먼저 태운다 — 제로폭·
-                    // 양방향 문자가 남으면 isNotBlank() 는 통과하는데 서버에서 정리하면 빈 값이
-                    // 되어 **이메일 인증까지 마친 뒤에야** 400 이 난다.
-                    //
-                    // 30자에서 막되, **말없이 막지 않는다.** 넘겨 치면 그 순간 아래에
-                    // 이유가 뜨고(글자는 들어가지 않는다), 지워서 여유가 생기면 사라진다.
-                    // 항상 켜진 카운터(7/30)는 넘기 전까진 알려 줄 게 없어 두지 않는다.
-                    onValueChange = { raw ->
-                        val cleaned = sanitizeDisplayName(raw)
-                        // 30자 **정확히** 일 때는 플래그를 건드리지 않는다 — 잘라서 돌려준
-                        // 값을 IME 가 되돌려 보내면 방금 켠 경고가 곧바로 꺼진다.
-                        if (cleaned.length > DisplayNameMaxLength) {
-                            nameTooLong = true
-                        } else if (cleaned.length < DisplayNameMaxLength) {
-                            nameTooLong = false
-                        }
-                        name = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
-                    },
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Next,
-                    enabled = !busy,
-                    isError = nameTooLong,
-                    supportingText = if (nameTooLong) {
-                        { Text(stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength)) }
-                    } else {
-                        null
-                    },
                 )
             }
 
@@ -628,7 +590,7 @@ internal fun AuthScreen(
                     when (authEmailSubmitOutcome(email)) {
                         AuthEmailSubmitOutcome.ShowEmailFormatError -> emailFormatError = true
                         AuthEmailSubmitOutcome.Submit -> if (mode == AuthMode.Register) {
-                            onRegister(email, password, name, emailCode)
+                            onRegister(email, password, emailCode)
                         } else {
                             onLogin(email, password)
                         }

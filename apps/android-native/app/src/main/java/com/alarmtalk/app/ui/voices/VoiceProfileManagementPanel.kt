@@ -82,6 +82,10 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.data.MonoPcmNormalizer
+import com.alarmtalk.app.data.RecordingQualityAnalyzer
+import com.alarmtalk.app.data.RecordingResult
+import com.alarmtalk.app.data.diagnostics
 import com.alarmtalk.app.data.VoiceProfileAudioLimits
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.data.InMemoryAudioDataSource
@@ -375,6 +379,8 @@ internal fun VoiceProfileManagementPanel(
     // 삭제가 아니다. 남은 초안은 서버가 거둔다). 기본값을 두지 않는다 — 빠뜨리면 초안이 버려지지 않는다.
     onDiscardVoiceDraftQuietly: (String) -> Unit,
     onOpenBilling: () -> Unit,
+    /** 행 메뉴의 '이 목소리로 새 알람 만들기'(2026-10-26). 기존 알람·전역 기본값은 건드리지 않는다. */
+    onCreateAlarmWithVoice: ((String) -> Unit)? = null,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     // ⚠ 유료 안내 모달의 코드 입력(`onRegisterCode`)은 2026-10-14 에 지웠다 — 되살리지 말 것
@@ -408,6 +414,8 @@ internal fun VoiceProfileManagementPanel(
     onVoiceRegistrationFailureShown: () -> Unit = {},
     // 등록 창이 열리고 닫히는 것을 뷰모델에 알린다 — 닫힌 뒤에 온 실패는 스낵바로 가야 한다.
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
+    // 기본 목소리 아래 '추가 팩' 섹션(`docs/spec/voice-packs.md` §7).
+    voicePacks: VoicePackPanelState = VoicePackPanelState(),
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -418,6 +426,8 @@ internal fun VoiceProfileManagementPanel(
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
     var profileName by remember { mutableStateOf("") }
+    // 이름 상한을 넘겨 쳤다(`boundedNameInput`) — 등록 창의 이름 칸 아래에 이유를 띄운다.
+    var profileNameTooLong by remember { mutableStateOf(false) }
     var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
     // 인라인 동의 체크. 등록 요청이 나가기 전 단계에서만 의미가 있으므로 다이얼로그를 닫을 때
@@ -443,6 +453,11 @@ internal fun VoiceProfileManagementPanel(
     // 하한(12초) 미달 녹음이 있는지. 실제 길이는 카드에 남기되 유효한 완료본처럼
     // 재생·다시 녹음을 열지 않고, 카드와 하단 버튼이 같은 이유를 말한다.
     var recordTooShort by remember { mutableStateOf(false) }
+    // 방금 멈춘 녹음의 품질 판정이 도는 중인가(디코딩 — 길어도 1초 남짓). 그동안 `다음` 을 잠근다.
+    var recordingAnalyzing by remember { mutableStateOf(false) }
+    // 권장 안내·끼어듦·복구한 녹음 — '그래도 쓰기' / '다시 녹음' 을 묻는 알럿(스펙 voice-and-message §4-1
+    // 「녹음 품질 판정」). 확정 사유는 묻지 않고 거절 줄(`rerecordReason`)에 쓴다.
+    var recordingReview by remember { mutableStateOf<RecordingReview.Ask?>(null) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
     // 실제 마이크 입력 진폭(0~1) — 녹음 카드의 미니 레벨 바가 소비한다.
     var recordingLevel by remember { mutableStateOf(0f) }
@@ -476,6 +491,7 @@ internal fun VoiceProfileManagementPanel(
     var systemSectionExpanded by remember { mutableStateOf(true) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
+    var renameNameTooLong by remember { mutableStateOf(false) }
     var renameSubmitAttempted by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -716,18 +732,60 @@ internal fun VoiceProfileManagementPanel(
                     player.release()
                     return@runCatching
                 }
+                var sample: com.alarmtalk.app.data.SamplePlayback? = null
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
+                        // 끝까지 들었다(`sample_completed`). 멈추면 이 콜백이 오지 않는다.
+                        sample?.completed()
                         it.release()
                         if (mediaPlayer === it) mediaPlayer = null
                         if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
                     }
                     start()
                 }
+                sample = com.alarmtalk.app.data.SamplePlayback.start(context, voiceId, surface = "voices")
             }.onFailure { error ->
                 AlarmTalkLog.reportError(failureLog, error)
                 if (greetingPreviewRequestId == requestId) {
                     if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
+                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
+                }
+            }
+        }
+    }
+
+    // 추가 팩 미리듣기 샘플 — 인사말 미리듣기와 같은 플레이어·같은 '트는 중' 표시를 쓴다(겹쳐 울리지 않게).
+    // 받기 전에도 샘플 클립 하나만 받아 캐시한다(`MainViewModel.ensureVoicePackSample`).
+    fun playVoicePackSample(summary: com.alarmtalk.app.network.VoicePackSummary) {
+        if (playingGreetingVoiceId == summary.voiceId) {
+            stopMediaPreview()
+            return
+        }
+        val requestId = greetingPreviewRequestId + 1
+        greetingPreviewRequestId = requestId
+        scope.launch {
+            stopMediaPreview(invalidateGreetingPreview = false)
+            playingGreetingVoiceId = summary.voiceId
+            runCatching {
+                val cached = voicePacks.ensureSample(summary)
+                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
+                    ?: error("Failed to create voice pack sample player.")
+                if (greetingPreviewRequestId != requestId) {
+                    player.release()
+                    return@runCatching
+                }
+                mediaPlayer = player.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                        if (playingGreetingVoiceId == summary.voiceId) playingGreetingVoiceId = null
+                    }
+                    start()
+                }
+            }.onFailure { error ->
+                AlarmTalkLog.reportError("Failed to play voice pack sample", error)
+                if (greetingPreviewRequestId == requestId) {
+                    if (playingGreetingVoiceId == summary.voiceId) playingGreetingVoiceId = null
                     localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
                 }
             }
@@ -751,14 +809,17 @@ internal fun VoiceProfileManagementPanel(
                 return
             }
             playingGreetingVoiceId = profile.id
+            var sample: com.alarmtalk.app.data.SamplePlayback? = null
             mediaPlayer = player.apply {
                 setOnCompletionListener {
+                    sample?.completed()
                     it.release()
                     if (mediaPlayer === it) mediaPlayer = null
                     if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
                 }
                 start()
             }
+            sample = com.alarmtalk.app.data.SamplePlayback.start(context, profile.id, surface = "voices")
             return
         }
         playGreetingClip(profile.id, failureLog = "Failed to play greeting preview")
@@ -1270,17 +1331,71 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // 녹음한 클립을 버린다 — '다시 녹음'(카드·품질 알럿)과 확정 거절이 같은 길을 쓴다.
+    fun discardRecordedAudio() {
+        stopMediaPreview()
+        val discarded = selectedAudio
+        selectedAudio = null
+        recordingElapsedMillis = 0L
+        recordTooShort = false
+        recordingReview = null
+        discarded?.cacheKey?.let { cacheKey ->
+            scope.launch(Dispatchers.IO) { audioStore.deleteCachedAudio(cacheKey) }
+        }
+    }
+
+    // 멈춘 녹음을 기기에서 판정한다 — 디코딩 → 정규화(16 kHz 모노) → 기본 신호 검사. 진단에는 수치만 남긴다.
+    // ⚠ VAD 는 꽂혀 있지 않다(기본 신호 검사) — 화면 어디에서도 'VAD 통과' 라고 말하지 않는다.
+    fun reviewRecordedAudio(result: RecordingResult) {
+        recordingAnalyzing = true
+        scope.launch {
+            val verdict = withContext(Dispatchers.Default) {
+                val decoded = VoiceAudioDecoder.decodeMono(
+                    context = appContext,
+                    uri = Uri.parse(result.audio.localAudioUri),
+                    maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS + RECORDING_REVIEW_DECODE_SLACK_MILLIS,
+                )
+                val samples = decoded?.let { MonoPcmNormalizer.toAnalysisRate(it.samples, it.sampleRate) }
+                RecordingQualityAnalyzer.analyze(
+                    samples = samples,
+                    minDurationMillis = VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
+                )
+            }
+            recordingAnalyzing = false
+            // 그사이 버렸거나 다시 녹음했다 — 지난 녹음의 판정을 새 상태에 덮지 않는다.
+            if (selectedAudio?.cacheKey != result.audio.cacheKey) return@launch
+            AlarmTalkLog.breadcrumb(
+                category = "recording_quality",
+                event = "Voice registration recording reviewed",
+                data = verdict.diagnostics() + mapOf(
+                    "interrupted" to (result.interruption != null),
+                    "recovered" to result.recoveredAfterStopFailure,
+                ),
+            )
+            when (val review = reviewRecording(verdict, result.recoveredAfterStopFailure, result.interruption)) {
+                RecordingReview.Accept -> Unit
+                is RecordingReview.Reject -> {
+                    discardRecordedAudio()
+                    rerecordReason = context.getString(recordingRejectionMessageRes(review.reason))
+                }
+                is RecordingReview.Ask -> recordingReview = review
+            }
+        }
+    }
+
     fun stopRecording() {
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { recorder.stop() }
-            }.onSuccess { audio ->
+            }.onSuccess { result ->
                 isRecording = false
+                val audio = result.audio
                 val duration = audio.durationMillis
                 val error = voiceProfileDurationError(context, duration)
                 if (error == null) {
                     recordTooShort = false
                     applySelectedAudio(audio)
+                    reviewRecordedAudio(result)
                 } else {
                     if (duration != null && duration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
                         // 실제 시간은 보여 주되 완료본처럼 재생/되돌리기를 열지 않는다.
@@ -1288,7 +1403,12 @@ internal fun VoiceProfileManagementPanel(
                         selectedAudio = audio
                         recordingElapsedMillis = duration
                         recordTooShort = true
-                        localMessage = null
+                        // 끼어들어 멈춘 짧은 녹음이면 왜 멈췄는지 말한다 — 사용자가 멈춘 것이 아니다.
+                        localMessage = if (result.interruption != null) {
+                            context.getString(R.string.recording_interrupted_short)
+                        } else {
+                            null
+                        }
                     } else {
                         selectedAudio = null
                         localMessage = error
@@ -1296,8 +1416,10 @@ internal fun VoiceProfileManagementPanel(
                 }
             }.onFailure { error ->
                 isRecording = false
+                recordingElapsedMillis = 0L
                 AlarmTalkLog.reportError("Failed to stop voice profile recording", error)
-                localMessage = userFacingError(error, context.getString(R.string.voices_recording_stop_failed))
+                // 실패한 파일은 녹음기가 지웠다 — 업로드할 것이 없다. 이유는 녹음 카드 바로 아래에 쓴다(다시 녹음할 자리).
+                rerecordReason = userFacingError(error, context.getString(R.string.voices_recording_stop_failed))
             }
         }
     }
@@ -1333,6 +1455,8 @@ internal fun VoiceProfileManagementPanel(
         recordingElapsedMillis = 0L
         recordingLevel = 0f
         recordTooShort = false
+        recordingReview = null
+        recordingAnalyzing = false
         stopMediaPreview()
         selectedFileUri = null
         selectedFileDurationMillis = null
@@ -1341,6 +1465,7 @@ internal fun VoiceProfileManagementPanel(
         createPreparing = false
         createSubmitAttempted = false
         profileName = ""
+        profileNameTooLong = false
         profileVoiceLanguage = defaultVoiceLanguage
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
@@ -1398,6 +1523,7 @@ internal fun VoiceProfileManagementPanel(
     // 계정의 일반 실패는 그대로 다시 시도할 수 있어야 한다).
     fun enterCreatingStep() {
         if (recorder.isRecording) recorder.cancel()
+        recordingReview = null
         isRecording = false
         recordingElapsedMillis = 0L
         recordingLevel = 0f
@@ -1613,7 +1739,8 @@ internal fun VoiceProfileManagementPanel(
                 recordingElapsedMillis = (System.currentTimeMillis() - startedAt)
                     .coerceAtMost(VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
                 recordingLevel = (recorder.maxAmplitude().toFloat() / 32767f).coerceIn(0f, 1f)
-                if (recordingElapsedMillis >= VoiceProfileAudioLimits.MAX_DURATION_MILLIS) {
+                // 전화·다른 앱이 오디오를 가져갔다 — 그때까지의 녹음을 남기고 멈춘다(녹음 복구).
+                if (recordingElapsedMillis >= VoiceProfileAudioLimits.MAX_DURATION_MILLIS || recorder.interruption != null) {
                     stopRecording()
                     break
                 }
@@ -2048,9 +2175,11 @@ internal fun VoiceProfileManagementPanel(
                             onRename = {
                                 renameTarget = profile
                                 renameName = profile.name
+                                renameNameTooLong = false
                                 renameSubmitAttempted = false
                             },
                             onDelete = { deleteTarget = profile },
+                            onCreateAlarm = onCreateAlarmWithVoice?.let { create -> { create(profile.id) } },
                             readiness = readiness,
                             onRetryPrerender = { retryPrerender(profile.id) },
                             retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
@@ -2067,7 +2196,7 @@ internal fun VoiceProfileManagementPanel(
         // 내 목소리가 하나도 없어도 이 섹션은 항상 나온다.
         if (systemVoices.isNotEmpty()) {
             // 기본 목소리 받기 진행은 **헤더 옆**에 둔다(2026-09-17 지시, iOS 와 같은 자리).
-            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenDefaultVoicesReady`) 그 이유가
+            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenAlarmVoiceReady`) 그 이유가
             // 섹션을 접어 둬도 보여야 한다 — 목록 아래에 두면 접었을 때 사라진다.
             val downloadProgress = voicePrefetchProgress
                 ?.takeIf { (done, total) -> total > 0 && done < total }
@@ -2109,6 +2238,21 @@ internal fun VoiceProfileManagementPanel(
             }
         }
         // 기본 목소리 받기 진행은 위 헤더 옆으로 옮겼다(2026-09-17).
+
+        // 추가 팩은 기본 목소리 **아래**다(`docs/spec/voice-packs.md` §7). 기본 4종 받기·관문과 섞지 않는다.
+        // 지금은 숨긴다(`VOICE_PACKS_VISIBLE`).
+        if (com.alarmtalk.app.data.VOICE_PACKS_VISIBLE) VoicePackSection(
+            catalog = voicePacks.catalog,
+            held = voicePacks.held,
+            progress = voicePacks.progress,
+            catalogLoaded = voicePacks.catalogLoaded,
+            catalogFailed = voicePacks.catalogFailed,
+            playingVoiceId = playingGreetingVoiceId,
+            onPlaySample = { summary -> playVoicePackSample(summary) },
+            onDownload = { packId -> voicePacks.onDownload(packId) },
+            onDelete = { packId -> voicePacks.onDelete(packId) },
+            countAlarmsUsing = { voiceId -> voicePacks.countAlarmsUsing(voiceId) },
+        )
     }
 
     // 이번에 등록할 목소리의 권리는 입구에서 확인한다. 법정 민감 동의는 기존 업로드 경로가 따로 받는다.
@@ -2362,18 +2506,7 @@ internal fun VoiceProfileManagementPanel(
                                             ?.takeIf { it >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS },
                                         isRecordedPreviewActive = recordPreviewPlaying,
                                         onPreviewRecording = ::playRecordedPreview,
-                                        onRedoRecording = {
-                                            stopMediaPreview()
-                                            val discarded = selectedAudio
-                                            selectedAudio = null
-                                            recordingElapsedMillis = 0L
-                                            recordTooShort = false
-                                            discarded?.cacheKey?.let { cacheKey ->
-                                                scope.launch(Dispatchers.IO) {
-                                                    audioStore.deleteCachedAudio(cacheKey)
-                                                }
-                                            }
-                                        },
+                                        onRedoRecording = { discardRecordedAudio() },
                                     )
                                     rerecordReason?.let { reason -> RerecordReasonLine(reason) }
                                     // 곁에 없는 사람의 목소리를 등록하려는 경우가 흔하다.
@@ -2439,18 +2572,26 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Details -> {
                                 OutlinedTextField(
                                     value = profileName,
-                                    onValueChange = { profileName = sanitizeDisplayName(it, maxLength = VoiceNameMaxLength) },
+                                    onValueChange = { raw ->
+                                        val (bounded, tooLong) = boundedNameInput(raw, VoiceNameMaxLength, profileNameTooLong)
+                                        profileName = bounded
+                                        profileNameTooLong = tooLong
+                                    },
                                     label = { Text(stringResource(R.string.voices_name_label)) },
                                     placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
                                     singleLine = true,
-                                    isError = nameRequiredError,
+                                    isError = nameRequiredError || profileNameTooLong,
                                     // supportingText 람다를 항상 넘기면 에러가 없어도 그 자리(약 16dp)가
                                     // 예약돼 이름↔관계 간격만 넓어진다 — 에러일 때만 붙여 3개 필드의
                                     // 간격(부모 spacedBy 14dp)을 균일하게 유지한다.
-                                    supportingText = if (nameRequiredError) {
-                                        { Text(stringResource(R.string.voices_required_field)) }
-                                    } else {
-                                        null
+                                    supportingText = when {
+                                        nameRequiredError -> {
+                                            { Text(stringResource(R.string.voices_required_field)) }
+                                        }
+                                        profileNameTooLong -> {
+                                            { Text(stringResource(R.string.voices_name_too_long, VoiceNameMaxLength)) }
+                                        }
+                                        else -> null
                                     },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
@@ -2707,6 +2848,7 @@ internal fun VoiceProfileManagementPanel(
                     }
 
                     val canAdvanceFromSource = !voiceProfileBusy && !isRecording && !createPreparing &&
+                        !(inputMode == VoiceCaptureMode.Record && recordingAnalyzing) &&
                         (canSubmitRecord || canSubmitSingleFile)
                     // 관계·호칭은 선택 입력 — 이름만 있으면 등록으로 진행할 수 있다.
                     val identityComplete = profileName.trim().isNotBlank()
@@ -2871,6 +3013,27 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // 방금 멈춘 녹음의 권장 안내(작음·무음 많음·클리핑)나 제대로 끝나지 않은 녹음 — 거절하지 않고 묻는다.
+    // 바깥 탭·뒤로가기는 '그래도 쓰기' 와 같다(녹음을 지우는 쪽은 버튼으로만 — 실수로 잃지 않게).
+    recordingReview?.let { review ->
+        IosAlertDialog(
+            title = stringResource(R.string.recording_quality_title),
+            message = recordingReviewMessage(context, review),
+            onDismiss = { recordingReview = null },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.common_voice_record_again),
+                    onClick = { discardRecordedAudio() },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.recording_quality_use_anyway),
+                    emphasized = true,
+                    onClick = { recordingReview = null },
+                ),
+            ),
+        )
+    }
+
     // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 — 나가면 임시 목소리(초안)가 삭제됨을 경고.
     if (draftExitWarningOpen) {
         val exitDraftId = (confirmNewVoice ?: pendingVoiceDraft)?.id
@@ -2927,7 +3090,12 @@ internal fun VoiceProfileManagementPanel(
             description = stringResource(R.string.voices_edit_name_desc),
             name = renameName,
             nameError = renameNameError,
-            onNameChange = { renameName = sanitizeDisplayName(it, maxLength = VoiceNameMaxLength) },
+            onNameChange = { raw ->
+                val (bounded, tooLong) = boundedNameInput(raw, VoiceNameMaxLength, renameNameTooLong)
+                renameName = bounded
+                renameNameTooLong = tooLong
+            },
+            nameTooLong = renameNameTooLong,
             onDismiss = { renameTarget = null },
             onConfirm = {
                 renameSubmitAttempted = true

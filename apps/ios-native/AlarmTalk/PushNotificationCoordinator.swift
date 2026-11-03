@@ -361,6 +361,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         AlarmTalkLog.startCrashReporting()
+        // 앱을 켜 둔 동안 온 알림도 배너로 보인다(아래 `willPresent`). 시스템은 델리게이트가 없으면 전경 알림을 버린다.
+        UNUserNotificationCenter.current().delegate = self
         // ⚠ **BGTask 핸들러는 launch 가 끝나기 전에 등록돼 있어야 한다.**
         // 뷰의 `.task` 에서 하면 이 콜백이 반환한 뒤라 늦고, 시스템이 백그라운드
         // 새로고침으로 앱을 깨운 경우에는 scene 이 안 붙어 아예 안 돌 수도 있다
@@ -764,15 +766,46 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         }
 
         BackgroundSyncTask.register(
-            // 회차 직렬화는 타입 전역(`serialGate`)이라 화면 쪽 인스턴스와 겹쳐도 차례를 지킨다.
-            push: RemoteAlarmPushSync(store: deps.alarmStore, auth: deps.auth),
             socialFeatures: deps.socialFeatures,
             store: deps.alarmStore,
             alarmKit: deps.alarmKit,
             // 주기 사이클이 목소리 접근권을 다시 받아야 한다(푸시를 놓쳤을 때의 그물).
             voiceStudio: deps.voiceStudio
         )
+        // ⚠ **백그라운드로 받은 클립을 예약에 반영하는 훅도 launch 에서 꽂는다** — iOS 가 다운로드 완료를 배달하려고 앱을
+        //   다시 띄우면 scene 이 없어 화면의 `.task` 가 돌지 않는다(위 등록·실행기와 같은 이유). 새 재조정 경로를 만들지 않고
+        //   기존 리컨사일러를 부른다 — 캐시를 보고 어긋난 예약만 다시 건다(`docs/spec/voice-and-message.md` 「앱을 닫아도 받는다」).
+        BackgroundClipDownloader.shared.onClipsCached = { @Sendable in
+            await Self.reconcileAfterBackgroundClips()
+        }
         return true
+    }
+
+    @MainActor
+    private static func reconcileAfterBackgroundClips() async {
+        let deps = BackgroundDependencies.shared
+        await deps.alarmStore.waitUntilLoadedFromDisk()
+        guard deps.alarmStore.hasLoadedFromDisk, let ownerID = deps.auth.session?.user.id else { return }
+        _ = await AlarmScheduleReconciler.reconcile(store: deps.alarmStore, alarmKit: deps.alarmKit, ownerUserId: ownerID)
+        // ⚠ **새 예약 손잡이가 디스크에 남은 뒤에 끝낸다**(Codex #972 P1). `schedule` 의 `markScheduled` 는 비동기 저장만
+        //   띄운다 — 곧바로 완료 핸들러를 부르면 iOS 가 그 전에 앱을 멈춰, 다음 실행이 취소된 옛 손잡이를 읽고 새 예약은 관리
+        //   밖으로 떨어진다. 다른 백그라운드 실행(`BackgroundDependencies` 의 교체 확정)과 같은 이유로 동기 저장한다.
+        if !deps.alarmStore.saveNow() {
+            AlarmTalkLog.logger.warning("Background clip reconcile could not flush alarm store")
+        }
+    }
+
+    /// 앱이 꺼져 있거나 멈춘 동안 **스톡 클립 백그라운드 다운로드**가 끝나면 iOS 가 앱을 (다시) 띄워 이걸 부른다. 같은 이름의
+    /// 세션을 다시 만들어 이벤트를 받고, 다 받으면 [completionHandler] 를 메인에서 부른다(`BackgroundClipDownloader`).
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        if !BackgroundClipDownloader.shared.handleEvents(forSessionIdentifier: identifier, completionHandler: completionHandler) {
+            // 우리 세션이 아니다 — 받을 것이 없으니 곧바로 끝났다고 알린다.
+            completionHandler()
+        }
     }
 
     func application(
@@ -796,5 +829,23 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         guard let coordinator = Self.coordinator else { return .noData }
         let changed = await coordinator.handle(userInfo: userInfo)
         return changed ? .newData : .noData
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+
+extension PushAppDelegate: UNUserNotificationCenterDelegate {
+    /// **앱을 켜 둔 동안 온 알림도 보인다**(2026-10-29 두 앱 비교). 델리게이트가 없으면 iOS 는 전경 알림을 조용히 버린다 — 결제
+    /// 보류(`billing_hold`)·운영 안내가 앱을 쓰는 중에 오면 아무 데도 안 떴다. 안드로이드는 전경에서도 알림을 올린다
+    /// (`fcm/AlarmTalkMessagingService.kt`). 무음 푸시(`plan_changed` 등)는 이 콜백을 부르지 않는다.
+    ///
+    /// ⚠ **`nonisolated` 로 둔다.** 시스템이 고른 큐에서 부를 수 있다 — 메인 액터를 물려받으면 진입 검사가 트랩한다
+    /// (CLAUDE.md 「시스템이 큐를 정하는 콜백에 메인 액터 클로저를 넘기지 않는다」). 상태를 건드리지 않고 곧바로 답한다.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
     }
 }

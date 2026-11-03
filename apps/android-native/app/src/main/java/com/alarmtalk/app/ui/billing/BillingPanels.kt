@@ -54,6 +54,8 @@ internal fun SubscriptionPanel(
     ///
     /// 스토어 값이 권위이며, 아직 못 받았을 때만 백엔드의 한국 가격표와 같은 폴백을 쓴다.
     planPrices: Map<String, String>,
+    /** 플랜 key → 무료 체험 기간(ISO 8601 `P1M`). 있으면 그 카드에 체험 조건을 말한다. */
+    planTrials: Map<String, String> = emptyMap(),
     onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onRestorePurchases: () -> Unit,
@@ -70,6 +72,11 @@ internal fun SubscriptionPanel(
      * 열려 있다(개인 카드의 결제 버튼이 남는다).
      */
     personalPromo: PersonalPromo? = null,
+    /**
+     * 관리자 기간 지급의 끝(`plan_grant.ends_at`, 배타). 지금 지급 중이면 프로모와 같은 자리에 "플러스 이용 중 · …까지" 를
+     * 말한다 — 구독처럼 그리지 않는다(해지 버튼은 산 이용권으로만 가른다). 프로모와 함께 오지 않는다.
+     */
+    planGrantEndsAt: String? = null,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -90,15 +97,20 @@ internal fun SubscriptionPanel(
             features = listOf(
                 stringResource(R.string.billing_plan_free_feature_basic_alarm),
                 stringResource(R.string.billing_plan_free_feature_stock_voice),
+                // 직접 입력 횟수(무료 3 · 플러스 30)는 shared `MANUAL_TTS_MONTHLY_LIMIT` 의 값이다(voice-and-message.md §8).
+                // 카드는 등급 비교라 서버 현황(`/tts/manual-quota`)이 아니라 정해진 기본분을 적는다 — 값이 바뀌면 같이 고친다.
+                stringResource(R.string.billing_plan_free_feature_manual),
             ),
         ),
         SubscriptionPlanOption(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
             price = planPriceLabel(context, planPrices, "personal"),
+            trialPeriod = planTrials["personal"]?.let { trialPeriodLabel(context, it) },
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
                 stringResource(R.string.billing_plan_personal_feature_messages_in_voice),
+                stringResource(R.string.billing_plan_personal_feature_manual),
             ),
         ),
     )
@@ -112,6 +124,11 @@ internal fun SubscriptionPanel(
         val promoLineText = promoLastDay?.let { lastDay ->
             val locale = LocalConfiguration.current.locales[0]
                 ?: java.util.Locale.getDefault()
+            stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
+        } ?: planGrantLastDay(planGrantEndsAt, java.time.ZoneId.systemDefault(), System.currentTimeMillis())?.let { lastDay ->
+            val locale = LocalConfiguration.current.locales[0]
+                ?: java.util.Locale.getDefault()
+            // 지급도 같은 문구다 — 결제 없이 쓰는 플러스라 iOS(같은 자리로 읽는다)와 같은 말을 한다.
             stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
         }
         // '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 [planScreenCurrentOf] 한 곳이다(스펙 D4).
@@ -469,7 +486,11 @@ internal fun SubscriptionPlanCard(
             }
             if (option.price.isNotBlank()) {
                 Text(
-                    text = option.price,
+                    // 체험을 받을 수 있으면 "1개월 무료 체험, 이후 ₩3,900" — 결제 시트가 처음 청구할 금액이 0 이라는 것을
+                    // 카드가 먼저 말한다. 이미 산 이용권이 현재인 카드에는 붙이지 않는다(결제 버튼이 없다).
+                    text = option.trialPeriod?.takeIf { showsPurchase }
+                        ?.let { stringResource(R.string.billing_plan_trial_price, it, option.price) }
+                        ?: option.price,
                     // iOS `.subheadline.weight(.semibold)` = 15 semibold.
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
                     color = MaterialTheme.colorScheme.primary,
@@ -498,6 +519,14 @@ internal fun SubscriptionPlanCard(
             // ⚠ **`!isCurrent` 로 되돌리지 말 것**(2026-09-29). 프로모만 쓰는 계정은 개인 카드가
             //   '현재' 인데 산 이용권이 아니라 결제 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야
             //   하고, 버튼을 숨기면 살 길이 사라진다([PlanScreenCurrent.showsPurchase]).
+            if (showsPurchase && option.trialPeriod != null) {
+                // 자동 결제와 해지를 결제 버튼 **앞에서** 말한다(스토어 정책 — 체험 뒤 청구를 숨기지 않는다).
+                Text(
+                    text = stringResource(R.string.billing_plan_trial_terms),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (showsPurchase) {
                 Button(
                     onClick = onPurchase,
@@ -627,6 +656,22 @@ private val FallbackPlanPriceKrw = mapOf(
 )
 
 /** 스토어 가격이 있으면 그걸, 없으면 현재 언어의 월 가격 문구로 준다. */
+/**
+ * ISO 8601 기간(`P1M`·`P7D`·`P1W`·`P1Y`) → "1개월"·"7일"·"1주"·"1년". 못 읽으면 null(체험 문구를 그리지 않는다 — 기간을
+ * 지어내지 않는다).
+ */
+internal fun trialPeriodLabel(context: Context, iso: String): String? {
+    val match = Regex("^P(\\d+)([DWMY])$").matchEntire(iso.trim().uppercase()) ?: return null
+    val count = match.groupValues[1].toIntOrNull()?.takeIf { it > 0 } ?: return null
+    val res = when (match.groupValues[2]) {
+        "D" -> R.plurals.billing_trial_days
+        "W" -> R.plurals.billing_trial_weeks
+        "M" -> R.plurals.billing_trial_months
+        else -> R.plurals.billing_trial_years
+    }
+    return context.resources.getQuantityString(res, count, count)
+}
+
 private fun planPriceLabel(context: Context, planPrices: Map<String, String>, key: String): String {
     planPrices[key]?.takeIf { it.isNotBlank() }?.let { return it }
     val krw = FallbackPlanPriceKrw[key] ?: return ""

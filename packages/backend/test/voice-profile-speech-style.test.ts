@@ -545,6 +545,10 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     expect(requeue, '말투 재시도 성공이 사전렌더를 다시 굽게 하지 않는다').toBeDefined();
     // 밀리초까지 — 같은 초에 게시된 옛 클립을 새 것으로 세지 않게.
     expect(requeue!.sql).toContain("requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now')");
+    // 대기 중이던 응원 보충 회차(스펙 voice-and-message §5-4)도 전체 재렌더로 바뀐다 — 보충 표시가 남으면 진행 조회가
+    // done 으로 답하고 실패가 done 으로 접힌다. 요청된 묶음(content_sets)은 건드리지 않는다.
+    expect(requeue!.sql).toContain('supplement = 0');
+    expect(requeue!.sql).not.toContain('content_sets');
     // 결과는 읽은 **그 녹음**을 아직 문 프로필에만 쓴다 — 분석 도중 제자리 교체되면 옛 녹음의 말투가
     // 새 목소리를 덮는다(Codex #802).
     expect(doneCall!.sql).toContain('su.object_key = ?');

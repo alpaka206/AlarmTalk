@@ -145,6 +145,41 @@ class AlarmTimeCalculatorTest {
         )
     }
 
+    /** 날짜 알람은 고른 시간대의 그 시각에 고정된다 — 기기 시간대와 무관하다(alarm-lifecycle.md §4-2). */
+    @Test
+    fun datedFireTimeIsFixedInTheConfirmedTimezone() {
+        val seoulSevenAm = java.time.ZonedDateTime.of(2026, 10, 27, 7, 0, 0, 0, ZoneId.of("Asia/Seoul"))
+            .toInstant().toEpochMilli()
+
+        assertEquals(seoulSevenAm, AlarmTimeCalculator.datedFireAtMillis("2026-10-27", "Asia/Seoul", 7, 0))
+        // 같은 날짜·시각이라도 시간대가 다르면 다른 절대 시각이다(10월 27일 런던은 서머타임이 끝나 UTC+0).
+        assertEquals(
+            seoulSevenAm + 9 * 3_600_000L,
+            AlarmTimeCalculator.datedFireAtMillis("2026-10-27", "Europe/London", 7, 0),
+        )
+    }
+
+    @Test
+    fun datedFireTimeRejectsBrokenValues() {
+        assertEquals(null, AlarmTimeCalculator.datedFireAtMillis(null, "Asia/Seoul", 7, 0))
+        assertEquals(null, AlarmTimeCalculator.datedFireAtMillis("2026-02-30", "Asia/Seoul", 7, 0))
+        assertEquals(null, AlarmTimeCalculator.datedFireAtMillis("2026-10-27", "Mars/Olympus", 7, 0))
+        assertEquals(null, AlarmTimeCalculator.datedFireAtMillis("2026-10-27", null, 7, 0))
+    }
+
+    /** 날짜 지정을 켰을 때의 첫 날짜 — 그 시각이 아직이면 오늘, 지났으면 내일(alarm-editor.md §2-1). */
+    @Test
+    fun initialTargetDateIsTodayOrTomorrow() {
+        assertEquals(
+            LocalDate.of(2026, 5, 3),
+            AlarmTimeCalculator.initialTargetDate(8, 30, millis("2026-05-03T08:00:00"), zoneId),
+        )
+        assertEquals(
+            LocalDate.of(2026, 5, 4),
+            AlarmTimeCalculator.initialTargetDate(8, 30, millis("2026-05-03T08:30:00"), zoneId),
+        )
+    }
+
     private fun millis(value: String): Long = LocalDateTime.parse(value)
         .atZone(zoneId)
         .toInstant()

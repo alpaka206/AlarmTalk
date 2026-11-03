@@ -66,7 +66,7 @@ beforeEach(async () => {
   // 자식부터 지운다.
   for (const table of ['store_transactions', 'subscriptions']) await db.execute(`DELETE FROM ${table}`);
   await db.execute({ sql: `DELETE FROM users WHERE id = ?`, args: [USER] });
-  await db.execute({ sql: `INSERT INTO users (id,email,name) VALUES (?,?,?)`, args: [USER, 'c@example.test', 'c'] });
+  await db.execute({ sql: `INSERT INTO users (id,email) VALUES (?,?)`, args: [USER, 'c@example.test'] });
 });
 afterAll(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
 

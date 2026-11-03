@@ -22,6 +22,14 @@ import XCTest
 @MainActor
 final class AuthViewModelTests: XCTestCase {
 
+    /// 마케팅 동의 캐시(`MarketingConsentCache`)는 앱 기본 저장소에 산다 — 앞 테스트가 적은 값이 다음 테스트의 첫 그림이 되지 않게
+    /// 매번 비운다.
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.removeObject(forKey: "marketing_consent_cache.user_id")
+        UserDefaults.standard.removeObject(forKey: "marketing_consent_cache.agreed")
+    }
+
     func testBackgroundRenewalPublishesTheStoredTokenToMemory() async throws {
         PendingSignOutStore.removeAll()
         let api = MockAuthAPI()
@@ -951,6 +959,18 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(vm.consentUnsupported)
     }
 
+    /// 떠 있던 민감 동의 시트는 로그아웃과 함께 내린다 — 다음 계정이 자기가 부르지 않은 시트를 보면 안 된다.
+    func test_signOut_떠_있던_민감_동의_시트를_내린다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        _ = vm.requestSensitiveConsent(types: ["voice_biometric"], registeringVoice: true)
+        XCTAssertNotNil(vm.pendingSensitiveConsent)
+
+        vm.signOut(revokeOnServer: false)
+
+        XCTAssertNil(vm.pendingSensitiveConsent)
+    }
+
     /// 받을 것이 없으면 막지 않는다 — 호출자가 그대로 진행한다.
     func test_requestSensitiveConsent_받을_것이_없으면_막지_않는다() {
         let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
@@ -1322,8 +1342,8 @@ final class AuthViewModelTests: XCTestCase {
     /// **프로필 저장은 plan 답이 아니다 — 바꾼 칸만 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05,
     /// `docs/spec/session-and-auth.md` 「프로필 저장은 바꾼 칸만 세션에 적는다」). 저장이 떠 있는 사이 결제 전 조회·세션 밖
     /// `/auth/me`(`applyFreshPlan` — 토큰을 굴리지 않는다)가 plus + 개인 프로모를 반영했으면 저장 뒤에도 그 짝이 남고,
-    /// 확인 조회가 실패해도 방금 저장한 이름은 곧바로 보인다(예전에는 확인 조회만 기다려 옛 이름이 보였다).
-    func testNicknameSaveKeepsThePlanAnsweredMeanwhileAndShowsTheNewNameWithoutConfirmation() async {
+    /// 닉네임 저장은 2026-10-29 에 없앴다 — 남은 프로필 저장(계정 설정)이 같은 규칙을 지킨다.
+    func testProfileSaveKeepsThePlanAnsweredMeanwhile() async {
         let api = MockAuthAPI()
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
         let session = makeEmailSession()
@@ -1339,39 +1359,12 @@ final class AuthViewModelTests: XCTestCase {
         // 확인 조회는 실패한다(저장 직후 연결이 끊겼다).
         api.meResult = .failureRaw(URLError(.notConnectedToInternet))
 
-        await vm.updateProfile(name: "새 이름")
+        await vm.updateProfile(dynamicPromptSettings: .empty)
 
-        XCTAssertEqual(vm.session?.user.name, "새 이름", "확인 조회가 실패하자 저장한 이름이 안 보였다")
         XCTAssertEqual(vm.session?.user.plan, "plus", "요청 전의 사본이 plus 를 되돌렸다")
         XCTAssertEqual(vm.session?.user.personalPromo?.endsAt, promo.endsAt)
         XCTAssertEqual(vm.session?.token, session.token)
-        XCTAssertEqual(KeychainStore.readSession()?.user.name, "새 이름")
         XCTAssertEqual(KeychainStore.readSession()?.user.plan, "plus")
-    }
-
-    /// 회귀(2026-10-05 리뷰): **저장 전에 떠난 조회가 먼저 와 토큰을 굴려도, 확인 조회가 저장한 이름을 남긴다.** 서버는
-    /// `/auth/me` 마다 토큰을 굴린다(`routes/auth.ts`). 그래서 옛 답(옛 이름)이 먼저 오면 세션 토큰이 바뀌어 있고, 확인
-    /// 조회의 답은 '토큰만 구른 같은 로그인' 갈래(`isTokenRolledWithinSignIn`)로 온다 — 예전에는 그 갈래가 plan·프로모만
-    /// 적어, 저장도 확인 조회도 성공했는데 세션·키체인에 옛 이름이 다음 `/auth/me` 까지 남았다. 확인 조회가 먼저 오면
-    /// 옛 답은 확인 조회가 굴린 토큰에 걸려 밀린 답이 된다. 안드로이드
-    /// `ProfileSaveKeepsAccountAnswerTest` 의 `저장_전에_떠난_조회가_늦게_와도_확인_조회가_새_이름을_남긴다` 와 같은 두 순서다.
-    func testConfirmationRefreshKeepsTheSavedNameWhicheverOrderTheOlderRefreshArrives() async throws {
-        for olderArrivesFirst in [true, false] {
-            let order = olderArrivesFirst ? "옛 답이 먼저" : "확인 조회가 먼저"
-            let vm = try await saveRacingAnOlderRefresh(olderArrivesFirst: olderArrivesFirst) { server in
-                server.name = "새 이름"
-            } save: { vm in
-                await vm.updateProfile(name: "새 이름")
-            }
-
-            XCTAssertEqual(vm.session?.user.name, "새 이름", "확인 조회가 성공했는데 옛 이름이 남았다(\(order))")
-            XCTAssertEqual(KeychainStore.readSession()?.user.name, "새 이름", order)
-            XCTAssertEqual(
-                vm.session?.token, olderArrivesFirst ? "rolled-by-older" : "rolled-by-confirm",
-                "토큰은 먼저 반영된 답이 굴린 것을 지킨다(\(order))"
-            )
-            XCTAssertEqual(KeychainStore.readSession()?.token, vm.session?.token, order)
-        }
     }
 
     /// 토큰만 구른 갈래는 프로필 칸을 적어도 **탈퇴 유예는 건드리지 않는다** — 복구는 토큰이 그대로인 갈래만
@@ -1971,21 +1964,9 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertTrue(vm.needsConsent)
         XCTAssertTrue(vm.consentIsReconsent)
         XCTAssertEqual(api.consentStatusCallCount, 1)
-        let generation = vm.consentSubmitGeneration
         await vm.submitConsents(agreedOptional: [])
         XCTAssertEqual(api.lastRecordConsentsRequest?.consents.map(\.type), ["privacy"])
-        XCTAssertEqual(vm.consentSubmitGeneration, generation + 1)
         XCTAssertFalse(vm.showConsentScreen)
-    }
-
-    func test_failedConsentSubmissionDoesNotRestartSync() async {
-        let api = MockAuthAPI()
-        api.recordConsentsResult = .failure(APIError.invalidResponse)
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        vm._setSessionForTesting(makeEmailSession())
-        let generation = vm.consentSubmitGeneration
-        await vm.submitConsents(agreedOptional: [])
-        XCTAssertEqual(vm.consentSubmitGeneration, generation)
     }
 
     func test_consent403_overlappingForegroundLookupFailureStillOpensFallback() async {
@@ -2056,6 +2037,133 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(api.recordConsentsCallCount, 1)
         XCTAssertFalse(vm.showConsentScreen, "제출한 동의를 옛 403 때문에 다시 받으면 안 된다")
         XCTAssertFalse(vm.needsConsent)
+    }
+
+    // MARK: - 광고성 정보 수신 토글 (`docs/spec/consent.md` 「광고성 정보 수신 토글」)
+
+    private func marketingConsents(_ agreed: Bool) -> ConsentListResponse {
+        ConsentListResponse(consents: [
+            ConsentRecord(consentType: "marketing", policyVersion: "8", agreed: agreed, agreedAt: nil),
+        ])
+    }
+
+    /// 읽기 전에는 **모른다** — false 로 시작하면 동의한 사람에게 '꺼짐' 을 그리고 눌리기까지 한다.
+    func test_marketingConsent_읽기_전에는_모른다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        XCTAssertNil(vm.marketingConsentAgreed)
+    }
+
+    /// 다시 들어온 화면의 조회가 떠 있는 동안 켰다 — 그 조회의 늦은 답(켜기 전의 서버 값)이 스위치를 되돌리면
+    /// 서버는 켬인데 스위치는 끔이다.
+    func test_marketingConsent_토글_전에_떠난_조회의_답은_켠_값을_덮지_않는다() async {
+        let api = MockAuthAPI()
+        let reloadSent = expectation(description: "다시 들어온 화면의 조회 전송")
+        let held = HeldMeResponses(arrivals: [2: reloadSent])
+        let stale = marketingConsents(false)
+        api.listConsentsResponder = { call in
+            if call == 2 { await held.hold(call) }
+            return stale
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.loadMarketingConsent()
+        XCTAssertEqual(vm.marketingConsentAgreed, false)
+
+        let reload = Task { await vm.loadMarketingConsent() }
+        await fulfillment(of: [reloadSent], timeout: 3)
+        await vm.updateMarketingConsent(true)
+        held.release(2)
+        await reload.value
+
+        XCTAssertEqual(api.recordConsentsCallCount, 1)
+        XCTAssertEqual(vm.marketingConsentAgreed, true, "서버는 켬을 받았다 — 늦게 온 조회가 끔으로 되돌리면 안 된다")
+    }
+
+    /// 쓰기는 한 번에 하나다. 화면을 나갔다 들어오면 화면 상태는 새로 만들어지므로, 잠금이 화면에 있으면 앞 쓰기가
+    /// 도는 중에 또 보내 서버에 늦게 닿은 쪽이 이긴다. 그 사이의 진입 조회도 쓰기 결과보다 낡았다.
+    /// 쓰는 동안에도 누를 수 있다 — 겹쳐 보내지 않고, 앞 쓰기가 끝나면 **마지막으로 누른 값**을 이어 보낸다(2026-10-29 두 앱
+    /// 비교 — 예전 iOS 는 쓰는 동안 스위치를 잠갔다). 쓰는 동안에는 조회도 하지 않는다.
+    func test_marketingConsent_쓰는_동안_누른_마지막_값을_이어_보낸다() async {
+        let api = MockAuthAPI()
+        api.listConsentsResult = .success(marketingConsents(false))
+        let writeSent = expectation(description: "쓰기 전송")
+        let held = HeldMeResponses(arrivals: [1: writeSent])
+        api.recordConsentsResponder = { call in
+            if call == 1 { await held.hold(call) }
+            return RecordConsentsResponse(success: true, recorded: 1)
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.loadMarketingConsent()
+
+        let write = Task { await vm.updateMarketingConsent(true) }
+        await fulfillment(of: [writeSent], timeout: 3)
+        XCTAssertTrue(vm.marketingConsentWriteInFlight)
+        await vm.updateMarketingConsent(false)
+        XCTAssertEqual(vm.marketingConsentAgreed, false, "누른 값은 곧바로 그린다")
+        await vm.loadMarketingConsent()
+
+        XCTAssertEqual(api.recordConsentsCallCount, 1, "앞 쓰기가 끝나기 전에 겹쳐 보내지 않는다")
+        XCTAssertEqual(api.listConsentsCallCount, 1, "쓰는 동안에는 조회하지 않는다")
+        held.release(1)
+        await write.value
+        XCTAssertEqual(api.recordConsentsCallCount, 2, "끝나면 마지막 값을 이어 보낸다")
+        XCTAssertEqual(api.lastRecordConsentsRequest?.consents.first?.agreed, false)
+        XCTAssertFalse(vm.marketingConsentWriteInFlight)
+        XCTAssertEqual(vm.marketingConsentAgreed, false)
+    }
+
+    /// 로그인한 동안의 실패는 **그 동작의 자리에** 남는다(2026-10-29 오너 — 알림이 아니라 빨간 글자). `statusMessage` 는 로그인
+    /// 화면만 그려서, 예전에는 스위치만 되돌아가고 이유는 어디에도 안 보였다.
+    func test_로그인_중_실패는_그_동작의_자리에_남고_다시_누르면_지운다() async {
+        let api = MockAuthAPI()
+        api.listConsentsResult = .success(marketingConsents(false))
+        api.recordConsentsResult = .failure(APIError.invalidResponse)
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.loadMarketingConsent()
+
+        await vm.updateMarketingConsent(true)
+        XCTAssertNotNil(vm.actionErrorMessage(for: .marketing))
+        XCTAssertNil(vm.actionErrorMessage(for: .withdrawal), "다른 동작의 자리에는 그리지 않는다")
+        XCTAssertEqual(vm.marketingConsentAgreed, false)
+
+        api.recordConsentsResult = .success(RecordConsentsResponse(success: true, recorded: 1))
+        await vm.updateMarketingConsent(true)
+        XCTAssertNil(vm.actionErrorMessage(for: .marketing), "다시 누르면 지운다")
+
+        api.recordConsentsResult = .failure(APIError.invalidResponse)
+        await vm.updateMarketingConsent(false)
+        XCTAssertNotNil(vm.actionErrorMessage(for: .marketing))
+        vm.signOut(revokeOnServer: false)
+        XCTAssertNil(vm.actionError, "계정을 떠나면 앞 계정의 실패 표시도 내린다")
+    }
+
+    /// 쓰는 사이 계정이 바뀌었다 — 앞 계정 쓰기의 실패가 '직전 값' 으로 되돌리면 그 값이 다음 계정 화면에 남는다.
+    func test_marketingConsent_계정이_바뀌면_앞_계정_쓰기의_답을_버린다() async {
+        let api = MockAuthAPI()
+        api.listConsentsResult = .success(marketingConsents(false))
+        let writeSent = expectation(description: "쓰기 전송")
+        let held = HeldMeResponses(arrivals: [1: writeSent])
+        api.recordConsentsResponder = { call in
+            if call == 1 { await held.hold(call) }
+            throw APIError.invalidResponse
+        }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.loadMarketingConsent()
+
+        let write = Task { await vm.updateMarketingConsent(true) }
+        await fulfillment(of: [writeSent], timeout: 3)
+        vm.signOut(revokeOnServer: false)
+        XCTAssertFalse(vm.marketingConsentWriteInFlight, "계정 정리가 잠금을 푼다")
+        held.release(1)
+        await write.value
+
+        XCTAssertNil(vm.marketingConsentAgreed)
+        XCTAssertNil(vm.statusMessage, "떠난 계정의 실패를 알리지 않는다")
     }
 
 }
@@ -2179,9 +2287,28 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         }
     }
 
+    /// 있으면 `recordConsentsResult` 대신 **호출마다** 답을 정한다 — 인자는 몇 번째 호출(1부터). 쓰기를 붙들어 두고
+    /// 그 사이에 일어나는 일(조회·계정 정리)을 흉내 낼 때 쓴다(`HeldMeResponses`).
+    var recordConsentsResponder: (@MainActor @Sendable (_ call: Int) async throws -> RecordConsentsResponse)?
+    var listConsentsResult: Result<ConsentListResponse, Error> = .success(ConsentListResponse(consents: []))
+    /// 있으면 `listConsentsResult` 대신 호출마다 답을 정한다 — 인자는 몇 번째 호출(1부터).
+    var listConsentsResponder: (@MainActor @Sendable (_ call: Int) async throws -> ConsentListResponse)?
+    private(set) var listConsentsCallCount = 0
+
+    func listConsents(token: String) async throws -> ConsentListResponse {
+        listConsentsCallCount += 1
+        if let listConsentsResponder {
+            return try await listConsentsResponder(listConsentsCallCount)
+        }
+        return try listConsentsResult.get()
+    }
+
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
         recordConsentsCallCount += 1
         lastRecordConsentsRequest = requestBody
+        if let recordConsentsResponder {
+            return try await recordConsentsResponder(recordConsentsCallCount)
+        }
         switch recordConsentsResult {
         case .success(let response):
             return response

@@ -370,6 +370,8 @@ internal fun VoiceProfileRow(
     onPreview: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    /** 메뉴의 '이 목소리로 새 알람 만들기' — null 이면 그 행을 그리지 않는다. */
+    onCreateAlarm: (() -> Unit)? = null,
     readiness: CloneVoiceReadiness? = null,
     onRetryPrerender: () -> Unit = {},
     retryPrerenderBusy: Boolean = false,
@@ -444,6 +446,7 @@ internal fun VoiceProfileRow(
             profileName = profile.name,
             onRename = onRename,
             onDelete = onDelete,
+            onCreateAlarm = onCreateAlarm,
             onDismiss = { menuExpanded = false },
         )
     }
@@ -483,9 +486,22 @@ private fun VoiceProfileMenuSheet(
     profileName: String,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    /** 메뉴의 '이 목소리로 새 알람 만들기' — null 이면 그 행을 그리지 않는다. */
+    onCreateAlarm: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     WakerSelectionSheet(title = profileName, onDismiss = onDismiss) { dismiss ->
+        if (onCreateAlarm != null) {
+            WakerSheetOptionRow(
+                title = stringResource(R.string.voicesr_create_alarm_with_voice),
+                selected = false,
+                onClick = {
+                    dismiss()
+                    onCreateAlarm()
+                },
+                divider = true,
+            )
+        }
         WakerSheetOptionRow(
             title = stringResource(R.string.voicesr_edit_name),
             selected = false,

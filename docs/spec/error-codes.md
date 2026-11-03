@@ -44,7 +44,12 @@
 커플·가족 이용권을 지우며 그룹·초대 코드·가족 알람·목소리 업로드 갈래의 코드를 지웠고(`GROUP_FULL`·
 `OWNER_CANNOT_LEAVE`·`FAMILY_ALARM_*`·`TARGETED_ALARM_IMMUTABLE`·`ALARM_SCHEMA_UPGRADING`·`CODE_EXPIRED`·
 `CODE_ALREADY_USED`·`CODE_ALREADY_REDEEMED_BY_YOU` 등 — [plan-gates.md](plan-gates.md) 「커플·가족 이용권 — 폐지」),
-옛 앱 호환 응답이 계속 내는 `CODE_NOT_FOUND`·`NOT_CONNECTED` 는 남겼다.
+옛 앱 호환 응답이 내던 `CODE_NOT_FOUND` 는 2026-10-26 그 라우트와 함께 지웠고(강제 업데이트 뒤), `NOT_CONNECTED` 는 남겼다.
+2026-10-29 서버 알람 사본을 지우며 알람 행이 있어야 나던 `ALARM_NOT_FOUND`·`ALARM_DELETE_FAILED`·`NO_UPDATE_FIELDS` 를
+지웠다 — 옛 앱의 올리기(`POST/PATCH/DELETE /alarm`)는 형식만 보고 저장 없이 되돌려 주므로 그 코드를 받을 일이 없다
+([alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」). 그 경로가 지금도 내는 형식 코드(`INVALID_ALARM_ID`·
+`REQUIRED_FIELDS_MISSING`·칸 검사의 `INVALID_*`)와 `NOT_CONNECTED` 는 남는다. 두 앱의 문구 표에서도 `ALARM_NOT_FOUND` 를
+뺐다(안드로이드 `api_error_alarm_not_found`, iOS `APIErrorMessages`·목소리 화면의 `knownErrorCodes`).
 
 ## 3. 기록은 전부, 경보는 골라서
 
@@ -93,7 +98,9 @@
 | **중앙 401 처리기가 이미 끊은 세션의 401** | 토큰 만료·폐기는 세션 정리와 "다시 로그인해 주세요" 로 **이미 사용자에게 닿은 사실**이다. 그 위에 이슈까지 쌓으면 한 번의 만료가 재시도 횟수만큼 올라간다 | 로그 + 브레드크럼(category `auth`), 워커는 **재시도하지 않고** 세션을 끊는다 |
 | **HTTP/2 스트림·연결 리셋**(`stream was reset: CANCEL`, GOAWAY) | 엣지·프록시가 스트림을 끊은 것 — 일시적 네트워크 실패와 같은 부류인데 `IOException` 의 다른 하위 타입이라 빠져 있었다(2026-09-22 ANDROID-N) | 로그 + 브레드크럼(`transient`), 워커는 재시도 |
 | **Google 로그인이 사용자 행동으로 끝남**(12501 취소·12502 진행 중·16 `CANCELED`) | 뒤로가기·버튼 연타·계정 선택 창 닫기(16 은 `resultCode=0` 으로 돌아온다 — 2026-10-16 ANDROID-1G)다. 화면이 상태별 문구를 이미 보여준다(2026-09-22 ANDROID-P — 16 은 12501 과 같은 '취소' 문구). 네트워크(7)는 일시적 실패와 같다 | 로그 + 브레드크럼(`user`). **10(설정 오류)·12500(실패)은 그대로 이슈** — 우리가 고칠 것이 있다 |
-| **사용자가 고칠 예상된 거절**(2026-10-11) — 상태가 **4xx** 이고 `error_code` 가 **목록에 있을 때만**: 인증 코드가 틀림·만료(`AUTH_EMAIL_CODE_INVALID`·`AUTH_EMAIL_CODE_EXPIRED`), 이미 쓰는 이메일·소셜로 가입한 이메일(`AUTH_EMAIL_TAKEN`·`AUTH_EMAIL_SOCIAL`), 옛 앱의 코드 칸이 받는 '코드 없음'(`CODE_NOT_FOUND` — 2026-10-20 부터 서버는 어떤 코드든 이것으로 거절한다. 초대 코드 갈래 셋 `CODE_EXPIRED`·`CODE_ALREADY_USED`·`CODE_ALREADY_REDEEMED_BY_YOU` 은 초대 코드와 함께 빠졌다. 그 전 2026-10-12 에 프로모 코드 갈래 셋 — `plan-gates.md` 「커플·가족 이용권 — 폐지」) | 사용자가 친 값의 문제이고 화면이 코드로 고른 문장으로 이유를 이미 말한다 — 우리가 고칠 코드가 없다(2026-10-09~10 Sentry 조사에서 미룬 항목) | 로그 + 브레드크럼(`refusal`). **`AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`·`VOICE_MONTHLY_CHANGE_LIMIT_REACHED` 는 목록에 없다 — 그대로 이슈**다. 1.2.10 의 두 묶음(같은 코드 다섯 번 제출, 낡은 등록 횟수)은 그 둘이 이슈로 올라와 드러났다. 같은 코드라도 5xx 면 이슈다. 목록은 앱마다 **한 곳**이다(구현 지도) |
+| **녹음을 시작하자마자 멈춤**(2026-10-26, 안드로이드) — 원인 사슬에 `RecordingStoppedTooSoonException`(시작 뒤 1초 안의 `MediaRecorder.stop()` 실패)이 있을 때만 | 기기의 녹음기는 첫 프레임을 쓰기 전에 멈추면 `RuntimeException: stop failed.` 를 던진다(A32 계측 테스트로 재현, Sentry ANDROID-1P). 사용자의 동작이고 화면이 "녹음이 너무 짧아요" 로 이미 말한다 | 로그 + 브레드크럼(`user`). **1초 뒤의 같은 실패는 표시가 없어 그대로 이슈**다 |
+| **녹음이 권한·끼어듦으로 끝남**(2026-10-26, 안드로이드) — 원인 사슬에 `RecordingEndedByUserOrDeviceException`(`RecordingPermissionMissingException`·`RecordingInterruptedException`, 시작하자마자 멈춤도 이 부류)이 있을 때만 | 마이크 권한이 없거나 전화·다른 앱이 오디오 포커스를 가져가 `MediaRecorder` 가 실패했다. 사용자·기기의 사정이고 화면이 이유를 말하고 다시 녹음하게 한다([voice-and-message.md](voice-and-message.md) §4-1 「녹음 품질 판정」) | 로그 + 브레드크럼(`user`) — 판정은 `AlarmTalkLog.isRecordingEndedByUserOrDevice`. **이유를 모르는 멈춤 실패는 그대로 이슈**다 |
+| **사용자가 고칠 예상된 거절**(2026-10-11) — 상태가 **4xx** 이고 `error_code` 가 **목록에 있을 때만**: 인증 코드가 틀림·만료(`AUTH_EMAIL_CODE_INVALID`·`AUTH_EMAIL_CODE_EXPIRED`), 이미 쓰는 이메일·소셜로 가입한 이메일(`AUTH_EMAIL_TAKEN`·`AUTH_EMAIL_SOCIAL`). 옛 앱의 코드 칸이 받던 '코드 없음'(`CODE_NOT_FOUND`)은 2026-10-26 그 라우트와 함께 빠졌다(초대 코드 갈래 셋은 2026-10-20, 프로모 코드 갈래 셋은 2026-10-12 — `plan-gates.md` 「커플·가족 이용권 — 폐지」) | 사용자가 친 값의 문제이고 화면이 코드로 고른 문장으로 이유를 이미 말한다 — 우리가 고칠 코드가 없다(2026-10-09~10 Sentry 조사에서 미룬 항목) | 로그 + 브레드크럼(`refusal`). **`AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`·`VOICE_MONTHLY_CHANGE_LIMIT_REACHED` 는 목록에 없다 — 그대로 이슈**다. 1.2.10 의 두 묶음(같은 코드 다섯 번 제출, 낡은 등록 횟수)은 그 둘이 이슈로 올라와 드러났다. 같은 코드라도 5xx 면 이슈다. 목록은 앱마다 **한 곳**이다(구현 지도) |
 | **우리 서버가 아닌 곳이 낸 504** — 상태 504 이고 응답에 `error_code` 가 **없을 때만**(2026-10-15) | 우리 워커는 504 를 내지 않고 모든 4xx/5xx 에 코드를 싣는다. 코드 없는 504 는 기기와 우리 사이의 프록시·게이트웨이가 시간을 넘긴 것이다 — 2026-10-11~14 `HTTP_504` 23건(ANDROID-11 외)은 전부 Play 사전 출시 로봇이었고 같은 시각 서버 `api_error` 기록에 5xx 가 없었다 | 로그 + 브레드크럼(`transient`). **502·503 은 그대로 이슈**다 — Cloudflare 가 워커 자체의 실패로 내는 자리다. 코드가 실린 5xx 도 이슈다 |
 | **탈퇴 유예 계정의 403**(`ACCOUNT_PENDING_DELETION`, 2026-10-15) — 상태 **403** 이고 그 코드일 때만 | 다시 로그인하면 서버가 탈퇴를 철회하고 신청은 모든 기기의 세션을 끊는다([session-and-auth.md](session-and-auth.md) 「탈퇴 유예 — 다시 로그인하면 철회」). 그러니 이 403 은 끝난 세션이다 — 고칠 결함이 아니다. 예전에는 계정 응답보다 먼저 떠난 호출이 로그인마다 이슈를 열었다(2026-10-12~13 Play 사전 출시 로봇, ANDROID-15~1B) | 로그 + 브레드크럼(`account`). 앱은 **그 기기의 계정을 떠난다**(알람까지 끄는 명시적 로그아웃 — 자동 만료가 아니다). 전경이든 안드로이드 워커든 같다(`endWorkerSession` → `leaveAccountAfterPendingDeletion`). 같은 코드라도 5xx 면 이슈다. 이웃한 `CONSENT_STATE_UNAVAILABLE` 은 그대로 이슈다 |
 | **동의 필요 403**(`CONSENT_REQUIRED`, 2026-10-20) — 상태 **403** 이고 그 코드일 때만 | 서버의 동의 미들웨어가 데이터 라우트를 막은 것이고, 응답 쪽 한 곳(안드로이드 `AlarmTalkApiClient` 의 인터셉터, iOS `AlarmTalkAPI` 의 `consentRequiredNotification`)이 이미 동의 화면으로 보낸다 — 401 과 같은 모양이다. 재동의 기준(`CONSENT_MIN_POLICY_VERSION`)을 올리면 대상자가 앱을 열 때 그 답보다 먼저 떠난 호출이 한 건씩 이슈를 열었다(2026-10-20 처리방침 3→5 재동의 뒤 한 사람이 다섯 개 — ANDROID-1D·1E·1F·1M·1N) | 로그 + 브레드크럼(`consent`). 동의 화면이 안 뜨는 결함은 앱 이슈가 아니라 서버의 `api_error` 기록(같은 계정의 403 이 그치지 않는다)으로 본다. 같은 코드라도 5xx 면 이슈고, `CONSENT_STATE_UNAVAILABLE`·코드 없는 403 은 그대로 이슈다. 워커는 따로 '동의 대기' 로 접는다(아래) |
@@ -114,7 +121,8 @@
 - ⚠ **HTTP 4xx 를 여기서 낮추지 않는다.** 그 4xx 가 무엇을 뜻하는지는 문맥을 아는 호출부가
   코드를 보는 자리에서 결정한다 — 로그인 직후 동의 전 `403 CONSENT_REQUIRED` 는 재시도 대상이
   아니라 **동의를 마쳐야 풀리는 상태**라, 백그라운드 워커는 성공으로 끝내고 다음 전경
-  진입·주기가 다시 끌어온다(`sync/SyncWorkerFailure.kt`, iOS 는 `RemoteAlarmSyncViewModel`).
+  진입·주기가 다시 끌어온다(`sync/SyncWorkerFailure.kt`. iOS 의 그 자리였던 알람 동기화는 2026-10-29 에 지웠다 — 남은
+  사용 기록 전송 `UsageEventUploader.flush` 가 그 403 을 보류로 접는다).
   정확히 그 코드만이다 — `CONSENT_STATE_UNAVAILABLE` 은 파손이다. (탈퇴 유예 403 `ACCOUNT_PENDING_DELETION` 은
   2026-10-15 부터 따로 낮추고, 앱은 전경에서 그 기기의 계정을 떠난다 — 위 표. 동의 필요 403 의 **보고**도 2026-10-20 부터
   브레드크럼이다 — 위 표. 워커의 결말(동의 대기)은 그와 별개로 호출부가 정한다.)
@@ -287,17 +295,17 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 (`network/ApiErrorMessages.kt`)은 이미 가입된 주소의 409(`routes/auth.ts`)다. 정상 흐름에서 그 409 를
 받는 자리는 **인증 코드 요청**(`POST /auth/email-code`)이고, 거기는 표를 부르는 자리가 아니다 —
 두 앱 모두 **화면이 직접** 가른다: 안드로이드 `duplicateEmailMessage`
-(`ui/main/MainViewModelAuthActions.kt`), iOS `AuthViewModel.requestEmailVerification` 의
-`userFacingErrorMessage` 폴백.
-- **가입(`POST /auth/register`)은 2026-10-11 부터 표를 부른다**(위 문단). 거기서 이 409 는 코드를 받은
-  뒤 같은 주소로 다른 가입이 먼저 끝난 경쟁에서만 온다. 안드로이드는 그때도 `duplicateEmailMessage`
-  (화면 층)가 표보다 **먼저** 받아 로그인 화면으로 넘긴다 — 층 순서 그대로다. iOS 는 표에 그 두 줄이
-  없어 가입 화면의 폴백으로 떨어진다.
-- **iOS 표에 이 둘을 더하는 일은 이번 변경에 넣지 않았다.** 더하면 가입의 그 드문 409 문장만 달라지고
-  코드 요청 경로는 그대로다 — 표만 같아 보이고 실제 차이는 남는다. 맞추려면 두 경로를 함께, 아래의
-  화면 전환까지 정한다.
-- 특히 `AUTH_EMAIL_TAKEN` 은 문구만이 아니라 **로그인 화면 전환**(`authRedirectToLogin`)을
-  겸한다. 표는 문자열 하나만 돌려주므로 구조적으로 그 일을 할 수 없다.
+(`ui/main/MainViewModelAuthActions.kt`), iOS `AuthViewModel.duplicateEmailOutcome`.
+- **두 경로 모두 화면 층이 표보다 먼저 받는다**(2026-10-29 두 앱 맞춤). 코드 요청과 가입(`POST /auth/register` —
+  거기서 이 409 는 코드를 받은 뒤 같은 주소로 다른 가입이 먼저 끝난 경쟁에서만 온다) 둘 다다. 예전 iOS 는 두 코드를
+  몰라 "인증 코드를 보내지 못했어요"/가입 폴백으로 말했고, 이미 가입한 사람이 다시 받기만 눌렀다.
+- `AUTH_EMAIL_TAKEN` 은 문구만이 아니라 **로그인 화면 전환**을 겸한다(안드로이드 `authRedirectToLogin`, iOS
+  `redirectToLoginTick`). 입력한 이메일은 그대로 두고, 왜 넘어왔는지는 로그인 제목 아래(`authNotice`)에 말한다.
+  표는 문자열 하나만 돌려주므로 구조적으로 그 일을 할 수 없다 — 그래서 iOS 표에는 이 둘을 더하지 않는다.
+- `AUTH_EMAIL_SOCIAL` 은 `provider`(`google`·`apple`)를 함께 싣는다. 구글 연결이 있으면 `google`, 애플만 있으면
+  `apple`(예전에는 언제나 `google` 이라 애플로 가입한 사람이 안드로이드에서 "구글로 가입된 이메일" 을 들었다).
+  안드로이드는 그 값으로 문장을 고르고, iOS 는 고르지 않는다 — 소셜 로그인이 애플뿐인데 구글로 가입한 사람도 같은
+  코드를 받으므로 "Apple 또는 Google로 가입된 이메일" 로 말한다(`APIError` 가 `provider` 를 싣지 않는다).
 - 안드로이드 표의 그 두 줄은 화면 층이 늘 먼저 받아 지금도 **닿지 않는 자리**다. 지우려면 가입·코드
   요청 경로가 정말로 표까지 내려오지 않는지 먼저 확인하고, 이 문단도 함께 고친다.
 
@@ -337,12 +345,12 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 | 동의 필요 403 은 브레드크럼(`consent`, 상태 403 + 코드) · 동의 화면은 응답 쪽 한 곳이 연다 | `core/AlarmTalkLog.kt` 의 `isConsentRequired` → `breadcrumbCategoryFor` · 회귀 `TransientFailureClassificationTest` 의 `consentRequiredBecomesConsentBreadcrumbOnlyAs403` | `AlarmTalkLog.swift` 의 `isConsentRequired` → `handledFailureCategory` · 회귀 `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_동의_필요_403은_consent_브레드크럼이다` | `middleware/consent.ts` 가 403 `CONSENT_REQUIRED` 를 낸다 · 모든 4xx 는 `middleware/errorCode.ts` 가 `api_error` 로 남긴다 |
 | 코드 없는 504 는 일시 실패(`transient`) · 502·503·코드 있는 5xx 는 이슈 | `core/AlarmTalkLog.kt` 의 `isForeignGatewayTimeout` · 회귀 `TransientFailureClassificationTest` 의 `codelessGatewayTimeoutIsTransientButOur5xxStayIssues` | `AlarmTalkLog.swift` 의 `isForeignGatewayTimeout` · 회귀 `test_코드_없는_504는_일시_실패다` | 우리 워커는 504 를 내지 않는다(`test/error-codes.test.ts` ④ — 모든 4xx/5xx 에 코드) |
 | 낮추는 **범위**(그 밖의 4xx·5xx 는 그대로 이슈) | `core/AlarmTalkLog.kt` 의 `breadcrumbCategoryFor` · `TransientFailureClassificationTest` 의 `onlyUnauthorizedAndTransientBecomeBreadcrumbs` | `AlarmTalkLog.swift` 의 `handledFailureCategory` · `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_401_외의_상태코드는_그대로_이슈다` | — |
-| 앱의 **묶음 키**(§3 — `[api_error, 코드 또는 HTTP_상태, logKey]` · 코드 없는 5xx 는 `logKey` 없음 · 태그 `api.status`·`api.error_code`·`log.key` · 낮추는 것 없음) | `core/AlarmTalkLog.kt` 의 `logKeyOf`·`apiFailureFingerprint` ← `reportError`(이슈 갈래에서 `apiFailureOf` 로 상태·코드를 읽어 지문·태그를 달고 `network/ReportedApiFailure` 로 감싸 올린다. HTTP 가 아니면 `log.key` 태그만) · 회귀 `ApiFailureReportingTest`(Robolectric — id 만 다른 메시지는 같은 지문 · 코드가 다르면 다른 지문 · 코드 없는 504 는 `[api_error, HTTP_504]` · 코드 없는 404 는 `logKey` 유지 · HTTP 가 아니면 지문 없음 · 포장의 메시지·`cause`·패키지). ⚠ 지문이 실제 이벤트에 실리는지는 유닛 테스트가 못 본다 — dev 빌드 이벤트 한 건으로 확인한다 | `AlarmTalkLog.swift` 의 `logKey(of:)`·`apiFailureFingerprint(for:message:)` ← `reportError`(원인 사슬에 `APIError.server` 가 있으면 지문·태그, 없으면 `log.key` 태그만. 포장 없음 — 컨텍스트 키 `log_message` 는 그대로) ← 호출부 `RemoteAlarmPushSync`(알람 push)·`UsageEventUploader.flush`(사용 기록 전송)·`AuthViewModel` 의 `reportFailure`(2026-10-11 — `requestEmailVerification`·`verifyEmailCode`·`performRegisterWithEmail`·`requestPasswordReset`·`confirmPasswordReset`, 메시지는 안드로이드 `ui/main/MainViewModelAuthActions.kt` 와 같은 글자) · 회귀 `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_API_실패의_묶음_키` · `AlarmTalkTests/EmailCodeErrorMessageTests` 의 `test_인증_코드_다섯_갈래의_실패는_정해진_글자로_한_번씩_올린다`(성공은 올리지 않는다 · 실패마다 한 번 · 안드로이드와 같은 글자 · 받은 오류를 그대로)·`test_올린_실패의_갈래와_묶음_키는_보고_함수가_정한다`(호출부는 거르지 않는다 — 시도 상한의 거절은 `[api_error, 코드, 호출 자리]` 이슈 · 코드 없는 5xx 는 `[api_error, HTTP_503]` · 시간 초과·401 은 브레드크럼 · 틀린 숫자(`AUTH_EMAIL_CODE_INVALID`)는 `refusal`) | 짝: `middleware/errorCode.ts` 의 `setFingerprint(['api_error', code])`(위 행) |
+| 앱의 **묶음 키**(§3 — `[api_error, 코드 또는 HTTP_상태, logKey]` · 코드 없는 5xx 는 `logKey` 없음 · 태그 `api.status`·`api.error_code`·`log.key` · 낮추는 것 없음) | `core/AlarmTalkLog.kt` 의 `logKeyOf`·`apiFailureFingerprint` ← `reportError`(이슈 갈래에서 `apiFailureOf` 로 상태·코드를 읽어 지문·태그를 달고 `network/ReportedApiFailure` 로 감싸 올린다. HTTP 가 아니면 `log.key` 태그만) · 회귀 `ApiFailureReportingTest`(Robolectric — id 만 다른 메시지는 같은 지문 · 코드가 다르면 다른 지문 · 코드 없는 504 는 `[api_error, HTTP_504]` · 코드 없는 404 는 `logKey` 유지 · HTTP 가 아니면 지문 없음 · 포장의 메시지·`cause`·패키지). ⚠ 지문이 실제 이벤트에 실리는지는 유닛 테스트가 못 본다 — dev 빌드 이벤트 한 건으로 확인한다 | `AlarmTalkLog.swift` 의 `logKey(of:)`·`apiFailureFingerprint(for:message:)` ← `reportError`(원인 사슬에 `APIError.server` 가 있으면 지문·태그, 없으면 `log.key` 태그만. 포장 없음 — 컨텍스트 키 `log_message` 는 그대로) ← 호출부 `UsageEventUploader.flush`(사용 기록 전송)·`AuthViewModel` 의 `reportFailure`(2026-10-11 — `requestEmailVerification`·`verifyEmailCode`·`performRegisterWithEmail`·`requestPasswordReset`·`confirmPasswordReset`, 메시지는 안드로이드 `ui/main/MainViewModelAuthActions.kt` 와 같은 글자) · 회귀 `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_API_실패의_묶음_키` · `AlarmTalkTests/EmailCodeErrorMessageTests` 의 `test_인증_코드_다섯_갈래의_실패는_정해진_글자로_한_번씩_올린다`(성공은 올리지 않는다 · 실패마다 한 번 · 안드로이드와 같은 글자 · 받은 오류를 그대로)·`test_올린_실패의_갈래와_묶음_키는_보고_함수가_정한다`(호출부는 거르지 않는다 — 시도 상한의 거절은 `[api_error, 코드, 호출 자리]` 이슈 · 코드 없는 5xx 는 `[api_error, HTTP_503]` · 시간 초과·401 은 브레드크럼 · 틀린 숫자(`AUTH_EMAIL_CODE_INVALID`)는 `refusal`) | 짝: `middleware/errorCode.ts` 의 `setFingerprint(['api_error', code])`(위 행) |
 | 코드 읽기는 **본문을 소진하지 않는다**(순서·횟수와 무관하게 같은 답) | `network/ApiErrors.kt` 의 `apiError`(버퍼된 오류 본문을 엿본다)·`apiFailureOf`(원인 사슬에서 상태 + 코드 — `ApiFailure`) · 회귀 `TransientFailureClassificationTest` 의 `apiErrorCanBeReadTwice`·`apiFailureIsIndependentOfCallOrder`(기존 `breadcrumbClassificationDoesNotConsumeTheErrorBody`·`unauthorizedClassificationDoesNotConsumeTheErrorBody` 는 그대로 초록) | — (`APIError.server(status, _, code)` 가 코드를 값으로 든다) | — |
 | 탈퇴 신청의 쓰기 재시도 | — | — | `routes/user.ts` → `withRetryableWriteTransaction`: 트랜잭션 열기 실패 또는 COMMIT 전 실패이고 롤백 성공/트랜잭션 닫힘이 확인된 경우에 기존 Turso 백오프로 재실행. 콜백은 DB 작업만 수행하고 푸시는 성공 뒤 발송. COMMIT·롤백 실패는 재실행하지 않음. 일반 `withWriteTransaction`은 그대로 재시도 없음 · `test/transactions.test.ts` |
-| 동의 전 403 은 재시도가 아님 | `sync/SyncWorkerFailure.kt` 의 `syncWorkerOutcome` | `RemoteAlarmSyncViewModel` 의 `runFullSync` catch | `middleware/consent.ts` |
+| 동의 전 403 은 재시도가 아님 | `sync/SyncWorkerFailure.kt` 의 `syncWorkerOutcome` | `UsageEventUploader.flush` 의 403 `CONSENT_REQUIRED` 갈래(큐를 남기고 이슈로 올리지 않는다 — 알람 동기화 `runFullSync` 의 catch 는 2026-10-29 에 지웠다) | `middleware/consent.ts` |
 | 401 은 재시도가 아니라 세션 종료 | `sync/SyncWorkerFailure.kt` 의 `endSessionAfterWorkerUnauthorized`(**세대+토큰** 검사) · `TransientFailureClassificationTest` | `AlarmTalkAPI.handleUnauthorized` → `AuthViewModel.handleUnauthorized`(**토큰** 대조 후 `signOut`) — API 계층이라 백그라운드도 같다 | — |
-| 401 이면 **그 회차를 끊는다**(남은 후보를 같은 죽은 토큰으로 밀지 않는다) | 워커가 `SESSION_EXPIRED` 에서 `Result.success()` 로 끝낸다(`sync/SyncWorkerFailure.kt`) | `RemoteAlarmPushSync` 의 후보 루프 `break` · `AlarmTalkTests/UnauthorizedSessionHandlingTests` 의 `PushSyncUnauthorizedCycleTests` | — |
+| 401 이면 **그 회차를 끊는다**(남은 후보를 같은 죽은 토큰으로 밀지 않는다) | 워커가 `SESSION_EXPIRED` 에서 `Result.success()` 로 끝낸다(`sync/SyncWorkerFailure.kt`) | (해당 없음 — 후보를 차례로 미는 회차가 없다. 알람 push 의 후보 루프와 그 회귀 `PushSyncUnauthorizedCycleTests` 는 2026-10-29 에 지웠다) | — |
 | 파기된 계정의 404 는 401 과 **같은 갈래**(코드 없는 404 는 **세션 유지**) | `ui/main/MainViewModelAuthActions.kt` 의 `isDestroyedAccountFailure` → `MainViewModel.handleUnauthorized` · `DestroyedAccountSessionTest` | `AuthViewModel.refreshUserApplyingToken` 의 `status == 404 && errorCode == "AUTH_USER_NOT_FOUND"` · `AlarmTalkTests/UnauthorizedSessionHandlingTests` 의 `SessionHealthCheckDestroyedAccountTests` | `routes/auth.ts` 의 `GET /auth/me`(그 밖의 라우트는 `middleware/auth.ts` 가 401) |
 | 응답에서 코드 꺼내기 | `network/ApiErrors.kt` 의 `apiErrorCode`(본문을 소진하지 않는다 — 위 행) | `APIError.serverErrorCode` | — |
 | 코드 → 문구(공용) | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` | — |

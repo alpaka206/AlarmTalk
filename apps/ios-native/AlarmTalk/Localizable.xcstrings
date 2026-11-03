@@ -1316,6 +1316,23 @@
         }
       }
     },
+    "기본 목소리로 직접 입력 월 3회" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type it yourself: 3 a month (default voices)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分で入力 月3回(基本の声)"
+          }
+        }
+      }
+    },
     "기본 목소리가 바뀌어서 알람에 쓸 음성을 다시 받는 중이에요. 다 받아야 알람이 새 목소리로 울려요.\n\n네트워크가 불안정하면 멈출 수 있어요. 그럴 때는 아래 버튼을 눌러 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1333,42 +1350,42 @@
         }
       }
     },
-    "기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요." : {
+    "기본 목소리로 바꾸면 지금 입력한 문구가 지워져요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Basic voices only speak ready-made lines, so the message you typed will be removed."
+            "value" : "Switching to a default voice clears the message you typed."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "基本の声は用意された文だけを話すので、直接入力した文はなくなります。"
+            "value" : "基本の声に変えると、いま入力した文は消えます。"
           }
         }
       }
     },
-    "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요." : {
+    "기본 목소리로는 이 문구를 만들 수 없어요. 준비된 문구를 고르거나 직접 입력해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type."
+            "value" : "This message can't be made with a default voice. Pick a prepared message or type your own."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "基本の声は用意された文だけを話せます。自由入力の文で起こすには、自分の声を選んでください。"
+            "value" : "基本の声ではこの文を作成できません。用意された文を選ぶか、自分で入力してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
+            "value" : "기본 목소리로는 이 문구를 만들 수 없어요. 준비된 문구를 고르거나 직접 입력해 주세요."
           }
         }
       }
@@ -5702,19 +5719,36 @@
         }
       }
     },
-    "원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요." : {
+    "직접 입력 월 30회(등록한 목소리 포함)" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No file of the voice you want? Play a video and record that."
+            "value" : "Type it yourself: 30 a month (incl. your registered voice)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使いたい声の音源がなければ、動画を流して録音しても大丈夫です。"
+            "value" : "自分で入力 月30回(登録した声も)"
+          }
+        }
+      }
+    },
+    "허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Have permission but no audio file? Play a video of them and record that."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "許可を得た声で音源がなければ、動画を流して録音しても大丈夫です。"
           }
         }
       }
@@ -7446,6 +7480,23 @@
         }
       }
     },
+    "목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a region from the list. We don't use location permission."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リストから地域を選んでください。位置情報の権限は使いません。"
+          }
+        }
+      }
+    },
     "직접 녹음" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8413,19 +8464,19 @@
         }
       }
     },
-    "목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요." : {
+    "목소리를 만들지 못했어요. 잠시 후 다시 시도해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "We could not create that voice. Please record again somewhere quiet."
+            "value" : "We couldn't create the voice. Please try again in a moment."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声を作成できませんでした。静かな場所でもう一度録音してください。"
+            "value" : "声を作成できませんでした。しばらくしてからもう一度お試しください。"
           }
         }
       }
@@ -8718,37 +8769,39 @@
         }
       }
     },
-    "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (%lld%%)\n목소리 탭에서 진행 상황을 볼 수 있어요." : {
+    "이 알람에 쓸 목소리를 받고 있어요. 이 목소리부터 먼저 받아요. (%lld%%)\n다른 기본 목소리도 이어서 받아요." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You can set alarms once the default voices finish downloading. (%lld%%)\nYou can check progress in the Voices tab."
+            "value" : "Downloading the voice for this alarm first. (%lld%%)\nThe other default voices keep downloading after it."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。(%lld%%)\n進み具合は「声」タブで確認できます。"
+            "value" : "このアラームで使う声を先にダウンロードしています。(%lld%%)\nほかの基本の声も続けてダウンロードします。"
           }
         }
-      }
+      },
+      "extractionState" : "manual"
     },
-    "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요." : {
+    "이 알람에 쓸 목소리를 받고 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You can set alarms once the default voices finish downloading.\nPlease stay connected to the internet for a moment."
+            "value" : "Downloading the voice for this alarm.\nPlease stay connected to the internet for a moment."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。\nインターネットに接続したまま少しお待ちください。"
+            "value" : "このアラームで使う声をダウンロードしています。\nインターネットに接続したまま少しお待ちください。"
           }
         }
-      }
+      },
+      "extractionState" : "manual"
     },
     "받는 중 %lld%%" : {
       "localizations" : {
@@ -12499,6 +12552,1806 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "退会申請中のアカウントのため、この端末でもログアウトしました。もう一度ログインすると退会が取り消されます。"
+          }
+        }
+      }
+    },
+    "이 목소리로 새 알람 만들기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New alarm with this voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この声で新しいアラームを作成"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 목소리로 새 알람 만들기"
+          }
+        }
+      }
+    },
+    "%@ 목소리의 인사예요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A hello from %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@の声のあいさつです"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 목소리의 인사예요"
+          }
+        }
+      }
+    },
+    "더 보기 (운세·약)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More (fortune, medication)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もっと見る（運勢・お薬）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "더 보기 (운세·약)"
+          }
+        }
+      }
+    },
+    "다음 알람과 목소리가 준비됐어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your next alarm and its voice are ready."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のアラームと声の準備ができています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 알람과 목소리가 준비됐어요."
+          }
+        }
+      }
+    },
+    "기본 목소리를 받고 있어요. 받는 동안에도 알람은 울려요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading the default voices. Your alarm still rings meanwhile."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標準の声をダウンロードしています。その間もアラームは鳴ります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기본 목소리를 받고 있어요. 받는 동안에도 알람은 울려요."
+          }
+        }
+      }
+    },
+    "날씨를 아직 갱신하지 못했어요. 연결되면 다시 받아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't update the weather yet. It will retry when you're online."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気をまだ更新できていません。接続されたら再取得します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날씨를 아직 갱신하지 못했어요. 연결되면 다시 받아요."
+          }
+        }
+      }
+    },
+    "등록한 목소리는 %@에 이용이 끝나요. 그 뒤에는 기본 목소리로 울려요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your registered voice is available until %@. After that, the alarm uses a default voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録した声は%@まで使えます。その後は標準の声で鳴ります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "등록한 목소리는 %@에 이용이 끝나요. 그 뒤에는 기본 목소리로 울려요."
+          }
+        }
+      }
+    },
+    "다음 알람 · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next alarm · %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のアラーム · %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 알람 · %@"
+          }
+        }
+      }
+    },
+    "다음 알람" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next alarm"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のアラーム"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 알람"
+          }
+        }
+      }
+    },
+    "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still making this voice. Please save again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ音声を作成しています。少し待ってからもう一度保存してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요."
+          }
+        }
+      }
+    },
+    "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A new message makes a voice when you save, using 1 of this month's creations. Reusing a voice that's still on this phone doesn't count, but getting it again when it isn't on this phone uses 1."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。このスマホに残っている音声はもう一度使っても回数を使いませんが、スマホにない音声をもう一度受け取ると1回使います。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요."
+          }
+        }
+      }
+    },
+    "녹음 파일을 읽지 못했어요. 다시 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We couldn't read the recording. Please record again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音ファイルを読み込めませんでした。もう一度録音してください。"
+          }
+        }
+      }
+    },
+    "마이크에서 소리가 들어오지 않았어요. 다른 앱이 마이크를 쓰고 있지 않은지 확인한 뒤 다시 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No sound came in from the microphone. Make sure no other app is using it, then record again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクから音が入ってきませんでした。ほかのアプリがマイクを使っていないか確認してから、もう一度録音してください。"
+          }
+        }
+      }
+    },
+    "말소리가 거의 들리지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We can barely hear any speech."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話し声がほとんど聞こえません。"
+          }
+        }
+      }
+    },
+    "말하지 않은 시간이 길어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There are long stretches without speech."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話していない時間が長いです。"
+          }
+        }
+      }
+    },
+    "목소리가 작게 녹음됐어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your voice was recorded quietly."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声が小さく録音されました。"
+          }
+        }
+      }
+    },
+    "소리가 너무 커서 일부가 찌그러졌어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parts of it were too loud and got distorted."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音が大きすぎて、一部がひずみました。"
+          }
+        }
+      }
+    },
+    "녹음이 제대로 끝나지 않았어요. 들어 보고 쓸지 정해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The recording didn't finish properly. Listen to it and decide whether to use it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音が正しく終わりませんでした。聞いてみて、使うかどうか決めてください。"
+          }
+        }
+      }
+    },
+    "전화나 다른 앱 때문에 녹음이 멈췄어요. 멈춘 곳까지 남겨 두었어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A call or another app stopped the recording. We kept everything up to that point."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電話やほかのアプリのせいで録音が止まりました。止まったところまでは残してあります。"
+          }
+        }
+      }
+    },
+    "전화나 다른 앱 때문에 녹음이 멈췄어요. 12초 이상 다시 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A call or another app stopped the recording. Please record again for at least 12 seconds."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電話やほかのアプリのせいで録音が止まりました。12秒以上もう一度録音してください。"
+          }
+        }
+      }
+    },
+    "말소리로 들린 시간 약 %lld초 · 전체 %lld초" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech heard: about %lld s · Total: %lld s"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話し声が聞こえた時間 約%lld秒 · 全体 %lld秒"
+          }
+        }
+      }
+    },
+    "그대로 써도 돼요. 다시 녹음하면 목소리가 더 또렷하게 만들어질 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can use it as is. Recording again may give you a clearer voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このまま使っても大丈夫です。録音し直すと、声がよりはっきり作られることがあります。"
+          }
+        }
+      }
+    },
+    "녹음을 확인해 주세요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your recording"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を確認してください"
+          }
+        }
+      }
+    },
+    "그래도 쓰기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use anyway"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このまま使う"
+          }
+        }
+      }
+    },
+    "날짜 지정" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Specific date"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付を指定"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날짜 지정"
+          }
+        }
+      }
+    },
+    "고른 날 한 번만 울려요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rings once on the day you pick"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選んだ日に一度だけ鳴ります"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "고른 날 한 번만 울려요"
+          }
+        }
+      }
+    },
+    "날짜" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Date"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날짜"
+          }
+        }
+      }
+    },
+    "날짜 고르기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a date"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付を選択"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날짜 고르기"
+          }
+        }
+      }
+    },
+    "%@ 기준 · 이 기기 시각 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ time · %2$@ on this device"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 基準 · この端末の時刻 %2$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 기준 · 이 기기 시각 %@"
+          }
+        }
+      }
+    },
+    "이미 지난 시각이에요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That time has already passed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すでに過ぎた時刻です"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이미 지난 시각이에요"
+          }
+        }
+      }
+    },
+    "날짜나 시각을 다시 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick another date or time."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付か時刻を選び直してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날짜나 시각을 다시 골라 주세요."
+          }
+        }
+      }
+    },
+    "같은 시각에 다른 알람이 있어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another alarm is set for this time"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同じ時刻に別のアラームがあります"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "같은 시각에 다른 알람이 있어요"
+          }
+        }
+      }
+    },
+    "날짜 알람은 다른 알람을 바꾸지 않아요. 다른 시각을 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A dated alarm won't replace other alarms. Pick another time."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付アラームは他のアラームを置き換えません。別の時刻を選んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날짜 알람은 다른 알람을 바꾸지 않아요. 다른 시각을 골라 주세요."
+          }
+        }
+      }
+    },
+    "날짜가 지난 알람이에요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This alarm's date has passed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付が過ぎたアラームです"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날짜가 지난 알람이에요"
+          }
+        }
+      }
+    },
+    "편집에서 날짜를 다시 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit the alarm to pick a new date."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編集で日付を選び直してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "편집에서 날짜를 다시 골라 주세요."
+          }
+        }
+      }
+    },
+    "%lld주" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld-week"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld週間"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld주"
+          }
+        }
+      }
+    },
+    "%lld개월" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld-month"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldか月"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld개월"
+          }
+        }
+      }
+    },
+    "%lld년" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld-year"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld年"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld년"
+          }
+        }
+      }
+    },
+    "%@ 무료 체험, 이후 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ free trial, then %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@無料トライアル、その後%2$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 무료 체험, 이후 %2$@"
+          }
+        }
+      }
+    },
+    "체험이 끝나면 자동으로 결제돼요. 끝나기 전에 App Store 에서 언제든 해지할 수 있고, 해지하면 결제되지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After the trial you are charged automatically. Cancel anytime in the App Store before it ends and you will not be charged."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トライアル終了後は自動で課金されます。終了前にApp Storeでいつでも解約でき、解約すれば課金されません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "체험이 끝나면 자동으로 결제돼요. 끝나기 전에 App Store 에서 언제든 해지할 수 있고, 해지하면 결제되지 않아요."
+          }
+        }
+      }
+    },
+    "이번 달 광고 보상을 다 받았어요. 다음 달 1일에 다시 받을 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've used this month's ad rewards. More become available on the 1st."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月の広告特典はすべて受け取りました。来月1日からまた受け取れます。"
+          }
+        }
+      }
+    },
+    "다른 기기에서 광고를 보고 있어요. 잠시 뒤 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An ad is already open on another device. Please try again shortly."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の端末で広告を表示中です。少ししてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "광고 준비 시간이 지났어요. 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The ad took too long to start. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告の準備時間が過ぎました。もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "지금은 광고를 볼 수 없어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ads aren't available right now. Voices you made and the basic messages still work."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今は広告を表示できません。作成済みの音声と基本の文言はそのまま使えます。"
+          }
+        }
+      }
+    },
+    "광고 보고 한 번 쓰기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watch an ad to use once"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告を見て1回使う"
+          }
+        }
+      }
+    },
+    "이번 달 무료 만들기를 다 썼어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've used this month's free creations"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月の無料作成をすべて使いました"
+          }
+        }
+      }
+    },
+    "광고를 끝까지 한 번 보면 기본 목소리로 직접 입력 문구를 한 번 더 만들 수 있어요. 받은 보상은 이 계정에서만 쓰여요. 플러스는 한 달에 30번 만들 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watch one ad to the end to create one more typed message in a basic voice. The reward stays with this account. Plus lets you create 30 a month."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告を最後まで1回見ると、基本の声で自分で入力した文言をもう1回作成できます。特典はこのアカウントでのみ使えます。プラスなら月30回作成できます。"
+          }
+        }
+      }
+    },
+    "보상을 확인하고 있어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking your reward"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "特典を確認しています"
+          }
+        }
+      }
+    },
+    "광고 보상을 확인하는 데 시간이 걸리고 있어요. 확인되면 다시 저장할 때 광고 없이 만들 수 있어요. 이 창은 닫아도 돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirming your ad reward is taking a while. Once it's confirmed, save again to create it without another ad. You can close this."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告特典の確認に時間がかかっています。確認できたら、もう一度保存すると広告なしで作成できます。この画面は閉じても大丈夫です。"
+          }
+        }
+      }
+    },
+    "이번 달 광고 보상을 다 받았어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've used this month's ad rewards"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月の広告特典はすべて受け取りました"
+          }
+        }
+      }
+    },
+    "%@에 다시 받을 수 있어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있고, 플러스는 한 달에 30번 만들 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can earn more on %@. Voices you made and the basic messages still work, and Plus lets you create 30 a month."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@からまた受け取れます。作成済みの音声と基本の文言はそのまま使えます。プラスなら月30回作成できます。"
+          }
+        }
+      }
+    },
+    "광고 보상을 받았어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ad reward received"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告特典を受け取りました"
+          }
+        }
+      }
+    },
+    "다시 저장하면 이 보상으로 한 번 만들어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save again to create it once with this reward."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度保存すると、この特典で1回作成します。"
+          }
+        }
+      }
+    },
+    "지금은 광고를 볼 수 없어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No ad available right now"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今は広告を表示できません"
+          }
+        }
+      }
+    },
+    "지금은 볼 수 있는 광고가 없어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There's no ad to watch right now. Voices you made and the basic messages still work."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今は表示できる広告がありません。作成済みの音声と基本の文言はそのまま使えます。"
+          }
+        }
+      }
+    },
+    "광고를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We couldn't load an ad. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告を読み込めませんでした。少ししてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "광고" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ads"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告"
+          }
+        }
+      }
+    },
+    "광고 개인정보 설정" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ad privacy settings"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告のプライバシー設定"
+          }
+        }
+      }
+    },
+    "기상 인사" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wake-up greeting"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目覚めのあいさつ"
+          }
+        }
+      }
+    },
+    "응원 문구" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encouragement lines"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "応援の言葉"
+          }
+        }
+      }
+    },
+    "다양하게" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mix it up"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "いろいろな言葉で"
+          }
+        }
+      }
+    },
+    "이 문구로 고정" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep this line"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この言葉に固定"
+          }
+        }
+      }
+    },
+    "고른 문구로만 울려요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only the line you pick will play."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選んだ言葉だけが流れます。"
+          }
+        }
+      }
+    },
+    "최근에 준비한 문구는 잠시 쉬고, 다른 응원으로 준비해요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recently prepared lines take a short break, so a different one is set up next."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近用意した言葉は少しお休みして、別の応援を用意します。"
+          }
+        }
+      }
+    },
+    "voicePack.editor.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra pack"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パック"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "추가 팩"
+          }
+        }
+      }
+    },
+    "추가 팩" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra packs"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パック"
+          }
+        }
+      }
+    },
+    "준비 중인 추가 팩이 아직 없어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No extra packs are available yet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パックはまだありません。"
+          }
+        }
+      }
+    },
+    "받지 못했어요. 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't download. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードできませんでした。もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "게시가 끝났어요. %@까지 기존 알람에서 울려요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This pack is no longer offered. Existing alarms keep using it until %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公開が終了しました。%@まで既存のアラームで鳴ります。"
+          }
+        }
+      }
+    },
+    "받음" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロード済み"
+          }
+        }
+      }
+    },
+    "들어 보기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listen"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "試聴"
+          }
+        }
+      }
+    },
+    "사용 범위" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "利用範囲"
+          }
+        }
+      }
+    },
+    "받으면 알람 목소리 목록에 이 목소리가 생겨요. 날씨·운세·응원·약 테마에 쓸 수 있고, 직접 입력에는 쓸 수 없어요. 이미 있는 알람은 바뀌지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once downloaded, this voice appears in your alarm voice list. You can use it for the weather, fortune, cheer and medication themes, but not for custom text. Existing alarms stay as they are."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードすると、アラームの声の一覧にこの声が追加されます。天気・運勢・応援・薬のテーマに使えますが、直接入力には使えません。既存のアラームは変わりません。"
+          }
+        }
+      }
+    },
+    "이 팩을 지울까요?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this pack?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このパックを削除しますか?"
+          }
+        }
+      }
+    },
+    "지우기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除"
+          }
+        }
+      }
+    },
+    "이 목소리를 쓰는 알람 %lld개가 미나 목소리로 바뀌어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld alarms using this voice will switch to Mina's voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この声を使うアラーム%lld件がミナの声に変わります。"
+          }
+        }
+      }
+    },
+    "받기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロード"
+          }
+        }
+      }
+    },
+    "다시 받기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度ダウンロード"
+          }
+        }
+      }
+    },
+    "이 팩은 지금 받을 수 없어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This pack isn't available right now."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このパックは現在ダウンロードできません。"
+          }
+        }
+      }
+    },
+    "받은 오디오가 맞지 않아요. 다시 받아 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The downloaded audio didn't match. Please download it again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードした音声が一致しません。もう一度ダウンロードしてください。"
+          }
+        }
+      }
+    },
+    "추가 팩 목소리로 바꿀까요?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to the extra pack voice?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パックの声に変えますか?"
+          }
+        }
+      }
+    },
+    "추가 팩 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra pack voices only say prepared lines, so the text you typed will be removed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パックの声は用意された文だけを話すため、入力した文は消えます。"
+          }
+        }
+      }
+    },
+    "직접 입력을 쓸 수 없어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom text isn't available"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直接入力は使えません"
+          }
+        }
+      }
+    },
+    "추가 팩 목소리는 직접 입력에 쓸 수 없어요. 문구 화면에서 테마를 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra pack voices can't read custom text. Choose a theme on the message screen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加パックの声は直接入力には使えません。文の画面でテーマを選んでください。"
+          }
+        }
+      }
+    },
+    "이미 가입된 이메일이에요. 로그인해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This email is already registered. Please log in."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "既に登録済みのメールです。ログインしてください。"
+          }
+        }
+      }
+    },
+    "Apple 또는 Google로 가입된 이메일이에요. 처음 가입한 방법으로 로그인해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This email is registered with Apple or Google. Please sign in the way you first signed up."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AppleまたはGoogleで登録済みのメールです。最初に登録した方法でログインしてください。"
+          }
+        }
+      }
+    },
+    "녹음이 필요해요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording needed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音が必要です"
+          }
+        }
+      }
+    },
+    "지역이 없어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No region"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地域がありません"
+          }
+        }
+      }
+    },
+    "운세 정보가 없어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No fortune details"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "占いの情報がありません"
+          }
+        }
+      }
+    },
+    "먼저 목소리를 녹음하거나 파일을 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record a voice or pick a file first."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先に声を録音するか、ファイルを選んでください。"
+          }
+        }
+      }
+    },
+    "알람을 읽어 줄 목소리를 먼저 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the voice that will read your alarm."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームを読み上げる声を先に選んでください。"
+          }
+        }
+      }
+    },
+    "날씨 문구를 쓰려면 지역이 필요해요. 문구 화면에서 지역을 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weather messages need a region. Pick one on the message screen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気の文章には地域が必要です。文章の画面で地域を選んでください。"
+          }
+        }
+      }
+    },
+    "운세 문구를 쓰려면 성별과 생년월일, 태어난 시간이 필요해요. 문구 화면에서 입력해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortune messages need your gender, birth date and birth time. Add them on the message screen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "占いの文章には性別・生年月日・生まれた時間が必要です。文章の画面で入力してください。"
+          }
+        }
+      }
+    },
+    "목소리 파일을 아직 받는 중이에요. 잠시 뒤에 다시 저장해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The voice file is still downloading. Try saving again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声ファイルをまだ受信中です。少し経ってからもう一度保存してください。"
+          }
+        }
+      }
+    },
+    "%@ (광고 보상 %lld번)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (%lld from ads)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（広告特典 %lld回）"
+          }
+        }
+      }
+    },
+    "알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없고 %lld자까지 쓸 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is the name shown in the alarm list and the Voices tab. It can't be left empty and can be up to %lld characters."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラーム一覧と声タブに表示される名前です。名前は空にできず、%lld文字まで入力できます。"
           }
         }
       }

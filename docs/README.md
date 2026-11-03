@@ -14,6 +14,7 @@
 |---|---|
 | **[spec/](spec/README.md)** | **⭐ 동작 스펙 — 세 구현의 단일 출처. 동작을 바꾸면 여기부터** |
 | [product/](product/README.md) | 제품 방향, 대상 사용자, 음성 프롬프트 설계 |
+| [product/campaigns-v13.md](product/campaigns-v13.md) | v1.3 시연 소재 3종 대본·캠페인 링크 규칙·설치 뒤 연결 현황·관찰 기록표(대본만 — 촬영·게시 전) |
 | [tech/](tech/README.md) | 시스템 구조, DB 운영 규약, API 개요 |
 | [standards/](standards/README.md) | 코딩 컨벤션, git 워크플로, 아키텍처 결정 |
 | [qa/](qa/README.md) | 테스트 전략과 진행 중인 실기기 검증 |

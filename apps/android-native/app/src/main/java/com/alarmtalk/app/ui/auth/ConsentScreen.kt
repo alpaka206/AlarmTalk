@@ -87,6 +87,8 @@ internal fun ConsentScreen(
     prechecked: List<String>,
     isReconsent: Boolean,
     onAgree: (agreedOptional: Set<String>) -> Unit,
+    // 제출이 안 됐다는 이유 — 버튼 바로 위에 빨간 글자로 그린다(2026-10-29 오너: 알림이 아니라 빨간 글자, iOS 짝).
+    errorText: String? = null,
 ) {
     var age14 by remember { mutableStateOf(false) }
     var terms by remember { mutableStateOf(false) }
@@ -278,6 +280,14 @@ internal fun ConsentScreen(
                 }
             }
 
+            errorText?.let { text ->
+                Text(
+                    text = text,
+                    modifier = Modifier.padding(top = 12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AuthErrorText,
+                )
+            }
             Box(Modifier.padding(vertical = 16.dp)) {
                 GradientCta(
                     // 받을 게 선택 동의뿐이면 '동의하고 시작하기' 라고 하면 안 된다 —

@@ -56,7 +56,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.alarmtalk.app.core.AlarmTalkLog
+import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.DowngradeNoticeStore
+import com.alarmtalk.app.data.systemVoiceDisplayName
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -95,6 +97,10 @@ internal fun AlarmTalkApp(
     val authSession = viewModel.authSession
     val authBusy = viewModel.authBusy
     val voiceProfiles = viewModel.voiceProfiles
+    // 받은 추가 팩 — 저장소(워커도 쓴다)가 바뀌거나 계정이 바뀌면 다시 읽는다(`docs/spec/voice-packs.md` §7).
+    val voicePackChanges by com.alarmtalk.app.data.VoicePackStore.changes.collectAsState()
+    val voicePackProgress by com.alarmtalk.app.data.VoicePackStore.progress.collectAsState()
+    LaunchedEffect(voicePackChanges, authSession?.user?.id) { viewModel.refreshHeldVoicePacks() }
     val pendingVoiceDraft = viewModel.pendingVoiceDraft
     val voiceProfileBusy = viewModel.voiceProfileBusy
     val billingBusy = viewModel.billingBusy
@@ -276,6 +282,8 @@ internal fun AlarmTalkApp(
     // '알람 추가' 흐름에서 권한 게이트로 넘어온 요청. 권한을 모두 허용하면 이어서 알람 편집
     // 페이지로 진입한다. 사용자가 모달을 닫으면 취소로 보고 비운다.
     var pendingCreateAlarmAfterPermission by remember { mutableStateOf(false) }
+    // 권한 게이트를 지나는 동안 들고 있는 '이 목소리로 새 알람 만들기' 의 목소리.
+    var pendingCreateAlarmVoiceId by remember { mutableStateOf<String?>(null) }
 
     // 권한 게이트 모달이 열린 동안 권한 상태를 추적한다: 현재 대상 권한이 채워지면 다음 미허용
     // 알람 권한으로 넘기고, 알람에 필요한 권한이 모두 채워지면 모달을 자동으로 닫는다.
@@ -296,7 +304,8 @@ internal fun AlarmTalkApp(
         if (pendingCreateAlarmAfterPermission && permissions.alarmReady) {
             pendingCreateAlarmAfterPermission = false
             viewModel.dismissPermissionGate()
-            navController.navigate(AppRoute.AlarmCreate)
+            navController.navigate(AppRoute.alarmCreate(pendingCreateAlarmVoiceId))
+            pendingCreateAlarmVoiceId = null
         }
     }
 
@@ -532,6 +541,8 @@ internal fun AlarmTalkApp(
         viewModel.preloadVoiceProfiles()
         viewModel.loadStockClips()
         viewModel.prefetchStockClips()
+        // 추가 팩 카탈로그 — 받은 팩의 게시 끝 기한을 적고 기한 지난 팩을 미나로 바꾼다(`docs/spec/voice-packs.md` §5).
+        viewModel.loadVoicePackCatalog()
         // 준비도(생성+다운로드)를 함께 센다 — 편집기 관문과 준비 화면이 이 값을 본다.
         // ⚠ **매번 다시 센다.** '한 번 받았다' 를 기록해 건너뛰면 캐시 삭제·기본 목소리
         // 추가로 비어도 알아채지 못한다(docs/spec/voice-and-message.md).
@@ -697,6 +708,8 @@ internal fun AlarmTalkApp(
     LaunchedEffect(currentTab, sessionEffectKey) {
         if (authSession == null) return@LaunchedEffect
         val tab = currentTab ?: return@LaunchedEffect
+        // 목소리 탭에 들어올 때마다 지난 실패 이유를 지운다 — 아래 스로틀보다 앞이다(갱신은 건너뛰어도 지우기는 한다).
+        if (tab == NativeTab.Voices) viewModel.voiceTabError = null
         val throttleKey = tab to sessionEffectKey
         val now = System.currentTimeMillis()
         val last = lastTabRefreshAt[throttleKey]
@@ -713,12 +726,11 @@ internal fun AlarmTalkApp(
                 viewModel.preloadVoiceProfiles()
                 // 유료 클론 확정 후 cron 이 세션 중 새로 만든 사전렌더 클립을 반영하려면 다시 본다.
                 // 신선도 창(45초) 안에 받은 게 있으면 그걸 쓴다 — 탭을 오갈 때마다 받지 않게
-                // (`StockClipManifestFlights`, 효율 감사 M1).
                 viewModel.loadStockClips(com.alarmtalk.app.ManifestNeed.RECENT)
+                viewModel.loadVoicePackCatalog()
             }
             // 알람 홈: 히어로가 구독 데이터를 쓰므로 함께 갱신한다.
             NativeTab.Alarms -> {
-                viewModel.syncNow()
                 viewModel.refreshBilling()
                 // 편집기가 이 탭에서 열리고, cron 이 세션 중 만든 클론 클립을 오프라인 버킷 판정
                 // (hasCompleteCloneBucket)에 반영하려면 매니페스트를 다시 봐야 한다(신선도 창 안이면
@@ -823,24 +835,36 @@ internal fun AlarmTalkApp(
     val defaultVoiceGate = remember(defaultVoiceGateScope) { DefaultVoiceGate(defaultVoiceGateScope) }
 
     /**
-     * 알람 설정 화면(새로 만들기·고치기)을 연다 — **기본 목소리를 다 받았을 때만.**
+     * 알람 설정 화면(새로 만들기·고치기)을 연다 — **그 알람이 쓸 기본 목소리를 다 받았을 때만.**
      *
-     * 2026-09-17 지시: 다 받기 전에는 설정 화면 자체를 막는다. 받다 만 상태로 들어가면 문구
-     * 행이 「문구를 준비하고 있어요」 에 머물고, 저장해도 테마 회전이 비어 운다. 막았으면
-     * 받기부터 다시 건다(유니크 작업이라 돌고 있으면 그대로 둔다).
-     * 규칙은 `docs/spec/voice-and-message.md` 「기본 목소리를 다 받아야 알람을 설정한다」.
+     * 2026-09-17 에는 기본 목소리 **넷 전부**를 다 받아야 열었다. 2026-10-26(v1.3 W05)부터는 그 알람의 목소리 하나만 본다
+     * — 새 알람은 편집기가 처음 고를 목소리(직전 선택 → 내 목소리 → 첫 기본 목소리), 기존 알람은 그 알람의 목소리다. 나머지
+     * 기본 목소리는 뒤에서 계속 받는다. 받다 만 목소리로 들어가면 문구 행이 「문구를 준비하고 있어요」 에 머무는 사고는 그
+     * 목소리 하나를 다 받았는지로 막힌다. 막혔으면 그 목소리를 **먼저** 받게 순서를 적고 받기를 다시 건다(유니크 작업이라
+     * 돌고 있으면 그대로 두고, 돌던 워커가 다음 배치부터 순서를 다시 읽는다 — `StockClipPrefetchPriority`).
+     * 내 목소리(클론)는 여기서 보지 않는다 — 편집기의 `ClipGate` 가 본다.
+     * 규칙은 `docs/spec/voice-and-message.md` 「알람마다 필요한 목소리만 본다」.
      *
      * ⚠ **탭 하나에 한 번, 메인 밖에서 센다**([DefaultVoiceGate] — 2026-09-29 A32 에서 메인에서
      * 두 번 세다 3.5초, 연타로 15.8초 멎었다). [onReady] 는 판정이 끝난 뒤 메인에서 불린다.
      * 판정이 도는 동안 들어온 탭은 버린다. 세는 사이 다른 화면(백스택 항목)이나 다른 계정으로
      * 옮겼으면 결과를 버린다 — 새 화면 위에 편집기·알럿이 뜨면 안 된다.
      */
-    fun whenDefaultVoicesReady(onReady: () -> Unit) {
+    fun whenAlarmVoiceReady(voiceId: String?, onReady: () -> Unit) {
         val userId = authSession?.user?.id
+        // 모르면(목소리 목록이 비었다 등) 예전처럼 기본 목소리 전체를 본다 — 모르는 것으로 열지 않는다.
+        if (voiceId != null && !isSystemVoiceId(voiceId)) {
+            onReady()
+            return
+        }
         val requestedEntryId = navController.currentBackStackEntry?.id
         defaultVoiceGate.request(
             progress = {
-                com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId)
+                if (voiceId == null) {
+                    com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId)
+                } else {
+                    com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId, voiceId)
+                }
             },
             // 캡처한 `authSession` 은 탭한 순간 값이라, 지금 값은 뷰모델 상태에서 다시 읽는다.
             isStillCurrent = {
@@ -850,26 +874,54 @@ internal fun AlarmTalkApp(
             onReady = onReady,
             onBlocked = { progress ->
                 voicesNotReadyProgress = progress
+                if (voiceId != null) {
+                    com.alarmtalk.app.sync.StockClipPrefetchPriority.request(
+                        context,
+                        userId,
+                        com.alarmtalk.app.sync.PrefetchTarget(voiceId, null),
+                    )
+                }
                 com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context)
                 voicesNotReadyOpen = true
             },
         )
     }
 
-    /** 관문을 **이미 통과한 뒤** 편집기를 연다(권한이 모자라면 권한 게이트부터). */
-    fun openCreateAlarm() {
+    /** 새 알람의 편집기가 처음 고를 목소리 — 편집기의 자동 선택과 같은 규칙(`preferredInitialVoiceProfileId`). */
+    fun initialVoiceForNewAlarm(): String? {
+        // 편집기와 같은 목록에서 고른다 — 무료면 클론을 거르고(`editorVisibleVoiceProfiles`), 정리 중·준비 안 된 것도 뺀다.
+        val visible = editorVisibleVoiceProfiles(
+            voiceProfiles,
+            editorFreeVoiceTier(authSession, subscriptionResponse, viewModel.isStoreEntitledNow()),
+        )
+        val selectable = visible.filter { (it.status == null || it.status == "ready") && it.id !in viewModel.settlingVoiceProfileIds }
+        return preferredInitialVoiceProfileId(
+            lastUsedVoiceId = viewModel.lastUsedVoiceId,
+            ownVoiceIds = selectable.filter { it.isSystem != true }.map { it.id },
+            systemVoiceIds = selectable.filter { it.isSystem == true }.map { it.id },
+            profileLoadFinished = viewModel.voiceProfileLoadFinished,
+        )
+    }
+
+    /**
+     * 관문을 **이미 통과한 뒤** 편집기를 연다(권한이 모자라면 권한 게이트부터). [preferredVoiceId] 는 목소리 탭의 '이 목소리로
+     * 새 알람 만들기' 가 넘기는 목소리 — 그 새 알람에서만 처음 고른다.
+     */
+    fun openCreateAlarm(preferredVoiceId: String? = null) {
         if (!permissions.alarmReady) {
             // 권한 게이트로 넘어가되, 허용 완료 후 이 알람 추가를 이어서 편집 페이지로 진입시킨다.
             pendingCreateAlarmAfterPermission = true
+            pendingCreateAlarmVoiceId = preferredVoiceId
             requestFirstMissingAlarmPermission()
         } else {
-            navController.navigate(AppRoute.AlarmCreate)
+            navController.navigate(AppRoute.alarmCreate(preferredVoiceId))
         }
     }
 
-    // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드가 모두 이 경로를 탄다.
-    fun requestCreateAlarm() {
-        whenDefaultVoicesReady { openCreateAlarm() }
+    // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드, 목소리 탭의 '이 목소리로 새 알람 만들기' 가 모두 이 경로를 탄다.
+    // 관문은 그 새 알람이 처음 고를 목소리를 본다 — 목소리 탭에서 넘긴 목소리가 있으면 그것이다.
+    fun requestCreateAlarm(preferredVoiceId: String? = null) {
+        whenAlarmVoiceReady(preferredVoiceId ?: initialVoiceForNewAlarm()) { openCreateAlarm(preferredVoiceId) }
     }
 
     if (authSession == null) {
@@ -942,18 +994,10 @@ internal fun AlarmTalkApp(
         )
     }
 
-    if (viewModel.nicknameEditDialogOpen) {
-        NicknameEditDialog(
-            initial = authSession?.user?.name.orEmpty(),
-            busy = authBusy,
-            onDismiss = viewModel::dismissEditNickname,
-            onConfirm = viewModel::updateNickname,
-        )
-    }
-
     if (viewModel.deleteAccountConfirmOpen) {
         DeleteAccountConfirmDialog(
             busy = authBusy,
+            errorText = viewModel.actionErrorFor(SignedInAction.ACCOUNT_DELETION),
             onDismiss = viewModel::dismissDeleteAccount,
             onConfirm = ::deleteAccount,
         )
@@ -1041,7 +1085,11 @@ internal fun AlarmTalkApp(
             // 국외 이전만 빠진 등록에서 TTS 카피가 떠 사용자를 속인다(Codex #660).
             registeringVoice = request.resumeVoiceDrafts != null,
             onAgree = viewModel::submitVoiceConsents,
-            onDismiss = { viewModel.pendingSensitiveConsent = null },
+            errorText = viewModel.actionErrorFor(SignedInAction.SENSITIVE_CONSENT),
+            onDismiss = {
+                viewModel.pendingSensitiveConsent = null
+                viewModel.clearActionError(SignedInAction.SENSITIVE_CONSENT)
+            },
         )
     }
 
@@ -1050,6 +1098,21 @@ internal fun AlarmTalkApp(
             timeLabel = "%02d:%02d".format(prompt.hour, prompt.minute),
             onConfirm = prompt.onConfirmReplace,
             onDismiss = viewModel::dismissDuplicateAlarmPrompt,
+        )
+    }
+
+    viewModel.datedAlarmNotice?.let { notice ->
+        IosAlertDialog(
+            title = stringResource(notice.titleRes),
+            message = stringResource(notice.messageRes),
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.dated_alarm_notice_ok),
+                    emphasized = true,
+                    onClick = { viewModel.dismissDatedAlarmNotice() },
+                ),
+            ),
+            onDismiss = { viewModel.dismissDatedAlarmNotice() },
         )
     }
 
@@ -1249,6 +1312,7 @@ internal fun AlarmTalkApp(
               optional = viewModel.consentOptional,
               prechecked = viewModel.consentPrechecked,
               onAgree = { agreedOptional -> viewModel.submitConsents(agreedOptional) },
+              errorText = viewModel.actionErrorFor(SignedInAction.CONSENT),
           )
           return@Scaffold
       }
@@ -1331,10 +1395,37 @@ internal fun AlarmTalkApp(
       fun EditorRoute(
           alarm: AlarmEntity?,
           saveAlarm: (AlarmDraft) -> Unit,
+          // 새 알람에서 처음 고를 목소리 — 직전 선택 자리를 이 편집기에서만 대신한다(전역 값은 그대로).
+          preferredVoiceId: String? = null,
       ) {
           val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
           val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
           val lastManualText = remember(authSession?.user?.id) { viewModel.lastManualText() }
+          // 기본 목소리마다 폰에 다 받았는가 — 편집기가 떠 있는 동안만, 다 받을 때까지 2초마다 센다(디스크를 읽으니 IO 에서).
+          var systemVoiceDownload by remember { mutableStateOf<Map<String, Pair<Int, Int>>?>(null) }
+          LaunchedEffect(authSession?.user?.id) {
+              while (true) {
+                  val counted = withContext(Dispatchers.IO) {
+                      runCatching {
+                          com.alarmtalk.app.sync.StockClipPrefetchWorker
+                              .defaultVoiceProgressByVoice(context, authSession?.user?.id)
+                      }.getOrNull()
+                  }
+                  systemVoiceDownload = counted
+                  if (counted != null && counted.values.all { (done, total) -> done >= total }) break
+                  kotlinx.coroutines.delay(2000)
+              }
+          }
+          // **받은 추가 팩은 편집기에 넘길 때만 합친다**(`docs/spec/voice-packs.md` §7). 다 받았고 게시 중인 팩 + 이 알람이 이미
+          // 쓰는 팩이다. 기본 목소리처럼(`isSystem`) 테마 클립으로 묶인다 — 뷰모델의 `stockClips` 에는 섞지 않는다(기본 4종
+          // 관문·선다운로드가 그 목록을 센다).
+          val editorPacks = com.alarmtalk.app.data.editorVoicePacks(viewModel.heldVoicePacks, alarm?.voiceProfileId)
+          val editorVoiceProfiles = if (editorPacks.isEmpty()) voiceProfiles else voiceProfiles + editorPacks.map { it.toVoiceProfile() }
+          val editorStockClips = if (editorPacks.isEmpty()) {
+              viewModel.stockClips
+          } else {
+              viewModel.stockClips + editorPacks.flatMap { it.toStockClips() }
+          }
           AlarmEditorScreen(
               contentPadding = padding,
               // ⚠ 편집기 유료 게이트의 코드 입력(`onRegisterCode`)은 2026-10-14 에 지웠다 — 되살리지 말 것
@@ -1343,25 +1434,41 @@ internal fun AlarmTalkApp(
               authSession = authSession,
               subscriptionResponse = subscriptionResponse,
               storeEntitledNow = viewModel.isStoreEntitledNow(),
-              voiceProfiles = voiceProfiles,
+              voiceProfiles = editorVoiceProfiles,
               settlingVoiceProfileIds = viewModel.settlingVoiceProfileIds,
               onVoiceUnavailable = { reason -> viewModel.message = reason },
               voiceProfileBusy = voiceProfileBusy,
               voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
-              stockClips = viewModel.stockClips,
+              stockClips = editorStockClips,
               expectedVariants = viewModel.expectedVariants,
               clipReadiness = viewModel.clipReadiness,
               onRetryClipRenders = viewModel::retryFailedClipRendersAsync,
               onPrepareClipsFor = { viewModel.refreshClipReadinessAsync() },
-              lastUsedVoiceId = viewModel.lastUsedVoiceId,
+              systemVoiceDownload = systemVoiceDownload,
+              onPrioritizeVoice = { voiceId ->
+                  if (isSystemVoiceId(voiceId)) {
+                      com.alarmtalk.app.sync.StockClipPrefetchPriority.request(
+                          context,
+                          authSession?.user?.id,
+                          com.alarmtalk.app.sync.PrefetchTarget(voiceId, null),
+                      )
+                      com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context)
+                  }
+              },
+              lastUsedVoiceId = preferredVoiceId?.takeIf { alarm == null } ?: viewModel.lastUsedVoiceId,
               lastMessageContext = lastMessageContext,
               lastFreeBucket = lastFreeBucket,
               lastManualText = lastManualText,
+              legacyNicknameFallback = remember(alarms) { com.alarmtalk.app.data.legacyNicknameFromAlarms(alarms) },
+              // 날짜 알람의 같은 시각 판정 — 이 계정에 보이는 다른 알람(`observeAlarms` 가 이미 소유자로 거른다).
+              otherAlarmTimes = alarms.filter { it.id != alarm?.id }.map { it.hour to it.minute }.toSet(),
               onCancel = ::goBackInApp,
               onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
               onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
               onGenerateTts = viewModel::generateTtsAudio,
+              manualRequestIds = viewModel.manualRequestIds,
               onLoadManualQuota = viewModel::loadManualQuota,
+              adRewardSessions = remember(viewModel) { viewModel.adRewardSessionClient() },
               onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
               onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
               onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
@@ -1415,6 +1522,7 @@ internal fun AlarmTalkApp(
                           voiceProfiles = voiceProfiles,
                           pendingVoiceDraft = pendingVoiceDraft,
                           voiceProfileBusy = voiceProfileBusy,
+                          voiceTabError = viewModel.voiceTabError,
                           billingBusy = billingBusy,
                           subscriptionResponse = subscriptionResponse,
                           // 삭제 경고('지금 지우면 이번 달엔 못 만들어요')는 초안 시도 쿼터가 아니라
@@ -1443,6 +1551,17 @@ internal fun AlarmTalkApp(
                           voiceRegistrationFailure = viewModel.voiceRegistrationFailure,
                           onVoiceRegistrationFailureShown = { viewModel.consumeVoiceRegistrationFailure() },
                           onRegistrationWindowOpenChange = { open -> viewModel.voiceRegistrationWindowChanged(open) },
+                          voicePacks = VoicePackPanelState(
+                              catalog = viewModel.voicePackCatalog,
+                              held = viewModel.heldVoicePacks,
+                              progress = voicePackProgress,
+                              catalogLoaded = viewModel.voicePackCatalogLoaded,
+                              catalogFailed = viewModel.voicePackCatalogFailed,
+                              onDownload = { packId -> viewModel.downloadVoicePack(packId) },
+                              onDelete = { packId -> viewModel.removeVoicePack(packId) },
+                              countAlarmsUsing = { voiceId -> viewModel.countAlarmsUsingVoicePack(voiceId) },
+                              ensureSample = { summary -> viewModel.ensureVoicePackSample(summary) },
+                          ),
                           lastUsedVoiceId = viewModel.lastUsedVoiceId,
                           // 워커(온보딩·앱 시작의 선다운로드)가 받는 중이면 그 진행을 먼저 보여 준다.
                           // '백그라운드에서 계속' 으로 받기 화면을 닫은 뒤 진행을 볼 곳이 여기다.
@@ -1459,11 +1578,13 @@ internal fun AlarmTalkApp(
                               viewModel.cacheVoiceClips(voiceId, clips, onProgress)
                           },
                           planPrices = viewModel.billingPlanPrices,
+                          planTrials = viewModel.billingPlanTrials,
                           onPurchasePlay = viewModel::startPlayPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onRestorePurchases = viewModel::restorePurchases,
                           permissions = permissions,
                           onCreateAlarm = { requestCreateAlarm() },
+                          onCreateAlarmWithVoice = { voiceId -> requestCreateAlarm(voiceId) },
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
                           onDeleteAccount = viewModel::requestDeleteAccount,
                           themeMode = themeMode,
@@ -1477,8 +1598,9 @@ internal fun AlarmTalkApp(
                           },
                           // 권한이 하나라도 빠지면 편집기에 들어가지 않는다 — 들어가 봐야 저장이 막힌다.
                           onEditAlarm = { alarm ->
-                              // 막히면 이유는 알럿이 말한다(`whenDefaultVoicesReady`).
-                              whenDefaultVoicesReady {
+                              // 막히면 이유는 알럿이 말한다(`whenAlarmVoiceReady`). 목소리를 쓰지 않는 알람(알람 전용·직접
+                              // 녹음)도 그 알람의 목소리 값으로 본다 — 편집기에서 목소리로 옮길 수 있다.
+                              whenAlarmVoiceReady(alarm.voiceProfileId) {
                                   if (permissions.alarmReady) {
                                       navController.navigate(AppRoute.alarmEdit(alarm.id))
                                   } else {
@@ -1493,10 +1615,20 @@ internal fun AlarmTalkApp(
                       )
                   }
               }
-              composable(AppRoute.AlarmCreate) {
+              composable(
+                  route = AppRoute.AlarmCreatePattern,
+                  arguments = listOf(
+                      navArgument(AppRoute.AlarmCreateVoiceArg) {
+                          type = NavType.StringType
+                          nullable = true
+                          defaultValue = null
+                      },
+                  ),
+              ) { entry ->
                   EditorRoute(
                       alarm = null,
                       saveAlarm = { draft -> viewModel.createAlarm(draft) { navController.popBackStackOrHome() } },
+                      preferredVoiceId = entry.arguments?.getString(AppRoute.AlarmCreateVoiceArg),
                   )
               }
               composable(
@@ -1525,7 +1657,6 @@ internal fun AlarmTalkApp(
                       contentPadding = padding,
                       authSession = authSession,
                       onBack = ::goBackInApp,
-                      onEditNickname = viewModel::requestEditNickname,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onOpenConsentHistory = { navController.navigate(AppRoute.ConsentHistory) },
                       onOpenOssLicenses = { navController.navigate(AppRoute.OssLicenses) },
@@ -1551,6 +1682,8 @@ internal fun AlarmTalkApp(
                       onLoadMarketingConsent = viewModel::loadMarketingConsent,
                       onChangeMarketingConsent = viewModel::updateMarketingConsent,
                       onWithdrawVoiceBiometric = viewModel::withdrawVoiceBiometricConsent,
+                      withdrawError = viewModel.actionErrorFor(SignedInAction.WITHDRAWAL),
+                      marketingError = viewModel.actionErrorFor(SignedInAction.MARKETING),
                   )
               }
               composable(AppRoute.LegalDoc) { entry ->

@@ -5,6 +5,7 @@ import type { Env, AppEnv } from './types';
 import type { DowngradedAlarm } from './lib/paid-voice-cleanup';
 import { authMiddleware } from './middleware/auth';
 import { consentMiddleware } from './middleware/consent';
+import { appPresenceMiddleware } from './middleware/appPresence';
 import { loggerMiddleware } from './middleware/logger';
 import {
   rateLimitMiddleware,
@@ -39,12 +40,13 @@ import userRoutes from './routes/user';
 import authRoutes from './routes/auth';
 import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
+import billingAppleNotifications from './routes/billing-apple-notifications';
 import adsRoutes from './routes/ads';
+import adRewardSessionRoutes from './routes/ad-reward-sessions';
 import billingApple from './routes/billing-apple';
-import familyRoutes from './routes/family';
-import codeRoutes from './routes/code';
 import pushRoutes from './routes/push';
 import eventsRoutes from './routes/events';
+import voicePacksRoutes from './routes/voice-packs';
 import holidayRoutes from './routes/holiday';
 import eventRoutes from './routes/event';
 import adminRoutes from './routes/admin';
@@ -56,6 +58,11 @@ import adminRoutes from './routes/admin';
 const USAGE_EVENT_RETENTION_DAYS = 365;
 /** cron 한 회차가 길어지지 않게 묶어 지운다. 남으면 다음 회차가 이어서 지운다. */
 const USAGE_EVENT_PRUNE_BATCH = 500;
+/**
+ * 앱 빌드·접속 기록(`user_app_presence`, 관리자 콘솔) 보관 기간 — 마지막 접속 뒤 이만큼 지나면 지운다.
+ * **처리방침 3장의 '접속 로그 및 보안 로그 3개월' 과 같아야 한다.**
+ */
+const APP_PRESENCE_RETENTION_DAYS = 90;
 
 registerMp3EncoderModule(mp3EncoderWasm);
 
@@ -257,6 +264,11 @@ app.route('/api/auth', authRoutes);
 // ?token=GOOGLE_RTDN_VERIFICATION_TOKEN 쿼리로만 보호한다).
 app.route('/api/billing/google', billingGoogleRtdn);
 
+// App Store Server Notifications V2 웹훅 (인증 미들웨어 미적용 — 애플 서버가 부르고, 본문의 애플 서명(x5c → Apple Root
+// CA - G3)으로만 보호한다). ⚠ 아래 `app.route('/api', api)` 보다 **먼저** 둔다 — 뒤에 두면 인증 미들웨어가 먼저 받는다.
+app.use('/api/billing/apple/notifications', noStore);
+app.route('/api/billing/apple', billingAppleNotifications);
+
 // AdMob 보상형 광고 서버 확인(SSV) 콜백 (인증 미들웨어 미적용 — AdMob 서버가 부르고, 서명으로만 보호한다).
 app.use('/api/ads/*', noStore);
 app.use('/api/ads/*', adRewardCallbackRateLimitMiddleware);
@@ -268,12 +280,22 @@ api.use('*', authMiddleware);
 // 인증 성공한 요청은 전역 IP 버킷 카운트를 환불 — 이후는 사용자 버킷(아래)만 소모한다.
 // 비인증/인증실패/공개 라우트는 환불이 없어 IP 버킷에 그대로 누적된다(rateLimit.ts 참고).
 api.use('*', ipRateLimitRefundMiddleware);
+// 앱 빌드·접속 기록(관리자 콘솔) — **동의 검사 앞**이다. 재동의를 안 해 403 을 받는 사람이야말로 알림으로 찾아야
+// 할 대상이라, 뒤에 두면 바로 그 사람들의 빌드만 빈다(`middleware/appPresence.ts`).
+api.use('*', appPresenceMiddleware);
 // 서버측 동의 강제(B4) — authMiddleware 직후에 둬 userIdPK 를 사용한다. 데이터 수집
 // 라우트는 일반 필수 동의가 없으면 403. 면제 경로는 consentMiddleware 내부에서 통과.
 api.use('*', consentMiddleware);
 // 오디오 내려받기는 전용 버킷이 맡는다(일반 버킷은 이 경로를 세지 않는다 — rateLimit.ts).
 api.use('/tts/messages/:id/audio', audioDownloadRateLimitMiddleware);
+// 추가 음성팩 클립도 같은 내려받기 버킷이다(`docs/spec/voice-packs.md` §3).
+api.use('/voice-packs/:packId/clips/:clipId/audio', audioDownloadRateLimitMiddleware);
 api.use('*', rateLimitMiddleware);
+// 한도·광고 보상 현황은 저장·광고 직후 다시 묻는 값이다 — 30초 캐시를 붙이면 앱이 정산 전 응답을 계속 읽어
+// 보상이 들어왔는데도 '확인하고 있어요' 로 끝난다(코덱스 #959). **아래 전역 캐시보다 먼저** 걸어야 이긴다:
+// 먼저 건 미들웨어가 바깥이라 응답 헤더를 마지막에 쓴다.
+api.use('/tts/manual-quota', noStore);
+api.use('/ad-rewards/*', noStore);
 api.use('*', async (c, next) => {
   const mw = c.req.method === 'GET' ? privateCache : noStore;
   return mw(c, next);
@@ -284,17 +306,24 @@ api.route('/alarm', alarmRoutes);
 api.route('/user', userRoutes);
 api.route('/billing', billingApple);
 api.route('/billing', billingRoutes);
-api.route('/family', familyRoutes);
-api.route('/code', codeRoutes);
 api.route('/push', pushRoutes);
 // 사용 기록 — 앱이 오프라인에 쌓아 둔 이벤트를 모아 보낸다(routes/events.ts).
 api.route('/events', eventsRoutes);
+// 광고 시청 승인 세션 — 광고를 띄우기 전 승인·시작·끝 알림(`docs/spec/ad-rewards.md` §3). 콜백(`/api/ads`)과 다른 경로다.
+api.route('/ad-rewards', adRewardSessionRoutes);
+// 추가 음성팩 — 권리를 확인한 무료 고정 목소리(`docs/spec/voice-packs.md`).
+api.route('/voice-packs', voicePacksRoutes);
 
-// 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(HTTP Basic)로 보호한다
-// (admin.ts 내부 미들웨어). 지금은 없앤 프로모 코드의 이력만 읽기 전용으로 보여 준다.
+// 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(비밀번호 로그인·세션 쿠키)로 보호한다
+// (admin.ts 내부 미들웨어). 개요·사용자·알림 보내기 — `docs/spec/admin-console.md`.
 app.route('/admin', adminRoutes);
 
 app.route('/api', api);
+
+// 없는 경로도 **코드가 있는 404** 다(`docs/spec/error-codes.md` §1 — 모든 4xx 는 코드를 갖는다). Hono 기본은 본문이
+// 글자 하나인 404 라, 강제 업데이트 뒤 지운 옛 앱 호환 경로(2026-10-26 — 가족 그룹·초대 코드·받은 알람)를 옛 기기의
+// 배경 작업이 부르면 코드 없는 실패가 된다.
+app.notFound((c) => c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404));
 
 app.onError((err, c) => {
   // ⚠ 여기서 sentry.captureException 을 직접 부르지 말 것 — logRouteError 가 이미 보낸다.
@@ -484,6 +513,31 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     captureCron('scheduled.usage_event_prune', err);
   }
 
+  // 앱 빌드·접속 기록 — 90일 동안 접속이 없는 행. `last_seen_at` 은 DDL 기본값 꼴(`YYYY-MM-DD HH:MM:SS`)이라
+  // `datetime(?)` 으로 맞춰 비교한다.
+  try {
+    const cutoff = new Date(now.getTime() - APP_PRESENCE_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await db.execute({
+      sql: `DELETE FROM user_app_presence WHERE last_seen_at < datetime(?)`,
+      args: [cutoff],
+    });
+  } catch (err) {
+    captureCron('scheduled.app_presence_prune', err);
+  }
+
+  // 애플 서버 알림 수신 기록(#136) — 90일. 중복 거르기는 재전송 창(최대 사흘)이면 충분하고, 나머지는 운영 조사용이다.
+  // `received_at` 은 DDL 기본값 꼴이라 `datetime(?)` 으로 맞춰 비교한다.
+  try {
+    const { APPLE_NOTIFICATION_RETENTION_DAYS } = await import('./lib/apple-server-notifications');
+    const cutoff = new Date(now.getTime() - APPLE_NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await db.execute({
+      sql: `DELETE FROM apple_server_notifications WHERE received_at < datetime(?)`,
+      args: [cutoff],
+    });
+  } catch (err) {
+    captureCron('scheduled.apple_notification_prune', err);
+  }
+
   // 만료된 이메일 인증코드(PII) 정리 — 무한 보존 방지. expires_at 은 ISO 문자열로 기록되므로
   // 동일 포맷으로 비교한다. 만료 후 72h 유예를 두고 일괄 삭제(저렴·멱등).
   try {
@@ -514,6 +568,34 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     await processSubscriptionExpiry(db, env, now);
   } catch (err) {
     captureCron('scheduled.subscription_expiry', err);
+  }
+
+  // 관리자 기간 지급의 뒷정리 — 끝났거나 회수된 지급마다 한 번(다른 권한이 없으면 클론 반납 + 3일 보관).
+  // 지급 중인 계정은 위 만료 처리·보관 스윕이 유료로 본다(`hasActivePaidEntitlement`).
+  try {
+    const { settleEndedPlanGrants } = await import('./lib/plan-grants');
+    await settleEndedPlanGrants(db, env, now);
+  } catch (err) {
+    captureCron('scheduled.plan_grant_settle', err);
+  }
+
+  // 광고 보상 — 적어 두었지만 정산이 실패한 SSV 콜백을 다시 정산하고(내부 재시도), 다시 볼 일 없는 기록을 지운다
+  // (`lib/ad-reward-sessions.ts`, `docs/spec/ad-rewards.md` §3).
+  try {
+    const { pruneAdRewardHistory, retryUnsettledAdRewardCallbacks } = await import('./lib/ad-reward-sessions');
+    const retried = await retryUnsettledAdRewardCallbacks(db, env, now.getTime());
+    if (retried.failed > 0) captureCron('scheduled.ad_reward_settle', new Error(`${retried.failed} callbacks failed to settle`));
+    await pruneAdRewardHistory(db, now.getTime());
+  } catch (err) {
+    captureCron('scheduled.ad_reward_settle', err);
+  }
+
+  // 직접 입력의 같은 요청 표식 — 이틀 지난 것을 지운다(`lib/manual-tts-requests.ts`).
+  try {
+    const { pruneManualRequests } = await import('./lib/manual-tts-requests');
+    await pruneManualRequests(db, now);
+  } catch (err) {
+    captureCron('scheduled.manual_request_prune', err);
   }
 
   // 기간 한정 개인 플랜 종료 전환 — **폴백**(틱당 3명). 본 처리는 위의 전용 크론이 하고, 이건
@@ -636,6 +718,20 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 슬롯의 마지막 틱이면 이미 맨 앞에서 돌았다(위 `weatherFirst`).
   if (!weatherFirst) await weatherRegionDailyTick(db, env, now, captureCron);
 
+  // 관리자 콘솔의 스토어 다운로드 수(`lib/admin/store-downloads.ts`, `docs/spec/admin-console.md` 「스토어 다운로드」).
+  // 하루 여섯 틱에서만 돈다(한국 시각 0·3·9·12·15·18시 35~39분) — 숫자가 하루 한 번 바뀌어 매 틱 부를 까닭이 없다.
+  // 하위 요청은 스스로 24 개 안에서 멈추고 다음 회차가 잇는다. 클론 드레인(아래)은 남은 예산으로 돈다.
+  try {
+    const { isStoreSyncTick, runStoreDownloadSync } = await import('./lib/admin/store-downloads');
+    if (isStoreSyncTick(now)) {
+      await runStoreDownloadSync(db, env, now, {
+        onError: (platform, err) => captureCron('scheduled.store_downloads', err, { platform }),
+      });
+    }
+  } catch (err) {
+    captureCron('scheduled.store_downloads', err);
+  }
+
   // ⚠⚠ **기본(시스템) 목소리 스톡 클립 드레인은 껐다**(2026-09-03 리뷰 15차).
   //
   // 7차에 이걸 붙인 이유는 "교체가 배포되는 순간 기본 목소리에 클립이 0개가 된다" 였다.
@@ -655,40 +751,72 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 특정 목소리만 다시 굽는 수동 도구는 남아 있다: `POST /api/admin/seed-stock-clips`
   // (`?voice=`·`?reset=`). 새 프리셋을 추가했는데 미리 굽지 않았다면 그걸로 채운다.
 
+  // 공급자 계정의 남은 글자 — 문턱(`TTS_PROVIDER_REMAINING_ALERT_CHARS`)을 정했을 때만, 한 시간에 한 번 조회한다
+  // (`lib/tts-provider-quota.ts`). dev·prod 가 같은 키라 둘 다 같은 계정을 본다. 키는 로그·경보에 싣지 않는다.
+  try {
+    const { checkProviderRemaining, isProviderQuotaCheckTick, ProviderRemainingLowError } = await import(
+      './lib/tts-provider-quota'
+    );
+    if (isProviderQuotaCheckTick(now)) {
+      const check = await checkProviderRemaining(env);
+      if (check.status === 'low') {
+        captureCron('scheduled.tts_provider_remaining', new ProviderRemainingLowError(check.quota.remaining, check.threshold), {
+          remaining: String(check.quota.remaining),
+          threshold: String(check.threshold),
+        });
+      }
+    }
+  } catch (err) {
+    captureCron('scheduled.tts_provider_remaining', err);
+  }
+
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
   // 대상이라 전유저 스캔이 없고, 한 건 실패가 나머지를 막지 않도록 격리한다.
   try {
-    const { runPrerenderBatch } = await import('./lib/stock-clips');
-    // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드다.
-    //
-    // ⚠ **6 → 10 으로 올렸다**(2026-08-20). 6은 목소리 1개 풀셋(21클립)에 4틱 = 20분이
-    // 걸린다는 뜻이었고, 실기기 QA 에서 그 대기가 문제로 지적됐다. 상한을 넘겨 서브리퀘스트가
-    // 소진되면 `runPrerenderBatch` 가 즉시 멈추고 pending 을 유지해 다음 틱이 이어받으므로,
-    // 올려서 손해 보는 경우가 "그 틱이 조금 일찍 끝난다" 뿐이다 — 그 안전장치가 이미
-    // 검증돼 있어서 올릴 수 있다. 등록 직후 첫 배치는 요청 쪽에서 따로 돈다(promote).
-    const result = await runPrerenderBatch(db, env, {
-      maxClips: 10,
-      maxVoices: 5,
-      // ⚠ **어느 목소리의 어느 클립인지 함께 올린다.** 예전에는 에러만 보내서, Sentry 에
-      // 한 줄이 떠도 대상을 특정할 수 없었다(ALARMTALK-BACKEND-9 — 실제로 1건을 끝내
-      // 못 짚었다). `clip_failure` 는 원인 갈래다: 사유 식별자면 모델이 낸 **내용**이
-      // 걸린 것이고, `transport` 면 전송이 죽은 것이다 — 봐야 할 곳이 정반대라 갈라 둔다.
-      onClipError: (genErr, failure) =>
-        captureCron('scheduled.stock_clips.generate', genErr, {
-          voice_profile_id: failure.voiceProfileId,
-          clip_category: failure.category,
-          clip_variant: String(failure.variant),
-          clip_language: failure.language,
-          clip_failure: failure.reason ?? 'transport',
-        }),
-    });
-    if (result.rendered > 0) {
-      logStructured('info', {
+    // dev 월 합성 예산(`TTS_DEV_MONTHLY_CHAR_BUDGET`)을 다 썼으면 이 틱은 굽지 않는다 — 큐는 그대로 남아 다음 달(또는 예산을
+    // 올린 뒤) 이어 굽는다. 운영이거나 예산을 정하지 않았으면 DB 를 부르지 않고 통과한다.
+    const { checkDevBudget } = await import('./lib/tts-budget');
+    const devBudget = await checkDevBudget(db, env, 1, now);
+    if (!devBudget.ok) {
+      logStructured('warn', {
         at: 'scheduled.stock_clips',
-        rendered: result.rendered,
-        claimed: result.claimed,
+        skipped: 'dev_budget_exhausted',
+        used: devBudget.used,
+        budget: devBudget.budget,
       });
+    } else {
+      const { runPrerenderBatch } = await import('./lib/stock-clips');
+      // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드다.
+      //
+      // ⚠ **6 → 10 으로 올렸다**(2026-08-20). 6은 목소리 1개 풀셋(21클립)에 4틱 = 20분이
+      // 걸린다는 뜻이었고, 실기기 QA 에서 그 대기가 문제로 지적됐다. 상한을 넘겨 서브리퀘스트가
+      // 소진되면 `runPrerenderBatch` 가 즉시 멈추고 pending 을 유지해 다음 틱이 이어받으므로,
+      // 올려서 손해 보는 경우가 "그 틱이 조금 일찍 끝난다" 뿐이다 — 그 안전장치가 이미
+      // 검증돼 있어서 올릴 수 있다. 등록 직후 첫 배치는 요청 쪽에서 따로 돈다(promote).
+      const result = await runPrerenderBatch(db, env, {
+        maxClips: 10,
+        maxVoices: 5,
+        // ⚠ **어느 목소리의 어느 클립인지 함께 올린다.** 예전에는 에러만 보내서, Sentry 에
+        // 한 줄이 떠도 대상을 특정할 수 없었다(ALARMTALK-BACKEND-9 — 실제로 1건을 끝내
+        // 못 짚었다). `clip_failure` 는 원인 갈래다: 사유 식별자면 모델이 낸 **내용**이
+        // 걸린 것이고, `transport` 면 전송이 죽은 것이다 — 봐야 할 곳이 정반대라 갈라 둔다.
+        onClipError: (genErr, failure) =>
+          captureCron('scheduled.stock_clips.generate', genErr, {
+            voice_profile_id: failure.voiceProfileId,
+            clip_category: failure.category,
+            clip_variant: String(failure.variant),
+            clip_language: failure.language,
+            clip_failure: failure.reason ?? 'transport',
+          }),
+      });
+      if (result.rendered > 0) {
+        logStructured('info', {
+          at: 'scheduled.stock_clips',
+          rendered: result.rendered,
+          claimed: result.claimed,
+        });
+      }
     }
   } catch (err) {
     captureCron('scheduled.stock_clips', err);

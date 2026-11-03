@@ -22,7 +22,9 @@ import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.apiErrorMessage
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -45,6 +47,7 @@ internal fun MainViewModel.login(email: String, password: String) {
             // 세션을 올리는 순간 로그인 뒤 계정 조회(`checkAccountStatus`)가 뜬다 — 멈추는 로그인 뒤 정리
             // (`onSignedIn`)보다 **먼저** 적어야 이 응답이 이번 진입의 첫 결과다(Codex #803).
             recordSignInAnswer(response.user, accountRequest)
+            recordAuthSuccess(method = "email")
             onSignedIn()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
@@ -116,7 +119,12 @@ private fun MainViewModel.duplicateEmailMessage(error: Throwable): String? {
             authRedirectToLogin = true
             app.getString(R.string.msg_register_email_taken)
         }
-        "AUTH_EMAIL_SOCIAL" -> app.getString(R.string.msg_register_email_social_google)
+        // 서버가 가입한 소셜을 알려 준다(`provider`). 애플로 가입한 사람(아이폰)에게 구글로 안내하지 않는다.
+        "AUTH_EMAIL_SOCIAL" -> if (parsed.provider == "apple") {
+            app.getString(R.string.msg_register_email_social_apple)
+        } else {
+            app.getString(R.string.msg_register_email_social_google)
+        }
         else -> null
     }
 }
@@ -198,14 +206,12 @@ internal fun MainViewModel.confirmEmailVerification(email: String, code: String)
 internal fun MainViewModel.register(
     email: String,
     password: String,
-    name: String,
     emailVerificationCode: String,
 ) {
     if (authBusy) return
     val normalizedEmail = email.trim().lowercase()
-    val trimmedName = name.trim()
     val trimmedCode = emailVerificationCode.trim()
-    if (normalizedEmail.isBlank() || password.isBlank() || trimmedName.isBlank() || trimmedCode.isBlank()) {
+    if (normalizedEmail.isBlank() || password.isBlank() || trimmedCode.isBlank()) {
         registerError = getApplication<android.app.Application>().getString(R.string.msg_register_all_fields_required)
         return
     }
@@ -222,7 +228,6 @@ internal fun MainViewModel.register(
                 RegisterRequest(
                     email = normalizedEmail,
                     password = password,
-                    name = trimmedName,
                     emailVerificationCode = trimmedCode,
                 ),
             )
@@ -231,6 +236,7 @@ internal fun MainViewModel.register(
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
             recordSignInAnswer(response.user, accountRequest)
+            recordAuthSuccess(method = "email_register")
             onSignedIn()
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
@@ -334,6 +340,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
             recordSignInAnswer(response.user, accountRequest)
+            recordAuthSuccess(method = "google")
             onSignedIn()
             message = null
         }.onFailure { error ->
@@ -375,6 +382,22 @@ private fun MainViewModel.recordSignInAnswer(
     // 도착한 진입을 대조한다 — `accountAnswerEntryFor`). 세션 정리(`resetForAccountSwitch`)는 로그아웃
     // 쪽에만 있어 로그인 전에 뜬 표가 앞질러지지 않는다.
     recordAccountAnswer(request, user.personalPromo)
+}
+
+/**
+ * 로그인 결과(`auth_result`, `docs/spec/usage-events.md` §7.1). 세션을 저장한 **뒤**라 기록기가 이 계정으로 적는다.
+ * ⚠ 실패는 적지 않는다 — 계정이 없어 기록기가 버리고, 가입 전 사건을 모아 두었다 붙여 보내는 길은 만들지 않는다(§7.4).
+ *   막 가입한 계정은 동의 전이라 서버가 받고 버린다(§3).
+ */
+private fun MainViewModel.recordAuthSuccess(method: String) {
+    com.alarmtalk.app.data.UsageSignals.record(
+        getApplication(),
+        com.alarmtalk.app.data.UsageEvents.AUTH_RESULT,
+        props = com.alarmtalk.app.data.UsageEventProps(
+            outcome = com.alarmtalk.app.data.UsageEventProps.OUTCOME_SUCCESS,
+            method = method,
+        ),
+    )
 }
 
 private suspend fun MainViewModel.onSignedIn() {
@@ -485,6 +508,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
     val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val shouldSignOutGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
+    clearActionError(SignedInAction.ACCOUNT_DELETION)
     viewModelScope.launch {
         authBusy = true
         // 유예 신청은 **모든 기기의 세션을 끊는다**(서버가 `token_epoch` 를 올린다 — user.ts). 성공하면 곧바로
@@ -520,7 +544,11 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             // 동안의 **진짜** 자동 만료가 마커를 못 남겨, 업데이트 후 재예약이 이 기기의
             // 알람을 복원하지 못한다. (성공 갈래는 `clearSignedInSession` 이 내린다.)
             endSignOutMarker()
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_request_failed))
+            // 확인 창이 열린 채다 — 스낵바는 그 창의 어두운 막 아래에 깔린다. 창 안에 빨간 글자로 말한다.
+            failAction(
+                SignedInAction.ACCOUNT_DELETION,
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_request_failed)),
+            )
         } finally {
             authBusy = false
         }
@@ -608,37 +636,6 @@ internal fun MainViewModel.onAccountLeftInBackground(left: com.alarmtalk.app.cor
         val session = authSession ?: return@launch
         if (session.user.id != left.userId || session.token != left.clearedToken) return@launch
         leaveAccountForPendingDeletion(session)
-    }
-}
-
-internal fun MainViewModel.updateNickname(name: String) {
-    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
-    val trimmed = name.trim()
-    if (trimmed.isEmpty() || trimmed.length > 30) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_nickname_length_invalid)
-        return
-    }
-    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
-    val startGeneration = authSessionStore.sessionGeneration()
-    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
-    viewModelScope.launch {
-        authBusy = true
-        runCatching {
-            api.updateProfile(authorization, com.alarmtalk.app.network.UpdateProfileRequest(name = trimmed))
-        }.onSuccess {
-            // 바꾼 칸(이름)만 **지금 세션** 위에 — 요청 전의 `session` 사본을 되쓰면 그 사이 `/auth/me` 가 적은
-            // plan·프로모·받은 시각을 되돌린다([saveProfileEdit]).
-            saveProfileEdit(session.user.id, startGeneration) { it.copy(name = trimmed) }?.let { saved ->
-                authSession = saved
-                // 확인 조회 — 저장 전에 떠나 옛 이름을 읽은 `/auth/me` 가 늦게 와도 바로잡는다([saveProfileEdit]).
-                refreshAppSession(rollToken = false)
-            }
-            dismissEditNickname()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to update nickname", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_nickname_change_failed))
-        }
-        authBusy = false
     }
 }
 
@@ -923,13 +920,13 @@ internal fun MainViewModel.refreshConsentCollectAfterGate() {
  * 업데이트뿐이다 — 모르는 필수 동의와 같은 게이트로 보낸다. 반대로 이 앱이 앞서가는
  * 경우(서버 배포가 아직 안 끝난 구간)는 업데이트해도 안 풀리므로 그렇게 말하면 안 된다.
  */
-private fun MainViewModel.handleConsentVersionMismatch(error: Throwable): Boolean {
+private fun MainViewModel.handleConsentVersionMismatch(error: Throwable, action: SignedInAction): Boolean {
     val api = com.alarmtalk.app.network.apiError(error)
     if (api.code != "POLICY_VERSION_MISMATCH" && api.code != "DOCUMENT_VERSION_REQUIRED") return false
     val serverVersion = api.current?.toIntOrNull()
     val bundled = bundledPolicyVersion?.toIntOrNull()
     if (serverVersion != null && bundled != null && serverVersion <= bundled) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed)
+        failAction(action, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         return true
     }
     consentUnsupported = true
@@ -938,6 +935,7 @@ private fun MainViewModel.handleConsentVersionMismatch(error: Throwable): Boolea
 
 internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
     val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
+    clearActionError(SignedInAction.CONSENT)
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     // 서버에 "현재 정책 버전"으로 기록되도록 직전 checkConsentStatus 가 저장한 버전을 함께 보낸다.
     // version 을 비우면 백엔드가 "1" 로 기록해, 정책이 개정된 뒤엔 옛 버전으로 저장되어
@@ -1006,15 +1004,14 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
                     .write(ownerUserId, row.agreed)
             }
             consentChecked = true
-            // 동의를 기다리는 동안 막혔던 알람 전송을 지금 다시 돈다(`docs/spec/consent.md`). 게이트가 떠 있던 동안의
-            // 전송은 403 `CONSENT_REQUIRED` 를 받고 '동의 대기' 로 조용히 접혔다 — 다시 걸지 않으면 그 사이 저장한
-            // 알람이 다음 회차까지 서버에 오르지 않는다. iOS 는 `consentSubmitGeneration` → `runFullSync` 가 같은 일을 한다.
-            syncNow()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
             if (authSession?.user?.id != ownerUserId) return@onFailure
-            if (handleConsentVersionMismatch(error)) return@onFailure
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
+            if (handleConsentVersionMismatch(error, SignedInAction.CONSENT)) return@onFailure
+            failAction(
+                SignedInAction.CONSENT,
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed)),
+            )
         }
         authBusy = false
     }
@@ -1029,6 +1026,7 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
 internal fun MainViewModel.submitVoiceConsents() {
     val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val request = pendingSensitiveConsent ?: return
+    clearActionError(SignedInAction.SENSITIVE_CONSENT)
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
     // 이 요청을 시작한 계정. 코루틴이 request 를 지역 변수로 붙들고 있어, 응답이 오는 사이
@@ -1082,8 +1080,12 @@ internal fun MainViewModel.submitVoiceConsents() {
                 request.resumeVoiceDrafts?.let { purgeVoiceCloneSourceRecordings(it) }
                 return@onFailure
             }
-            if (handleConsentVersionMismatch(error)) return@onFailure
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
+            if (handleConsentVersionMismatch(error, SignedInAction.SENSITIVE_CONSENT)) return@onFailure
+            // 시트(자기 창)가 열린 채다 — 스낵바는 그 아래에 깔린다. 시트 안에 빨간 글자로 말한다.
+            failAction(
+                SignedInAction.SENSITIVE_CONSENT,
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed)),
+            )
         }
     }
 }
@@ -1099,6 +1101,9 @@ internal suspend fun MainViewModel.loadConsentRecords(): List<com.alarmtalk.app.
 // GET /user/consents 는 유형별 최신값을 돌려주므로 marketing 의 agreed 를 그대로 쓴다.
 internal fun MainViewModel.loadMarketingConsent() {
     val session = authSession ?: return
+    // 쓰기가 도는 동안에는 읽지 않는다 — 그 쓰기의 결과가 곧 최신값이다. 이 조회는 쓰기와 세대가 같아, 쓰기보다
+    // 먼저 서버에 닿은 답이 뒤늦게 오면 방금 누른 값을 덮는다(화면을 나갔다 곧바로 다시 들어온 경우).
+    if (marketingConsentWriteInFlight) return
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     // 캐시된 직전 서버 확인값으로 토글을 즉시 채운다 → GET 응답 전 '로딩'으로 늦게 뜨지 않게(낙관적 표시).
@@ -1132,9 +1137,10 @@ internal fun MainViewModel.loadMarketingConsent() {
 }
 
 // 설정의 '광고성 정보 수신' 토글 변경. marketing 동의를 현재 정책 버전으로 재기록한다(누적 저장,
-// 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 직전 값으로 되돌린다.
+// 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 서버가 가진 값으로 되돌린다.
 internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
-    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
+    sessionOrMessage(R.string.msg_login_required_to_use) ?: return
+    clearActionError(SignedInAction.MARKETING)
     // ⚠ **진행 중인 쓰기가 있으면 버리지 말고 '마지막 값' 으로 예약한다.**
     // 예전에는 그냥 `return` 이라, 스위치가 상시 활성이 된 지금은 연속으로 토글하면
     // **화면은 켜져 있는데 서버는 꺼진 채**로 끝날 수 있다. 낙관적 표시는 아래에서
@@ -1144,10 +1150,19 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         pendingMarketingConsent = agreed
         return
     }
+    // 쓰기가 없을 때 스위치는 서버가 확인해 준 값이다(조회·캐시·직전 쓰기의 결과) — 실패하면 여기로 돌아간다.
+    sendMarketingConsent(agreed, rollbackTo = marketingConsentAgreed)
+}
+
+/**
+ * 마케팅 동의 하나를 보낸다. 실패하면 [rollbackTo] 로 되돌린다 — **보내기 전에 서버가 가진 값**이어야 한다.
+ * 이어 보내는 쓰기는 화면 값이 이미 낙관적으로 바뀐 뒤라 그 값을 잡으면 안 된다([marketingConsentAfterWrite]).
+ */
+private fun MainViewModel.sendMarketingConsent(agreed: Boolean, rollbackTo: Boolean?) {
+    val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
-    val previous = marketingConsentAgreed
     // 토글로 사용자가 정한 값이 우선이다. 진행 중이던 로드(GET)의 결과가 이 값을 덮어쓰지 않도록
     // generation 을 올려 무효화한 뒤, 낙관적으로 즉시 반영한다.
     marketingConsentLoadGeneration++
@@ -1179,29 +1194,34 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         // 완료 사이 계정 전환/더 새로운 토글로 사용자나 generation 이 바뀌었으면 이 결과는 폐기한다
         // (상태·잠금 모두 건드리지 않음 — 현재 소유자가 따로 관리).
         if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
-        marketingConsentWriteInFlight = false
-        // 진행 중에 사용자가 또 눌렀으면 **마지막 값**을 이어서 보낸다.
-        pendingMarketingConsent?.let { queued ->
-            pendingMarketingConsent = null
-            if (queued != agreed) {
-                updateMarketingConsent(queued)
-                return@launch
-            }
-        }
-        result.onSuccess {
-            val app = getApplication<android.app.Application>()
-            // 확정된 값을 캐시에 저장 → 다음 진입 때 즉시 seed(낙관적 표시).
-            com.alarmtalk.app.data.MarketingConsentCache(app).write(userId, agreed)
-            // ⚠ **성공 토스트를 되살리지 말 것**(2026-08-11 요청). 스위치가 이미 결과를
-            // 보여주는데 토스트가 같은 말을 한 번 더 한다 — 켜고 끌 때마다 화면 아래가
-            // 가려진다. **실패는 그대로 알린다**(아래) — 그때는 스위치가 되돌아가므로
-            // 왜 되돌아갔는지 말해 줄 것이 필요하다.
-        }.onFailure { error ->
-            marketingConsentAgreed = previous
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed))
-        }
         // 성공·실패와 무관하게(단, 이 쓰기가 여전히 최신일 때만) 쓰기 잠금 해제 → 다음 토글 허용.
         marketingConsentWriteInFlight = false
+        if (result.isSuccess) {
+            // 확정된 값을 캐시에 저장 → 다음 진입 때 즉시 seed(낙관적 표시). 이어 보내기 **전에** 적는다 —
+            // 이어 보낸 쓰기가 실패해도 캐시는 서버 값을 가리킨다.
+            com.alarmtalk.app.data.MarketingConsentCache(getApplication<android.app.Application>()).write(userId, agreed)
+        }
+        val queued = pendingMarketingConsent
+        pendingMarketingConsent = null
+        when (val next = marketingConsentAfterWrite(agreed, rollbackTo, succeeded = result.isSuccess, queued = queued)) {
+            // 진행 중에 사용자가 또 눌렀으면 **마지막 값**을 이어서 보낸다.
+            is MarketingConsentNext.Send -> sendMarketingConsent(next.agreed, next.rollbackTo)
+            is MarketingConsentNext.Settle -> {
+                marketingConsentAgreed = next.shown
+                // ⚠ **성공 토스트를 되살리지 말 것**(2026-08-11 요청). 스위치가 이미 결과를
+                // 보여주는데 토스트가 같은 말을 한 번 더 한다 — 켜고 끌 때마다 화면 아래가
+                // 가려진다. **실패는 그대로 알린다** — 그때는 스위치가 되돌아가므로
+                // 왜 되돌아갔는지 말해 줄 것이 필요하다.
+                val error = result.exceptionOrNull()
+                if (next.failed && error != null) {
+                    // 스위치 바로 아래에 빨간 글자로 말한다(동의 내역 화면) — 스낵바는 화면 위쪽에 잠깐 떴다 사라진다.
+                    failAction(
+                        SignedInAction.MARKETING,
+                        userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed)),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1231,6 +1251,7 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return false
     }
+    clearActionError(SignedInAction.WITHDRAWAL)
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     // 철회로 사라질 목소리 id 를 **POST 전에 서버에서 확정**한다.
@@ -1246,10 +1267,13 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
     val revokedVoiceIds = runCatching {
         api.listVoiceProfiles(authorization).profiles
     }.getOrElse { error ->
+        // ⚠ **화면을 떠나 취소된 것은 실패가 아니다**(2026-10-29 두 앱 비교). 아직 아무것도 보내지 않았으니 조용히 물러선다 —
+        //   예전에는 `runCatching` 이 취소까지 받아 떠난 화면에 '철회에 실패했어요' 를 남겼다.
+        if (error is kotlinx.coroutines.CancellationException) throw error
         AlarmTalkLog.reportError("Failed to resolve owned voices before consent withdrawal", error)
-        message = userFacingError(
-            error,
-            getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
+        failAction(
+            SignedInAction.WITHDRAWAL,
+            userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed)),
         )
         return false
     }
@@ -1257,123 +1281,64 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
         .filter { it.isSystem != true }
         .map { it.id }
         .filter { it.isNotBlank() }
-    val result = runCatching {
-        api.recordConsents(
-            authorization,
-            com.alarmtalk.app.network.RecordConsentsRequest(
-                consents = listOf(
-                    com.alarmtalk.app.network.ConsentItemRequest(
-                        type = "voice_biometric",
-                        agreed = false,
-                        version = cachedPolicyVersion(),
+    // ⚠ **보낸 철회는 화면을 떠나도 끝까지 처리한다.** 이 함수는 동의 내역 화면의 코루틴에서 돈다 — 응답을 기다리는 사이
+    //   화면을 나가면 그 코루틴이 취소되고, `runCatching` 이 취소를 실패로 받아 '철회에 실패했어요' 를 띄우며 아래 로컬 강등을
+    //   건너뛰었다. 서버는 이미 지웠을 수 있다 — 그러면 철회한 목소리가 이 기기에서 계속 운다(위 KDoc). 보내는 순간부터는 끝까지 간다.
+    return withContext(NonCancellable) {
+        val result = runCatching {
+            api.recordConsents(
+                authorization,
+                com.alarmtalk.app.network.RecordConsentsRequest(
+                    consents = listOf(
+                        com.alarmtalk.app.network.ConsentItemRequest(
+                            type = "voice_biometric",
+                            agreed = false,
+                            version = cachedPolicyVersion(),
+                        ),
                     ),
+                    documentVersion = bundledPolicyVersion,
                 ),
-                documentVersion = bundledPolicyVersion,
-            ),
-        )
-    }
-    return result.fold(
-        onSuccess = {
-            val app = getApplication<android.app.Application>()
-            // 1) 서버가 지웠다고 확인해 준 것부터 **세션 가드보다 먼저** 로컬에서 끊는다.
-            //    응답이 오는 사이 자동 401 이 세션을 비웠을 수 있는데, 그 경로는 로컬 알람
-            //    예약을 일부러 그대로 둔다(알람 전달이 인증 상태에 묶이면 안 되므로).
-            //    여기서 안 끊으면 서버에선 이미 지워진 목소리가 그 기기에서 계속 울린다
-            //    (Codex #660). 대상은 이 계정 자신의 목소리라 새 세션에 아무 영향이 없다.
-            //    타깃 강등이라 소셜 목록 신선도 가드에도 막히지 않는다.
-            for (voiceId in revokedVoiceIds) {
-                runCatching { repository.degradeAlarmsUsingVoiceProfile(voiceId) }
-                    .onFailure { error ->
-                        AlarmTalkLog.reportError("Failed to degrade alarms after consent withdrawal", error)
-                    }
-            }
-            // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
-            if (authSession?.user?.id != userId) return@fold true
-            if ("voice_biometric" !in sensitiveConsentMissing) {
-                sensitiveConsentMissing = sensitiveConsentMissing + "voice_biometric"
-            }
-            voiceProfiles = voiceProfiles.filter { it.isSystem == true }
-            // 3) 폴백 — 실패해도 위에서 이미 발사 경로는 끊겼다.
-            loadVoiceProfiles()
-            com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(app)
-            message = app.getString(R.string.msg_voice_consent_withdrawn)
-            true
-        },
-        onFailure = { error ->
-            AlarmTalkLog.reportError("Failed to withdraw voice biometric consent", error)
-            // 실패는 알릴 대상이 이 계정 화면뿐이라, 세션이 바뀌었으면 조용히 끝낸다.
-            if (authSession?.user?.id != userId) return@fold false
-            message = userFacingError(
-                error,
-                getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
             )
-            false
-        },
-    )
-}
-
-internal fun MainViewModel.syncNow() {
-    if (authSession == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_sync_login_required)
-        return
-    }
-    // ⚠ **두 회차를 겹쳐 돌리지 않는다.** syncNow 는 알람 탭 진입·시작·푸시 등 여러 곳에서
-    // 불려 짧은 간격으로 두 번 들어온다. 두 회차가 같은 '아직 안 올린' 목록을 읽으면
-    // (remoteAlarmId 는 응답이 와야 커밋된다) 둘 다 create 로 가서 **서버에 같은 알람이 두 개**
-    // 생긴다. 2026-08-06 실기기 재현(운세 알람 1개가 서버에 2행).
-    //
-    // 다만 **버리지는 않고 미뤄 둔다.** 그냥 return 하면, 앞 회차가 목록을 이미 스냅샷한 뒤에
-    // 저장된 알람이 다음 트리거(탭 재진입·앱 재실행)까지 서버에 안 올라간다 — repository.
-    // syncWithBackend 를 부르는 곳은 여기뿐이고 워커는 알람을 올리지 않는다(Codex #686). 그래서
-    // 요청이 겹치면 표시만 남기고, 지금 회차가 끝난 뒤 한 번 더 돈다.
-    //
-    // 켜는 건 반드시 launch **밖**이어야 한다. 안에서 켜면 두 코루틴이 모두 예약된 뒤에
-    // 켜져 아무것도 못 막는다.
-    if (syncBusy) {
-        syncRequestedWhileBusy = true
-        return
-    }
-    syncBusy = true
-    viewModelScope.launch {
-        try {
-        do {
-        // 이번 회차가 시작될 때 표시를 내린다. 도는 도중에 다시 켜지면 한 번 더 돈다.
-        syncRequestedWhileBusy = false
-        // ⚠ **세션은 회차마다 다시 읽는다.** 미뤄 둔 회차는 앞 회차의 네트워크 왕복이 끝난
-        // 뒤에 도는데, 그 사이 토큰이 바뀔 수 있다(로그인·롤링 갱신 — 알람 탭 효과는 계정·세션
-        // 세대가 바뀔 때 다시 돈다). 처음 잡아 둔 토큰을 계속 쓰면 옛 자격증명으로
-        // 나가고, 더 나쁘게는 repository.syncWithBackend 가 **소유자를 지금 세션 저장소에서**
-        // 가져오므로 재로그인 직후엔 새 계정의 로컬 행이 옛 계정 토큰으로 올라간다(Codex #686).
-        // 로그아웃됐으면 이번 회차는 돌리지 않고 끝낸다.
-        val session = authSession ?: break
-        // 올리기 실패는 **그 알람 행이 직접 말한다**(syncState=FAILED → `AlarmStates.FAILED` 배지) —
-        // 위에서 같은 말을 한 번 더 하지 않는다.
-        runCatching {
-            repository.syncWithBackend(api, session.token)
-        }.onFailure { error ->
-            // syncNow 는 알람 탭 진입 시 자동 실행되고(사용자 조치가 아님) 다음 진입·주기 sync 가
-            // 자동 재시도한다. 그래서 전체 실패는 겁주는 토스트 대신 로그만 남긴다 — 특히 첫
-            // 로그인 직후 동의 정착 전 알람 올리기가 잠깐 CONSENT_REQUIRED 로 막히는 게
-            // 흔한데(면제 경로 아님), 이건 정상 재시도로 곧 풀린다. 사용자에게 뜨던
-            // "알람 정보를 주고받지 못했어요" 토스트를 제거한다.
-            if (error is kotlin.coroutines.cancellation.CancellationException) throw error
-            // 403 이라도 error_code 로 정확히 CONSENT_REQUIRED 만 여기서 강등한다 — CONSENT_STATE_UNAVAILABLE
-            // 같은 실제 인증/동의 파손은 모니터링에 남겨야 한다. (탈퇴 유예 403 `ACCOUNT_PENDING_DELETION` 은
-            // `reportError` 가 스스로 브레드크럼으로 낮춘다 — 복구 화면이 이미 그 상태를 말한다,
-            // `AlarmTalkLog.isAccountPendingDeletion`.)
-            if (com.alarmtalk.app.network.apiErrorCode(error) == "CONSENT_REQUIRED") {
-                Log.i(TAG, "Auto-sync deferred: consent not settled yet, will retry")
-            } else {
-                AlarmTalkLog.reportError("Backend sync failed", error)
-            }
         }
-        } while (syncRequestedWhileBusy)
-        } finally {
-            // 취소·예외로 빠져나가도 반드시 푼다 — 안 그러면 이 세션 동안 sync 가 영영 막힌다.
-            // 미뤄 둔 요청 표시도 함께 내린다(다음 트리거가 정상적으로 새 회차를 연다).
-            syncRequestedWhileBusy = false
-            syncBusy = false
-        }
+        result.fold(
+            onSuccess = {
+                val app = getApplication<android.app.Application>()
+                // 1) 서버가 지웠다고 확인해 준 것부터 **세션 가드보다 먼저** 로컬에서 끊는다.
+                //    응답이 오는 사이 자동 401 이 세션을 비웠을 수 있는데, 그 경로는 로컬 알람
+                //    예약을 일부러 그대로 둔다(알람 전달이 인증 상태에 묶이면 안 되므로).
+                //    여기서 안 끊으면 서버에선 이미 지워진 목소리가 그 기기에서 계속 울린다
+                //    (Codex #660). 대상은 이 계정 자신의 목소리라 새 세션에 아무 영향이 없다.
+                //    타깃 강등이라 소셜 목록 신선도 가드에도 막히지 않는다.
+                for (voiceId in revokedVoiceIds) {
+                    runCatching { repository.degradeAlarmsUsingVoiceProfile(voiceId) }
+                        .onFailure { error ->
+                            AlarmTalkLog.reportError("Failed to degrade alarms after consent withdrawal", error)
+                        }
+                }
+                // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
+                if (authSession?.user?.id != userId) return@fold true
+                if ("voice_biometric" !in sensitiveConsentMissing) {
+                    sensitiveConsentMissing = sensitiveConsentMissing + "voice_biometric"
+                }
+                voiceProfiles = voiceProfiles.filter { it.isSystem == true }
+                // 3) 폴백 — 실패해도 위에서 이미 발사 경로는 끊겼다.
+                loadVoiceProfiles()
+                com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(app)
+                message = app.getString(R.string.msg_voice_consent_withdrawn)
+                true
+            },
+            onFailure = { error ->
+                AlarmTalkLog.reportError("Failed to withdraw voice biometric consent", error)
+                // 실패는 알릴 대상이 이 계정 화면뿐이라, 세션이 바뀌었으면 조용히 끝낸다.
+                if (authSession?.user?.id != userId) return@fold false
+                // 철회 버튼 아래에 빨간 글자로 말한다(동의 내역 화면).
+                failAction(
+                    SignedInAction.WITHDRAWAL,
+                    userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed)),
+                )
+                false
+            },
+        )
     }
 }
 
@@ -1557,7 +1522,20 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
                 return@onSuccess
             }
+            // 앱이 본 플랜이 **실제로 바뀌었을 때만**(`entitlement_changed`, `docs/spec/usage-events.md` §7.1) — 같은 계정의 앞 값과
+            // 비교한다. 로그인 직후 첫 답·계정 전환은 변경이 아니다. 출처(결제·관리자 지급·기간 한정)는 서버가 기록에 찍는다.
+            val previousPlan = authSession?.takeIf { it.user.id == saved.user.id }?.user?.plan
             authSession = saved
+            if (previousPlan != null && previousPlan != saved.user.plan) {
+                com.alarmtalk.app.data.UsageSignals.record(
+                    getApplication(),
+                    com.alarmtalk.app.data.UsageEvents.ENTITLEMENT_CHANGED,
+                    props = com.alarmtalk.app.data.UsageEventProps(
+                        fromPlan = com.alarmtalk.app.data.UsageEventProps.code(previousPlan),
+                        toPlan = com.alarmtalk.app.data.UsageEventProps.code(saved.user.plan),
+                    ),
+                )
+            }
             // 종료 안내가 판정에 쓰는 '이 계정의 가장 최근 응답'. 쿠폰·결제 뒤의 갱신도 여기로
             // 와서, 떠 있는 옛 안내를 걷는다(리뷰 지적 — 예전에는 `checkAccountStatus` 만 적었다).
             // plan 쓰기(위의 순번)와 순번이 따로다: 나중에 보낸 `checkAccountStatus` 의 답이 먼저

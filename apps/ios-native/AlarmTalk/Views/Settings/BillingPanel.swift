@@ -190,6 +190,14 @@ struct BillingPanel: View {
         // 각자 카드라, 그 전체를 또 한 겹 카드로 감싸면 **카드 안의 카드**가 된다 —
         // 실기에서 요금 상자들을 큰 상자가 다시 감싸고 있었다. 안드로이드는 플랜 카드만
         // 세로로 늘어놓는다.
+        .onAppear {
+            // 결제 화면을 봤다(`paywall_viewed` — `docs/spec/usage-events.md` §7.1).
+            UsageEventQueue.shared.record(
+                .paywallViewed,
+                props: UsageEventProps(surface: "billing"),
+                userID: auth.session?.user.id
+            )
+        }
         .task {
             // 시트 진입 시 제품 정보 + 이용권 동기화.
             if subscriptions.products.isEmpty {

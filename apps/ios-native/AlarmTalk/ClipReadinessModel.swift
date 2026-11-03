@@ -7,7 +7,7 @@ import os
 /// ⚠ **이 값으로 알람 만들기를 막지 말 것**(클론까지 센다). 알람 설정 관문은
 /// **기본 목소리만** 보는 `StockClipPrefetcher.defaultVoicesReady` 하나다(2026-09-17).
 /// 이 값으로 막는 것은 **목소리 등록**과, 아직 못 받은 **그 목소리를 고르는 것**뿐이다
-/// (docs/spec/voice-and-message.md 「기본 목소리를 다 받아야 알람을 설정한다」).
+/// (docs/spec/voice-and-message.md 「알람마다 필요한 목소리만 본다」).
 @MainActor
 final class ClipReadinessModel: ObservableObject {
     private static let logger = Logger(subsystem: "com.alarmtalk.app", category: "ClipReadiness")
@@ -60,27 +60,37 @@ final class ClipReadinessModel: ObservableObject {
             }
         }
 
-        let systemVoiceIDs = Set(manifest.clips.map { $0.voiceProfileId }.filter { isSystemVoiceId($0) })
+        // 기본 목소리는 **지금 언어의** 클립만 센다 — 받는 대상이 그것뿐이다(`StockClipPrefetcher.isDefaultVoiceTarget`).
+        // 모든 언어를 세면 앱 언어를 바꾼 뒤 옛 언어 클립만으로 '다 받음' 이 되어, 준비 화면은 끝났다는데 고르면 다시
+        // 막혔다(코덱스 #952). 내 목소리는 등록 때 고른 언어 한 벌이라 거르지 않는다. 안드로이드 `refreshClipReadiness` 짝.
+        let language = VoiceStudioViewModel.appVoiceLanguage()
+        let clips = manifest.clips.filter { !isSystemVoiceId($0.voiceProfileId) || ($0.language ?? "ko") == language }
+        let systemVoiceIDs = Set(clips.map { $0.voiceProfileId }.filter { isSystemVoiceId($0) })
 
-        let missing = Set((await StockClipPrefetcher.missingClipsOffMain(manifest.clips, audioCache: audioCache)).map(\.messageId))
+        let missing = Set((await StockClipPrefetcher.missingClipsOffMain(clips, audioCache: audioCache)).map(\.messageId))
         guard !Task.isCancelled, KeychainStore.readSession()?.token == token else { return }
 
         let targets = systemVoiceIDs.sorted() + ownedVoiceProfileIDs.sorted()
         // 카테고리도 매니페스트에서 나온다 — 앱에 목록을 박아 두면 운영이 카테고리를
         // 추가했을 때 그 몫이 진행률에서 통째로 빠진다.
-        let categoriesByVoice = Dictionary(grouping: manifest.clips, by: { $0.voiceProfileId })
+        let categoriesByVoice = Dictionary(grouping: clips, by: { $0.voiceProfileId })
             .mapValues { clips in Set(clips.compactMap { $0.category }).sorted() }
+        // 카테고리 → 테마(`cheer_v2` → `cheer`, 스펙 voice-and-message §5-4). 기본 목소리가 무료 테마를 고를 때 쓴다.
+        let themeByCategory = Dictionary(
+            manifest.clips.compactMap { clip in clip.category.map { ($0, clip.bucketTheme ?? $0) } },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         voices = ClipReadiness.evaluate(
             voiceProfileIDs: targets,
-            clips: manifest.clips,
+            clips: clips,
             expectedVariants: manifest.expectedVariants,
             isSystemVoice: { isSystemVoiceId($0) },
             categories: { voiceID in
                 guard let all = categoriesByVoice[voiceID] else { return [] }
                 // 기본 목소리는 스톡 클립 카테고리만 쓴다(= 편집기 문구 목록과 같은 다섯).
                 return isSystemVoiceId(voiceID)
-                    ? all.filter { StockClipPrefetcher.freeBucketCategories.contains($0) }
+                    ? all.filter { StockClipPrefetcher.freeBucketCategories.contains(themeByCategory[$0] ?? $0) }
                     : all
             },
             renderState: { renderStates[$0] ?? (false, false) },

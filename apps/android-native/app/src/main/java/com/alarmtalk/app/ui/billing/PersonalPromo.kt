@@ -4,7 +4,9 @@ import android.content.Context
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.PersonalPromo
+import com.alarmtalk.app.network.PlanGrant
 import com.alarmtalk.app.network.normalizePersonalPromo
+import com.alarmtalk.app.network.normalizePlanGrant
 import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -50,8 +52,17 @@ internal fun parseServerInstantMillis(value: String?): Long? {
  *   그대로다.
  * ⚠ **되돌릴 수 없는 경로는 이걸 쓰지 않는다** — 방금 받은 답은 [freshPlanPromoStamp] 다.
  */
-internal fun planAnswerStampMillis(promo: PersonalPromo?, receivedAtMillis: Long): Long =
-    parseServerInstantMillis(runCatching { promo?.computedAt }.getOrNull()) ?: receivedAtMillis
+internal fun planAnswerStampMillis(promo: PersonalPromo?, receivedAtMillis: Long, grant: PlanGrant? = null): Long =
+    parseServerInstantMillis(runCatching { promo?.computedAt }.getOrNull())
+        ?: parseServerInstantMillis(runCatching { grant?.computedAt }.getOrNull())
+        ?: receivedAtMillis
+
+/**
+ * 계산된 `plus` 의 **기한**(배타, 서버 시계) — 기간 한정 개인 플랜이 있으면 그 끝, 없으면 관리자 기간 지급의 끝. 둘 다
+ * 없으면 null(기한 없는 plan — 진짜 구독이거나 무료). 오프라인 차단([personalPromoLapsed])은 둘을 같은 규칙으로 자른다.
+ */
+internal fun limitedPlanEndsAt(promo: PersonalPromo?, grant: PlanGrant?): String? =
+    normalizePersonalPromo(promo)?.endsAt ?: normalizePlanGrant(grant)?.endsAt
 
 /**
  * 캐시된 plan 답에 붙은 **프로모 표지** — 그 plan 이 기간 한정 개인 플랜으로 계산된 값일 때,
@@ -68,12 +79,15 @@ internal data class PlanPromoStamp(
 )
 
 /** [promo] 가 있으면 그 답의 표지. 종료 시각이 없으면(프로모 아님) null. */
-internal fun planPromoStampOf(promo: PersonalPromo?, fetchedAtMillis: Long?): PlanPromoStamp? =
-    normalizePersonalPromo(promo)?.endsAt?.let { PlanPromoStamp(it, fetchedAtMillis) }
+internal fun planPromoStampOf(
+    promo: PersonalPromo?,
+    fetchedAtMillis: Long?,
+    grant: PlanGrant? = null,
+): PlanPromoStamp? = limitedPlanEndsAt(promo, grant)?.let { PlanPromoStamp(it, fetchedAtMillis) }
 
-/** 세션에 캐시된 plan 답의 표지 — 세션의 promo 와 **그 세션이 받은 시각**의 짝. */
+/** 세션에 캐시된 plan 답의 표지 — 세션의 promo(또는 관리자 지급)와 **그 세션이 받은 시각**의 짝. */
 internal fun AuthSession.planPromoStamp(): PlanPromoStamp? =
-    planPromoStampOf(user.personalPromo, userFetchedAtMillis)
+    planPromoStampOf(user.personalPromo, userFetchedAtMillis, user.planGrant)
 
 /**
  * **방금** 서버에서 받은 답의 표지 — 받은 시각이 곧 판정 시각([nowMillis])이다.
@@ -83,7 +97,7 @@ internal fun AuthSession.planPromoStamp(): PlanPromoStamp? =
  * 답을 기기 시계로 뒤집어 잠그는 일이 없다(기기 시계가 빠르거나, 경계에 걸친 경우).
  */
 internal fun freshPlanPromoStamp(user: AuthUser, nowMillis: Long): PlanPromoStamp? =
-    planPromoStampOf(user.personalPromo, nowMillis)
+    planPromoStampOf(user.personalPromo, nowMillis, user.planGrant)
 
 /**
  * 캐시된 계산값 `plus` 를 **이제 무료로 읽어야 하는가** — 오프라인 차단(양 앱 공통 규칙).
@@ -160,6 +174,16 @@ internal fun isPersonalPromoEndNoticeDue(
  */
 internal fun personalPromoLastDay(promo: PersonalPromo?, zone: ZoneId): LocalDate? {
     val endsAtMillis = parseServerInstantMillis(normalizePersonalPromo(promo)?.endsAt) ?: return null
+    return Instant.ofEpochMilli(endsAtMillis - 1_000L).atZone(zone).toLocalDate()
+}
+
+/**
+ * 관리자 기간 지급의 "…까지" 마지막 날 — 지금 지급 중일 때만(끝났거나 못 읽으면 null). 날짜 규칙은
+ * [personalPromoLastDay] 와 같다(`ends_at − 1초` 의 기기 날짜).
+ */
+internal fun planGrantLastDay(endsAt: String?, zone: ZoneId, nowMillis: Long): LocalDate? {
+    val endsAtMillis = parseServerInstantMillis(endsAt?.trim()) ?: return null
+    if (nowMillis >= endsAtMillis) return null
     return Instant.ofEpochMilli(endsAtMillis - 1_000L).atZone(zone).toLocalDate()
 }
 

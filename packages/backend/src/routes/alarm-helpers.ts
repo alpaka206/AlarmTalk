@@ -1,5 +1,5 @@
 import { UUID_RE } from '../lib/validate';
-import type { ErrorCode } from '@alarmtalk/shared';
+import { CHEER_CONTENT_IDS, CHEER_MODES, isAlarmTargetDate, type CheerMode, type ErrorCode } from '@alarmtalk/shared';
 import {
   FREE_BUCKET_CATEGORIES,
   CLONE_PRERENDER_CATEGORIES,
@@ -46,6 +46,7 @@ export type AlarmRow = Record<string, unknown> & {
   vibration_pattern?: unknown;
   wake_mode?: unknown;
   voice_profile_id?: unknown;
+  target_date?: unknown;
 };
 
 export function normalizeAlarmRow(row: AlarmRow) {
@@ -82,6 +83,8 @@ export function normalizeAlarmRow(row: AlarmRow) {
     vibration_pattern: vibrationPattern,
     wake_mode: wakeMode,
     voice_profile_id: (row.voice_profile_id ?? null) as string | null,
+    // 날짜 지정 알람의 날짜(`docs/spec/alarm-lifecycle.md` §4). 형식이 어긋난 값은 날짜 없음으로 읽는다.
+    target_date: isAlarmTargetDate(row.target_date) ? row.target_date : null,
   };
 }
 
@@ -99,7 +102,28 @@ export function validateAlarmFields(body: {
   message_id?: string | null;
   is_active?: boolean;
   bucket_id?: string | null;
+  target_date?: string | null;
+  timezone?: string | null;
+  cheer_mode?: unknown;
+  cheer_pinned_content_id?: unknown;
 }): FieldError | null {
+  // 응원 테마의 '다양하게 / 이 문구로 고정'(스펙 voice-and-message §5-4). 둘 다 선택 필드이고 null 은 '없음'(= 다양하게).
+  // 고정 문구는 카탈로그의 응원 ID 여야 한다(옛 응원 포함 — 옛 알람이 고정해 둔 값). 길이·형식은 ID 집합이 막는다.
+  if (
+    body.cheer_mode !== undefined &&
+    body.cheer_mode !== null &&
+    !CHEER_MODES.includes(body.cheer_mode as CheerMode)
+  ) {
+    return { error: `cheer_mode must be one of: ${CHEER_MODES.join(', ')}`, error_code: 'INVALID_CHEER_SETTING' };
+  }
+  if (
+    body.cheer_pinned_content_id !== undefined &&
+    body.cheer_pinned_content_id !== null &&
+    (typeof body.cheer_pinned_content_id !== 'string' || !CHEER_CONTENT_IDS.has(body.cheer_pinned_content_id))
+  ) {
+    return { error: 'Unknown cheer_pinned_content_id', error_code: 'INVALID_CHEER_SETTING' };
+  }
+
   if (body.message_id != null && !UUID_RE.test(body.message_id)) {
     return { error: 'Invalid message_id format', error_code: 'INVALID_MESSAGE_ID' };
   }
@@ -171,7 +195,50 @@ export function validateAlarmFields(body: {
     return { error: 'is_active must be a boolean', error_code: 'INVALID_IS_ACTIVE' };
   }
 
+  // 날짜 지정 알람(`docs/spec/alarm-lifecycle.md` §4-7): 실제 날짜 + 같은 요청의 유효한 IANA 시간대 + 빈 반복 요일.
+  // **지난 날짜는 거절하지 않는다** — 끝난 날짜 알람의 끄기·켜기도 사본으로 올라온다.
+  if (body.target_date !== undefined && body.target_date !== null) {
+    if (!isAlarmTargetDate(body.target_date)) {
+      return { error: 'target_date must be a real YYYY-MM-DD date', error_code: 'INVALID_TARGET_DATE' };
+    }
+    if (Array.isArray(body.repeat_days) && body.repeat_days.length > 0) {
+      return { error: 'target_date cannot be combined with repeat_days', error_code: 'INVALID_TARGET_DATE' };
+    }
+    const timezone = normalizeTimezone(body.timezone);
+    if (!timezone || !isValidIanaTimezone(timezone)) {
+      return { error: 'target_date requires a valid IANA timezone', error_code: 'INVALID_TARGET_DATE' };
+    }
+  }
+
   return null;
+}
+
+/** 런타임이 아는 IANA 시간대 이름인가(`Intl` 이 거절하면 아니다). 날짜 지정 알람의 시간대 검증용. */
+export function isValidIanaTimezone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 응원 저장값 — 본문에 온 것만 고른다(`undefined` = 건드리지 않음). 검증은 `validateAlarmFields` 가 먼저 한다.
+ *
+ * 쓰기는 값이 왔을 때만 칼럼(#143)을 쓰고(없으면 지금과 같은 행), 값이 왔는데 칼럼이 없으면 통째로 실패한다(fail-closed —
+ * CLAUDE.md 「배포가 마이그레이션보다 먼저 돈다」).
+ */
+export function cheerFieldsOf(body: {
+  cheer_mode?: unknown;
+  cheer_pinned_content_id?: unknown;
+}): { column: 'cheer_mode' | 'cheer_pinned_content_id'; value: string | null }[] {
+  const out: { column: 'cheer_mode' | 'cheer_pinned_content_id'; value: string | null }[] = [];
+  if (body.cheer_mode !== undefined) out.push({ column: 'cheer_mode', value: (body.cheer_mode as string | null) ?? null });
+  if (body.cheer_pinned_content_id !== undefined) {
+    out.push({ column: 'cheer_pinned_content_id', value: (body.cheer_pinned_content_id as string | null) ?? null });
+  }
+  return out;
 }
 
 /**

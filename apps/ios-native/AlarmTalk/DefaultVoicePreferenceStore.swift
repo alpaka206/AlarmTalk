@@ -37,6 +37,24 @@ struct DefaultVoicePreferenceStore {
         return defaults.string(forKey: key)?.nilIfBlank
     }
 
+    /// **로그인 전 랜딩에서 들어 보고 고른 기본 목소리**(2026-10-26 v1.3 W04) — 계정이 없을 때라 기기 하나의 값이다.
+    /// 안드로이드 `LandingVoicePick` 짝. 기본(시스템) 목소리만 받는다.
+    func setLandingVoicePick(_ voiceId: String) {
+        guard isSystemVoiceId(voiceId) else { return }
+        defaults.set(voiceId, forKey: Self.landingVoicePickKey)
+    }
+
+    /// 랜딩에서 고른 목소리를 **이 계정이 아직 고른 적이 없으면** 그 계정의 직전 선택으로 한 번 옮기고 지운다. 이미 고른 적이
+    /// 있으면 그 값이 이긴다 — 랜딩에서 눌러 본 것으로 기존 사용자의 선택을 덮지 않는다.
+    func adoptLandingVoicePick(userID: String?) {
+        let pick = defaults.string(forKey: Self.landingVoicePickKey)
+        defaults.removeObject(forKey: Self.landingVoicePickKey)
+        guard let pick, isSystemVoiceId(pick), lastUsedVoiceId(userID: userID) == nil else { return }
+        setLastUsedVoiceId(userID: userID, voiceId: pick)
+    }
+
+    private static let landingVoicePickKey = "landing_voice_pick"
+
     func setLastUsedVoiceId(userID: String?, voiceId: String?) {
         guard let key = lastUsedVoiceKey(userID) else { return }
         if let voiceId = voiceId.nilIfBlank {

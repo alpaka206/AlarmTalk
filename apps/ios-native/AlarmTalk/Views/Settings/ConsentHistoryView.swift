@@ -23,7 +23,8 @@ struct ConsentHistoryView: View {
     @State private var reloadTick = 0
     @State private var withdrawConfirmOpen = false
     @State private var withdrawBusy = false
-    @State private var marketingBusy = false
+    /// 광고 개인정보 선택(UMP)을 다시 열 자리가 필요한가 — 규정 지역에서만(안드로이드 `ConsentHistoryScreen` 의 '광고' 카드).
+    @State private var adPrivacyOptionsRequired = false
 
     var body: some View {
         ScrollView {
@@ -45,6 +46,9 @@ struct ConsentHistoryView: View {
                 requiredSection
                 overseasNotice
                 optionalSection
+                if adPrivacyOptionsRequired {
+                    adsSection
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
@@ -53,6 +57,8 @@ struct ConsentHistoryView: View {
         .navigationTitle(String(localized: "약관 및 개인정보 처리 동의"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: reloadTick) { await load() }
+        // 광고 개인정보 선택(UMP) — 규정이 있는 지역에서만 다시 열 자리를 둔다(`docs/spec/ad-rewards.md` §4).
+        .task { adPrivacyOptionsRequired = await RewardedAds.shared.privacyOptionsRequired() }
         // iOS 에서는 시스템 알럿이 곧 표준이다 — 안드로이드의 `IosAlertDialog` 은
         // 그 시스템 알럿을 Compose 로 흉내 낸 것이므로, 여기서 커스텀 껍데기를 만들면
         // 오히려 원본에서 멀어진다.
@@ -102,22 +108,41 @@ struct ConsentHistoryView: View {
                 // 아니라 단방향 '철회' 액션이다(켜지지 않는 스위치는 버그로 보인다).
                 onWithdraw: withdrawBusy ? nil : { withdrawConfirmOpen = true }
             )
+            if let message = auth.actionErrorMessage(for: .withdrawal) { inlineError(message) }
             Divider().overlay(theme.palette.outlineVariant)
             // 읽기 전용 이력이 아니라 실제로 켜고 끄는 토글 — 설정에 있던 마케팅 카드를
             // 이 법적 정보 화면으로 통합했다(안드로이드와 같은 위치).
             ConsentToggleRow(
                 label: "광고성 정보 수신 동의",
-                agreed: auth.marketingConsentLoadFailed ? nil : auth.marketingConsentAgreed,
-                busy: marketingBusy,
+                agreed: auth.marketingConsentAgreed,
                 loadFailed: auth.marketingConsentLoadFailed,
                 onRetry: { Task { await auth.loadMarketingConsent() } },
                 onChange: { next in
-                    Task {
-                        marketingBusy = true
-                        await auth.updateMarketingConsent(next)
-                        marketingBusy = false
-                    }
+                    Task { await auth.updateMarketingConsent(next) }
                 }
+            )
+            // 실패는 알림이 아니라 그 스위치 아래 빨간 글자로 남긴다 — 화면을 나갔다 와도 보인다(다시 누르면 지운다).
+            if let message = auth.actionErrorMessage(for: .marketing) { inlineError(message) }
+        }
+    }
+
+    /// 실패한 동작의 이유 — 그 행 바로 아래에 빨간 글자로(2026-10-29 오너).
+    private func inlineError(_ message: String) -> some View {
+        Text(message)
+            .font(theme.typography.bodySmall)
+            .foregroundStyle(theme.palette.error)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+    }
+
+    private var adsSection: some View {
+        ConsentSectionCard(title: String(localized: "광고")) {
+            ConsentRow(
+                label: "광고 개인정보 설정",
+                record: nil,
+                onOpen: { Task { await RewardedAds.shared.presentPrivacyOptions() } },
+                showStatus: false
             )
         }
     }
@@ -187,6 +212,8 @@ private struct ConsentRow: View {
     let record: ConsentRecord?
     let onOpen: (() -> Void)?
     var onWithdraw: (() -> Void)?
+    /// 날짜 칸을 그리는가 — 동의 기록이 아닌 행(광고 개인정보 설정)은 그리지 않는다.
+    var showStatus: Bool = true
 
     private var statusText: String {
         guard let record else { return "—" }
@@ -202,9 +229,11 @@ private struct ConsentRow: View {
                 .foregroundStyle(theme.palette.onSurface)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(statusText)
-                .font(theme.typography.bodyMedium)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+            if showStatus {
+                Text(statusText)
+                    .font(theme.typography.bodyMedium)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            }
 
             // 철회는 동의한 상태에서만 뜻이 있다.
             if let onWithdraw, record?.agreed == true {
@@ -265,7 +294,6 @@ private struct ConsentToggleRow: View {
     /// nil = 아직 못 읽음. **false 로 뭉뚱그리지 말 것** — 안 읽힌 값을 '거절' 로 그리면
     /// 동의해 둔 사람에게 꺼진 스위치를 보여주게 된다.
     let agreed: Bool?
-    let busy: Bool
     let loadFailed: Bool
     let onRetry: () -> Void
     let onChange: (Bool) -> Void
@@ -288,8 +316,8 @@ private struct ConsentToggleRow: View {
                 Toggle("", isOn: Binding(get: { agreed == true }, set: onChange))
                     .labelsHidden()
                     .alarmTalkSwitch()
-                    // 로드 전(nil)엔 비활성, 쓰기 중(busy)엔 연속 토글로 인한 opt-out 유실 방지.
-                    .disabled(agreed == nil || busy)
+                    // 로드 전(nil)엔 비활성. 쓰는 동안에도 누를 수 있다 — 마지막 값을 뷰모델이 이어 보낸다(`MarketingConsentNext`).
+                    .disabled(agreed == nil)
             }
         }
         .padding(.horizontal, 12)

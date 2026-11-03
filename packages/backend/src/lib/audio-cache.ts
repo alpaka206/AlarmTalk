@@ -1,3 +1,5 @@
+import { currentRenderExtras, renderExtrasCacheKeyPart, type RenderExtras } from './render-fingerprint';
+
 export interface TtsCacheInput {
   provider: string;
   providerVoiceId: string;
@@ -33,6 +35,14 @@ export interface TtsCacheInput {
    *   (`generateStockClip`)와 키가 맞는다 — 범위(`STOCK_TTS_CACHE_SCOPE`)와 같은 규칙이다.
    */
   loudnessBoostDb?: number;
+  /**
+   * **원래 키에 없던 렌더 설정**(합성 옵션·글자 규칙 세대·후처리 세대·최종 형식 — `lib/render-fingerprint.ts`). 비우면
+   * 지금 코드 값이다. 2026-10-26 의 기준값(`BASELINE_RENDER_EXTRAS`)과 같으면 키에서 빠져 예전 키 그대로고, 다르면
+   * 그 해시가 들어가 옛 설정으로 만든 소리를 다시 내주지 않는다. 테스트만 넘긴다.
+   *
+   * ⚠ 예전에는 `TTS_VOICE_SETTINGS` 를 바꿔도 키가 그대로라 옛 설정의 소리가 계속 서빙됐다(`tts-model.ts` 의 옛 ⚠).
+   */
+  renderExtras?: RenderExtras;
 }
 
 /**
@@ -68,6 +78,8 @@ export async function computeTtsCacheKey(input: TtsCacheInput): Promise<string> 
     pitchSemitones: input.pitchSemitones ? input.pitchSemitones : undefined,
     // 음량도 같다 — 0·undefined 면 빠져, 올리지 않은 소리의 키는 예전 그대로다.
     loudnessBoostDb: input.loudnessBoostDb ? input.loudnessBoostDb : undefined,
+    // 부가 설정 — 기준값이면 undefined 라 빠진다(예전 키 그대로).
+    renderExtras: await renderExtrasCacheKeyPart(input.renderExtras ?? currentRenderExtras()),
   };
   return sha256Hex(JSON.stringify(normalized));
 }

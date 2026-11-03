@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.data.datedFireAtMillis
+import com.alarmtalk.app.data.isDated
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
@@ -368,11 +370,19 @@ internal fun AlarmRow(
                         }
                         // 라벨 대신 '다음 울릴 날짜'를 안내(기본 시계 라벨보다 실용적). 꺼진 알람도 미리 보이도록,
                         // 켜진 건 실제 예약값(fireAtMillis), 꺼진 건 스케줄로 다음 울림을 계산해 표시한다.
+                        // 날짜 지정 알람은 꺼져 있어도 다음 회차가 아니라 **그 날짜**를 말한다(끝난 날짜 알람 포함).
                         val nextFireMillis = if (alarm.enabled) {
                             alarm.fireAtMillis
                         } else {
-                            remember(alarm.hour, alarm.minute, alarm.repeatDaysMask, alarm.holidayOff) {
-                                com.alarmtalk.app.data.AlarmTimeCalculator.nextFireAtMillis(
+                            remember(
+                                alarm.hour,
+                                alarm.minute,
+                                alarm.repeatDaysMask,
+                                alarm.holidayOff,
+                                alarm.targetDate,
+                                alarm.targetTimezone,
+                            ) {
+                                alarm.datedFireAtMillis() ?: com.alarmtalk.app.data.AlarmTimeCalculator.nextFireAtMillis(
                                     hour = alarm.hour,
                                     minute = alarm.minute,
                                     repeatDaysMask = alarm.repeatDaysMask,
@@ -382,7 +392,10 @@ internal fun AlarmRow(
                         }
                         // 날짜 뒤에 '누구 목소리로 울리는지'를 붙인다 — 홈에서 알람을 구분하는
                         // 이 앱 고유의 정보라, 라벨 없는 리스트에서 구분자 역할도 겸한다.
-                        val dateLabel = nextFireDateLabel(context, nextFireMillis)
+                        // 날짜 알람의 시간대가 이 기기와 다르면 이 기기 시각으로 언제인지 말한다(alarm-lifecycle.md §4-2).
+                        val dateLabel = (
+                            if (alarm.isDated()) datedTimezoneNote(context, alarm.targetTimezone, nextFireMillis) else null
+                            ) ?: nextFireDateLabel(context, nextFireMillis)
                         Text(
                             text = if (voiceName.isNullOrBlank()) {
                                 dateLabel

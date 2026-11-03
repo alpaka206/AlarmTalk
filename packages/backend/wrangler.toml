@@ -105,6 +105,7 @@ crons = ["*/5 * * * *", "* * * * *"]
 # APPLE_KEY_ID                    (App Store Server API 키의 Key ID)
 # APPLE_PRIVATE_KEY               (그 키의 .p8 파일 내용 전체, PEM. 개행 포함)
 #                                  ↑ 이 셋 + APPLE_BUNDLE_ID 가 다 있어야 /billing/apple/confirm 이 산다.
+#                                  애플 서버 알림 V2(/api/billing/apple/notifications)도 같은 넷을 쓴다 — 없으면 503.
 #
 # 공휴일(KR 보정) — 미설정 시 KR 오버레이 생략, date-holidays 결과만 제공:
 # KASI_SERVICE_KEY                (data.go.kr 특일정보 getRestDeInfo, **Decoding(디코딩)** 키.

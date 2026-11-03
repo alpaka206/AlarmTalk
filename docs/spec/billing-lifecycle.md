@@ -145,9 +145,10 @@
 
 왜: 갱신 알림을 놓칠 수 있기 때문이다.
 - Google: RTDN 유실
-- Apple: **App Store Server Notifications 라우트가 아예 없다.** 연장 신호는 iOS 앱이
-  전경으로 올라올 때 보내는 `resyncEntitlements` 뿐인데, 알람 앱은 안 열어도 울리므로
-  한 달 넘게 안 여는 사용자가 흔하다 — 그 사이 크론이 무료로 강등시킨다.
+- Apple: 서버 알림 V2(아래 「애플 서버 알림 V2」, 2026-10-26)가 주 경로지만 App Store Connect 의 URL 설정·
+  전달 실패로 빠질 수 있다. 그 전에는 연장 신호가 iOS 앱이 전경으로 올라올 때 보내는 `resyncEntitlements`
+  뿐이었는데, 알람 앱은 안 열어도 울리므로 한 달 넘게 안 여는 사용자가 흔하다 — 알림이 빠지면 지금도
+  그 사이 크론이 재조회로 맞춘다. **크론 재조회를 지우지 말 것.**
 
 | 판정 | 뜻 |
 | --- | --- |
@@ -602,10 +603,10 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 
 ## 환불은 **크론을 기다리지 않고** 권한을 회수한다
 
-⚠ 애플에는 우리가 받는 서버 알림 라우트가 없다(App Store Server Notifications 미구현).
-기간 중 환불은 클라가 `Transaction.updates` 로 물어다 준 `POST /billing/apple/confirm`
-요청이 **유일한 통보**다. 거기서 `TRANSACTION_REVOKED` 로 거절만 하면, 만료 크론이
-재조회할 때까지 — 즉 저장된 `expires_at` 까지 — 환불받은 계정이 계속 유료로 남는다.
+기간 중 환불의 통보는 **둘**이다 — 애플 서버 알림 `REFUND`·`REVOKE`(아래 「애플 서버 알림 V2」)와, 클라가
+`Transaction.updates` 로 물어다 준 `POST /billing/apple/confirm` 요청. **둘 다 같은 함수**(`revokeAppleRefund`)로
+판정·회수한다. 알림이 빠졌을 때 확정이 `TRANSACTION_REVOKED` 로 거절만 하면, 만료 크론이 재조회할 때까지 —
+즉 저장된 `expires_at` 까지 — 환불받은 계정이 계속 유료로 남는다.
 
 - 정리는 Play RTDN 의 `deactivate` 갈래와 **같은 벌**이다: 매핑된 구독 한 건만 취소하고,
   목소리는 지우지 않고 보관 유예를 걸고, 강등되는 당사자에게 알린다.
@@ -722,35 +723,28 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 
 | 쓰는 값 | 자리 |
 | --- | --- |
-| **계산값** (`hasPersonalVoiceAccess`) | 목소리 클론 등록·초안 승격·제자리 교체 · `/tts/generate` 의 무료 제한(**내 목소리·스톡 목소리**) · 내 알람 저장·수정의 목소리 게이트(**내 목소리·스톡**) · `/tts/messages/:id/audio` 의 **내 목소리** 갈래 · 직접 입력 월 한도(개인 30) · 보관 판정(아래) |
+| **계산값** (`hasPersonalVoiceAccess`) | 목소리 클론 등록·초안 승격·제자리 교체 · `/tts/generate` 의 무료 제한(**내 목소리·스톡 목소리**) · 클론 응원 보충 요청(`POST /voice/:id/content-supplement`) · `/tts/messages/:id/audio` 의 **내 목소리** 갈래 · 직접 입력 월 한도(개인 30) · 보관 판정(아래) |
 | **원시값** (`isPaidVoicePlan`) | `users.plan` 에 쓰는 모든 경로(`createNewSubscriptionForPlan` · `syncUserPlanAfterCancel` · `downgradeUserToFree` · `resolvePlanAfterSuspend`) · `repairOrphanedPaidPlan` 의 복구 조건 · 스토어 교차 가드 · 등급 변경 감지(`plan_changed` 대상 고르기) |
 
 2026-10-20 전에는 원시값 자리가 하나 더 있었다 — 남의 목소리(같은 그룹이 공유한 클론)와 보낸 가족 알람. 그
-기능을 지워(plan-gates.md 「커플·가족 이용권 — 폐지」) 목소리 접근의 판정은 위 계산값 한 갈래다.
+기능을 지워(plan-gates.md 「커플·가족 이용권 — 폐지」) 목소리 접근의 판정은 위 계산값 한 갈래다. 2026-10-29 전에는
+계산값 자리에 **내 알람 저장·수정의 목소리 게이트**(내 목소리·스톡)도 있었다 — 서버 알람 사본과 함께 지웠다
+([alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」).
 
-**D8·D13 — 알람 PATCH 는 목소리·문구가 바뀔 때만 소유권을 본다.** 안드로이드 동기화
-(`RemoteAlarmMapper.toWriteRequest` → `RemoteAlarmWriteRequest`)는 켜기·끄기·시각만 고쳐도
-`voice_profile_id` 와 `message_id` 를 **매번 그대로** 보낸다. 그대로 보낸 값은 새 참조가 아니다 — 저장할 때
-이미 본 값이고, 알람 소유는 조회 조건이 확인한다. 그 값까지 소유권 게이트로 다시 보면, 그 사이 판정이 바뀐
-값(허용 갈래를 좁혔을 때 등)을 든 알람이 평범한 토글마다 404 → 생성 폴백도 404 → 동기화 실패(`FAILED`)로 남고
-동기화마다 Sentry 에 오른다. (처음 생긴 이유는 결제 보류 주인의 공유 목소리·프리셋 클립이었다 — 2026-09-27.
-그 기능은 지웠고 규칙은 남는다.)
+**D8·D13 — 알람 쓰기의 소유권 게이트는 없어졌다**(2026-10-29). 서버에는 알람이 없고, 옛 앱의 올리기는 형식만 보고 저장
+없이 되돌려 준다([alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」) — 저장하지 않는 쓰기에는 막을 참조가 없다.
+막힌 클립의 **재생**은 지금도 오디오 라우트가 막는다(아래).
 
-| 요청 | `voice_profile_id`(`voiceProfileBelongsToCaller`) · `message_id`(`messageBelongsToCaller`) 소유권 게이트 |
-| --- | --- |
-| `POST /alarm` | **언제나** 본다 |
-| `PATCH /alarm/:id` — 값이 저장된 알람의 값과 **같다**(토글·시각 수정) | **보지 않는다** — 새 참조를 만들지 않는다 |
-| `PATCH /alarm/:id` — 값이 **바뀐다**(다른 목소리·클립으로 교체, 비어 있던 클립을 채움) | 본다 — 허용 갈래 밖이면 404 |
+(그 전의 규칙 — 기록으로 남긴다: `PATCH /alarm` 은 `voice_profile_id`·`message_id` 가 **저장된 값에서 바뀔 때만**
+`voiceProfileBelongsToCaller`·`messageBelongsToCaller` 를 봤고 — 두 값은 따로, 트랜잭션 안의 재확인도 같은 조건 — `POST` 는
+언제나 봤다. 안드로이드 동기화가 켜기·끄기·시각만 고쳐도 두 값을 매번 그대로 보냈기 때문이다. 그대로 보낸 값은 새 참조가
+아니었고, 그것까지 보면 그 사이 판정이 바뀐 값을 든 알람이 토글마다 404 → 생성 폴백도 404 → 동기화 실패(`FAILED`)로 남았다.
+처음 생긴 이유는 결제 보류 주인의 공유 목소리·프리셋 클립이었다 — 2026-09-27.)
 
-- 두 값은 **따로** 판정한다 — 목소리는 그대로인데 클립만 바뀌면 클립만 본다(그 역도 같다).
-- 허용 갈래는 쌍 규칙 그대로다(CLAUDE.md) — **내 문구**(내 목소리·시스템 목소리) 또는 **시스템 스톡 프리셋**.
-  막힌 클립의 **재생**은 오디오 라우트가 막는다. 달라지는 것은 PATCH 가 **새 참조일 때만** 묻는다는 것뿐이다.
-- 트랜잭션 안의 재확인(TOCTOU)도 같은 조건이다(바뀔 때만).
-- 회귀 테스트: 백엔드의 D8·D13 PATCH 케이스(그대로 보낸 토글은 통과 · 바꾸는 PATCH 와 POST 는 404).
-
-⚠ **오디오 라우트와 `messageBelongsToCaller` 는 한 쌍이다**(CLAUDE.md). 오디오 라우트는 시스템 목소리면
-누구에게나, **목소리 주인이 호출자일 때는** 계산값(`hasPersonalVoiceAccess`)으로 연다 — 남의 목소리는 열지 않는다.
-쓰기 쪽도 내 문구(내 목소리·시스템 목소리)·시스템 프리셋만 받아 같은 답을 낸다.
+⚠ **오디오 라우트(`GET /tts/messages/:id/audio`)가 유일한 판정이다**(2026-10-29 — 짝이던 쓰기 쪽 `messageBelongsToCaller` 는
+서버 알람 사본과 함께 지웠다). 오디오 라우트는 시스템 목소리면 누구에게나, **목소리 주인이 호출자일 때는**
+계산값(`hasPersonalVoiceAccess`)으로 연다 — 남의 목소리는 열지 않는다. 허용 갈래는 **내 문구**(내 목소리·시스템 목소리)
+또는 **시스템 스톡 프리셋**이다.
 
 - 기존 `isPaidVoicePlan(raw)` 은 **원시 의미 그대로** 둔다. 기본 인자로 한꺼번에 바꾸지
   않는다 — 호출부마다 어느 질문인지 이름으로 드러난다.
@@ -1023,9 +1017,9 @@ Vibration disabled for ringing alarm
   `ensureDynamicVoiceRefreshScheduled` 는 `bucketId == weather` 만 본다)이 멈춰 울릴 때 대체 클립이
   낡은 조건을 고른다. 테마가 남아 있으면 편집기는 저장할 때 그 테마의 클립을 받아 묶는다(두 앱 모두
   기본 목소리 알람을 열면 테마를 붙이고 저장 때 클립을 받는다 — 유료 생성 경로로 가지 않는다).
-  기본 목소리 테마가 없는 종류(**기본 인사말 · 직접 입력**)는 비운다 — 서버가 기본 목소리 +
-  `greeting` 테마를 거절한다. 그 종류는 편집기가 기본 목소리에 줄 수 있는 첫 테마로 바꿔 붙인다
-  (voice-and-message.md §2 — 기본 목소리에는 그 두 종류가 없다).
+  기본 목소리 테마가 없는 종류(**기본 인사말 · 직접 입력**)는 비운다 — 기본 목소리 + `greeting` 은 알람 테마가 아니다
+  (2026-10-29 전에는 서버의 알람 쓰기도 그 조합을 거절했다). 그 종류는 편집기가 기본 목소리에 줄 수 있는 첫 테마로 바꿔
+  붙인다(voice-and-message.md §2 — 기본 목소리에는 그 두 종류가 없다).
 - 원래 유료 목소리의 필드(목소리 · 문구 · 오디오 · 테마 · 회전 · 조건 인덱스)는 **잠금 보관본**
   (안드로이드 `AlarmEntity.preLockVoiceJson`, iOS `LocalAlarmRecord.preLockVoice`)에 담고, 재생 방식은
   예전처럼 `preLockPlayMode` 에 담는다. 보관본이 있는 것이 '새 모양으로 잠겼다' 는 표시다.
@@ -1034,9 +1028,10 @@ Vibration disabled for ringing alarm
   안 세면 같은 클립을 쓰던 다른 알람을 지울 때 파일이 지워져 복원한 알람이 들을 소리가 없다).
   ⚠ 안드로이드 보관본은 Gson JSON 이 **앱 업데이트를 건너서** 읽히므로 필드 키를 `@SerializedName`
   으로 못 박는다(release 는 R8 이 필드 이름을 줄인다 — 매핑이 바뀐 빌드가 보관본을 잃거나 엉뚱한
-  필드로 읽으면 복원이 목소리 없는 행을 서버에 올린다). 키는 바꾸지 않고 더하기만 한다.
+  필드로 읽으면 복원이 목소리 없는 행을 남긴다). 키는 바꾸지 않고 더하기만 한다.
 - **복원**(다시 유료 — 안드로이드 `unlockPaidAlarmTalks`, iOS `restorePaidVoiceAlarms`)은 보관본을
-  되돌리고 **동기화 대상으로 올린다** — 잠긴 동안 켜기·끄기가 기본 목소리를 서버에 올렸을 수 있다.
+  되돌린다. (2026-10-29 전에는 **동기화 대상으로도 올렸다** — 잠긴 동안 켜기·끄기가 기본 목소리를 서버 사본에 올렸을 수
+  있어서다. 서버 알람 사본을 지워 올릴 곳이 없다.)
   ⚠ **날씨 조건 자리(`contextVariantIndex`·`contextResolvedAtMillis`)는 되살리지 않는다**(Codex #828) — 보관본도
   지금 행도 날씨 테마면 지금 값을 둔다(안드로이드 `restoredFromLock`, iOS `DefaultVoiceSubstitute.restored`).
   조건 자리는 목소리와 무관하고(클론·기본 목소리 variant 축이 같다), 잠긴 동안 시각·지역을 고쳐 저장하면 잠금이
@@ -1081,21 +1076,12 @@ Vibration disabled for ringing alarm
 - 이 버전 **전에** 잠긴 옛 모양(`alarm_only` + `preLockPlayMode`, 보관본 없음, 클론 참조 그대로)은
   다음 잠금 실행이 새 모양으로 옮긴다. 이미 알린 알람이라 강등 안내 개수에 **다시 세지 않는다.**
   옮기기 전에 울리면 울림 경로가 기본 목소리로 대신한다.
-- **서버 동기화**: 잠금은 예전처럼 **로컬만** 고친다(동기 상태 그대로). 그 뒤 켜기·끄기가 행을
-  올리면 기본 목소리 + 시스템 스톡 프리셋이라 무료 게이트(`usesOnlySystemStockVoice`)와
-  소유권(`voiceProfileBelongsToCaller` · `messageBelongsToCaller` 의 시스템 갈래)을 통과한다 — 예전
-  모양(클론 참조 그대로)은 토글마다 403 `VOICE_FEATURE_REQUIRES_PAID_PLAN` 이었다.
-  ⚠ **오디오 없이 잠긴 행은 빈 문구·테마를 명시적 `null` 로 보낸다**(Codex #820). 서버 `PATCH /alarm`
-  은 **빠진 필드를 그대로 두는데** 두 앱의 기본 직렬화는 null 을 뺀다(안드로이드 Gson, iOS
-  `encodeIfPresent`). 그러면 새 기본 목소리 id 만 올라가고 클론의 `message_id`·`bucket_id` 가 그 옆에
-  남는다 — 기본 인사말 알람(클론의 `greeting` 테마)은 기본 목소리 + greeting 정책으로 토글마다 400
-  `INVALID_BUCKET_ID`, 나머지는 반쯤 바뀐 서버 행이 된다. 그래서 잠긴 행(보관본이 있는 행)은 비어 있는
-  `message_id`·`bucket_id` 를 `null` 로 실어 지운다(안드로이드 `RemoteAlarmWriteRequest.clearsMissingVoiceReferences`
-  → `RemoteAlarmWriteRequestAdapterFactory`, iOS 같은 이름 → `RemoteAlarmWriteRequest.encode(to:)`).
-  **잠긴 행과 기본 목소리 알람에서만** 켠다 — 잠금이 **확정**됐거나 목소리를 잃어 미나로 바꾼 행은
-  보관본이 없어 보관본만으로는 못 가린다(같은 400 이 난다). 기본 목소리 알람의 빈 문구·테마는 로컬의
-  사실 그대로라 서버도 비우는 것이 맞다(판정: 녹음(`local_audio`)이 아니고 목소리가 기본 목소리).
-  그 밖의 알람(클론·녹음)은 예전처럼 빠진 필드를 서버가 지킨다.
+- **서버 동기화는 없다**(2026-10-29 — 서버에는 알람이 없다, [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이
+  없다」). 잠금·강등·복원은 기기의 행만 고친다. (그 전에는 잠긴 행이 켜기·끄기로 올라갈 때 기본 목소리 + 시스템 스톡
+  프리셋이라 서버의 무료 게이트와 소유권 게이트의 시스템 갈래를 지났고 — 옛 모양(클론 참조 그대로)은 토글마다 403
+  `VOICE_FEATURE_REQUIRES_PAID_PLAN` 이었다 —, 오디오 없이 잠긴 행·기본 목소리 알람은 빈 문구·테마를 명시적 `null` 로
+  보냈다(`clearsMissingVoiceReferences` — 빠진 필드를 그대로 두는 PATCH 가 클론의 `message_id`·`bucket_id` 를 남기면 기본
+  목소리 + `greeting` 정책으로 토글마다 400 `INVALID_BUCKET_ID` 였다, Codex #820).)
 - **안내 문구**: 목소리를 잃은 알람의 1회성 안내는 **원인과 상관없이 한 문장**이다(2026-10-16 오너 결정 —
   `downgrade_notice_title`·`downgrade_notice_message`, "기존에 설정한 알람 N개의 목소리가 기본 목소리로 바뀌었어요.",
   버튼은 '확인' 하나). 예전에는 무료 강등·공유 해제·제자리 교체로 문구를 갈랐는데, 원인을 맞히는 판정이 틀리면 엉뚱한
@@ -1137,9 +1123,8 @@ Vibration disabled for ringing alarm
 - ⚠ **오디오가 하나도 없는 행은 제자리 교체 강등이 다시 세지 않는다**(`hasOwnVoiceAudio` — 두 앱).
   미나로 바꾼 직접 입력 알람은 테마가 없어 직접 입력 판정에 걸리고 오디오 시각이 0 이라, 안 보면 **미나의
   교체 표식**이 올 때마다 같은 행을 다시 '강등' 으로 세어 없는 변화를 안내한다.
-- 동기 상태는 예전 그대로다 — 안드로이드는 로컬만 고치고(서버 행은 삭제 경로가 이미
-  `sound-only` 로 내린다), iOS 는 동기화 대상(DIRTY)으로 올린다. 올라갈 때는 위 「서버 동기화」 대로 빈
-  문구·테마를 `null` 로 지운다.
+- 서버로 올라가는 것은 없다(위 「서버 동기화는 없다」). (2026-10-29 전에는 안드로이드는 로컬만 고치고 서버 행은 삭제
+  경로가 `sound-only` 로 내렸고, iOS 는 동기화 대상(DIRTY)으로 올려 빈 문구·테마를 `null` 로 지웠다.)
 - **이 버전 전에 '알람' 모드로 내려 둔 옛 행**(강등 표시가 목소리 모드, 목소리 참조 없음)은 옮기지
   않는다 — 이미 "기본 알람음으로 바뀌었어요" 로 알린 행이다. 울릴 때 **알람음을 강제**한다(스위치를
   믿지 않는다). 단 목소리 크기 0 이면 사용자가 고른 무음이다(alarm-ringing.md §4).
@@ -1161,7 +1146,7 @@ Vibration disabled for ringing alarm
 | 지우는 것 | 서버와의 연결(`remoteAlarmId`·`lastSyncedAtMillis`·전달 버전)과 보낸 사람의 흔적, 오디오·문구·테마·클립(`localAudioUri`·`audioCacheKey`·`rawAudioUri`·`ttsMessageId`·`voiceText`·`voiceCategory`·`voiceListenerTitle`·`bucketId`·`bucketClipKeysJson`·`bucketClipTextsJson`·`preLockPlayMode`·`preLockVoiceJson`, iOS 는 대응 필드). 문구에 딸린 값(랜덤 문구 여부·종류 `voiceRandomPrompt`·`voiceRandomContext`, 날씨 지역·운세 입력 `voiceWeatherCountry`·`voiceWeatherCity`·`voiceFortuneGender`·`voiceFortuneBirthDate`·`voiceFortuneBirthTime`, 동적 문구 준비 시각 `dynamicVoicePreparedForFireAtMillis`, 날씨·운세 조건 자리와 그 시각 `contextVariantIndex`·`contextResolvedAtMillis`, 클립 회전 자리 `bucketRotationIndex`, 목소리 언어 `voiceLanguage`)도 비워 **모양을 하나로 정한다** — 2단계가 '1단계 모양 그대로인가' 를 이 모양과 비교한다 |
 | 라벨 | 기본 라벨 — 안드로이드는 `rd_default_alarm_label` 의 그 시점 로케일 값, iOS 는 목소리를 걷어낼 때 쓰던 값 |
 | 목소리 | **미나**(안드로이드 `SUBSTITUTE_SYSTEM_VOICE_ID`, iOS `substituteSystemVoiceID`), 목소리 출처는 TTS 프로필 — 오디오 없는 기본 목소리 알람이라 울릴 때(iOS 는 예약할 때) 미나의 클립·내장 인사말이 운다(위 「목소리를 못 쓰게 되면」의 표) |
-| 출처·동기 상태 | 내 알람(`local_owned`). 동기 상태는 '아직 서버에 없는 새 내 알람' 과 같은 값 — 다음 동기화가 보통의 내 알람으로 올린다(시스템 목소리라 서버의 소유권 게이트를 지난다) |
+| 출처·동기 상태 | 내 알람(`local_owned`). 동기 상태는 '아직 서버에 없는 새 내 알람' 과 같은 값 — 2026-10-29 부터 그 칸을 읽는 곳이 없다(그 전에는 다음 동기화가 보통의 내 알람으로 올렸다 — 시스템 목소리라 서버의 소유권 게이트를 지났다) |
 | 보낸 사람의 음원 파일 | 받은 알람용 캐시(`remote-message-*`)를 참조가 없어지면 **한 번** 정리해 지운다 — 다른 알람이 같은 파일을 쓰면 남긴다. iOS 의 `Library/Sounds` 구운 사본은 바꾼 알람이 **새 소리로 다시 예약된 뒤에** 지운다 — 그 전에는 옛 AlarmKit 예약이 그 파일을 가리킨다(Codex #931) |
 
 - 안드로이드는 이 변환을 Room 27→28 마이그레이션(`MIGRATION_27_28`) **안에서, 표 재생성과 같은 트랜잭션의 SQL**
@@ -1332,7 +1317,7 @@ D9(기간 중 커플·가족을 여는 자리의 보류 규칙)는 2026-10-20 �
     `SocialFeatureViewModel` 의 두 스냅샷 쓰기(`refreshAll`·결제 전 조회)는 `AuthViewModel.isPlanAnswerCurrent`
     가 참일 때만 plan·프로모를 쓴다(자기 답을 막 반영한 요청도 최신 — 경계가 `isSuperseded` 와 다르다).
   - **프로필 저장·탈퇴 복구 저장은 plan 답이 아니다 — 세션의 plan·프로모·받은 시각을 쓰지 않는다**(2026-10-05).
-    순번 가드는 plan 답끼리만 가른다. 그런데 안드로이드 프로필 저장(`PATCH /user/me` — 닉네임·계정 설정)은
+    순번 가드는 plan 답끼리만 가른다. 그런데 안드로이드 프로필 저장(`PATCH /user/me` — 계정 설정. 닉네임은 2026-10-29 에 없앴다)은
     요청 **전에** 잡은 세션 사본을, iOS 탈퇴 복구는 푸시 준비를 기다리기 **전에** 잡은 사본을 통째로 저장해, 그 사이 가드를
     지나 반영된 더 새 답(`plan_changed`, 복귀 갱신, 다른 기기 결제, 결제 전 조회)을 다음
     `/auth/me` 까지 되돌렸다 — 세션과 디스크 모두. 판정 스냅샷은 그 저장이 건드리지 않아 그대로였지만, 세션 plan 을
@@ -1470,8 +1455,8 @@ D9(기간 중 커플·가족을 여는 자리의 보류 규칙)는 2026-10-20 �
 | --- | --- | --- | --- |
 | 날짜·판정 — 유일 출처 | `packages/shared/src/schemas/plan.ts` 의 `PERSONAL_PROMO` · `isPersonalPromoActive` · `userPlanWithPromo` · `PersonalPromoSchema` | API 값만 소비 | API 값만 소비 |
 | 스위치·리허설 값 해석 | `lib/personal-promo.ts` `resolvePersonalPromoWindow` · `resolvePersonalPromo`; prod 동기화 거절은 `scripts/worker-secret-keys.ts` | — | — |
-| 계산값 게이트 | `routes/billing-helpers.ts` `hasPersonalVoiceAccess` → `voice-profile.ts`(등록·승격·교체) · `tts.ts`(generate 의 내 목소리·본인 오디오·manual-quota) · `alarm-mutation.ts`(내 알람 POST·PATCH) | — | — |
-| 알람 PATCH 는 목소리·클립이 바뀔 때만 소유권을 본다(D8·D13) | `routes/alarm-mutation.ts` PATCH 의 `changedVoiceProfileId` → `voiceProfileBelongsToCaller` · `changedMessageId` → `messageBelongsToCaller`(바깥 게이트·트랜잭션 재확인 둘 다; POST 는 언제나) | `network/RemoteAlarmApi.kt` `RemoteAlarmWriteRequest`(매번 그대로 보낸다 — 앱은 바꾸지 않는다) | — |
+| 계산값 게이트 | `routes/billing-helpers.ts` `hasPersonalVoiceAccess` → `voice-profile.ts`(등록·승격·교체 · `POST /:id/content-supplement`) · `tts.ts`(generate 의 내 목소리·본인 오디오·manual-quota). 알람 쓰기(`alarm-mutation.ts` 의 내 알람 POST·PATCH)의 게이트는 2026-10-29 서버 알람 사본과 함께 지웠다 | — | — |
+| 알람 쓰기의 소유권 게이트 — 없다(D8·D13, 2026-10-29 — 옛 앱의 올리기는 형식만 보고 저장 없이 되돌려 준다) | `routes/alarm-mutation.ts`(소유권을 보지 않는다 — 저장하지 않는다) — 회귀 `test/alarm-compat.test.ts` | — (알람을 올리지 않는다) | — (같음) |
 | 응답 필드(`deletes_voices_at_end`·`computed_at` 포함) | `lib/personal-promo.ts` `personalPromoField`(`computed_at` = `promo.now`)·`loadPersonalPromoField`·`activeSubscriptionRowExistsSql` → `routes/auth.ts`(5종) · `routes/billing-query.ts`; shared `PersonalPromoSchema.computed_at`(optional) | `network/AuthApi.kt` `PersonalPromo`(`computedAt` 포함) · `AuthUser.personalPromo` · `network/BillingApi.kt` `BillingSubscriptionResponse.personalPromo` · `network/PersonalPromoJsonAdapter.kt`(관대한 파싱 — D5) · `network/AuthSessionStore.kt` `normalizePersonalPromo`(`computedAt` 은 벗긴다) | `PersonalPromo.swift` `PersonalPromo`(`init(from:)` 은 던지지 않는다 — D5, `computedAt` 을 읽는다) · `AlarmTalkAPIModels.swift` `AuthUser.personalPromo`·`BillingSubscriptionResponse.personalPromo` |
 | 판정 스냅샷 — plan·프로모(·받은 시각, D1·D7) 같은 응답에서 | `/auth/me` · 결제 전 `user_plan` · 받은 시각의 원본 `personal_promo.computed_at` | 받은 시각: `ui/billing/PersonalPromo.kt` `planAnswerStampMillis` ← `AuthSessionStore` 의 `save`(`AuthSession.userFetchedAtMillis`) · `AccessSnapshot.withServerUser(user, receivedAtMillis)`·`withBillingResponse(response, receivedAtMillis)`(`userPlanPromoEndsAt`·`userPlanFetchedAtMillis`); 문: `EntitlementWriter` · `MainViewModelAuthActions` `refreshAppSessionNow`(쓰기 전 순번 가드 `PersonalPromoLedger.claimPlanAnswer` — 밀린 답은 세션·스냅샷·`recordPlanApplied` 를 건너뛴다); plan 답이 아닌 프로필 저장은 저장소의 plan·프로모·받은 시각을 그대로 둔다(`AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit` — 회귀 `ProfileSaveKeepsAccountAnswerTest`) | 받은 시각: `PersonalPromo.fetchedAt`(저장 키 `receivedAtMillis`) ← `PersonalPromo.init(from:)` · `AlarmTalkAPI.makeResponseDecoder`(`PersonalPromo.stampsReceiptKey`); 문: `EntitlementWriter.renewSession` · `SocialFeatureViewModel.refreshAll` · `AuthViewModel.applyFreshPlan(userID:from:plan:personalPromo:request:)`(→ `applyAccountPlanAnswer` — 순번 가드) · `refreshUserApplyingToken`(→ `reconcileAccountAnswer` — 순번 가드·울타리; 토큰만 구른 답은 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` → `reconcileAccountAnswer`) · `AccessSnapshot.personalPromo`; plan 답이 아닌 저장은 그 저장이 바꾼 칸만 — `updateProfile`(응답을 기다린 뒤 `var updated = current` 에 바꾼 칸만 얹고 → `refreshUser` 로 확인 조회), `completeAccountRecovery`(푸시 준비를 기다린 뒤의 세션에 탈퇴 상태만 — `/auth/me` 경로는 → `reconcileAccountAnswer` 로 다시 다듬기) — 회귀 `AuthViewModelTests` |
 | 오프라인 차단(D1 — 받은 시각이 없으면 끝 전의 답) | — | `resolvePaidVoiceAccess`(`ui/util/PlatformAndLabelUtils.kt`) · `personalPromoLapsed`·`PlanPromoStamp`(`ui/billing/PersonalPromo.kt`) · 파괴적 경로 `sync/PlanChangeSyncWorker`(`freshPlanPromoStamp`) | `PaidVoiceGate.resolve` · `PersonalPromo.isStale` · `PlanTier.bestKnown(user:)` · 파괴적 경로 `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` |
@@ -1483,10 +1468,171 @@ D9(기간 중 커플·가족을 여는 자리의 보류 규칙)는 2026-10-20 �
 | 이용권 화면 — 프로모만 쓰는 계정은 개인 카드가 현재(D4) | — | `ui/billing/BillingPanels.kt` `planScreenCurrentOf`(`PlanScreenCurrent` — `isCurrent`·`showsPurchase`·`promoOnPersonalCard`·`promoLineAboveList`) → `SubscriptionPanel`·`SubscriptionPlanCard`(`showsPurchase`); 결제 알럿은 산 이용권(`PlayPurchaseDialog` 의 `currentPlanKey`) | `Views/Common/PlanTier.swift` `PlanScreenCurrent.resolve`·`drawsPromoLineAboveList(cardsVisible:)`(카드가 없는 스켈레톤·가져오기 실패 동안은 카드 위 한 줄) → `BillingPanel.planScreen` · `PlanCard`(`showsPurchase`·`statusText`·접근성 컨테이너 `planCard.<key>`); 결제·전환 판정은 산 이용권(`BillingPanel.currentTier`) |
 | 이용권 화면의 프로모 문구(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer(result)` — 문을 지난 `EntitlementWrite.Applied` 만, `MainViewModel.saveSubscriptionSnapshot` 이 부른다) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
 | 종료 안내(D3·D4) | — | [gates-and-overlays.md](gates-and-overlays.md) 구현 지도 | 같은 곳 |
-| 목소리를 못 쓰게 되면 기본 목소리 — 잠금·울림·복원·확정(2026-09-29) | 바꾸지 않는다 — 잠긴 행의 시스템 목소리·스톡 프리셋은 `usesOnlySystemStockVoice`·`voiceProfileBelongsToCaller`·`messageBelongsToCaller` 의 시스템 갈래가 받는다(빈 문구·테마는 앱이 `null` 로 지운다 — PATCH 는 빠진 필드를 그대로 둔다) | `data/SystemVoices.kt`(`SUBSTITUTE_SYSTEM_VOICE_ID` — 미나) · `data/DefaultVoiceFallback.kt`(`pickDefaultSystemVoiceId`(이미 기본 목소리면 그대로, 아니면 미나)·`lostVoiceReplacedByDefault`·`lockSurvivesSave`(편집 저장이 잠금을 잇는가 ← `AlarmRepository.updateAlarm`)·`hasOwnVoiceAudio`·`defaultVoiceBucketFor`·`completeDefaultVoiceClips`(세트 완전성 — `expected_variants`)·`defaultVoiceClipSet`·`LockedPaidVoice`·`lockedToDefaultVoice`·`restoredFromLock`·`finalizedLock`·`isLegacyPlanLock`·`wasVoiceAlarmConvertedBySystem`) · `data/DefaultVoiceClipSource.kt`(`lockBinding`·`ringUri`) · `AlarmRepository.lockPaidAlarmTalks`·`unlockPaidAlarmTalks`·`degradeMatchingLocalOwnedVoiceAlarms`(확정 · 잠긴 행 제외)·`deleteAudioNoAlarmUses`(확정이 놓은 보관본 오디오 전부 — 키 없는 옛 파일은 경로로)·`sweepStaleAudioCache` · `AlarmDao.countByAudioCacheKey`(보관본도 참조) · `AlarmEntity.preLockVoiceJson`(Room 26→27) · 울림 `alarm/RingSoundDecision.kt` → `RingingService` · 동기화 `network/RemoteAlarmMapper.toWriteRequest`(`clearsMissingVoiceReferences`) → `RemoteAlarmWriteRequestAdapterFactory`(빈 `message_id`·`bucket_id` 를 `null` 로) · 목록 `AlarmListScreen`(이름) · 문구 `downgrade_notice_title`·`downgrade_notice_message`(원인과 무관한 한 문장, 2026-10-16) | `SystemVoices.swift`(`substituteSystemVoiceID` — 미나) · `DefaultVoiceSubstitute.swift`(`pickVoiceID`·`replacedLostVoice`·`LocalAlarmRecord.hasOwnVoiceAudio`·`LockedPaidVoice`·`completeClips`·`binding`·`locked`·`restored`·`finalized`·`substitutedForScheduling`·`fallbackClip`) · 동기화 `RemoteAlarmMapper.toRemoteRequest`(`clearsMissingVoiceReferences`) → `RemoteAlarmWriteRequest.encode(to:)` · `LocalAlarmRecord.preLockVoice` · `LocalAlarmStore.countByAudioCacheKey`(보관본도 참조) · `DefaultVoiceSubstitute.saveKeepsLock`(같은 테마 클립 채우기·테마 없는 잠금에 편집기가 붙인 첫 테마는 편집 아님) · `AlarmVoicePlayer.playIfNeeded(for:url:)`(in-app 폴백은 판정 URL) · `SocialFeatureViewModel.applyFreePlanVoiceLock`(선별 `FreePlanLockSelection`)·`restorePaidVoiceAlarms`·`rescheduleIfEnabled`(켜진 알람만 다시 예약) · `VoiceStudioViewModel.finalizeDefaultVoiceLocks`(보관본 오디오 전부 + 구운 사본)·`degradeCustomMessageAlarms`(잠긴 행 제외) · `AlarmKitViewModel.defaultVoiceSubstitute` · `AlarmSoundResolver.plan`(1b) · `AlarmEditDraft`·`AlarmEditorSheet`(이어받기) · `AlarmsListView`(이름) · `RootView.downgradeNoticeMessage` + 카탈로그 |
-| 받은 알람 → 내 알람(1단계 곧바로 미나 · 2단계 쓸 수 있는 내 클론 + 기본 인사말, 클립이 다 있을 때만 · 절대 조용하지 않다 — 2026-10-20) | 그대로 — 바뀐 행은 시스템 목소리(1단계)·내 클론(2단계)의 보통 내 알람으로 올라간다 | 1단계 `data/AlarmDatabase.kt` 의 `MIGRATION_27_28`(`ReceivedAlarmConversionMigration` — 표 재생성과 같은 트랜잭션의 SQL) · 2단계 `data/FormerReceivedAlarms.kt`(기록 `FormerReceivedAlarmStore` — 계정별 SharedPreferences, 판정 `decideFormerReceivedPromotion` — 순수 함수) → 적용 `AlarmRepository.settleFormerReceivedAlarm`(락 안에서 행을 다시 읽는다), 미접근 목소리 정리와 같은 신선한 새로고침 뒤 — 회귀 27→28 마이그레이션 테스트·`FormerReceivedPromotionTest` | `ReceivedAlarmConversion.swift` — 1단계 `ReceivedAlarmConversion.convert`·`asOwnAlarm`(저장소 로드 뒤 변환·곧바로 저장 — `LocalAlarmStore`, 던지지 않는 디코드 — `LocalAlarmRecord`)·`finish`(보낸 사람 오디오 정리·기록 — 구운 사본은 다시 예약된 뒤 `releaseStagedSenderAudioIfRearmed` ← `AlarmScheduleReconciler.reconcile`) · 2단계 기록 `ReceivedAlarmPromotionStore`(계정별 UserDefaults — 편집기 저장·삭제가 지운다), 판정 `ReceivedAlarmPromotion.decide`(순수 함수) → 적용 `VoiceStudioViewModel.promoteConvertedReceivedAlarms`(신선한 새로고침 뒤) — 회귀 `LocalAlarmRecordCodableTests`(옛 JSON 이 그대로 읽히고 바뀐다)·판정 단위 테스트 |
-| 회귀 테스트 — 기본 목소리 대체 | — | `RingSoundDecisionTest`(리허설 재현·강제 알람음·사용자 무음·옛 강등 행의 목소리 크기 0 은 무음) · `DefaultVoiceFallbackTest`(대체 목소리는 미나·편집 저장이 잠금을 잇는 표(`lockSurvivesSave`)·보관본 JSON 키 고정 포함·빈틈·세트 크기·묶지 못해도 테마 유지) · `DefaultVoiceLockRepositoryTest`(잠금·시각만 고친 저장은 잠금을 잇고 목소리를 바꾸면 비움·인사말 잠금에 편집기가 붙인 첫 테마는 편집 아님·잠금은 마지막 목소리를 안 보고 미나·목소리 삭제는 같은 테마의 미나 알람·오디오 없는 미나 알람·옛 모양 이전·복원·확정·확정이 보관본 클립을 전부 놓음·키 없는 보관본 파일도 놓음·교체 표식에 잠긴 행 제외·모자란 세트는 자리로 묶지도 울리지도 않음) · `RemoteAlarmMapperTest`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `VoiceReplacementCascadeTest`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈) · `AlarmOwnerScopedOperationsTest` | `DefaultVoiceSubstituteTests`(대체 목소리는 미나·예약 대체·내장 인사말·조건 클립·모자란 세트·테마 유지) · `RemoteAlarmMapperTests`(잠긴 행·보관본 없는 기본 목소리 알람의 빈 문구·테마는 `null`) · `FreePlanVoiceLockTests`(선별·두 번째 실행 0·보관본 참조 개수·같은 테마 클립 채우기는 잠금 유지·테마 없는 잠금에 편집기가 붙인 첫 테마도 잠금 유지·꺼진 알람은 다시 예약 안 함) · `VoiceReplacementCascadeTests`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈·잠긴 행 제외·확정이 보관본 클립을 전부 놓음) · `InaccessibleVoiceReconcileTests`(접근권을 잃으면 미나) · `PaidVoiceGateTests` · `AlarmEditDraftTests` |
+| 목소리를 못 쓰게 되면 기본 목소리 — 잠금·울림·복원·확정(2026-09-29) | 바꾸지 않는다 — 서버에는 알람이 없다(2026-10-29 전에는 잠긴 행이 올라갈 때 무료 게이트·소유권 게이트의 시스템 갈래를 지났다) | `data/SystemVoices.kt`(`SUBSTITUTE_SYSTEM_VOICE_ID` — 미나) · `data/DefaultVoiceFallback.kt`(`pickDefaultSystemVoiceId`(이미 기본 목소리면 그대로, 아니면 미나)·`lostVoiceReplacedByDefault`·`lockSurvivesSave`(편집 저장이 잠금을 잇는가 ← `AlarmRepository.updateAlarm`)·`hasOwnVoiceAudio`·`defaultVoiceBucketFor`·`completeDefaultVoiceClips`(세트 완전성 — `expected_variants`)·`defaultVoiceClipSet`·`LockedPaidVoice`·`lockedToDefaultVoice`·`restoredFromLock`·`finalizedLock`·`isLegacyPlanLock`·`wasVoiceAlarmConvertedBySystem`) · `data/DefaultVoiceClipSource.kt`(`lockBinding`·`ringUri`) · `AlarmRepository.lockPaidAlarmTalks`·`unlockPaidAlarmTalks`·`degradeMatchingLocalOwnedVoiceAlarms`(확정 · 잠긴 행 제외)·`deleteAudioNoAlarmUses`(확정이 놓은 보관본 오디오 전부 — 키 없는 옛 파일은 경로로)·`sweepStaleAudioCache` · `AlarmDao.countByAudioCacheKey`(보관본도 참조) · `AlarmEntity.preLockVoiceJson`(Room 26→27) · 울림 `alarm/RingSoundDecision.kt` → `RingingService` · 목록 `AlarmListScreen`(이름) · 문구 `downgrade_notice_title`·`downgrade_notice_message`(원인과 무관한 한 문장, 2026-10-16) | `SystemVoices.swift`(`substituteSystemVoiceID` — 미나) · `DefaultVoiceSubstitute.swift`(`pickVoiceID`·`replacedLostVoice`·`LocalAlarmRecord.hasOwnVoiceAudio`·`LockedPaidVoice`·`completeClips`·`binding`·`locked`·`restored`·`finalized`·`substitutedForScheduling`·`fallbackClip`) · `LocalAlarmRecord.preLockVoice` · `LocalAlarmStore.countByAudioCacheKey`(보관본도 참조) · `DefaultVoiceSubstitute.saveKeepsLock`(같은 테마 클립 채우기·테마 없는 잠금에 편집기가 붙인 첫 테마는 편집 아님) · `AlarmVoicePlayer.playIfNeeded(for:url:)`(in-app 폴백은 판정 URL) · `SocialFeatureViewModel.applyFreePlanVoiceLock`(선별 `FreePlanLockSelection`)·`restorePaidVoiceAlarms`·`rescheduleIfEnabled`(켜진 알람만 다시 예약) · `VoiceStudioViewModel.finalizeDefaultVoiceLocks`(보관본 오디오 전부 + 구운 사본)·`degradeCustomMessageAlarms`(잠긴 행 제외) · `AlarmKitViewModel.defaultVoiceSubstitute` · `AlarmSoundResolver.plan`(1b) · `AlarmEditDraft`·`AlarmEditorSheet`(이어받기) · `AlarmsListView`(이름) · `RootView.downgradeNoticeMessage` + 카탈로그 |
+| 받은 알람 → 내 알람(1단계 곧바로 미나 · 2단계 쓸 수 있는 내 클론 + 기본 인사말, 클립이 다 있을 때만 · 절대 조용하지 않다 — 2026-10-20) | 그대로 — 바뀐 행은 기기의 보통 내 알람이다(2026-10-29 부터 서버로 올라가지 않는다) | 1단계 `data/AlarmDatabase.kt` 의 `MIGRATION_27_28`(`ReceivedAlarmConversionMigration` — 표 재생성과 같은 트랜잭션의 SQL) · 2단계 `data/FormerReceivedAlarms.kt`(기록 `FormerReceivedAlarmStore` — 계정별 SharedPreferences, 판정 `decideFormerReceivedPromotion` — 순수 함수) → 적용 `AlarmRepository.settleFormerReceivedAlarm`(락 안에서 행을 다시 읽는다), 미접근 목소리 정리와 같은 신선한 새로고침 뒤 — 회귀 27→28 마이그레이션 테스트·`FormerReceivedPromotionTest` | `ReceivedAlarmConversion.swift` — 1단계 `ReceivedAlarmConversion.convert`·`asOwnAlarm`(저장소 로드 뒤 변환·곧바로 저장 — `LocalAlarmStore`, 던지지 않는 디코드 — `LocalAlarmRecord`)·`finish`(보낸 사람 오디오 정리·기록 — 구운 사본은 다시 예약된 뒤 `releaseStagedSenderAudioIfRearmed` ← `AlarmScheduleReconciler.reconcile`) · 2단계 기록 `ReceivedAlarmPromotionStore`(계정별 UserDefaults — 편집기 저장·삭제가 지운다), 판정 `ReceivedAlarmPromotion.decide`(순수 함수) → 적용 `VoiceStudioViewModel.promoteConvertedReceivedAlarms`(신선한 새로고침 뒤) — 회귀 `LocalAlarmRecordCodableTests`(옛 JSON 이 그대로 읽히고 바뀐다)·판정 단위 테스트 |
+| 회귀 테스트 — 기본 목소리 대체 | — | `RingSoundDecisionTest`(리허설 재현·강제 알람음·사용자 무음·옛 강등 행의 목소리 크기 0 은 무음) · `DefaultVoiceFallbackTest`(대체 목소리는 미나·편집 저장이 잠금을 잇는 표(`lockSurvivesSave`)·보관본 JSON 키 고정 포함·빈틈·세트 크기·묶지 못해도 테마 유지) · `DefaultVoiceLockRepositoryTest`(잠금·시각만 고친 저장은 잠금을 잇고 목소리를 바꾸면 비움·인사말 잠금에 편집기가 붙인 첫 테마는 편집 아님·잠금은 마지막 목소리를 안 보고 미나·목소리 삭제는 같은 테마의 미나 알람·오디오 없는 미나 알람·옛 모양 이전·복원·확정·확정이 보관본 클립을 전부 놓음·키 없는 보관본 파일도 놓음·교체 표식에 잠긴 행 제외·모자란 세트는 자리로 묶지도 울리지도 않음) · `VoiceReplacementCascadeTest`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈) · `AlarmOwnerScopedOperationsTest` | `DefaultVoiceSubstituteTests`(대체 목소리는 미나·예약 대체·내장 인사말·조건 클립·모자란 세트·테마 유지) · `FreePlanVoiceLockTests`(선별·두 번째 실행 0·보관본 참조 개수·같은 테마 클립 채우기는 잠금 유지·테마 없는 잠금에 편집기가 붙인 첫 테마도 잠금 유지·꺼진 알람은 다시 예약 안 함) · `VoiceReplacementCascadeTests`(직접 입력은 미나·기본 목소리는 그대로·오디오 없는 행 다시 안 셈·잠긴 행 제외·확정이 보관본 클립을 전부 놓음) · `InaccessibleVoiceReconcileTests`(접근권을 잃으면 미나) · `PaidVoiceGateTests` · `AlarmEditDraftTests` |
 | 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·대조군·한도·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest` · `PersonalPromoNoticeTest`(`computed_at` 파싱·첫 결과 실패) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·잠금 갈래 `foregroundPlanLockAction`·미룬 잠금 `deferredPromoLapseLockDue`·plan 순번 `claimPlanAnswer`·이용권 화면 프로모 문구의 답) · `PlanScreenCurrentTest`(D4 — 개인 카드가 현재·결제 버튼 유지·예전 그대로인 네 갈래) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·종료 안내 판정·D12 `isFreeOnlyByPromoLapse`·`freePlanLockMayApply`·D4 `PlanScreenCurrent` — 안드로이드와 같은 표 + 카드가 없을 때의 폴백) · `AuthViewModelTests`(계정 요청 표·순번·진입 결과·`planAnsweredEntry`·토큰만 구른 답) · `BillingPreflightTests`(세션 밖 요청 실패의 표) · `PersonalPromoNoticeUITests`(이용권 화면 D4 — 뱃지·결제 버튼·문구가 개인 카드에 한 번 / 보류 행은 무료 카드·카드 위 한 줄 — 로컬 전용) |
+
+## 관리자 기간 지급 — **쓰지 않고, 읽을 때 계산한다** (2026-10-26)
+
+관리자 콘솔(사용자 상세)에서 한 사람에게 **기간을 정해 플러스를 준다.** 고객 지원·보정·운영 시험·전환 보호 용도다.
+CLAUDE.md 「유료 기능은 스토어 결제로만」의 두 번째 예외로 오너가 승인했다 — 앱에는 입력 칸이 없고 코드가 아니다.
+
+- **원시 `users.plan` 을 쓰지 않는다.** 표 `plan_grants`(#134)에 지급을 적고, 읽을 때 "원시 free + 유효 지급 → plus" 로
+  계산한다(`planWithGrantSql` — `lib/plan-grant-sql.ts`). 기간 한정 개인 플랜(`computedUserPlan`)은 이 값 위에 얹는다.
+  원시 plan 을 올리면 `repairOrphanedPaidPlan` 이 되돌리고, 결제 해지·만료가 지급 중인 사람을 무료로 내린다.
+  가짜 구독 행도 만들지 않는다 — 해지 버튼·`/billing/cancel` 이 엉뚱하게 움직인다.
+- **스토어 구독 행·영수증·청구일을 건드리지 않는다.** 결제자에게 줘도 환급·청구일 연기는 없다.
+- **시작은 언제나 지금**, 끝은 7일 / 한국 달력 1개월(같은 날짜가 없으면 말일의 같은 시각) / 끝나는 날 지정(그 한국 날짜
+  끝까지) 중 하나다. 한 번에 366일까지. 끝은 배타 경계다.
+- 겹친 지급은 **합집합**이다 — 기간을 더하지 않는다. 응답의 끝(`plan_grant.ends_at`)은 지금을 덮는 이어진 구간의 끝이다.
+- **월 직접 입력 한도를 새로 채우지 않는다.** 같은 달 사용량을 그대로 이어 쓴다(지급은 등급만 바꾼다).
+- 같은 확인 화면을 두 번 보내도 한 번이다(`request_key` UNIQUE). 회수는 그 지급만 끝낸다 — 다른 지급·구독은 그대로다.
+- 지급과 함께 걸려 있던 목소리 보관 예약을 푼다. 반납된 클론은 다음 사용 때 원본으로 다시 만든다.
+- 결제가 끝나도 지급이 남아 있으면 **클론을 반납하지 않는다**(`syncUserPlanAfterCancel`). 유료 판정
+  `hasActivePaidEntitlement` 은 지급도 유료로 친다 — 지급 중에는 보관이 걸리지 않고 스윕이 지우지 않는다.
+- **끝난 뒤**: 5분 크론의 `settleEndedPlanGrants` 가 지급마다 한 번(`settled_at`) 뒷정리한다. 다른 유료 권한(구독·다른
+  지급·기간 한정 개인 플랜)이 없으면 결제 만료와 같은 일을 한다 — 클론 반납, **그 처리 시각부터** 3일 보관. 처리가 늦었다고
+  지난 끝 시각으로 소급해 보관을 줄이지 않고, 이미 더 늦은 기한이 걸려 있으면 앞당기지 않는다. 회수는 곧바로 같은 정리를
+  한다. 실제 삭제 직전에 스윕이 권한을 한 번 더 본다.
+- **기간 한정 개인 플랜의 종료 전환 대상이 아니다**(`PROMO_END_TARGET` 이 유효 지급을 뺀다). 지급이 끝나면 위 뒷정리가
+  보관을 건다 — 행사의 약속 시각을 다시 쓰지 않는다.
+- API: 계정 응답의 `user.plan_grant` 와 `GET /billing/subscription` 최상위 `plan_grant` = `{ ends_at, computed_at }` 또는
+  `null`(shared `PlanGrantSchema`). **지급 때문에 플러스일 때(원시 plan 이 free)만** 싣는다 — 구독자에게는 싣지 않는다.
+  ⚠ 응답의 `plan` 과 `plan_grant` 는 **한 순간·한 문장**으로 계산한다(`loadPlanGrantAnswer`, 프로모와 같은 `promo.now`) — 따로
+  계산하면 그 사이 지급이 끝났을 때 `plan: plus` 가 기한 없이 나간다(Codex #941).
+- **행사와 지급이 둘 다 원시 free 를 덮으면 더 늦게 끝나는 기한 하나만 싣는다**(`composeLimitedPlanFields`, Codex #941) —
+  짧은 지급이 행사를 가리면 오프라인 앱이 아직 플러스인 사람을 일찍 자르고, 행사 조각이 더 긴 지급을 가리면 '행사 종료 뒤
+  목소리 삭제' 를 거짓으로 말한다. 행사 조각은 언제나 **원시** plan 으로 계산한다.
+- 회수하면 등급이 그대로여도(다른 지급이 남음) 앱에 알린다 — 겹친 지급의 끝이 당겨졌을 수 있다. 뒷정리는 탈퇴 대기
+  계정도 똑같이 한다(유예 중 다시 로그인해 철회해도 클론 반납·보관이 빠지지 않게).
+- **앱은 이 값을 기간 한정 개인 플랜과 같은 오프라인 기한으로 읽는다**(Codex #941 P2). 끝 전에 계산된 `plus` 캐시는 끝 뒤에
+  무료로 읽는다 — 서버의 뒷정리·푸시는 오프라인 기기를 고치지 못하므로, 그 기기(특히 울림 경로)가 지급이 끝난 뒤에도 등록
+  목소리를 쓰지 않게 하는 자리가 이것이다. 안드로이드는 `limitedPlanEndsAt`(`ui/billing/PersonalPromo.kt`)이 프로모 끝 또는
+  지급 끝을 `PlanPromoStamp` 로 묶고 세션·권한 스냅샷에 plan 과 한 벌로 적는다. iOS 는 `AuthUser.decodePlanGrant` 가 지급을
+  `personalPromo` 자리로 읽고(종료 안내 창 `notice_from` 은 없다), 구독 응답은 `limitedPlan` 이 같은 일을 한다. 이용권 화면은
+  "플러스 무료 이용 중 · …까지" 를 말한다(양 앱 같은 문구). 회귀 테스트: 안드로이드 `PlanGrantExpiryTest`, iOS
+  `PersonalPromoTests` 「관리자 기간 지급」.
+- 탈퇴 파기가 지급 기록을 지운다. 지급자는 콘솔이 비밀번호 하나라 `admin-console` 로 적힌다.
+
+| 규칙 | 백엔드 | 테스트 |
+| --- | --- | --- |
+| 표 | 마이그레이션 #134 `plan_grants` | `migrations.lock.json` |
+| 읽기 계산 | `lib/plan-grant-sql.ts` → `routes/auth.ts`·`tts.ts`·`voice-profile.ts`·`ads.ts`·`billing-query.ts`·`lib/admin/metrics.ts`(`alarm-mutation.ts` 는 2026-10-29 서버 알람 사본을 지우며 플랜을 읽지 않게 됐다) | `plan-grants.test.ts` 「지급과 읽기」 |
+| 유료 판정·결제 종료 | `lib/billing-cancel.ts` 의 `isPaidEntitlementRow`·`hasActivePlanGrant`·`syncUserPlanAfterCancel` | `plan-grants.test.ts` 「끝난 지급의 뒷정리」 |
+| 지급·회수·뒷정리 | `lib/plan-grants.ts` · 크론 `index.ts` | `plan-grants.test.ts` |
+| 행사 종료 제외 | `lib/personal-promo-end.ts` 의 `PROMO_END_TARGET` | `plan-grants.test.ts` |
+| 콘솔 | `routes/admin.ts`·`lib/admin/user-detail.ts`·`lib/admin/grant-pages.ts` | `plan-grants.test.ts` 「콘솔」 |
+
+## 애플 서버 알림 V2 — 알림은 **어느 구독을 볼지**만 알려 준다 (2026-10-26)
+
+App Store Server Notifications **V2** 를 받는다(`POST /api/billing/apple/notifications`, 인증 없음). 갱신·해지
+예약·결제 실패·유예 만료·만료·환불·회수가 크론(`processSubscriptionExpiry`)이나 앱의 재전송을 기다리지 않고
+서버에 닿는다. **크론 재조회와 앱의 확정은 그대로 둔다** — 알림이 빠져도(URL 설정·전달 실패) 그 둘이 맞춘다.
+
+### 믿는 근거는 애플 서명 하나다
+
+공개 URL 이라 본문을 믿을 근거는 서명뿐이다(`lib/apple-jws.ts`). 애플 공식 라이브러리(`SignedDataVerifier`)와
+같은 판정을 WebCrypto 로 한다.
+
+1. 헤더 `alg` = ES256, `x5c` 는 정확히 세 장(잎 → 중간 → 루트).
+2. 루트는 **Apple Root CA - G3 의 SHA-256 지문**(`APPLE_ROOT_CA_G3_SHA256`)과 같아야 한다. 다르면 서명 계산 전에
+   끝낸다.
+3. 중간은 루트가, 잎은 중간이 서명했다. 잎에는 `1.2.840.113635.100.6.11.1`, 중간에는 `1.2.840.113635.100.6.2.1`
+   표식이 있어야 한다 — 같은 루트 아래의 다른 애플 인증서로 서명한 것을 막는다.
+4. JWS 서명을 잎의 키로 확인한다.
+5. 세 장의 유효기간은 **payload 의 `signedDate`** 로 본다(애플 라이브러리의 오프라인 판정과 같다). 재전송이
+   며칠 뒤에 와도 서명 당시 유효했던 인증서면 통과한다.
+
+그 뒤 `version` = `2.0`, `notificationUUID` 형식, `data.bundleId`(요약 알림은 `summary.bundleId`) = `APPLE_BUNDLE_ID`,
+`data.environment` = 이 워커의 환경을 본다. 안에 실린 `data.signedTransactionInfo` 도 **같은 검증을 따로** 거친다.
+`signedRenewalInfo` 는 읽지 않는다 — 상태는 재조회로 정한다.
+
+| 실패 | 응답 | 기록 |
+| --- | --- | --- |
+| 형식·서명·체인·표식·유효기간 | 400 `APPLE_NOTIFICATION_INVALID` | 적지 않는다 |
+| 애플이 서명했지만 다른 앱 | 400 `APPLE_NOTIFICATION_BUNDLE_MISMATCH`(경보) | 적지 않는다 |
+| 애플이 서명했지만 다른 환경 | 400 `APPLE_NOTIFICATION_ENVIRONMENT_MISMATCH`(경보) | 적지 않는다 |
+| 자격(`APPLE_ISSUER_ID`·`APPLE_KEY_ID`·`APPLE_PRIVATE_KEY`·`APPLE_BUNDLE_ID`) 없음 | 503 `APPLE_BILLING_UNCONFIGURED` | 적지 않는다 |
+
+뒤의 둘이 경보인 이유: 애플 서명을 통과한 뒤에만 나오므로 위조로는 만들 수 없고, App Store Connect 의 URL 이
+잘못된 워커를 가리킨다는 뜻이다 — 그동안 그 환경의 알림이 통째로 버려진다.
+
+### 환경 — 운영 워커는 `Production`, dev 워커는 `Sandbox`
+
+App Store Connect 에는 URL 이 환경마다 하나다. 그래서 **운영 URL → 운영 워커, 샌드박스 URL → dev 워커**로 나누고,
+각 워커는 자기 환경만 받는다(`expectedAppleEnvironment` — `ENVIRONMENT = production` 이면 `Production`, 그 밖은
+`Sandbox`). `Xcode`·`LocalTesting` 은 어느 쪽도 받지 않는다.
+
+- 잃는 것을 알고 택했다: 운영 앱의 TestFlight·심사 구매도 **샌드박스**라, 그 구독(운영 DB)의 알림은 dev 로 가서
+  거기서 주인 없는 거래(`unknown_transaction`)로 끝난다. 그 구독은 예전처럼 확정·크론 재조회가 맞춘다.
+  샌드박스를 운영으로 보내면 반대로 dev 빌드의 결제 시험이 알림을 못 받는다 — 결제 시험은 dev 에서 한다.
+
+### 중복과 실패 — 응답 전에 적는다
+
+표 `apple_server_notifications`(마이그레이션 #136). 키는 `notificationUUID`(소문자).
+
+1. 검증을 통과하면 처리 **전에** `received` 로 적는다(upsert 한 문장 — `claimAppleNotification`).
+2. 이미 끝난(`processed`·`ignored`) uuid 면 다시 처리하지 않고 200 `{ duplicate: true }`.
+3. 처리가 끝나면 `processed`(상태를 반영했다) 또는 `ignored`(할 일이 없다)와 결과(`outcome`)를 적고 200.
+4. 처리가 실패하면 `failed` 와 이유를 적고 **5xx** 로 답한다 — 애플 재조회 불가·스냅샷 경합(`BillingStateUnavailableError`)
+   은 502, 그 밖은 500(코드는 둘 다 `APPLE_NOTIFICATION_PROCESSING_FAILED`). 애플이 재전송하면(최대 사흘) 같은
+   uuid 의 `failed`·`received` 행은 `attempts` 를 올리고 **다시 처리한다.** 내부 재시도 큐는 두지 않는다 —
+   애플의 재전송과 크론 재조회가 이미 두 겹이다.
+5. 도중에 워커가 죽어 `received` 로 남은 행도 재전송 때 다시 처리한다. 처리가 스토어 재조회라 두 번 해도 같다.
+
+본문은 적지 않는다(처리에 필요 없다). `user_id` 는 주인을 찾았을 때만 적고 **탈퇴 파기가 지운다**
+(`lib/account-deletion.ts`). 행은 **90일** 뒤 5분 크론이 지운다(`APPLE_NOTIFICATION_RETENTION_DAYS`).
+
+### 처리 — 알림의 상태를 쓰지 않는다
+
+알림이 늦게 오거나 순서가 뒤바뀌어도 답이 같도록, 알림은 **어느 구독을 다시 볼지**만 정한다.
+
+1. 상태를 바꾸지 않는 종류(`TEST`·`CONSUMPTION_REQUEST`·`REFUND_DECLINED`·`EXTERNAL_PURCHASE_TOKEN`)는 `ignored`.
+   **목록에 없는 종류(애플이 나중에 늘리는 것 포함)는 다시 묻는다** — 재조회는 해가 없다.
+2. 트랜잭션이 없으면(요약 알림 등) `ignored`(`no_transaction`). 파는 구독 상품이 아니면 `ignored`(`unknown_product`).
+3. 주인은 **이미 묶어 둔 거래**로만 찾는다 — `store_transactions`(provider `apple`, `provider_transaction_id` =
+   `originalTransactionId`). 없으면 `ignored`(`unknown_transaction`) + 구조화 로그. 첫 구매(`SUBSCRIBED`)는 보통
+   앱의 확정보다 먼저 와서 여기로 온다 — 계정 바인딩(`appAccountToken`)은 **확정 라우트 한 곳**에서 판정하고,
+   알림이 새 주인을 정하지 않는다.
+4. `REFUND`·`REVOKE` → **확정 라우트와 같은** `revokeAppleRefund`(「환불은 크론을 기다리지 않고」). 체인이 끝났으면
+   매핑된 구독을 끊고(`refund_revoked`), 옛 갱신의 환불이라 체인이 살아 있으면 손대지 않는다(`refund_chain_live`).
+   못 물어봤거나 그 사이 갱신이 반영됐으면 실패(5xx — 재전송).
+5. 그 밖 → 매핑된 구독을 **크론과 같은** `reconcileStoreSubscription` 으로 맞춘다(애플에 체인의 현재 상태를 묻는다).
+   유효하면 연장·복구, 재시도면 보류, 만료·회수면 종료 — 전부 그 함수의 규칙이다. 구독이 이미 끝났으면
+   `ignored`(`no_active_subscription`) — 끝난 구독을 되살리는 것(재구독·`REFUND_REVERSED`)은 새 결제의 계정 바인딩을
+   거쳐야 해서 **앱의 확정**이 한다.
+
+남은 권한(다른 스토어 구독·관리자 기간 지급·기간 한정 개인 플랜)은 그 두 함수 안의 `hasActivePaidEntitlement`·
+`cancelSubscriptionImmediate` 가 지킨다 — 이 라우트가 따로 판정하지 않는다.
+
+### 운영 — 오너가 App Store Connect 에서 할 일
+
+⚠ 서버를 배포한 **뒤에** 설정한다(배포 전에 켜면 404 를 받은 알림이 재전송만 쌓인다). 마이그레이션 #136 은 배포 워크
+플로가 돌린다 — 그 전 창(~1분)에 온 알림은 기록 표가 없어 500 으로 실패하고 재전송된다(fail-closed).
+
+- App Store Connect → 앱(AlarmTalk) → **앱 정보** → **App Store 서버 알림**
+  - **운영 서버 URL**: `https://api.alarm-talk.com/api/billing/apple/notifications`, 버전 **Version 2**
+  - **샌드박스 서버 URL**: `https://api-dev.alarm-talk.com/api/billing/apple/notifications`, 버전 **Version 2**
+- 두 워커에 `APPLE_ISSUER_ID`·`APPLE_KEY_ID`·`APPLE_PRIVATE_KEY`·`APPLE_BUNDLE_ID` 가 있어야 한다(확정 라우트와 같은 값).
+  없으면 503 이다.
+- 확인: App Store Server API 의 **Request a Test Notification** 으로 `TEST` 를 보내면 그 워커 로그에
+  `billing.apple.notification` · `outcome: test` 가 남고, `apple_server_notifications` 에 행이 하나 생긴다.
+  `APPLE_NOTIFICATION_ENVIRONMENT_MISMATCH`·`BUNDLE_MISMATCH` 경보가 오면 URL 이 서로 바뀌었거나 다른 앱 것이다.
+
+### 구현 지도 — 애플 서버 알림 V2
+
+| 규칙 | 백엔드 | 안드로이드 | iOS |
+| --- | --- | --- | --- |
+| 라우트(인증 없음, `/api` 인증 묶음보다 먼저 연결) | `routes/billing-apple-notifications.ts` ← `index.ts` `app.route('/api/billing/apple', …)` | — | — |
+| 서명 검증 — x5c 체인 → Apple Root CA - G3 지문 · 표식 OID · ES256 · `signedDate` 유효기간 | `lib/apple-jws.ts` `verifyAppleSignedJws`·`APPLE_ROOT_CA_G3_SHA256` | — | — |
+| 번들·환경·형식 대조, 안의 트랜잭션도 검증 | `lib/apple-server-notifications.ts` `decodeAppleServerNotification`·`expectedAppleEnvironment` | — | — |
+| 응답 전 기록·중복 거르기·실패 재처리 | `claimAppleNotification`·`finishAppleNotification` → 표 `apple_server_notifications`(`migrations.ts` #136) | — | — |
+| 환불·회수 — 확정과 같은 갈래 | `routes/billing-apple.ts` `revokeAppleRefund` | — | — |
+| 그 밖 — 크론과 같은 정합화 | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
+| 탈퇴 파기·90일 정리 | `lib/account-deletion.ts` `purgeUserAccount` · `index.ts` 5분 크론(`APPLE_NOTIFICATION_RETENTION_DAYS`) | — | — |
+| 에러 코드 | `packages/shared/src/schemas/error-codes.ts`(`APPLE_NOTIFICATION_*`, 범위 불일치 둘은 경보) | 앱은 보지 않는다 | 앱은 보지 않는다 |
+| 회귀 테스트 | `test/apple-jws.test.ts`(실제 G3 → G6 체인·거절 갈래) · `test/billing-apple-notifications.test.ts`(실제 DB — 거절·중복·주인 없음·갱신 재조회·늦은 만료·환불·지급 보존·실패 재처리) · `test/account-purge-residue.test.ts` | — | — |
 
 ## 구현 지도
 
@@ -1497,7 +1643,7 @@ D9(기간 중 커플·가족을 여는 자리의 보류 규칙)는 2026-10-20 �
 | 해지 — 애플은 거절 | 같은 파일, `STORE_CANCEL_UNSUPPORTED` | `STORE_MANAGE_REQUIRED_CODES` | `SocialFeatureViewModel.cancelSubscription` → `BillingPanel.openAppStoreSubscriptionManagement` |
 | 해지 — **어느 스토어를 거치나** | `storeCancelProviderOf`(`lib/billing-cancel.ts`) → `GET /billing/subscription` 의 `store_provider` | 에러 코드로 판단(`STORE_MANAGE_REQUIRED_CODES`) | `BillingSubscription.storeProvider`(로컬 StoreKit 금지) |
 | 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 에러 문구 (`ApiErrorMessages`) | `BillingPanel.purchaseBlockReason` + 서버 409 |
-| 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
+| 환불 — 즉시 권한 회수 | `revokeAppleRefund` → `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) — 확정과 서버 알림(`REFUND`·`REVOKE`)이 같이 쓴다 | — | — |
 | 선물 폐지(2026-10-14) — 선물 상품 결제·환불 통보는 400 `UNKNOWN_PRODUCT`, 코드·원장·연결을 쓰지 않는다(옛 `revokeRefundedAppleGift`·발급 갈래는 지웠다) | `lib/apple-storekit.ts` `APPLE_PRODUCT_TO_PLAN_KEY`·`lib/play-subscriptions.ts` `googlePlanKeyFromProductId` 에서 빠짐 → `billing-apple.ts`·`billing-google.ts` 의 모르는 상품 검사; 표 `apple_gift_deliveries`(마이그레이션 117)는 #131 이 지웠다(2026-10-20) | 선물 상품을 조회·판매하지 않는다(`PlayBillingProducts.all` — 구독 셋) | 선물 상품을 조회·판매하지 않는다(`SubscriptionProduct` — 구독 셋). 남은 옛 트랜잭션은 확정 시도 뒤 끝낸다(`SubscriptionManager.replayUnfinishedTransactions`) |
 | 즉시 해지 중 새 유료 권한의 보관 정책 | `billing-mutation.ts` → `syncPaidVoiceRetention`(남은 유료 권한이면 기존 유예 삭제·응답 기한 null) | 기존 응답 소비 | 기존 응답 소비 |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
@@ -1522,7 +1668,7 @@ D9(기간 중 커플·가족을 여는 자리의 보류 규칙)는 2026-10-20 �
 | 결제 실패 알림 — 중복 방지 | 같은 쓰기 트랜잭션의 plan 전후 비교 | — | — |
 | 미완료 결제 재전송 — 진입점 **둘** | — | — | `SubscriptionManager.replayUnfinishedTransactions`(`bootstrap` · 계정 변경 `.task`) |
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
-| 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
+| 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) · `routes/billing-apple-notifications.ts` (애플 서버 알림 V2) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | **유료 판정 — 유일 출처** | `isPaidVoicePlan`(원시 users.plan) · `hasPersonalVoiceAccess`(기간 한정 개인 플랜 반영 — 위 절) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
 | 판정 소비 — 잠금(파괴적) | — | `AlarmTalkApp` 잠금 이펙트(갈래 `foregroundPlanLockAction` — `isDefinitelyFreePlan` · 기간 한정 개인 플랜의 낡은 프로모 갈래는 `freePlanLockMayApply` → `WaitForEntryPlan`, 재확인 `deferredPromoLapseLockDue`) · `sync/PlanChangeSyncWorker` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded`(낡은 프로모 갈래는 `PaidVoiceGate.freePlanLockMayApply` 로 기다린다 — D12) |
 | 판정 소비 — 울림·프리페치 | — | `alarm/RingingService`(→ `alarm/RingSoundDecision.kt` — 못 쓰면 기본 목소리, 절대 조용하지 않다) · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) → `AlarmKitViewModel.defaultVoiceSubstitute` |
@@ -1546,4 +1692,4 @@ D9(기간 중 커플·가족을 여는 자리의 보류 규칙)는 2026-10-20 �
 | 차이 | 이유 |
 | --- | --- |
 | iOS 해지는 시스템 시트로 나간다 | App Store Server API 에 해지가 없다 |
-| 애플에는 서버 알림(ASSN) 라우트가 없다 | 아직 미구현 — 그래서 만료 재조회가 **유일한** 서버측 갱신 감지 경로다. ASSN 을 붙이면 재조회는 그때도 안전망으로 남긴다 |
+| 애플 서버 알림(V2)은 주인 없는 거래를 묶지 않는다 — 구글 RTDN 은 `linkedPurchaseToken` 으로 잇는다 | 애플 알림에는 주인을 가릴 근거가 `appAccountToken` 뿐이고, 그 판정은 확정 라우트 한 곳이다(「애플 서버 알림 V2」). 만료 재조회는 두 스토어 모두 안전망으로 남는다 |

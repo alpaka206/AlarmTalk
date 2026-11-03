@@ -21,9 +21,11 @@ struct MessageSettingsPane: View {
     /// 현재 값(직접 입력이면 `manual`).
     let initialContext: String
     let initialManualText: String
-    /// 이번 달 직접 입력 여유 — 유료이고 limit > 0 일 때만 보여준다.
+    /// 이번 달 직접 입력 여유 — limit > 0 이면 보여 준다(무료 3·플러스 30, 2026-10-26 부터 무료도).
     var manualRemaining: Int?
     var manualLimit: Int?
+    /// 무료가 기본분을 다 쓰고 남은 광고 보상 — 있으면 '(0/3)' 대신 보상 수를 말한다(안드로이드 `editorp_random_manual_ad_credits` 짝).
+    var manualAdCredits: Int? = nil
     /// 저장된 날씨·운세 값(없으면 고르는 순간 입력창을 띄운다).
     let savedWeatherCountry: String
     let savedWeatherCity: String
@@ -46,6 +48,9 @@ struct MessageSettingsPane: View {
     /// 골랐다는 것은 이유가 되지 않는다. 유료면 기본 목소리로도 직접 입력을 쓸 수 있고
     /// 횟수만 차감된다(2026-08-11 확정).
     var manualLocked: Bool = false
+    /// '직접 입력' 을 그릴 것인가. 추가 음성팩 목소리면 false — 그 목소리로는 직접 입력을 만들 수 없다
+    /// (`docs/spec/voice-packs.md` §7). 잠금(`manualLocked`)과 다르다: 잠긴 항목은 남아 이유를 말하고, 이건 아예 없다.
+    var manualAvailable: Bool = true
 
     /// 잠긴 '직접 입력' 행을 눌렀을 때 — 호출부가 유료 안내로 보낸다.
     ///
@@ -55,10 +60,22 @@ struct MessageSettingsPane: View {
 
     let onSave: (MessageSettingsResult) -> Void
 
+    /// 응원 테마의 **다양하게 / 이 문구로 고정**(스펙 voice-and-message §5-4). `cheerPhrases` 는 이 목소리·언어로
+    /// 매니페스트에 있는 새 응원이다 — **비어 있으면 카드를 그리지 않는다**(준비되지 않은 문구를 보이지 않는다).
+    /// 안드로이드 `RandomPromptSettingsPane` 의 같은 이름 인자 미러.
+    var cheerMode: CheerMode = .vary
+    var cheerPinnedContentId: String?
+    var cheerPhrases: [CheerCandidate] = []
+    /// 응원 설정**만** 바꾸고 나왔을 때. `onSave` 는 테마·준비된 음원을 비우므로(`applyMessageSettings`) 그 길로 보내지
+    /// 않는다 — 모드만 바꿨는데 고른 응원 테마가 풀리면 안 된다.
+    var onCheerSettingsChange: (CheerMode, String?) -> Void = { _, _ in }
+
     /// 화면에 들어온 순간의 값 — 나갈 때 바뀐 게 있는지 판단하는 기준.
     @State private var openedWith: MessageSettingsResult?
 
     @State private var draftContext: String = "preset"
+    @State private var draftCheerMode: CheerMode = .vary
+    @State private var draftCheerPinned: String?
     @State private var draftManualText: String = ""
     /// 「직접 입력」 알럿 안에서만 쓰는 임시 값. '저장' 을 눌러야 `draftManualText` 로 간다.
     @State private var manualAlertDraft: String = ""
@@ -89,6 +106,8 @@ struct MessageSettingsPane: View {
     /// 요약 행(`MessageModeSummaryRow`)도 이 표에서 이름을 읽는다 — 표는 하나다.
     fileprivate static let options: [(id: String, label: String)] = [
         ("preset", String(localized: "기본 인사말")),
+        // 기상 인사 — 기본 목소리 전용 스톡 클립(스펙 voice-and-message §5-4). 클론 목록에서는 뺀다(편집기의 `availableContexts`).
+        ("wake", String(localized: "기상 인사")),
         ("wake_weather", String(localized: "날씨")),
         ("wake_fortune", String(localized: "운세")),
         ("cheer", String(localized: "응원")),
@@ -120,11 +139,25 @@ struct MessageSettingsPane: View {
         .buttonStyle(.plain)
     }
 
+    /// **처음에 접어 두는 종류 — 운세·약**(2026-10-26 v1.3 W04). 첫 화면은 날씨·응원·직접 입력이면 충분하다. 지우지 않는다 —
+    /// 지금 고른 것이 그 둘이면 처음부터 펼쳐 둔다. 안드로이드 `FoldedMessageContexts` 짝.
+    static let foldedContextIDs: Set<String> = ["wake_fortune", "medication"]
+
+    @State private var moreContextsShown: Bool?
+
+    private var allVisibleOptions: [(id: String, label: String)] {
+        Self.options.filter {
+            ($0.id == MessageSettingsResult.manualContext && manualAvailable) || availableContexts.contains($0.id)
+        }
+    }
+
+    private var showsMoreContexts: Bool {
+        moreContextsShown ?? Self.foldedContextIDs.contains(initialContext)
+    }
+
     /// 실제로 그릴 행. '직접 입력' 은 잠겨 있어도 **언제나 남는다**([onManualLocked] 주석).
     private var visibleOptions: [(id: String, label: String)] {
-        Self.options.filter {
-            $0.id == MessageSettingsResult.manualContext || availableContexts.contains($0.id)
-        }
+        showsMoreContexts ? allVisibleOptions : allVisibleOptions.filter { !Self.foldedContextIDs.contains($0.id) }
     }
 
     var body: some View {
@@ -142,9 +175,24 @@ struct MessageSettingsPane: View {
                                 }
                             }
                         }
+                        if !showsMoreContexts, allVisibleOptions.contains(where: { Self.foldedContextIDs.contains($0.id) }) {
+                            AlarmSettingDivider()
+                            Button {
+                                moreContextsShown = true
+                            } label: {
+                                Text(String(localized: "더 보기 (운세·약)"))
+                                    .font(theme.typography.bodyLarge)
+                                    .foregroundStyle(theme.palette.primary)
+                                    .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
 
                     detailCard
+
+                    cheerVarietyCard
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
@@ -174,7 +222,11 @@ struct MessageSettingsPane: View {
         // 테마 알람이 조용히 생성형으로 바뀐다.
         .onDisappear {
             guard let openedWith, result != openedWith else { return }
-            onSave(result)
+            if result.withoutCheerSettings == openedWith.withoutCheerSettings {
+                onCheerSettingsChange(result.cheerMode, result.cheerPinnedContentId)
+            } else {
+                onSave(result)
+            }
         }
         // ⚠ 확인해도 **이 목록은 닫지 않는다** — 도시 하나 바꾸려다 화면 밖으로 튕기면
         // 안 된다. 최종 반영은 이 화면의 저장 버튼 한 곳이다.
@@ -269,7 +321,9 @@ struct MessageSettingsPane: View {
                     .isEmpty
             )
         } message: {
-            Text(String(localized: "이 문구를 그대로 읽어 드려요."))
+            // 새 음성을 만드는 순간 횟수를 쓴다는 것을 **치기 전에** 말한다(`voice-and-message.md` §8 — 무료 3·플러스 30,
+            // 이미 만든 문구는 세지 않는다). 안드로이드 `editor_manual_charge_notice` 와 같은 문장.
+            Text(String(localized: "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요."))
         }
         .onChange(of: manualDialogOpen) { _, open in
             // 열 때만 현재 값으로 시드한다. 닫힐 때는 건드리지 않는다 —
@@ -325,10 +379,54 @@ struct MessageSettingsPane: View {
         }
     }
 
+    // MARK: - 응원 다양하게 / 고정
+
+    /// 응원을 골랐고 고를 새 응원이 있을 때만 — 안드로이드 `RandomPromptSettingsPane` 의 응원 카드와 같은 모양이다.
+    /// 없으면(공개 전·보충 전) 그리지 않는다. 그때 응원은 묶어 둔 옛 응원을 순서대로 돌린다.
+    @ViewBuilder
+    private var cheerVarietyCard: some View {
+        if draftContext == RandomPromptContext.cheer.rawValue, !cheerPhrases.isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
+                EditorSectionTitle(text: "응원 문구")
+                EditorCard(verticalPadding: 0) {
+                    RadioRow(label: String(localized: "다양하게"), selected: draftCheerMode == .vary) {
+                        draftCheerMode = .vary
+                    }
+                    AlarmSettingDivider()
+                    RadioRow(label: String(localized: "이 문구로 고정"), selected: draftCheerMode == .pinned) {
+                        draftCheerMode = .pinned
+                        // 고정할 문구가 아직 없으면 첫 문구를 고른 채로 연다 — 빈 고정은 없다.
+                        if !cheerPhrases.contains(where: { $0.contentId == draftCheerPinned }) {
+                            draftCheerPinned = cheerPhrases.first?.contentId
+                        }
+                    }
+                }
+                Text(draftCheerMode == .pinned
+                     ? String(localized: "고른 문구로만 울려요.")
+                     : String(localized: "최근에 준비한 문구는 잠시 쉬고, 다른 응원으로 준비해요."))
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .padding(.horizontal, 4)
+                if draftCheerMode == .pinned {
+                    EditorCard(verticalPadding: 0) {
+                        ForEach(Array(cheerPhrases.enumerated()), id: \.element.id) { index, phrase in
+                            if index > 0 { AlarmSettingDivider() }
+                            RadioRow(label: phrase.text, selected: draftCheerPinned == phrase.contentId) {
+                                draftCheerPinned = phrase.contentId
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - 상태
 
     private func loadDraft() {
         draftContext = initialContext
+        draftCheerMode = cheerMode
+        draftCheerPinned = cheerPinnedContentId
         draftManualText = initialManualText
         draftWeatherCountry = savedWeatherCountry
         draftWeatherCity = savedWeatherCity
@@ -406,6 +504,10 @@ struct MessageSettingsPane: View {
         guard option.id == MessageSettingsResult.manualContext,
               let remaining = manualRemaining, let limit = manualLimit, limit > 0
         else { return option.label }
+        // 무료가 기본분을 다 쓰고 광고 보상이 남았으면 '(0/3)' 대신 보상 수를 말한다 — "직접 입력 (광고 보상 1번)".
+        if remaining <= 0, let credits = manualAdCredits, credits > 0 {
+            return String(localized: "\(String(option.label)) (광고 보상 \(Int(credits))번)")
+        }
         // 이번 달 남은 만들기 횟수 — 고르기 전에 몇 번 남았는지 먼저 보인다.
         return "\(option.label) (\(max(remaining, 0))/\(limit))"
     }
@@ -449,7 +551,9 @@ struct MessageSettingsPane: View {
             weatherCity: draftWeatherCity,
             fortuneGender: draftFortuneGender,
             fortuneBirthDate: draftFortuneBirthDate,
-            fortuneBirthTime: draftFortuneBirthTime
+            fortuneBirthTime: draftFortuneBirthTime,
+            cheerMode: draftCheerMode,
+            cheerPinnedContentId: draftCheerPinned
         )
     }
 }
@@ -466,8 +570,19 @@ struct MessageSettingsResult: Equatable {
     var fortuneGender: String
     var fortuneBirthDate: String
     var fortuneBirthTime: String
+    /// 응원 테마의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 응원이 아니면 그대로 되돌려 준다.
+    var cheerMode: CheerMode = .vary
+    var cheerPinnedContentId: String? = nil
 
     var isManual: Bool { context == Self.manualContext }
+
+    /// 응원 설정을 뺀 나머지 — 그것만 바뀌었는지 가르는 데 쓴다(`MessageSettingsPane.onDisappear`).
+    var withoutCheerSettings: MessageSettingsResult {
+        var copy = self
+        copy.cheerMode = .vary
+        copy.cheerPinnedContentId = nil
+        return copy
+    }
 }
 
 /// 문구 요약 행 — 편집기 목소리 카드 안에 놓인다.

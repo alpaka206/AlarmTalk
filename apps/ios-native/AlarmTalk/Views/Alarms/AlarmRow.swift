@@ -160,6 +160,14 @@ struct AlarmRow: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
+                        // 날짜 알람인데 기기 시간대가 다르면 **어떤 시각으로 예약됐는지** 말한다
+                        // (스펙 alarm-lifecycle.md §4-2). 같으면 아무것도 덧붙이지 않는다.
+                        if let note = alarm.datedTimezoneNote() {
+                            Text(note)
+                                .font(.pretendard(.regular, size: 13))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                        }
                     }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // 행 전체가 하나의 버튼으로 읽히게 한다(VoiceOver).
@@ -181,6 +189,13 @@ struct AlarmRow: View {
                         )
                     )
                     .labelsHidden()
+                    // ⚠ **스위치는 제 폭(캡슐 51)만 갖는다.** 공용 스타일(`Views/Common/AlarmTalkSwitch.swift`)의
+                    // 본체가 `HStack { 라벨; Spacer; 캡슐 }` 이라 라벨을 숨겨도 토글이 **남는 폭을 달라고**
+                    // 한다. 옆의 글자 칸도 `maxWidth: .infinity` 라 둘이 **반씩** 나눠 가져, 둘째 줄
+                    // ("날짜 · 목소리")이 폭이 남는데도 잘렸다(2026-11-03 시뮬레이터 실측 — 글자 칸 ≈ 행의 절반).
+                    // 안드로이드 `AlarmRow` 는 `Column(weight(1f))` + 고유 크기 스위치다 — 그 결로 맞춘다.
+                    // 회귀 테스트 `AlarmRowHitAreaUITests.test_스위치는_제_폭만_갖고_둘째_줄이_남은_폭을_쓴다`.
+                    .fixedSize()
                     // ⚠ `.tint` 로 직접 칠하지 말 것 — 그건 트랙만 바꾸고 손잡이는 흰색
                     // 그대로라 옅은 하늘색 트랙 위에서 바래 보인다. 공용 스타일이 트랙·
                     // 손잡이를 **둘 다** 안드로이드와 같은 규칙으로 정한다.

@@ -10,6 +10,7 @@ import {
   paidVoiceRetentionUpsertStatement,
 } from './billing-cancel';
 import { deleteSensitiveVoiceDataForOwners, type DowngradedAlarm } from './paid-voice-cleanup';
+import { activePlanGrantExistsSql } from './plan-grant-sql';
 import {
   notifyDowngradedAlarms,
   personalPromoEndWarningBody,
@@ -169,9 +170,12 @@ const HOUR_MS = 60 * 60 * 1000;
  * - 삭제·시스템·초안이 아닌 목소리가 있다 — 지울 것이 없는 사람은 건드리지도, 알리지도 않는다.
  *   목소리의 주인 id 는 PK 이거나 로그인 id(google_id)다.
  * - 보관 행이 없다.
+ * - 유효한 관리자 기간 지급이 없다(`lib/plan-grants.ts`) — 지급 중인 사람은 플러스다. 지급이 끝나면 지급 뒷정리
+ *   (`settleEndedPlanGrants`)가 그때부터 3일 보관을 건다 — 이 행사의 약속 시각을 다시 쓰지 않는다.
  */
 const PROMO_END_TARGET = `u.plan = 'free'
   AND NOT ${activeSubscriptionRowExistsSql('u.id')}
+  AND NOT ${activePlanGrantExistsSql('u.id')}
   AND NOT EXISTS (SELECT 1 FROM paid_voice_retention r WHERE r.user_id = u.id)
   AND EXISTS (
     SELECT 1 FROM voice_profiles vp

@@ -15,10 +15,12 @@ function placeholders(ids: string[]): string {
   return ids.map(() => '?').join(',');
 }
 
-/** 이 정리로 sound-only 로 강등된 알람 하나. 호출자가 커밋 후 신호를 보낸다. */
+/**
+ * 서버가 강등한 알람 하나 — **서버 알람 사본을 지운 뒤(#147)로는 생기지 않는다**(`revokeDeletedVoices` 가 늘 빈 목록을
+ * 돌려준다). 받는 쪽(`notifyDowngradedAlarms`)이 계정 단위로 접어 보내므로 모양만 남긴다.
+ */
 export interface DowngradedAlarm {
   alarmId: string;
-  /** 그 알람의 주인(`alarms.user_id`) — 그 계정의 기기가 목소리 접근권을 다시 확인해 로컬에서 강등한다. */
   ownerUserId: string;
 }
 
@@ -45,13 +47,6 @@ export async function deletePaidVoiceDataForUser(
                SELECT id FROM messages WHERE user_id IN (${ph})
              )`,
     args: [...ids, ...ids, ...ids],
-  });
-
-  // 삭제 스코프는 '호출 사용자 소유 데이터'로 한정한다. 남의 알람이 내 목소리·문구를 가리킬 길은 없다
-  // (알람 쓰기는 내 목소리·시스템 목소리만 받는다 — `voiceProfileBelongsToCaller`·`messageBelongsToCaller`).
-  await db.execute({
-    sql: `DELETE FROM alarms WHERE user_id IN (${ph})`,
-    args: ids,
   });
 
   await db.execute({

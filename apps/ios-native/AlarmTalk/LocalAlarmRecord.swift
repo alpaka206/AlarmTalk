@@ -96,6 +96,15 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 값 하나를 행에 적어 두면 캐시와 무관하게 무엇을 골랐는지 남는다.
     var bucketId: String?
 
+    /// **날짜 지정 알람**의 날짜(`YYYY-MM-DD`). 있으면 이 알람은 그날 한 번만 운다 — 요일 반복과
+    /// 배타적이다(`repeatDaysMask = 0`). 스펙 `docs/spec/alarm-lifecycle.md` §4. 서버 `target_date` 와 왕복한다.
+    /// 옛 저장값에는 없어 nil 로 읽힌다(지금까지의 알람은 전부 날짜 없는 알람이다).
+    var targetDate: String?
+
+    /// 날짜 알람의 시간대(IANA). **저장하는 순간 사용자가 확인한 값**으로 고정한다 — 기기 시간대가
+    /// 바뀌어도 이 시간대의 그 시각에 운다(`DatedAlarmTime`). 날짜 알람이 아니면 nil.
+    var targetTimezone: String?
+
     /// 이 테마에 묶인 클립들의 캐시 키. 안드로이드 `AlarmEntity.bucketClipKeysJson` 미러.
     ///
     /// ⚠ **한 개만 들고 있지 말 것.** 무료 테마는 울릴 때마다 다음 클립으로 넘어가는 게
@@ -132,6 +141,16 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 이 값이 지금 행의 지문과 다르면 `AlarmScheduleReconciler` 가 다시 예약한다.
     /// `nil` = 아직 예약한 적 없거나 옛 버전이 만든 행(그때는 예약 경로가 채운다).
     var scheduledSoundFingerprint: String?
+
+    /// 응원 테마의 **다양하게 / 이 문구로 고정**(`CheerMode`, 스펙 voice-and-message §5-4). `nil` = 다양하게.
+    /// 서버 사본(`alarms.cheer_mode`)과 왕복한다. 안드로이드 `AlarmEntity.cheerMode` 미러.
+    var cheerMode: String?
+    /// 고정한 문구 ID(`cheer_v2_05`). 서버 `alarms.cheer_pinned_content_id`.
+    var cheerPinnedContentId: String?
+    /// 준비·예약한 응원 문구 ID 이력(오래된 것 → 최근). **기기 로컬** — 서버로 가지 않는다.
+    var cheerHistory: [String]?
+    /// 지금 회차의 응원 선택. **기기 로컬.** 예약할 때 이 클립을 넘긴다(`AlarmSoundResolver.rotatedBucketClipKey`).
+    var cheerSelection: CheerSelection?
 
     // MARK: Convenience accessors (Phase 2-B2/B3 가 사용)
 
@@ -172,7 +191,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // 갈라진다 — 직접 입력의 캐시 키는 문구 해시라 이 접두가 붙지 않는다.
         !voiceRandomPrompt &&
             bucketId?.nilIfBlank == nil &&
-            !(audioCacheKey?.hasPrefix(AudioCacheStore.stockCacheKeyPrefix) ?? false) &&
+            !AudioCacheStore.isFixedClipCacheKey(audioCacheKey) &&
             (voiceCategory == nil || voiceCategory == "custom")
     }
 
@@ -183,8 +202,9 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// `setStockClipAudio` 와 동일 술어)를 1차 신호로 쓴다. 미래의 비-시스템 server_tts
     /// 알람이 우연히 stock 모양 key 를 가져도 새지 않도록 `isSystemVoiceId(voiceProfileId)`
     /// 를 함께 요구한다. `ttsMessageId` 는 생성 TTS 도 채우므로 단독 신호로 쓰지 않는다.
+    /// 추가 음성팩 클립(`pack_<clipId>` + 팩 목소리)도 같다 — 무료 고정 콘텐츠다(`docs/spec/voice-packs.md` §1).
     var isStockVoiceClip: Bool {
-        (audioCacheKey?.hasPrefix("stock_") ?? false) && isSystemVoiceId(voiceProfileId)
+        AudioCacheStore.isFixedClipCacheKey(audioCacheKey) && isFreeFixedVoiceID(voiceProfileId)
     }
 
     var isGeneratedFreeSystemPresetVoice: Bool {
@@ -208,6 +228,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // ⚠ 이 술어와 `PaidVoiceGate.usesFreeSystemVoice` 는 **한 쌍이다 — 항상 같이 고친다.**
         // 한쪽만 고치면 '예약은 목소리로 되는데 앱을 껐다 켜면 잠긴다'(또는 그 반대)가 된다.
         if voiceSourceEnum == .localAudio, localAudioUri?.nilIfBlank != nil { return false }
+        // 추가 음성팩 목소리 알람은 무료 고정 콘텐츠다 — `PaidVoiceGate.usesFreeSystemVoice` 의 `isFreeFixedVoiceID` 짝.
+        if voiceSourceEnum != .localAudio, isVoicePackVoiceID(voiceProfileId) { return false }
         let stockVoiceOnly =
             localAudioUri.nilIfBlank == nil &&
             rawAudioUri.nilIfBlank == nil &&
@@ -232,7 +254,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// AlarmKit 네이티브 timezone 적응 + 자동 재무장을 그대로 유지한다.
     /// makeSchedule / recoverScheduledAlarms 후보 필터 / markStopped / BackgroundSyncTask
     /// 가 모두 이 헬퍼로 동일한 분기를 표현해 inline 술어 분기 발산을 막는다.
-    var isHolidayOffRecurring: Bool { repeatDaysMask != 0 && holidayOff }
+    var isHolidayOffRecurring: Bool { isRecurring && holidayOff }
 
     var timeString: String {
         String(format: "%02d:%02d", hour, minute)
@@ -261,6 +283,25 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         let formatter = DateFormatter()
         formatter.locale = .autoupdatingCurrent
         formatter.setLocalizedDateFormatFromTemplate("MMMEd")
+        // 날짜 알람은 **그 알람의 날짜**를 말한다 — 기기 시간대로 읽으면 시간대가 다를 때 하루가 밀린다.
+        // 기기 시각은 `datedTimezoneNote` 가 따로 말한다(스펙 alarm-lifecycle.md §4-2).
+        if let targetDate = targetDate.nilIfBlank {
+            let zone = DatedAlarmTime.timeZone(targetTimezone)
+            if let date = DatedAlarmTime.pickerDate(for: targetDate, in: zone) {
+                formatter.timeZone = zone
+                return formatter.string(from: date)
+            }
+        }
+        // ⚠ **꺼진 알람은 저장된 시각이 아니라 다시 계산한 다음 울림을 말한다**(2026-10-29 두 앱 비교 — 안드로이드
+        //   `ui/components/ControlsAndPermissions.kt` 의 `AlarmRow` 짝). 끄거나 한 번 울고 꺼진 알람은 `fireAtMillis` 를 그대로
+        //   둔다 — 그 값을 읽으면 어제 울린 일회성·지난주에 끈 반복 알람이 지난 날짜를 보였다. 켜진 알람은 실제 예약값이다.
+        if !enabled,
+           let next = try? nextFireAtMillis(
+               nowMillis: Int64(Date().timeIntervalSince1970 * 1000),
+               isHoliday: { LocalHolidayCalendar.isHoliday($0) }
+           ) {
+            return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(next) / 1000.0))
+        }
         return formatter.string(from: nextFireDate)
     }
 
@@ -276,7 +317,13 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 이 행의 시각·요일·공휴일 설정으로 **다시 계산한** 다음 울림 시각.
     /// 울릴 날이 없으면 던진다 — 폴백은 부르는 쪽이 정한다.
     func nextFireAtMillis(nowMillis: Int64, isHoliday: (Date) -> Bool) throws -> Int64 {
-        try AlarmTimeCalculator.nextFireAtMillis(
+        // 날짜 알람은 **고정 시각**이다 — 지났어도 다음 날로 넘기지 않는다(스펙 alarm-lifecycle.md §4-4).
+        // 지났는지는 부르는 쪽이 `datedTimeHasPassed` 로 가른다.
+        if isDated {
+            guard let fixed = datedFireAtMillis else { throw AlarmTimeCalculator.CalculatorError.invalidTargetDate }
+            return fixed
+        }
+        return try AlarmTimeCalculator.nextFireAtMillis(
             hour: hour,
             minute: minute,
             repeatDaysMask: repeatDaysMask,
@@ -446,6 +493,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case bucketRotationIndex
         case contextVariantIndex
         case contextResolvedAtMillis
+        case targetDate
+        case targetTimezone
+        case cheerMode
+        case cheerPinnedContentId
+        case cheerHistory
+        case cheerSelection
     }
 
     /// Codable 디코딩. 신규 필드 누락 시 default 폴백.
@@ -544,6 +597,14 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.bucketRotationIndex = try c.decodeIfPresent(Int.self, forKey: .bucketRotationIndex)
         self.contextVariantIndex = try c.decodeIfPresent(Int.self, forKey: .contextVariantIndex)
         self.contextResolvedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .contextResolvedAtMillis)
+        // 옛 저장값에는 없다 — nil(날짜 없는 알람)로 읽는다.
+        self.targetDate = try c.decodeIfPresent(String.self, forKey: .targetDate)
+        self.targetTimezone = try c.decodeIfPresent(String.self, forKey: .targetTimezone)
+        self.cheerMode = try c.decodeIfPresent(String.self, forKey: .cheerMode)
+        self.cheerPinnedContentId = try c.decodeIfPresent(String.self, forKey: .cheerPinnedContentId)
+        self.cheerHistory = (try? c.decodeIfPresent([String].self, forKey: .cheerHistory)) ?? nil
+        // 깨진 선택 하나 때문에 알람 목록 전체를 못 읽으면 안 된다 — 못 읽으면 없는 것으로 본다(묶어 둔 회전으로 운다).
+        self.cheerSelection = (try? c.decodeIfPresent(CheerSelection.self, forKey: .cheerSelection)) ?? nil
 
         // fireAtMillis: 신규는 Int64. 없으면 hour/minute 으로 today/tomorrow 기본값.
         if let raw = try c.decodeIfPresent(Int64.self, forKey: .fireAtMillis) {
@@ -616,6 +677,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(bucketRotationIndex, forKey: .bucketRotationIndex)
         try c.encodeIfPresent(contextVariantIndex, forKey: .contextVariantIndex)
         try c.encodeIfPresent(contextResolvedAtMillis, forKey: .contextResolvedAtMillis)
+        try c.encodeIfPresent(targetDate, forKey: .targetDate)
+        try c.encodeIfPresent(targetTimezone, forKey: .targetTimezone)
+        try c.encodeIfPresent(cheerMode, forKey: .cheerMode)
+        try c.encodeIfPresent(cheerPinnedContentId, forKey: .cheerPinnedContentId)
+        try c.encodeIfPresent(cheerHistory, forKey: .cheerHistory)
+        try c.encodeIfPresent(cheerSelection, forKey: .cheerSelection)
     }
 
     /// hour/minute 만 알 때 다음 발화 시각 계산 (legacy import 폴백용).
@@ -650,6 +717,7 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
     case unknownVoiceSource
     case voiceAudioRequired
     case duplicateTime
+    case invalidTargetDate
 
     var errorDescription: String? {
         switch self {
@@ -665,6 +733,7 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
         case .unknownVoiceSource: return String(localized: "지원하지 않는 음성 소스예요.")
         case .voiceAudioRequired: return String(localized: "음성 알람은 음원을 먼저 캐싱해야 해요.")
         case .duplicateTime: return String(localized: "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요.")
+        case .invalidTargetDate: return String(localized: "날짜나 시각을 다시 골라 주세요.")
         }
     }
 }
@@ -759,5 +828,16 @@ extension LocalAlarmRecord {
     /// 버킷 없이 프리셋 클립 하나만 문 **옛 행**이 직접 입력으로 통과했다.
     var isManualMessageAlarm: Bool {
         usesCustomMessageVoice && ttsMessageId?.nilIfBlank != nil
+    }
+
+    /// 사용 기록에 남기는 **문구 종류** — `alarm_only`(알람음) · `recording`(직접 녹음) · 테마(`cheer`·`weather` …) · 생성형
+    /// 종류(`preset`·`wake` …) · `manual`(직접 입력). 관리자 콘솔의 '알람 문구 종류' 가 이것을 센다(서버 알람 사본을 지운
+    /// 2026-10-29 부터). 원문은 싣지 않는다. 안드로이드 짝은 `AlarmEntity.messageKindForUsage`.
+    var messageKindForUsage: String {
+        if playModeEnum == .alarmOnly { return "alarm_only" }
+        if voiceSourceEnum == .localAudio { return "recording" }
+        if let bucket = bucketId.nilIfBlank { return bucket.trimmingCharacters(in: .whitespaces) }
+        if voiceRandomPrompt { return voiceRandomContext.nilIfBlank?.trimmingCharacters(in: .whitespaces) ?? "preset" }
+        return "manual"
     }
 }

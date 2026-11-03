@@ -285,18 +285,6 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
   });
 });
 
-// 옛 앱 호환 — 공유받은 목소리 목록이었다(목소리 공유는 2026-10-20 에 없앴다). 옛 앱은 이 답을 받아야 내 목소리
-// 접근권 재확인을 끝낸다(안드로이드는 실패하면 워커가 끝없이 재시도하고, iOS 는 내 알람 재조정을 건너뛴다).
-describe('GET /voice/family — 옛 앱 호환', () => {
-  it('언제나 200 { profiles: [] } — DB 를 보지 않는다', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/voice/family'));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ profiles: [] });
-    expect(mockDB.calls).toHaveLength(0);
-  });
-});
-
 describe('POST /voice/clone — 음성 클론', () => {
   /**
    * 유료 플랜 행(큐 맨 앞) + **월 등록 자격 확인**(이번 달 등록 원장 집계 — 남았으면 통과)의 답. 자격 확인은
