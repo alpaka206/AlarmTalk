@@ -59,8 +59,7 @@
     <string name="auth_password_rule_min">8자 이상</string>
     <string name="auth_password_show">비밀번호 보기</string>
     <string name="auth_processing">처리 중</string>
-    <string name="auth_subtitle_login">좋아하는 목소리 알람을 다시 불러올게요.</string>
-    <string name="auth_subtitle_register">목소리 알람을 만들 계정을 준비해요.</string>    <string name="auth_title_login">로그인</string>
+    <string name="auth_title_login">로그인</string>
     <string name="auth_title_register">회원가입</string>
     <string name="auth_verification_code_hint">메일로 받은 6자리 코드를 입력해 주세요.</string>
     <string name="billing_cancel_at_date">%1$s에 해지</string>
@@ -81,6 +80,7 @@
     <string name="billing_plan_free_name">무료</string>
     <string name="billing_plan_free_price">0원</string>
     <string name="billing_plan_monthly_price_fallback">월 %1$,d원</string>
+    <string name="billing_plan_monthly_price">월 %1$s</string>
     <!-- ⚠ 날씨·운세·응원·약 문구는 기본 목소리로 **무료**다(docs/spec/voice-and-message.md §2 — 목록은 등급으로 자르지 않는다).
          플러스가 더하는 것은 문구 종류가 아니라 **등록한 목소리로 듣는 것**이다 — 종류를 유료 기능처럼 적지 말 것.
          클립은 준비된 것을 돌려 쓰므로 "매일 새 문구" 도 사실이 아니다. iOS PlanCard.features(for:) 와 글자까지 같다. -->
@@ -271,7 +271,6 @@
     <string name="editorp_cheer_pinned_hint">고른 문구로만 울려요.</string>
     <string name="editorp_random_manual_title">직접 입력 문구</string>
     <string name="editor_manual_charge_notice">새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요.</string>
-    <string name="editorp_random_more_contexts">더 보기 (운세·약)</string>
     <string name="editorp_random_fortune_title">운세 정보</string>
     <string name="editorp_random_save_button">저장</string>
     <string name="editorp_random_title">문구</string>

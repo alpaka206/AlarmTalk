@@ -283,15 +283,13 @@ internal fun RandomPromptSettingsPane(
                     // ⚠ **'직접 입력' 은 목록에서 빼지 않는다.** 무료에게도 이런 기능이
                     // 있다는 걸 보여 준다 — 아예 감추면 있는지조차 모르고, 유료 전환 동기
                     // 중 가장 강한 것을 잃는다. 잠긴 행으로 그린다.
-                    val allRows = EditorMessageContexts.filter { (context, _) ->
+                    //
+                    // ⚠ **접지 않는다 — 전부 편다**(2026-11-09 오너 "꼭 더보기를 넣어야 할까"). v1.3 W04 에서 운세·약을
+                    // '더 보기' 뒤로 접었다가 출시 전에 되돌렸다. 다 펴도 다섯 줄이라 한 화면에 들어가고, 접어 두면
+                    // 운세·약이 있는 줄도 모른다. iOS 짝 `MessageSettingsPane.visibleOptions` 도 같다.
+                    val rows = EditorMessageContexts.filter { (context, _) ->
                         (context == ManualMessageContext && manualAvailable) || context in availableContexts
                     }
-                    // **운세·약은 처음에는 접어 둔다**(2026-10-26 v1.3 W04) — 첫 화면은 날씨·응원·직접 입력이면 충분하고, 운세·약은
-                    // 추가 정보를 묻거나 쓰임이 좁다. 지우지 않는다: 지금 고른 것이 그 둘이면(직전 선택을 이은 새 알람·기존 알람)
-                    // 처음부터 펼쳐 둔다. iOS 짝은 `MessageSettingsPane.foldedContextIDs`.
-                    var moreContextsShown by remember { mutableStateOf(normalizedContext in FoldedMessageContexts) }
-                    val foldedPresent = allRows.any { it.first in FoldedMessageContexts }
-                    val rows = if (moreContextsShown) allRows else allRows.filter { it.first !in FoldedMessageContexts }
                     rows.forEachIndexed { index, (context, labelRes) ->
                         val baseLabel = stringResource(labelRes)
                         val locked = context == ManualMessageContext && manualLocked
@@ -319,23 +317,6 @@ internal fun RandomPromptSettingsPane(
                             )
                         }
                         if (index != rows.lastIndex) SnoozeOptionDivider()
-                    }
-                    if (!moreContextsShown && foldedPresent) {
-                        SnoozeOptionDivider()
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { moreContextsShown = true }
-                                .heightIn(min = 56.dp)
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.editorp_random_more_contexts),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
                     }
                 }
 
@@ -512,9 +493,6 @@ internal fun RandomPromptSettingsPane(
 }
 
 /** 직접 입력 문구 상한. iOS `MessageSettingsPane.manualTextMaxLength` 와 같은 값이어야 한다. */
-/** 문구 목록에서 처음에 접어 두는 종류 — 운세·약(2026-10-26 v1.3 W04). 고른 상태면 펼쳐 둔다. */
-internal val FoldedMessageContexts = setOf("wake_fortune", "medication")
-
 internal const val ManualMessageMaxLength = 200
 
 // '직접 입력' 선택 시 뜨는 문구 입력 다이얼로그(날씨·운세 다이얼로그와 같은 층위).

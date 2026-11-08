@@ -110,12 +110,6 @@ struct LoginView: View {
                         .foregroundStyle(AuthSceneColors.text)
                         .padding(.top, 6)
 
-                    Text(mode == .login
-                         ? String(localized: "좋아하는 목소리 알람을 다시 불러올게요.")
-                         : String(localized: "목소리 알람을 만들 계정을 준비해요."))
-                        .font(theme.typography.bodyMedium)
-                        .foregroundStyle(AuthSceneColors.textDim)
-
                     // 가입에서 이미 가입된 이메일이라 로그인으로 넘어온 경우 — 왜 화면이 바뀌었는지 여기서 말한다
                     // (안드로이드 `ui/auth/AuthScreen.kt` 의 `authNotice` 자리).
                     if mode == .login, let notice = auth.authNotice {

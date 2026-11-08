@@ -673,7 +673,10 @@ internal fun trialPeriodLabel(context: Context, iso: String): String? {
 }
 
 private fun planPriceLabel(context: Context, planPrices: Map<String, String>, key: String): String {
-    planPrices[key]?.takeIf { it.isNotBlank() }?.let { return it }
+    // ⚠ **결제 주기를 붙인다**(2026-11-09). Play 의 `formattedPrice` 는 "₩3,900" 뿐이라 그대로 쓰면 카드가
+    // "1개월 무료 체험, 이후 ₩3,900" 이 돼 **얼마마다** 내는지가 빠진다(스토어 정책은 체험 뒤 가격과 주기를 함께
+    // 말하라고 한다). 상품은 월 구독 하나(`PlayBillingProducts.PERSONAL_MONTHLY`)다. iOS 짝은 `"월 \(price)"`.
+    planPrices[key]?.takeIf { it.isNotBlank() }?.let { return context.getString(R.string.billing_plan_monthly_price, it) }
     val krw = FallbackPlanPriceKrw[key] ?: return ""
     return context.getString(R.string.billing_plan_monthly_price_fallback, krw)
 }

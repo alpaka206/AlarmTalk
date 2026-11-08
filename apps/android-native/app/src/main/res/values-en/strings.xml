@@ -57,8 +57,7 @@
     <string name="auth_password_rule_min">8+ characters</string>
     <string name="auth_password_show">Show password</string>
     <string name="auth_processing">Processing</string>
-    <string name="auth_subtitle_login">We\'ll bring back your favorite voice alarms.</string>
-    <string name="auth_subtitle_register">Let\'s set up an account to create voice alarms.</string>    <string name="auth_title_login">Log in</string>
+    <string name="auth_title_login">Log in</string>
     <string name="auth_title_register">Sign up</string>
     <string name="auth_verification_code_hint">Enter the 6-digit code from your email.</string>
     <string name="billing_cancel_at_date">Cancel on %1$s</string>
@@ -78,6 +77,7 @@
     <string name="billing_plan_free_name">Free</string>
     <string name="billing_plan_free_price">Free</string>
     <string name="billing_plan_monthly_price_fallback">KRW %1$,d/month</string>
+    <string name="billing_plan_monthly_price">%1$s/month</string>
     <string name="billing_plan_personal_feature_messages_in_voice">Weather and fortune messages in your registered voice</string>
     <string name="billing_plan_personal_feature_voice">Register 1 voice of your choice</string>
     <string name="billing_plan_personal_feature_manual">Type it yourself: 30 a month (incl. your registered voice)</string>
@@ -262,7 +262,6 @@
     <string name="editorp_cheer_pinned_hint">Only the line you pick will play.</string>
     <string name="editorp_random_manual_title">Your message</string>
     <string name="editor_manual_charge_notice">A new message makes a voice when you save, using 1 of this month\'s creations. Reusing a voice that\'s still on this phone doesn\'t count, but getting it again when it isn\'t on this phone uses 1.</string>
-    <string name="editorp_random_more_contexts">More (fortune, medication)</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>

@@ -126,6 +126,11 @@ internal fun IosAlertDialog(
     // 자기 때문에 스스로 걷힌다. (⚠ `content` 뒤로 옮기지 말 것 — 호출부가 `content` 를
     // 후행 람다로 넘긴다.)
     tracksAsOpenModal: Boolean = true,
+    // 요청이 실패한 이유 — 본문 바로 아래에 **본문과 같은 여백·정렬**로 빨갛게 그린다.
+    // ⚠ **`content` 슬롯에 넣지 말 것**(2026-11-09 오너 "왼쪽 간격이 왜 달라"). 그 슬롯은 입력칸 자리라
+    // 여백이 버튼 기준(16)이고 가운데 정렬이어서, 본문(30·왼쪽) 아래 한 줄만 시작선이 어긋났다.
+    // 그리고 `content` 가 있으면 순수 알럿도 '폼' 정렬로 바뀐다 — 오류 한 줄로 정렬 규칙이 바뀌면 안 된다.
+    errorMessage: String? = null,
     // 본문과 액션 사이에 들어가는 입력 영역. 없으면 예전과 똑같은 순수 알럿이다.
     content: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
@@ -165,7 +170,7 @@ internal fun IosAlertDialog(
             //
             // 알럿은 **자기 창**이라 `AlarmTalkApp` 의 제스처가 닿지 않아 여기 따로 건다.
             Column(modifier = Modifier.fillMaxWidth().clearFocusOnOutsideTap()) {
-                val hasContent = !title.isNullOrBlank() || !message.isNullOrBlank()
+                val hasContent = !title.isNullOrBlank() || !message.isNullOrBlank() || !errorMessage.isNullOrBlank()
                 if (hasContent) {
                     Column(
                         modifier = Modifier
@@ -217,6 +222,19 @@ internal fun IosAlertDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 // 줄 수는 그려 봐야 안다 — 재 보고 다음 배치에서 정렬을 정한다.
                                 onTextLayout = { messageLineCount = it.lineCount },
+                            )
+                        }
+                        if (!errorMessage.isNullOrBlank()) {
+                            if (!title.isNullOrBlank() || !message.isNullOrBlank()) {
+                                Spacer(Modifier.height(ERROR_GAP))
+                            }
+                            Text(
+                                text = errorMessage,
+                                color = scheme.error,
+                                // 본문과 같은 정렬 — 한 블록 안에서 시작점이 갈리지 않게.
+                                textAlign = blockAlign,
+                                style = IosAlertType.Message,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -389,6 +407,9 @@ private val ALERT_TEXT_INSET = 30.dp
  * ⚠ 4 로 되돌리지 말 것. 절반이라 제목과 본문이 한 덩어리로 붙어 보였다.
  */
 private val TITLE_TO_MESSAGE_GAP = 7.dp
+
+/** 본문과 오류 문장 사이 — 제목·본문 사이(7)보다 조금 띄워 다른 말이라는 것을 보인다. */
+private val ERROR_GAP = 10.dp
 
 /**
  * 액션 버튼 높이 — **48dp**.

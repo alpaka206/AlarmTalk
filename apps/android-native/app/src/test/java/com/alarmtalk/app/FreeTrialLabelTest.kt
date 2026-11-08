@@ -36,9 +36,13 @@ class FreeTrialLabelTest {
 
     @Test
     fun cardLineSaysTheTrialThenThePrice() {
+        // 스토어 가격("₩3,900")에는 주기가 없다 — 카드는 `billing_plan_monthly_price` 로 '월' 을 붙여 넘긴다
+        // (`planPriceLabel`). 빠지면 체험 뒤 **얼마마다** 내는지가 사라진다(2026-11-09).
+        val monthly = context.getString(R.string.billing_plan_monthly_price, "₩3,900")
+        assertEquals("월 ₩3,900", monthly)
         assertEquals(
-            "1개월 무료 체험, 이후 ₩3,900",
-            context.getString(R.string.billing_plan_trial_price, trialPeriodLabel(context, "P1M"), "₩3,900"),
+            "1개월 무료 체험, 이후 월 ₩3,900",
+            context.getString(R.string.billing_plan_trial_price, trialPeriodLabel(context, "P1M"), monthly),
         )
     }
 }

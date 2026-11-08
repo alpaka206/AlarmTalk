@@ -381,15 +381,6 @@ internal fun AuthScreen(
                 fontWeight = FontWeight.Bold,
                 color = TextOnScene,
             )
-            Text(
-                text = if (mode == AuthMode.Login) {
-                    stringResource(R.string.auth_subtitle_login)
-                } else {
-                    stringResource(R.string.auth_subtitle_register)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextOnSceneDim,
-            )
 
             // 회원가입에서 이미 가입된 이메일로 인증을 시도해 로그인으로 전환된 경우 —
             // 왜 화면이 바뀌었는지 여기서 설명한다(스낵바는 키보드에 가려 안 보인다).
@@ -461,13 +452,17 @@ internal fun AuthScreen(
                 }
 
                 if (codeSentForEmail && !isEmailVerified) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
+                    // ⚠ **라벨은 줄 위에 따로 둔다**(2026-11-09 오너 "입력창이랑 확인이랑 줄 다름").
+                    // 라벨을 입력칸과 한 묶음에 넣으면 가운데 정렬된 '확인' 버튼이 **라벨까지 합친 높이**의
+                    // 가운데로 올라가 입력칸과 한 줄로 안 맞는다. 줄에는 입력칸과 버튼만 두고, 두 상자의
+                    // 높이(56)를 같게 둔다. iOS 짝은 `LoginView.verificationCodeRow`(아래 정렬)다.
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             OutlinedTextField(
                                 value = emailCode,
                                 onValueChange = {
@@ -486,17 +481,17 @@ internal fun AuthScreen(
                                 ),
                                 modifier = Modifier.textInputTapTarget().then(Modifier.weight(1f)),
                             )
-                        }
-                        val confirmEnabled = !busy && emailCode.length == VerificationCodeLength
-                        OutlinedButton(
-                            onClick = { onConfirmEmailVerification(email, emailCode) },
-                            enabled = confirmEnabled,
-                            modifier = Modifier.heightIn(min = 56.dp),
-                            shape = WakerButtonShape,
-                            border = authOutlinedButtonBorder(confirmEnabled),
-                            colors = authOutlinedButtonColors(),
-                        ) {
-                            Text(stringResource(R.string.auth_confirm))
+                            val confirmEnabled = !busy && emailCode.length == VerificationCodeLength
+                            OutlinedButton(
+                                onClick = { onConfirmEmailVerification(email, emailCode) },
+                                enabled = confirmEnabled,
+                                modifier = Modifier.heightIn(min = 56.dp),
+                                shape = WakerButtonShape,
+                                border = authOutlinedButtonBorder(confirmEnabled),
+                                colors = authOutlinedButtonColors(),
+                            ) {
+                                Text(stringResource(R.string.auth_confirm))
+                            }
                         }
                     }
                     Text(

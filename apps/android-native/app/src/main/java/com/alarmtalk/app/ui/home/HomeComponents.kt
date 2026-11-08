@@ -392,15 +392,8 @@ internal fun DeleteAccountConfirmDialog(
                 onClick = onConfirm,
             ),
         ),
-        content = errorText?.let { text ->
-            {
-                Text(
-                    text = text,
-                    style = IosAlertType.Message,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        },
+        // 본문 바로 아래, 본문과 같은 여백·정렬이다(입력 슬롯 `content` 가 아니다 — `IosAlertDialog` 의 주석).
+        errorMessage = errorText,
     )
 }
 

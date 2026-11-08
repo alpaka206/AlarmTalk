@@ -3084,23 +3084,6 @@
         }
       }
     },
-    "목소리 알람을 만들 계정을 준비해요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Let's set up an account to create voice alarms."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "声のアラームを作るアカウントを準備しましょう。"
-          }
-        }
-      }
-    },
     "목소리 이름" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7272,23 +7255,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "大好きな%@で\n目覚める朝"
-          }
-        }
-      }
-    },
-    "좋아하는 목소리 알람을 다시 불러올게요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We'll bring back your favorite voice alarms."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "お気に入りの声のアラームをもう一度読み込みます。"
           }
         }
       }
@@ -12598,29 +12564,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 목소리의 인사예요"
-          }
-        }
-      }
-    },
-    "더 보기 (운세·약)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "More (fortune, medication)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "もっと見る（運勢・お薬）"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "더 보기 (운세·약)"
           }
         }
       }
