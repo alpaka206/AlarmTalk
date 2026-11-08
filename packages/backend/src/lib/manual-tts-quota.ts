@@ -143,11 +143,10 @@ export async function reserveManualTtsQuota(
     return { ok: false, used: 0, limit, remaining: 0, month: null };
   }
   const res = await db.execute({
-    sql: `INSERT INTO manual_tts_usage (pool_key, usage_month, used_count, updated_at)
-          VALUES (?, ${KST_MONTH_SQL}, 1, datetime('now'))
+    sql: `INSERT INTO manual_tts_usage (pool_key, usage_month, used_count)
+          VALUES (?, ${KST_MONTH_SQL}, 1)
           ON CONFLICT(pool_key, usage_month) DO UPDATE SET
-            used_count = used_count + 1,
-            updated_at = datetime('now')
+            used_count = used_count + 1
           WHERE manual_tts_usage.used_count < ?
           RETURNING used_count, usage_month`,
     args: [poolKey, limit],
@@ -171,7 +170,7 @@ export async function refundManualTtsQuota(
 ): Promise<void> {
   await db.execute({
     sql: `UPDATE manual_tts_usage
-          SET used_count = used_count - 1, updated_at = datetime('now')
+          SET used_count = used_count - 1
           WHERE pool_key = ? AND usage_month = ? AND used_count > 0`,
     args: [poolKey, usageMonth],
   });

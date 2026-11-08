@@ -570,5 +570,13 @@
   "148": {
     "name": "admin-password-attempts",
     "sha": "ef1276fab9f5ffd3"
+  },
+  "149": {
+    "name": "drop-unused-columns-and-weather-region-daily",
+    "sha": "948d37594b496bb3"
+  },
+  "150": {
+    "name": "drop-redundant-generated-audio-user-index",
+    "sha": "f946e579f00b21bf"
   }
 }
