@@ -19,8 +19,6 @@ import SwiftUI
 struct WeatherRegionPickerSheet: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Environment(\.dismiss) private var dismiss
-    /// 버전 확인이 받아 온 서버의 날씨 원천 토큰(`AppVersionGate.weatherAttribution`) — 출처 줄을 그릴지 정한다.
-    @EnvironmentObject private var versionGate: AppVersionGate
 
     /// 지금 저장된 값이 가리키는 지역(체크 표시용). 되짚지 못한 옛 값이면 nil.
     let current: WeatherRegion?
@@ -34,8 +32,6 @@ struct WeatherRegionPickerSheet: View {
     @State private var countryBarHeight: CGFloat = 0
     /// 제목 아래 안내 줄(옛 값 안내 또는 고르는 법)의 실제 높이 — 같은 이유로 뺀다.
     @State private var noteHeight: CGFloat = 0
-    /// 목록 아래 날씨 출처 줄의 실제 높이 — 같은 이유로 뺀다. Dynamic Type 으로 줄 수가 바뀌어도 실측이라 맞는다.
-    @State private var attributionHeight: CGFloat = 0
 
     init(
         current: WeatherRegion?,
@@ -50,9 +46,6 @@ struct WeatherRegionPickerSheet: View {
 
     private var language: String { WeatherRegions.currentLanguage() }
 
-    /// 목록 아래 날씨 출처 줄을 그리는가 — 서버가 지금 쓰는 원천을 말할 때만(`WeatherAttribution.showsLine`).
-    private var showsAttribution: Bool { WeatherAttribution.showsLine(versionGate.weatherAttribution) }
-
     /// 제목 아래 안내 줄 — 되짚지 못한 옛 값이면 "목록에 없어요", 아니면 고르는 법과 위치 권한을 쓰지 않는다는
     /// 사실(지시서 v1.3 8.1). 안드로이드 `WeatherLocationDialog` 의 부제(`region_picker_legacy_value_hint` /
     /// `region_picker_hint`)와 같다. 줄은 언제나 있다 — 그래서 높이도 언제나 뺀다.
@@ -63,15 +56,10 @@ struct WeatherRegionPickerSheet: View {
         return String(localized: "목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요.")
     }
 
-    /// 목록 높이 상한에서 뺄 몫 — 나라 세그먼트(+ 그 아래 간격), 안내 줄, 출처 줄(+ 그 위 간격).
-    /// ⚠ 출처 줄은 **그릴 때만** 뺀다. 안 그리는데 빼면 목록이 그만큼 짧아지고, 그리는데 안 빼면 시트가 화면을
-    /// 꽉 채워 스크림이 사라진다. 판정은 높이 값이 아니라 `showsAttribution` 이다 — 한 번 그렸다 숨기면
-    /// `attributionHeight` 에는 옛 실측이 남는다.
+    /// 목록 높이 상한에서 뺄 몫 — 나라 세그먼트(+ 그 아래 간격), 안내 줄.
+    /// (목록 아래 날씨 출처 줄은 2026-11-09 에 '약관 및 개인정보 처리 동의' 화면으로 옮겼다 — `ConsentHistoryView`.)
     private var reservedListHeight: CGFloat {
-        var reserved = countryBarHeight + BottomSheetTitle.titleToContentSpacing
-        reserved += noteHeight + 3
-        if showsAttribution { reserved += attributionHeight + BottomSheetTitle.titleToContentSpacing }
-        return reserved
+        countryBarHeight + BottomSheetTitle.titleToContentSpacing + noteHeight + 3
     }
 
     var body: some View {
@@ -107,8 +95,6 @@ struct WeatherRegionPickerSheet: View {
                 // 때마다 시트 높이가 튄다. 셋 다 화면을 넘으므로 늘 스크롤 갈래로 둔다.
                 // ⚠ 세그먼트 몫(+ 그 아래 간격)을 **빼지 않으면** 시트가 화면을 꽉 채워 뒤 스크림이
                 // 사라진다 — 바깥을 눌러 닫을 곳이 없다(2026-09-30 시뮬레이터 실측).
-                // ⚠ 아래 출처 줄(+ 그 위 간격)도 **그릴 때는** 같은 이유로 뺀다(`reservedListHeight`) — 빼먹으면
-                // 스크림이 사라진다.
                 SheetScrollingContent(
                     alwaysScrolls: true,
                     reservedHeight: reservedListHeight
@@ -128,20 +114,6 @@ struct WeatherRegionPickerSheet: View {
                 .onChange(of: country) { _, _ in scrollToTop(proxy) }
             }
 
-            // 날씨 출처 — 목록 **아래 고정**. 원천과 가공해 쓴다는 사실은 기상법(출처 표시)과 気象庁 약관(공공데이터
-            // 이용규약 — 가공 시 그 사실을 적는다)이 요구한다. 지역을 고르는 곳이 이 시트 하나라(설정·편집기 공용)
-            // 여기 한 곳에만 둔다. 안드로이드 `WeatherLocationDialog` 의 `region_picker_weather_attribution` 과 같은 문장이다.
-            // ⚠ **서버가 그 원천을 쓴다고 말할 때만 그린다**(`showsAttribution`). 문장을 늘 그리면 서버의 원천 교체가
-            // 늦거나 되돌려진 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845).
-            if showsAttribution {
-                Text(String(localized: "날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공"))
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, BottomSheetTitle.horizontalPadding)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { attributionHeight = $0 }
-            }
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -171,17 +143,10 @@ struct WeatherRegionPickerSheet: View {
             dismiss()
         } label: {
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: region.displayName(language: language))
-                        .foregroundStyle(theme.palette.onSurface)
-                    // 날씨를 재는 대표 도시가 지역 이름과 다를 때만(경기 → 수원, 아이치 → 나고야).
-                    // 안드로이드 `region_picker_seat_description`("수원 날씨")과 같은 문장이다.
-                    if let seat = region.seatDisplayName(language: language) {
-                        Text(String(localized: "\(seat) 날씨"))
-                            .font(theme.typography.bodySmall)
-                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                    }
-                }
+                // ⚠ **둘째 줄("수원 날씨")을 두지 않는다**(2026-11-09 오너 "각 날씨 아래에 ~~ 날씨 쓴 거 없애").
+                // 날씨를 재는 곳이 이름과 다른 지역에만 붙던 줄이라 행 높이가 들쭉날쭉했다. 안드로이드도 같다.
+                Text(verbatim: region.displayName(language: language))
+                    .foregroundStyle(theme.palette.onSurface)
                 Spacer(minLength: 0)
                 if region.key == current?.key {
                     Image(systemName: "checkmark")
@@ -200,13 +165,14 @@ struct WeatherRegionPickerSheet: View {
     }
 }
 
-/// 지역 시트의 날씨 출처 줄을 그릴지 — **서버가 원천을 말할 때만**.
+/// 날씨 출처 줄을 그릴지 — **서버가 원천을 말할 때만**. 그리는 자리는 '약관 및 개인정보 처리 동의' 화면 맨 아래
+/// (`ConsentHistoryView.weatherAttributionLine`, 2026-11-09 지역 시트에서 옮겼다).
 ///
 /// 계약은 `GET /api/app/version` 의 `weather_attribution`(`AppVersionResponse.weatherAttribution` →
 /// `AppVersionGate.weatherAttribution`), 백엔드 단일 출처는 `packages/backend/src/lib/weather-attribution.ts`.
 /// 출처 문장은 서버가 **실제로 쓰는 원천**을 따라가야 한다 — 앱이 단정하면 서버의 원천 교체가 늦거나 되돌려진
 /// 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 규칙 원문은 `docs/spec/voice-and-message.md`
-/// 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」.
+/// 「날씨 출처 줄 — 서버가 원천을 말할 때만」.
 /// 안드로이드는 `showsWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`)이 같은 판정이다.
 enum WeatherAttribution {
     /// 서버의 날씨가 기상청(KR)·気象庁(JP)·NWS(US)의 예보에서 온다는 토큰.

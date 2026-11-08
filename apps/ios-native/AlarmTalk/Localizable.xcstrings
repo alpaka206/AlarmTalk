@@ -268,23 +268,6 @@
       },
       "shouldTranslate" : false
     },
-    "%@ 날씨" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weather in %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@の天気"
-          }
-        }
-      }
-    },
     "%@ 다시 울릴 준비 중" : {
       "extractionState" : "manual",
       "localizations" : {

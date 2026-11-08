@@ -1217,7 +1217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var updateStoreUrl by mutableStateOf("")
         internal set
     /**
-     * 서버가 알려 준 날씨 원천 토큰 — `GET /api/app/version` 의 `weather_attribution`. 지역 시트가 출처 줄을
+     * 서버가 알려 준 날씨 원천 토큰 — `GET /api/app/version` 의 `weather_attribution`. 법적 정보 화면(약관 및 개인정보 처리 동의)이 출처 줄을
      * 그릴지 이 값으로 정한다(`showsWeatherAttribution`) — 앱이 원천을 스스로 단정하지 않는다.
      * 저장하지 않고 새로 묻지도 않는다: [checkAppVersion] 이 받아 온 값을 이 뷰모델이 사는 동안만 들고,
      * 확인이 실패하면 null(숨김)로 되돌린다. 화면에는 `MainActivity` 가 `LocalWeatherAttribution` 으로 내려 준다.

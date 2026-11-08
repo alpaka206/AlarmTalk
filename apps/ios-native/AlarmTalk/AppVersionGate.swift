@@ -55,7 +55,7 @@ final class AppVersionGate: ObservableObject {
             storeURLString = policy.storeUrl
             // Android: appVersionCode in 1 until minSupportedVersion
             updateRequired = appVersionCode >= 1 && appVersionCode < policy.minSupportedVersion
-            // 지역 시트의 날씨 출처 줄 — 서버가 지금 쓰는 원천을 말할 때만 그린다(`WeatherAttribution.showsLine`).
+            // 날씨 출처 줄(약관 및 개인정보 처리 동의 화면) — 서버가 지금 쓰는 원천을 말할 때만 그린다(`WeatherAttribution.showsLine`).
             weatherAttribution = policy.weatherAttribution
         } catch {
             // 정책 조회 실패 시 앱 사용을 막지 않는다.

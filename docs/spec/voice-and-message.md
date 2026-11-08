@@ -1332,7 +1332,8 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
   - **나라를 바꾸면 목록은 곧바로 맨 위다**(애니메이션 없이). 고른 지역이 있는 나라로 되돌아와도 같다 —
     고른 지역을 찾아가는 것은 시트를 연 직후 한 번뿐이다(2026-09-30 사용자 지시).
   - **시트는 화면의 90% 까지만** 올라온다 — 꽉 채우면 뒤의 스크림이 사라져 바깥을 눌러 닫을 곳이 없다.
-  - **목록 아래 날씨 출처 한 줄** — 문장·보이는 조건·iOS 높이 규칙은 바로 아래 「지역 시트의 날씨 출처 줄」 한 곳에 있다.
+  - **지역 행은 이름 한 줄이다**(2026-11-09 오너). 날씨를 재는 곳이 이름과 다른 지역(경기 → 수원)에 붙던 둘째 줄
+    ("수원 날씨")과 목록 아래 날씨 출처 줄을 뺐다. 출처는 「날씨 출처 줄」의 새 자리(법적 정보 화면)로 옮겼다.
 - **새 알람**은 행에 옛 앱용 글자를 적고, `prerender-variant` 요청에 **`region=<키>` 를 함께** 보낸다
   (`country`·`city` 도 계속 보낸다 — 새 서버가 배포되기 전 창과 옛 서버 호환).
 - **공휴일 국가 = 지역의 나라.** 설정 화면의 '공휴일 달력' 행은 없다 — 규칙은
@@ -1345,11 +1346,17 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
   일본어 목록은 일본 도시 8개였는데 나라는 `대한민국` 으로 보냈다. 이 값들은 전부 위 규칙으로
   되짚힌다(회귀 테스트가 main·develop 의 옛 목록을 전부 돈다).
 
-##### 지역 시트의 날씨 출처 줄 — **서버가 원천을 말할 때만** (2026-10-05)
+##### 날씨 출처 줄 — **서버가 원천을 말할 때만** (2026-10-05, 자리는 2026-11-09 에 옮김)
 
-지역 시트(설정·편집기 공용 — 지역을 고르는 곳은 이 시트 하나다)의 목록 **아래에 고정**한 한 줄이 날씨의 출처를
-말한다. 원천과 가공했다는 사실을 적는 것은 기상법 제12조의3 ⑤(출처 표시)와 気象庁 공공데이터 이용규약(가공했으면
-그 사실을 적고, 국가가 만든 것처럼 보이게 하지 않는다)이 요구한다. 문장은 세 언어 그대로이고 두 앱이 같다:
+**더보기 › 내 정보 › 약관 및 개인정보 처리 동의** 화면 **맨 아래 한 줄**이 날씨의 출처를 말한다(안드로이드
+`ConsentHistoryScreen`, iOS `ConsentHistoryView.weatherAttributionLine`). 원천과 가공했다는 사실을 적는 것은 기상법 제12조의3
+⑤(출처 표시)와 気象庁 공공데이터 이용규약(가공했으면 그 사실을 적고, 국가가 만든 것처럼 보이게 하지 않는다)이 요구하고,
+**둘 다 자리는 정하지 않는다.**
+- 2026-10-05~11-09 에는 지역 시트(설정·편집기 공용)의 목록 아래에 고정해 두었다. 오너가 시트에서 빼고("날씨 고르는 거
+  아래에 정보 출처 적은 것도 없애") 법적 정보 화면에 두기로 했다("약관 및 개인정보 처리 동의 이런 데 넣으면 안 되는
+  거야?"). **약관 본문 속 한 문장으로 묻지 않는다** — 찾을 수 없으면 표기의 뜻이 없다. 그리는 자리는 앱 전체에 하나다.
+
+문장은 세 언어 그대로이고 두 앱이 같다:
 
 - ko `날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공`
 - en `Weather data: forecasts from KMA (Korea), JMA (Japan) and the U.S. National Weather Service, processed by AlarmTalk`
@@ -1369,8 +1376,6 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
     동안에는 세 원천을 부르는 코드가 있다.
 - **보이는 규칙**: 토큰이 **정확히** `"kma_jma_nws"` 일 때만 그린다. 그 밖 — 모르는 값·`null`·필드가 없는 옛 서버·버전
   확인 실패·아직 응답 전 — 은 숨긴다(대소문자·공백을 고쳐 읽지 않는다).
-  - iOS 는 그 줄의 실측 높이(+ 그 위 간격)를 목록 높이 상한에서 **그릴 때만** 뺀다 — 그리는데 안 빼면 시트가 화면을
-    꽉 채워 스크림이 사라지고, 안 그리는데 빼면 목록만 짧아진다.
 - **값은 이 프로세스 동안만** 들고 있다 — 저장하지 않고, 이것 때문에 새로 묻지도 않는다. 버전 확인(안드로이드
   `checkAppVersion` — 앱 화면이 뜰 때, iOS `AppVersionGate.checkAppVersion` — 실행 때 한 번)이 받아 온 값을 쓰고,
   확인이 **실패하면 지운다** — 앞 응답의 원천을 계속 말하지 않는다. 서버가 원천을 되돌리면 **다음 확인부터** 숨는다
@@ -1710,7 +1715,7 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
   FAQ 의 '독자 예보'(허가 없이 예보를 만드는 것) 우려 때문이다. `null` → 클립 8.
 - ⚠ **날씨 숫자의 원천을 LLM(Gemini) 으로 바꾸지 말 것.** 모델은 관측·예보 값을 가진 곳이 아니다 — 그럴듯한
   숫자를 지어낸다.
-- **출처 표기(양 앱, 결정 D4)**: 문장·근거·보이는 조건(서버 토큰 `weather_attribution`)은 위 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」 한 곳에 있다.
+- **출처 표기(양 앱, 결정 D4)**: 문장·근거·보이는 조건(서버 토큰 `weather_attribution`)은 위 「날씨 출처 줄 — 서버가 원천을 말할 때만」 한 곳에 있다.
 - **개인정보**: 원천으로 나가는 것은 **고정 격자·예보구역 코드와 날짜뿐**이고 이용자 식별자가 없다. 호출은 전부
   서버(Cloudflare Worker)에서 나가 원천은 이용자 단말 IP 도 보지 못한다. `docs/qa/cleanup-audit-2026-08-01.md` 의
   Open-Meteo 판정과 같은 논리로 **위탁·국외이전 고지 대상이 아니다**(다시 볼 조건도 같다 — 정밀 좌표·식별자 전송,
@@ -1721,7 +1726,7 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 - **PR A(앱, #845 — develop 머지 2026-10-05)**: 출처 줄(서버 토큰이 `"kma_jma_nws"` 일 때만 그린다)과 주석. 다음
   스토어 빌드에 싣는다.
 - **PR B(백엔드·shared·스펙, #846)**: 원천 교체와 출처 토큰(`"kma_jma_nws"`)을 함께 낸다. prod 에는 **두 앱의 출처
-  표기 버전이 두 스토어에 모두 게재된 뒤** 간다(위 「지역 시트의 날씨 출처 줄」의 '순서') — develop 에 먼저 머지하면
+  표기 버전이 두 스토어에 모두 게재된 뒤** 간다(위 「날씨 출처 줄」의 '순서') — develop 에 먼저 머지하면
   그때까지 main 머지를 붙잡는다(결정 D5). 그 사이 prod 는 Open-Meteo 무료(비상업 약관) 그대로다.
   - 머지 전: 유닛 테스트(실측 픽스처) + 읽기 전용 점검(`npm run check:weather`).
   - dev 하루 관측: 슬롯 4개, `weather.fetch` 의 source 별 200/00, `cpuTime`, Sentry 0건.
@@ -1742,7 +1747,7 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 | D1 | 섞인 강수(KR PTY 2, JP 雨か雪, US rain_snow·sleet) | **눈**(세 나라 일관) | `MIXED_PRECIPITATION_IS_SNOW`(`lib/weather-source.ts`) |
 | D2 | US 안개 | patchy 제외 | `lib/weather-nws.ts` |
 | D3 | 흐림 임계값 | KR 낮 SKY ≥ 3 이 절반 이상 / US 07~19시 하늘 평균 > 50 / JP くもり 계열 | 각 어댑터 |
-| D4 | 출처 문구 | 「지역 시트의 날씨 출처 줄」의 '가공' 문구. 랜딩에 전문 출처(공공누리 1유형 문구와 링크)를 둘지는 미정 | 앱 문자열 |
+| D4 | 출처 문구 | 「날씨 출처 줄」의 '가공' 문구. 랜딩에 전문 출처(공공누리 1유형 문구와 링크)를 둘지는 미정 | 앱 문자열 |
 | D5 | 순서 | 출처 줄을 그리는 앱이 두 스토어에 모두 게재된 뒤에 백엔드를 prod 로 | 배포 |
 | D6 | 전환 | 원천별 캐시를 분리해 전환·롤백 모두 출처가 섞이지 않게 한다 | 마이그레이션 #127 |
 | D7 | 강수확률만으로 비라고 보는 하한 | 강수 **형태**를 주는 원천(KR PTY·PCP, JP 날씨 코드)은 형태가 1차이고 강수확률은 **60** 부터, NWS 는 **30**('Chance') 그대로. 예전 공통 30 은 원천이 '강수 없음'이라고 한 날도 비로 만들었다(2026-10-01 실측: KR 비 판정 34건 중 33건이 PTY 전 시간 0, JP 54건 중 33건이 晴·くもり) | `CODED_SOURCE_RAIN_PROBABILITY_THRESHOLD`(`lib/weather-signal.ts`) ← `finalizeSourceDay` 의 `source` |
@@ -2953,7 +2958,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만), 프로필 저장은 바꾼 칸만 지금 세션 위에(`AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit`, 끝나면 확인 조회), 밀린 응답도 받아 적기 — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest`·`ProfileSaveKeepsAccountAnswerTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation` ← `SettingsView.observation(of:)`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만 — 바꾼 칸만 응답 뒤의 세션 위에, 끝나면 `refreshUser`), 떠날 때 `beginLeavingAccount` + 세션을 비운 뒤 다시 지우기 — 회귀 `AccountPromptSettingsAdoptionTests`(`editBase` 판정 — ⚠ 화면의 두 호출부 `onSelect`·`saveFortuneDraft` 는 SwiftUI 라 유닛 테스트가 닿지 않는다)·`AuthViewModelTests`(관찰 축·재로그인·로그아웃 창) | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
 | 편집기 문구 화면 → 내 계정 설정(직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
 | 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
-| 지역 시트 날씨 출처 줄(목록 아래 고정 · ko·en·ja 같은 문장) — **서버 토큰이 정확히 `"kma_jma_nws"` 일 때만**, 그 밖·확인 실패·응답 전은 숨김 | `WeatherLocationDialog` 의 `if (showsAttribution)` ← 판정 `showsWeatherAttribution` ← `LocalWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`, `MainActivity` 가 내려 준다) · 문장 `region_picker_weather_attribution`(`res/values{,-en,-ja}/strings.xml`, 그리는 자리는 이 하나) — 회귀 `WeatherAttributionTest` | `WeatherRegionPickerSheet` 의 `showsAttribution`(그릴 때만 `attributionHeight` 를 `reservedListHeight` 에서 뺀다) ← 판정 `WeatherAttribution.showsLine` · `Localizable.xcstrings` — 회귀 `WeatherAttributionTests` | — |
+| 날씨 출처 줄(약관 및 개인정보 처리 동의 화면 맨 아래 · ko·en·ja 같은 문장 · 2026-11-09 지역 시트에서 옮김) — **서버 토큰이 정확히 `"kma_jma_nws"` 일 때만**, 그 밖·확인 실패·응답 전은 숨김 | `ConsentHistoryScreen` 의 `if (showsWeatherAttribution(LocalWeatherAttribution.current))` ← 판정 `showsWeatherAttribution` ← `LocalWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`, `MainActivity` 가 내려 준다) · 문장 `legal_weather_attribution`(`res/values{,-en,-ja}/strings.xml`, 그리는 자리는 이 하나) — 회귀 `WeatherAttributionTest` | `ConsentHistoryView.weatherAttributionLine` ← 판정 `WeatherAttribution.showsLine` · `Localizable.xcstrings` — 회귀 `WeatherAttributionTests` | — |
 | 날씨 출처 토큰 계약 — `GET /api/app/version` 의 `weather_attribution`(불투명 토큰 · 지금 `"kma_jma_nws"` — 원천 교체(#846)가 올렸다, 되돌리면 `null`) · 저장하지 않고 새로 묻지 않는다 · 확인이 실패하면 지운다 | `AppVersionResponse.weatherAttribution`(`network/AuthApi.kt`) → `MainViewModel.weatherAttribution` ← `checkAppVersion`(실패면 null) — 회귀 `WeatherAttributionTest` | `AppVersionResponse.weatherAttribution`(`AlarmTalkAPIModels.swift`) → `AppVersionGate.weatherAttribution` ← `checkAppVersion`(실패면 nil) — 회귀 `AppVersionGateTests`·`WeatherAttributionTests` | `WEATHER_ATTRIBUTION`(`lib/weather-attribution.ts`) → `GET /api/app/version`(`index.ts`) — 회귀 `app-version.test.ts`(필드가 실리고 `"kma_jma_nws"` · Open-Meteo 를 부르는 코드가 남아 있으면 `null` · 이 토큰을 말하는 동안 세 원천을 부르는 코드가 있다) |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |
 | 서버 미리 계산 · 현지 슬롯(21시 내일~+3 / 06시 오늘~+3) · due([내일, +3]) · 틱 예산(SELECT 1 + fetch 12(KMA 6·JMA 8·NWS 4) + batch 1) · 실패 세 갈래(설정 실패는 원천 전체 / 그 지역의 칸 — 지역의 칸이면 원천을 끄지 않는다 · 예산 소진은 틱 상한이면 그 지역만 넘기고 워커 한도면 멈춘다) · 슬롯 끝 경보(마지막 틱은 날씨를 5분 틱의 맨 앞에서 — 경보도 subrequest 라 새 예산으로 · 그래도 한도면 DB 에 있는 행만 센다) · 오늘 극값 메우기(원천 → 36h 저장 행 → 남은 시각 근사값) · 읽기 36h·지평 가드([오늘, +3] 밖은 네트워크 없이 null) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #127 `weather_region_daily_official`(옛 캐시와 분리) · `hasOpenWeatherSlot`·`hasWeatherSlotLastTick`·`openWeatherSlot`·`refreshWeatherRegionDaily`(`evaluateSlotEnds`) · 읽기 `resolveRegionVariantIndex` — `lib/weather-region-daily.ts` · 마지막 틱의 순서 `scheduled`(`isWeatherSlotLastTick` → `weatherRegionDailyTick`, `src/index.ts`) · 원천 디스패치·실패 분류(`SourceFailureScope`)·이어받기·근사값 `lib/weather-source.ts`(`finalizeSourceDay`) · 어댑터 `lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`(지역의 칸 404 는 `scope: 'region'`), 회귀 `weather-region-daily.test.ts`(실제 libSQL)·`weather-kma`·`weather-jma`·`weather-nws.test.ts`(2026-10-01 실측 픽스처)·`scheduled-weather-last-tick.test.ts`(실행 하나의 subrequest 모형) |
@@ -3008,7 +3013,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
   test/scheduled-weather-last-tick.test.ts test/weather-sources-dry-run.test.ts test/app-version.test.ts` — 픽스처는
   2026-10-01 실측 응답이다(키 없음). `scheduled-weather-last-tick` 은 마지막 틱의 순서(날씨가 5분 틱의 맨 앞 — 「실패」),
   `weather-sources-dry-run` 은 점검 스크립트의 드라이런 분류와 JP 오늘의 시각별 기대값(아래)을, `app-version` 은 출처
-  토큰이 실제 원천과 맞는지(「지역 시트의 날씨 출처 줄」)를 지킨다.
+  토큰이 실제 원천과 맞는지(「날씨 출처 줄」)를 지킨다.
   `packages/shared` 의 `weather-regions.test.ts` 가 KR 격자를 LCC 로 다시 계산한다. ⚠ 이 절의 규칙에 회귀 테스트
   파일을 더하면 이 명령에도 더한다 — 「구현 지도」가 대는 파일이 여기서 빠지면 로컬에서 그 회귀가 보이지 않는다.
 - **읽기 전용 점검**(DB 무접촉, 키는 출력하지 않는다): `npm run check:weather -- --env-file .dev.vars.dev` — NWS

@@ -110,9 +110,9 @@ describe('appVersionPolicy', () => {
   });
 });
 
-// 지역 시트의 날씨 출처 줄은 **서버가 원천을 말할 때만** 보인다(코덱스 #845) — 두 앱은 이 필드가 정확히
+// 앱의 날씨 출처 줄은 **서버가 원천을 말할 때만** 보인다(코덱스 #845) — 두 앱은 이 필드가 정확히
 // 'kma_jma_nws' 일 때만 "기상청 · 気象庁 · 미국 기상청(NWS)" 출처를 그리고, 그 밖은 숨긴다.
-// 규칙: docs/spec/voice-and-message.md 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」.
+// 규칙: docs/spec/voice-and-message.md 「날씨 출처 줄 — 서버가 원천을 말할 때만」.
 describe('GET /api/app/version — weather_attribution', () => {
   // 원천을 공식 예보(기상청·気象庁·NWS)로 바꾼 변경(#846)이 `WEATHER_ATTRIBUTION` 과 **함께** 이 기대값을 올렸다.
   // 원천을 되돌리면 둘을 함께 null 로 되돌린다.

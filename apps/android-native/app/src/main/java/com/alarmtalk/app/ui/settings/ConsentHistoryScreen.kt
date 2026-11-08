@@ -99,6 +99,8 @@ internal fun ConsentHistoryScreen(
             onBack = onBack,
             modifier = Modifier.padding(top = 12.dp),
         )
+    // 날씨 출처 줄을 그릴까(아래 맨 끝 항목) — 컴포지션 지역값은 목록 빌더 밖에서 읽는다.
+    val showsAttribution = showsWeatherAttribution(LocalWeatherAttribution.current)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
@@ -195,6 +197,23 @@ internal fun ConsentHistoryScreen(
                         onOpen = { context.findHostActivity()?.let { RewardedAds.showPrivacyOptions(it) } },
                     )
                 }
+            }
+        }
+
+        // 날씨 정보 출처 — 화면 **맨 아래 한 줄**(2026-11-09 지역 시트에서 옮겼다 — 오너 "약관 및 개인정보 처리 동의
+        // 이런 데 넣으면 안 되는 거야?"). 원천과 가공해 쓴다는 사실을 적는 것은 기상법(출처 표시)과 気象庁 공공데이터
+        // 이용규약(가공 시 그 사실)이 요구하고, 둘 다 **자리는 정하지 않는다** — 법적 정보 화면이면 찾을 수 있다.
+        // ⚠ **서버가 그 원천을 쓴다고 말할 때만 그린다**([showsWeatherAttribution]). 늘 그리면 서버의 원천 교체가
+        // 늦거나 되돌려진 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 그리는 자리는 앱 전체에 이 하나다.
+        // iOS 짝은 `ConsentHistoryView` 의 같은 자리다.
+        if (showsAttribution) {
+            item {
+                Text(
+                    text = stringResource(R.string.legal_weather_attribution),
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
