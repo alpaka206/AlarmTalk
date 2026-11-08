@@ -242,17 +242,20 @@ private struct ConsentRow: View {
 
     var body: some View {
         let row = HStack(spacing: 12) {
-            Text(label)
-                .font(theme.typography.bodyLarge)
-                .fontWeight(.semibold)
-                .foregroundStyle(theme.palette.onSurface)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if showStatus {
-                Text(statusText)
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            // ⚠ **동의 날짜는 이름 아래 줄이다**(2026-11-09) — 오른쪽에 날짜·'동의 철회'·화살표를 다 두면 이름이 눌려
+            // 두 줄로 감겼다. 안드로이드 `ConsentHistoryScreen` 의 `ConsentRow` 와 같다.
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(theme.typography.bodyLarge)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(theme.palette.onSurface)
+                if showStatus {
+                    Text(statusText)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // 철회는 동의한 상태에서만 뜻이 있다.
             if let onWithdraw, record?.agreed == true {
@@ -319,19 +322,23 @@ private struct ConsentToggleRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(label)
-                .font(theme.typography.bodyLarge)
-                .fontWeight(.semibold)
-                .foregroundStyle(theme.palette.onSurface)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(theme.typography.bodyLarge)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(theme.palette.onSurface)
+                // 값을 못 읽었으면 'off' 로 오인되지 않게 스위치 대신 다시 시도 줄을 보여준다 — **이름 아래**다
+                // (2026-11-09, 오른쪽에 두면 이름이 눌려 두 줄로 감겼다).
+                if loadFailed && agreed == nil {
+                    Button(String(localized: "불러오지 못했어요 · 다시 시도"), action: onRetry)
+                        .font(theme.typography.bodySmall)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            if loadFailed && agreed == nil {
-                // 값을 못 읽었으면 'off' 로 오인되지 않게 스위치 대신 다시 시도 행을 보여준다.
-                Button(String(localized: "불러오지 못했어요 · 다시 시도"), action: onRetry)
-                    .font(theme.typography.bodyMedium)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-            } else {
+            if !(loadFailed && agreed == nil) {
                 Toggle("", isOn: Binding(get: { agreed == true }, set: onChange))
                     .labelsHidden()
                     .alarmTalkSwitch()

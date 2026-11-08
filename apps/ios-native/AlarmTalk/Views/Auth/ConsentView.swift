@@ -118,7 +118,7 @@ struct ConsentView: View {
 
             // ⚠ `\n` 으로 줄을 **강제하지 않는다**(2026-08-18). 두 줄로 못 박으면 글자 크기
             // 설정·기기 폭과 무관하게 항상 두 줄을 차지해 목록이 그만큼 밀린다.
-            Text(isReconsent ? String(localized: "약관이 개정되어 다시 동의가 필요해요") : String(localized: "서비스 이용을 위해 약관에 동의해 주세요"))
+            Text(isReconsent ? String(localized: "약관이 업데이트되었어요") : String(localized: "서비스 이용을 위해\n약관에 동의해 주세요"))
                 .font(.title2.weight(.bold))
                 .foregroundStyle(AlarmTalkTheme.text)
 

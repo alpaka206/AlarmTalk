@@ -267,22 +267,26 @@ private fun ConsentToggleRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        // 로드 실패(값 미확보)면 'off'로 오인되지 않게 스위치 대신 다시 시도 행을 보여준다.
-        if (loadFailed && agreed == null) {
+        // 로드 실패(값 미확보)면 'off'로 오인되지 않게 스위치 대신 다시 시도 줄을 보여준다.
+        // ⚠ **그 줄은 이름 아래다**(2026-11-09 — 오른쪽에 두면 이름이 130dp 로 눌려 "광고성 정보 수신 / 동의" 로 감겼다).
+        val showRetry = loadFailed && agreed == null
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = stringResource(R.string.settings_marketing_load_failed),
-                modifier = Modifier.clickable(onClick = onRetry),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-        } else {
+            if (showRetry) {
+                Text(
+                    text = stringResource(R.string.settings_marketing_load_failed),
+                    modifier = Modifier.clickable(onClick = onRetry),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (!showRetry) {
             // ⚠ **쓰기 중이라고 스위치를 끄지 말 것**(2026-08-11 지적 "위치만 옮겨졌다가
             // 색이 나중에 나온다"). 비활성으로 만들면 손잡이는 낙관적으로 옮겨가는데 색이
             // **비활성 회색**으로 바뀌었다가 응답이 와야 제 색이 돌아온다 — 켜고 끌 때마다
@@ -323,19 +327,22 @@ private fun ConsentRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        if (showStatus) {
+        // ⚠ **동의 날짜는 이름 아래 줄이다**(2026-11-09 오너 "두 줄씩 되는 거 적절하게"). 날짜·'동의 철회'·화살표를
+        // 모두 오른쪽에 두면 이름이 130dp 로 눌려 "음성 생체정보 처리 / 동의" 로 감겼다. iOS `ConsentRow` 도 같다.
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
             )
+            if (showStatus) {
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         if (withdrawAction != null) {
             Text(

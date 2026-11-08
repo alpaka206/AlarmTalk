@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.dp
 
 /**
@@ -372,7 +373,11 @@ private fun ConsentRow(
             ) {
                 Text(
                     text = label,
-                    style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
+                    // 동의 항목 이름은 **균형 줄바꿈**(2026-11-09) — "[필수] 음성 AI 처리를 위한 국외 이전 / 동의" 처럼
+                    // 마지막 줄에 '동의' 하나만 남지 않게. 문구는 법무 문서(`docs/legal/consent-and-permission-copy.ko.md`)의
+                    // 것이라 줄이지 않는다. 아이폰은 시스템이 마지막 줄의 외톨이 어절을 피한다.
+                    style = (if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge)
+                        .copy(lineBreak = LineBreak.Heading),
                     fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal,
                     color = TextOnScene,
                 )

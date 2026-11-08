@@ -9967,24 +9967,24 @@
         }
       }
     },
-    "서비스 이용을 위해 약관에 동의해 주세요" : {
+    "서비스 이용을 위해\n약관에 동의해 주세요" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Please agree to the terms to use the service"
+            "value" : "Please agree to the terms\nto use the service"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サービスをご利用いただくために規約に同意してください"
+            "value" : "サービスをご利用いただくために\n規約に同意してください"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "서비스 이용을 위해 약관에 동의해 주세요"
+            "value" : "서비스 이용을 위해\n약관에 동의해 주세요"
           }
         }
       }
@@ -10099,24 +10099,24 @@
         }
       }
     },
-    "약관이 개정되어 다시 동의가 필요해요" : {
+    "약관이 업데이트되었어요" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The terms have changed. Please review and agree again."
+            "value" : "We have updated our terms"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "規約が改定されたため、改めて同意が必要です。"
+            "value" : "規約が更新されました"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "약관이 개정되어 다시 동의가 필요해요"
+            "value" : "약관이 업데이트되었어요"
           }
         }
       }

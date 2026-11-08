@@ -49,6 +49,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -782,6 +784,9 @@ private fun RingingMessage(text: String) {
         lineHeight = 33.sp,
         fontWeight = FontWeight.Medium,
         textAlign = TextAlign.Center,
+        // 가운데 정렬 문단은 **균형 줄바꿈**(2026-11-09) — 마지막 줄에 "챙겨요." 하나만 남지 않게. 글꼴은 테마 것을 잇는다
+        // (`style` 을 새 TextStyle 로 주면 Pretendard 가 빠진다).
+        style = LocalTextStyle.current.copy(lineBreak = LineBreak.Heading),
         // ⚠ **자르지 않는다**(2026-09-09 지시). 예전에는 3줄 + `…` 였는데, 알람이 읽어 줄
         //   문장을 화면이 중간에서 끊으면 무슨 말인지 확인할 길이 없다. 긴 문장은 그대로
         //   흐르게 두고, 자리가 모자라면 위아래 여백(weight Spacer)이 먼저 줄어든다.

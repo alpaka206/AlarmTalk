@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,8 +85,10 @@ internal object IosAlertType {
     // 안드로이드 글리프 비율(14.9/17 = 0.874)로 역산하면 iOS 본문과 같은 크기를 내는 값이
     // **14.5sp** 다. 13 으로 두면 글자가 작아 보일 뿐 아니라 **한 줄에 더 들어가서**
     // 같은 문장이 아이폰 3줄 / 갤럭시 2줄로 갈린다(사용자가 그걸 먼저 알아챘다).
-    val Title = TextStyle(fontSize = 17.sp, lineHeight = 21.sp, letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold)
-    val Message = TextStyle(fontSize = 14.5.sp, lineHeight = 20.sp, letterSpacing = 0.sp)
+    // 제목·본문은 **균형 줄바꿈**(`LineBreak.Heading`) — 두 줄로 넘어갈 때 마지막 줄에 어절 하나만 남지 않게
+    // (2026-11-09, `theme/AlarmTalkTypography.kt` 의 `balancedLines` 와 같은 이유). 아이폰 알럿은 시스템이 그렇게 한다.
+    val Title = TextStyle(fontSize = 17.sp, lineHeight = 21.sp, letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold, lineBreak = LineBreak.Heading)
+    val Message = TextStyle(fontSize = 14.5.sp, lineHeight = 20.sp, letterSpacing = 0.sp, lineBreak = LineBreak.Heading)
     val Field = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 0.sp)
     val Action = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = 0.sp)
 }
