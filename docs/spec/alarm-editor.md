@@ -84,24 +84,10 @@
   예외는 [voice-and-message.md](voice-and-message.md) §4 「적용 대상은 새 알람뿐」.
   빈 직접 입력으로 저장을 누르면 **요청 전에** 알럿으로 막는다(`MANUAL_TEXT_MISSING`).
 
-## 2-1. 반복 자리의 '날짜 지정(한 번)' (2026-10-26)
+## 2-1. 반복 자리의 '날짜 지정(한 번)' — 없앴다 (2026-11-09)
 
-반복 요일 칩 아래에 **'날짜 지정'** 스위치가 있다. 켜면 그 알람은 고른 날짜에 한 번만 운다 — 규칙 전문(저장값·
-시간대·울림·서버)은 [alarm-lifecycle.md](alarm-lifecycle.md) §4 다. 여기는 컨트롤만 적는다.
-
-- 스위치를 켜면 요일 선택이 모두 풀리고(`repeatDaysMask = 0`), 날짜는 **지금 고른 시각이 아직 오지 않았으면 오늘,
-  지났으면 내일**로 시작한다. 시간대는 그 순간의 기기 시간대다.
-- 켜져 있는 동안 스위치 아래에 **날짜 줄**이 있다 — 누르면 날짜 고르기 폼 시트(§4 의 두 번째 형태 — 좌 `취소` ·
-  가운데 제목 · 우 확정)가 뜬다. 오늘보다 앞의 날은 고를 수 없다.
-- 요일 칩을 하나라도 누르면 날짜 지정이 꺼진다(둘은 배타적이다). '공휴일에는 끄기' 는 요일을 고른 알람에만 있으므로
-  날짜 지정 중에는 보이지 않는다.
-- 위의 요약 줄은 반복 알람이면 요일, 날짜 알람이면 **그 날짜**(오늘·내일이면 그 말을 붙인다)를 말한다.
-- 이미 저장된 날짜 알람을 열면 그 날짜·시간대를 그대로 쓴다 — 날짜를 다시 골라도 **시간대는 저장된 값**이다(사용자가
-  확인한 값). 기기 시간대와 다르면 날짜 줄 아래에 "<시간대> 기준 · 이 기기 시각 <날짜 시각>" 을 쓴다. 스위치를 껐다
-  켜면 지금 기기 시간대로 새로 시작한다.
-- 저장을 누르면 지난 시각·같은 시각 알람을 **그 자리에서** 다시 재 알럿으로 막는다(alarm-lifecycle.md §4-3). 버튼은
-  죽이지 않는다.
-- 날짜 지정은 직전 선택으로 이어받지 않는다 — 새 알람은 언제나 꺼진 채 열린다.
+v1.3 W10(#955)이 요일 칩 아래에 두었던 '날짜 지정' 스위치·날짜 줄·날짜 고르기 시트를 출시 전에 오너 결정으로 지웠다. 반복
+자리는 요일 칩과 '공휴일에는 끄기'(요일을 고른 알람에만)뿐이다. 기록은 [alarm-lifecycle.md](alarm-lifecycle.md) §4.
 
 ## 3. 음성 출력
 
@@ -242,12 +228,12 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   (실제로 반영된 뒤 — iOS 는 연타를 합친 마지막 값이 켜짐일 때 한 번). 끄기·삭제·여러 개 삭제·다시 울림에는 띄우지 않는다.
 - **무엇을**: 홈 헤드라인과 **같은 문장·같은 계산**이다 — 안드로이드 `hs_status_ring_in` + `remainingDurationLabel`, iOS
   `NextAlarmHeadline.remainingLabel` + "%@ 후에 울려요.". 기준은 **방금 켠 그 알람의 예약 시각**이다(전체의 다음 알람이 아니다).
-  올림이라 1분 미만도 "1분 후에 울려요." 다. 날짜 지정 알람은 그 날짜까지의 남은 시간이다("2일 3시간 후에 울려요.").
+  올림이라 1분 미만도 "1분 후에 울려요." 다.
 - **어디에·얼마나**: 화면 아래(하단 탭 위)에 약 3초. 안드로이드는 기존 스낵바(정보, 액션 없음), iOS 는 같은 자리·같은 결의 캡슐 안내.
   누르거나 화면을 옮겨도 막지 않는다. 스크린 리더에는 같은 문장을 알린다.
 - **권한이 모자랄 때**: 안드로이드는 그래도 울리므로(CLAUDE.md 「알람 권한 3종」) 같은 문장을 띄운다. iOS 는 AlarmKit 권한이 없으면
   예약이 안 되므로 띄우지 않는다(헤드라인과 같은 판단).
-- 지난 날짜의 날짜 지정 알람처럼 켜지지 않은 경우에는 띄우지 않는다(그 경우의 알럿이 따로 있다).
+- 켜기가 실패해 켜지지 않은 경우에는 띄우지 않는다.
 
 ## iOS 중복 시각 알람 교체의 실패 처리
 
@@ -292,7 +278,6 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 저장 버튼의 로컬 확인 — IO 에서 · 찾는 동안은 '저장 중'(두 번째 탭은 버림) · 오프라인 판정도 그 확인으로(§6) | `ui/editor/ManualAudioReuseGate.kt` 의 `ManualAudioReuseGate`(`request` · `inFlight` — 편집기의 `busy` 가 함께 본다) ← `AlarmEditorScreen` 의 `saveEditor`(찾으면 `submitDraft`, 못 찾으면 오프라인 알럿 또는 `startGeneration`) · 찾기 `data/AlarmAudioStore.kt` 의 `findReusableTtsAudio` · 알럿 문자열 `saveBlockAlertStrings`(저장 버튼과 저장 흐름이 함께 쓴다) | — |
 | 세부 설정 행 순서(알람음 → 진동) | `ui/editor/AlarmSettingsCard.kt` 의 `AlarmSettingsCard` | 알람음 행 하나(`AlarmEditorSheet.detailSettingsSection`) |
 | 진동 값 18종(서버 `packages/backend/src/routes/alarm-helpers.ts` 의 `VIBRATION_PATTERNS` 는 옛 앱 올리기의 검사용, 세 목록 비교 `scripts/check-vibration-patterns.py`) | `data/AlarmConstants.kt` 의 `VibrationPatterns.all`(서버로 보내지 않는다 — 2026-10-29) | `AlarmEnums.swift` 의 `VibrationPattern`(18종 — 화면은 없다) ← `LocalAlarmRecord.vibrationPatternEnum`(모르는 값은 `.default`) → `AlarmEditorSheet` 저장이 `rawValue` 로 적는다 |
-| 반복 자리의 날짜 지정(스위치·날짜 줄·날짜 시트) | `ui/editor/AlarmEditorControls.kt` 의 `RepeatSelector`·`DatedAlarmRow`·`DatedAlarmDatePickerSheet` · `AlarmEditorState.enterDatedMode`·`toggleRepeatDay` | `Views/Editor/DatedAlarmToggle.swift` · `AlarmEditorSheet.datedAlarmSection`·`datedPickerContent`(`formSheet`) · `AlarmEditDraft.enterDatedMode`·`leaveDatedMode`(요일을 고르면 `repeatDaysMask` 의 `.onChange` 가 끈다) |
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |
 | 폼 시트 | `ui/components/WakerModal.kt` 의 `WakerFormSheet` | `Views/Common/FormSheet.swift` |
@@ -312,7 +297,6 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 재생 방식 세그먼트 존재 | `AlarmTalkUITests/FunctionalE2EUITests.swift` |
 | 알람 전용 → 목소리 = 직전 선택(없으면 기본 인사말), 빈 직접 입력은 요청 전 차단 | `AlarmEditorStateTest`(안드로이드) · `AlarmTalkTests/MessageContextMemoryTests.swift`(iOS) |
 | 저장 버튼의 로컬 확인은 IO 에서 한 번 · 도는 동안의 탭은 버림 · 찾으면 서버 없이 저장 · 그 사이 편집기가 바뀌었으면 버림 · 저장 사유는 파일을 읽지 않는다(§6) | `ManualAudioReuseGateTest`(안드로이드 — `aLookupResultIsDroppedWhenTheEditorChangedMeanwhile`) |
-| 날짜 알람 — 지난 시각·같은 시각 막기, 시간대 고정 계산, 요일과 배타 | `DatedAlarmEditorTest`·`AlarmTimeCalculatorTest`(안드로이드) · iOS `DatedAlarmTests` |
 | 선택 시트에 '닫기' 가 없는가 | `AlarmTalkUITests/VoiceSheetScreenshotUITests.swift` |
 
 ⚠ **계산부 테스트만으로는 부족하다.** 식이 맞는지만 보고 **연결돼 있는지**는 보지 못한다 —

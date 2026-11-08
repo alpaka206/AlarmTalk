@@ -31,7 +31,6 @@ type AlarmWriteBody = {
   is_active?: boolean;
   repeat_days?: number[];
   voice_profile_id?: string | null;
-  target_date?: string | null;
 } & Record<string, unknown>;
 
 alarmMutation.post('/', async (c) => {
@@ -67,7 +66,6 @@ alarmMutation.post('/', async (c) => {
         vibration_pattern: (body.vibration_pattern as VibrationPattern | undefined) ?? 'default',
         timezone: normalizeTimezone(body.timezone),
         voice_profile_id: body.voice_profile_id ?? null,
-        target_date: body.target_date ?? null,
       },
     },
     201,

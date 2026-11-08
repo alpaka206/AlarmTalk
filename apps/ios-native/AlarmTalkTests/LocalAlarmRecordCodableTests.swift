@@ -240,6 +240,39 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertFalse(rewritten.contains("remote-message-"))
     }
 
+    /// 날짜 지정 알람(2026-11-09 제거, `docs/spec/alarm-lifecycle.md` §4)을 쓰던 개발 빌드가 남긴 JSON — 날짜 칸
+    /// 두 개(`targetDate`·`targetTimezone`)가 남아 있다. 한 행이라도 던지면 `LocalAlarmPersistence.load` 가 알람 **전부**를
+    /// 버리므로, 모르는 칸으로 무시하고 나머지는 그대로 읽어야 한다. 다시 쓴 JSON 에는 그 칸이 남지 않는다.
+    func test_legacyDatedAlarmJSON_decodesAndDropsDateFields() throws {
+        let json = """
+        [
+          {
+            "id": "dated", "label": "내일 한 줄", "hour": 7, "minute": 30, "fireAtMillis": 1761517800000,
+            "repeatDaysMask": 0, "playMode": "alarm_only", "enabled": false, "state": "dismissed",
+            "targetDate": "2026-10-27", "targetTimezone": "Asia/Seoul"
+          },
+          {
+            "id": "daily", "label": "출근", "hour": 6, "minute": 0, "fireAtMillis": 1761512400000,
+            "repeatDaysMask": 127, "enabled": true, "state": "armed"
+          }
+        ]
+        """.data(using: .utf8)!
+
+        let loaded = try JSONDecoder().decode([LocalAlarmRecord].self, from: json)
+        XCTAssertEqual(loaded.map(\.id), ["dated", "daily"], "날짜 칸 때문에 행을 버리지 않는다")
+        let dated = try XCTUnwrap(loaded.first)
+        XCTAssertEqual(dated.hour, 7)
+        XCTAssertEqual(dated.minute, 30)
+        XCTAssertEqual(dated.fireAtMillis, 1_761_517_800_000)
+        XCTAssertEqual(dated.repeatDaysMask, 0)
+        XCTAssertFalse(dated.enabled)
+        XCTAssertEqual(loaded[1].repeatDaysMask, 127)
+
+        let rewritten = String(decoding: try JSONEncoder().encode(loaded), as: UTF8.self)
+        XCTAssertFalse(rewritten.contains("targetDate"), "날짜 칸은 다시 쓰지 않는다")
+        XCTAssertFalse(rewritten.contains("targetTimezone"))
+    }
+
     func test_alarmKitID_decodesUUIDObjectFromLegacyJSON() throws {
         // 옛 JSON 은 alarmKitID 를 UUID 객체로 인코딩하기도 했음.
         let json = """

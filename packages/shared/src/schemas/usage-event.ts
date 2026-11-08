@@ -71,9 +71,8 @@ export const USAGE_EVENT_V2_TYPES = [
   'reward_pending',
   'reward_granted',
   'reward_spent',
-  // 콘텐츠 — `content_selected` 는 알람 저장 성공 때 적는다. `dated_alarm_saved`·`pack_selected` 는 스키마만(해당 기능 PR 이 심는다)
+  // 콘텐츠 — `content_selected`·`pack_selected` 는 알람 저장 성공 때 적는다
   'content_selected',
-  'dated_alarm_saved',
   'pack_selected',
   // 결제
   'paywall_viewed',

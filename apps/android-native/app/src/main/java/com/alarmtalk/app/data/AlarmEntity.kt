@@ -100,15 +100,12 @@ data class AlarmEntity(
     /** 지금 회차의 응원 선택(JSON, `CheerSelection`). **기기 로컬.** 울릴 때 이 클립을 튼다. */
     val cheerSelectionJson: String? = null,
     /**
-     * **날짜 지정 알람(한 번)**의 날짜(`YYYY-MM-DD`). 있으면 반복 요일이 없고(`repeatDaysMask = 0`) 그날 한 번만
-     * 운다. 규칙: `docs/spec/alarm-lifecycle.md` §4. 옛 행은 NULL = 날짜 없는 알람. iOS 짝은
-     * `LocalAlarmRecord.targetDate`.
+     * 쓰지 않는 칸이다 — 날짜 지정 알람(2026-11-09 제거, `docs/spec/alarm-lifecycle.md` §4)이 쓰던 Room 열
+     * (`MIGRATION_30_31`)이라 엔티티에만 남는다. 어떤 코드도 읽거나 쓰지 않는다 — 새 행은 기본값(null)이고, 옛 행에
+     * 남은 값은 아무 데도 쓰이지 않는다.
      */
     val targetDate: String? = null,
-    /**
-     * 날짜 알람의 시간대(IANA). **저장하는 순간 사용자가 확인한 값**으로 고정한다 — 발사 시각은 이 시간대의
-     * `targetDate` 시:분이고 기기 시간대가 바뀌어도 따라가지 않는다(§4-2).
-     */
+    /** [targetDate] 와 같다 — 쓰지 않는 칸. */
     val targetTimezone: String? = null,
 )
 
@@ -158,22 +155,7 @@ data class AlarmDraft(
     /** 응원 테마의 다양하게/고정(스펙 voice-and-message §5-4). 응원이 아니면 null 로 둔다. */
     val cheerMode: String? = null,
     val cheerPinnedContentId: String? = null,
-    /** 날짜 지정 알람의 날짜·시간대 — [AlarmEntity.targetDate] 참고. 둘 다 있어야 날짜 알람이다. */
-    val targetDate: String? = null,
-    val targetTimezone: String? = null,
 )
-
-/** 날짜 지정 알람(한 번)인가 — `docs/spec/alarm-lifecycle.md` §4. */
-fun AlarmEntity.isDated(): Boolean = !targetDate.isNullOrBlank()
-
-/**
- * 날짜 알람의 발사 시각 — [targetDate] 의 시:분을 [targetTimezone] 으로 읽은 절대 시각. 날짜 알람이 아니거나
- * 값이 깨졌으면 null.
- */
-fun AlarmEntity.datedFireAtMillis(): Long? =
-    if (!isDated()) null else AlarmTimeCalculator.datedFireAtMillis(targetDate, targetTimezone, hour, minute)
-
-fun AlarmDraft.isDated(): Boolean = !targetDate.isNullOrBlank()
 
 /** bucketClipKeysJson(JSON 문자열 배열) ↔ List<String> 변환 유틸. */
 fun encodeBucketClipKeys(keys: List<String>): String? =
