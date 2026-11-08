@@ -711,6 +711,36 @@ internal fun VoiceProfileManagementPanel(
         if (stockClips.isNotEmpty()) prefetchGreetingPreviews()
     }
 
+    // ⚠ **미리듣기는 울림과 같은 스트림(USAGE_ALARM·CONTENT_TYPE_SPEECH)으로 낸다** — 그래야 여기서 듣는 크기가
+    // 실제 알람과 같은 볼륨 축에 선다(편집기 미리듣기와 같은 규약, `AlarmEditorScreen.startPreparedPreview`).
+    // 등록 미리듣기와 인사말 '듣기'(기본 목소리·내 목소리 — `playGreeting`·`playGreetingClip`)가 이 플레이어로 연다.
+    // 인사말은 예전에 `MediaPlayer.create` 로 만들어 미디어 볼륨으로 났다(2026-11-09 실기기). `MediaPlayer.create` 는
+    // prepare 까지 끝낸 플레이어를 돌려주므로 그 뒤에 속성을 걸어도 먹지 않는다 — 속성 → 데이터 → prepare 차례를 지킬 것.
+    // 기기 알람 볼륨을 울림 크기로 올리는 것은 등록 미리듣기(`startTunedPreview`)뿐이다 — 인사말은 스트림만 맞춘다.
+    // [tunedWav] 가 있으면 높이를 바꾼 소리를 **메모리에서** 튼다(파일을 남기지 않는다 — `VoiceTuningRenderer`),
+    // 없으면 [originalUri] 의 파일(내장 인사말은 `android.resource://` 주소)을 그대로 튼다.
+    fun createPreviewPlayer(originalUri: String, tunedWav: ByteArray?): MediaPlayer {
+        val player = MediaPlayer()
+        try {
+            player.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+            if (tunedWav != null) {
+                player.setDataSource(InMemoryAudioDataSource(tunedWav))
+            } else {
+                player.setDataSource(context, Uri.parse(originalUri))
+            }
+            player.prepare()
+        } catch (error: Throwable) {
+            player.release()
+            throw error
+        }
+        return player
+    }
+
     // 인사말 스톡 클립을 받아(캐시 우선) 들려준다 — 내장 인사말이 없는 기본 목소리와 내 목소리
     // 행의 ▶ 가 함께 쓴다. [failureLog] 는 Sentry 에서 갈래를 가르려고 따로 받는다.
     fun playGreetingClip(voiceId: String, failureLog: String) {
@@ -726,8 +756,7 @@ internal fun VoiceProfileManagementPanel(
             playingGreetingVoiceId = voiceId
             runCatching {
                 val cached = ensureGreetingCached(clip)
-                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
-                    ?: error("Failed to create greeting preview player.")
+                val player = createPreviewPlayer(cached.localAudioUri, tunedWav = null)
                 if (greetingPreviewRequestId != requestId) {
                     player.release()
                     return@runCatching
@@ -803,8 +832,10 @@ internal fun VoiceProfileManagementPanel(
         if (bundledRes != null) {
             greetingPreviewRequestId += 1
             stopMediaPreview(invalidateGreetingPreview = false)
-            val player = MediaPlayer.create(context, bundledRes)
-            if (player == null) {
+            val player = runCatching {
+                createPreviewPlayer("android.resource://${context.packageName}/$bundledRes", tunedWav = null)
+            }.getOrElse { error ->
+                AlarmTalkLog.reportError("Failed to play bundled greeting preview", error)
                 localMessage = context.getString(R.string.voices_preview_play_failed)
                 return
             }
@@ -823,32 +854,6 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         playGreetingClip(profile.id, failureLog = "Failed to play greeting preview")
-    }
-
-    // ⚠ **미리듣기는 울림과 같은 스트림(USAGE_ALARM)·같은 스트림 크기로 낸다** — 그래야 여기서
-    // 맞춘 음량이 실제 알람과 같다(편집기 미리듣기와 같은 규약, `AlarmEditorScreen.startPreparedPreview`).
-    // [tunedWav] 가 있으면 높이를 바꾼 소리를 **메모리에서** 튼다(파일을 남기지 않는다 — `VoiceTuningRenderer`),
-    // 없으면 원래 클립 파일을 그대로 튼다.
-    fun createPreviewPlayer(originalUri: String, tunedWav: ByteArray?): MediaPlayer {
-        val player = MediaPlayer()
-        try {
-            player.setAudioAttributes(
-                android.media.AudioAttributes.Builder()
-                    .setUsage(android.media.AudioAttributes.USAGE_ALARM)
-                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
-            if (tunedWav != null) {
-                player.setDataSource(InMemoryAudioDataSource(tunedWav))
-            } else {
-                player.setDataSource(context, Uri.parse(originalUri))
-            }
-            player.prepare()
-        } catch (error: Throwable) {
-            player.release()
-            throw error
-        }
-        return player
     }
 
     // 스트림은 시작하는 이 자리에서만 올린다(짝은 `releasePreviewTuning`).
