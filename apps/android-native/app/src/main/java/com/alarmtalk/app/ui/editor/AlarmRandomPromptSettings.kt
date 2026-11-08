@@ -8,9 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
@@ -41,6 +38,19 @@ import com.alarmtalk.app.data.WeatherCountry
 import com.alarmtalk.app.data.WeatherRegion
 import com.alarmtalk.app.data.WeatherRegions
 import com.alarmtalk.app.data.weatherRegionFor
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.LineBreak
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.layout.height
 
 @Composable
 internal fun RandomPromptSettingsPane(
@@ -693,6 +703,36 @@ internal fun showsWeatherAttribution(token: String?): Boolean =
  */
 internal val LocalWeatherAttribution = compositionLocalOf<String?> { null }
 
+/** 지역 칩 하나 — 고른 칩은 강조 배경 + 강조 테두리. 높이는 칸마다 같고 긴 이름은 두 줄까지(균형 줄바꿈). */
+@Composable
+private fun WeatherRegionChip(name: String, selected: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(WakerChipShape)
+            .background(if (selected) scheme.primaryContainer else scheme.surfaceVariant.copy(alpha = 0.46f))
+            .border(
+                BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) scheme.primary else scheme.outlineVariant),
+                WakerChipShape,
+            )
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelLarge.copy(lineBreak = LineBreak.Heading),
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) scheme.onPrimaryContainer else scheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 /**
  * 지역 고르기 — **나라 → 지역**, 직접 입력은 없다(2026-09-30).
  *
@@ -725,7 +765,7 @@ internal fun WeatherLocationDialog(
 
     val regions = WeatherRegions.byCountry(shownCountry)
     // 나라마다 목록을 새로 연다 — 새 목록은 맨 위에서 시작한다.
-    val listState = remember(shownCountry) { LazyListState() }
+    val listState = remember(shownCountry) { LazyGridState() }
     val selectedIndex = regions.indexOfFirst { it.key == display.region?.key }
     // 시트를 연 직후에만 고른 지역을 찾아간다. 사용자가 나라를 바꾸면 그 뒤로는 늘 맨 위다
     // (2026-09-30 사용자 지시 — 바꾸면 곧바로 맨 위로). 고른 지역이 있는 나라로 되돌아와도 같다.
@@ -743,8 +783,8 @@ internal fun WeatherLocationDialog(
             .first { info -> info.visibleItemsInfo.any { it.index == selectedIndex } }
         val item = layout.visibleItemsInfo.first { it.index == selectedIndex }
         val viewport = layout.viewportEndOffset - layout.viewportStartOffset
-        val centered = layout.viewportStartOffset + (viewport - item.size) / 2
-        listState.scrollBy((item.offset - centered).toFloat())
+        val centered = layout.viewportStartOffset + (viewport - item.size.height) / 2
+        listState.scrollBy((item.offset.y - centered).toFloat())
     }
 
     // ⚠ **나라 세그먼트는 제자리에 둔다**(`scrollsContent = false`). 껍데기가 통째로 스크롤하면
@@ -773,20 +813,25 @@ internal fun WeatherLocationDialog(
             },
             modifier = Modifier.padding(horizontal = 20.dp),
         )
-        LazyColumn(
+        // ⚠ **3열 칩이다**(2026-11-09 오너 — 고르기 시안 A). 목록은 대한민국 17곳도 한 화면에 다 안 들어가 스크롤해야
+        // 했다 — 칩이면 17곳이 스크롤 없이 보이고 고른 곳이 바로 눈에 띈다. 일본(47)·미국(69)은 칩이 길어져 스크롤한다.
+        // 긴 이름("찰스턴(웨스트버지니아)", "North Chungcheong")은 칩 안에서 두 줄까지 감는다(높이는 칩마다 같게 52).
+        // iOS 짝은 `WeatherRegionPickerSheet` 의 `LazyVGrid` 다.
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f, fill = false),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             itemsIndexed(regions, key = { _, region -> region.key }) { index, region ->
-                // ⚠ **둘째 줄("수원 날씨")을 두지 않는다**(2026-11-09 오너 "각 날씨 아래에 ~~ 날씨 쓴 거 없애"). 날씨를 재는
-                // 곳이 이름과 다른 지역(경기 → 수원)에만 붙던 줄이라 목록의 행 높이가 들쭉날쭉했다. iOS 도 같다.
-                WakerSheetOptionRow(
-                    title = stringResource(region.nameRes),
+                WeatherRegionChip(
+                    name = stringResource(region.nameRes),
                     selected = index == selectedIndex,
                     onClick = { onConfirm(region) },
-                    divider = index != regions.lastIndex,
                 )
             }
         }

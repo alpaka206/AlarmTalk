@@ -99,14 +99,29 @@ struct WeatherRegionPickerSheet: View {
                     alwaysScrolls: true,
                     reservedHeight: reservedListHeight
                 ) {
-                    // ⚠ `LazyVStack` 으로 바꾸지 말 것 — `SelectionSheet` 주석과 같은 이유다.
-                    VStack(spacing: 0) {
-                        ForEach(Array(WeatherRegions.byCountry(country).enumerated()), id: \.element.id) { index, region in
-                            if index > 0 { Divider() }
-                            row(region)
-                                .id(region.key)
+                    // ⚠ **3열 칩이다**(2026-11-09 오너 — 고르기 시안 A). 목록은 대한민국 17곳도 한 화면에 다 안 들어갔다 —
+                    // 칩이면 17곳이 스크롤 없이 보이고 고른 곳이 바로 눈에 띈다. 일본(47)·미국(69)은 스크롤한다.
+                    // 안드로이드 짝은 `WeatherLocationDialog` 의 `LazyVerticalGrid`(`WeatherRegionChip`) 다.
+                    // ⚠ `LazyVGrid` 로 바꾸지 말 것 — 열 때 고른 지역으로 `scrollTo` 하려면 그 칸이 이미 만들어져 있어야 한다
+                    // (`SelectionSheet` 의 `LazyVStack` 주석과 같은 이유). 69개라 모두 그려도 가볍다.
+                    VStack(spacing: 8) {
+                        ForEach(Array(stride(from: 0, to: WeatherRegions.byCountry(country).count, by: 3)), id: \.self) { start in
+                            let items = Array(WeatherRegions.byCountry(country)[start..<min(start + 3, WeatherRegions.byCountry(country).count)])
+                            HStack(spacing: 8) {
+                                ForEach(items, id: \.id) { region in
+                                    chip(region)
+                                        .id(region.key)
+                                }
+                                // 마지막 줄이 짧으면 빈 칸으로 채워 칩 폭을 같게 둔다.
+                                ForEach(0..<(3 - items.count), id: \.self) { _ in
+                                    Color.clear.frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52)
+                                }
+                            }
                         }
                     }
+                    .padding(.horizontal, BottomSheetTitle.horizontalPadding)
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .contain)
                 }
                 .onAppear { scrollToCurrent(proxy) }
                 // 나라를 바꾸면 곧바로 맨 위로 — 고른 지역이 있는 나라로 돌아와도 같다(2026-09-30
@@ -137,31 +152,34 @@ struct WeatherRegionPickerSheet: View {
     }
 
     @ViewBuilder
-    private func row(_ region: WeatherRegion) -> some View {
-        Button {
+    private func chip(_ region: WeatherRegion) -> some View {
+        let selected = region.key == current?.key
+        return Button {
             onSelect(region)
             dismiss()
         } label: {
-            HStack(spacing: 12) {
-                // ⚠ **둘째 줄("수원 날씨")을 두지 않는다**(2026-11-09 오너 "각 날씨 아래에 ~~ 날씨 쓴 거 없애").
-                // 날씨를 재는 곳이 이름과 다른 지역에만 붙던 줄이라 행 높이가 들쭉날쭉했다. 안드로이드도 같다.
-                Text(verbatim: region.displayName(language: language))
-                    .foregroundStyle(theme.palette.onSurface)
-                Spacer(minLength: 0)
-                if region.key == current?.key {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(theme.palette.primary)
-                }
-            }
-            // 행 치수는 `SelectionSheet` 와 같다(패딩을 먼저, 그다음 최소 높이 56).
-            .padding(.horizontal, BottomSheetTitle.horizontalPadding)
-            .padding(.vertical, 10)
-            .frame(minHeight: 56)
-            .contentShape(Rectangle())
+            // 긴 이름("찰스턴(웨스트버지니아)", "North Chungcheong")은 칩 안에서 두 줄까지 감는다. 높이는 칩마다 같다(52).
+            Text(verbatim: region.displayName(language: language))
+                .font(theme.typography.labelLarge)
+                .fontWeight(.semibold)
+                .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52)
+                .background(
+                    RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
+                        .fill(selected ? theme.palette.primaryContainer : theme.palette.surfaceVariant.opacity(0.46))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
+                        .stroke(selected ? theme.palette.primary : theme.palette.outlineVariant, lineWidth: selected ? 1.5 : 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(region.key == current?.key ? .isSelected : [])
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

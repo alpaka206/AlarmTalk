@@ -644,10 +644,16 @@ private fun RingingRoute(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.height(54.dp))
-                // 날짜 줄에 알람 이름을 합친다 — 카드 한 장을 줄인다.
+                // 날짜 줄에 오전·오후와 알람 이름을 합친다 — 카드 한 장을 줄인다.
+                // ⚠ **오전·오후는 날짜 줄에 있다**(2026-11-09 오너 — 고르기 시안 A "울림 화면 좌우가 달라 보여"). 시계 줄에
+                // '오전' + 숫자를 한 묶음으로 가운데에 두면 눈에 띄는 큰 숫자만 오른쪽으로 약 30dp 치우쳐 보였다. 숫자만
+                // 가운데에 둔다. 읽어 주는 시각(`spokenTime`)에는 그대로 오전·오후가 들어 있다.
                 Text(
-                    text = listOfNotNull(uiState.dateText.takeIf { it.isNotBlank() }, uiState.label)
-                        .joinToString(" · "),
+                    text = listOfNotNull(
+                        uiState.dateText.takeIf { it.isNotBlank() },
+                        uiState.ampm.takeIf { it.isNotBlank() },
+                        uiState.label,
+                    ).joinToString(" · "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
@@ -657,7 +663,8 @@ private fun RingingRoute(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(6.dp))
-                RingingClock(ampm = uiState.ampm, time = uiState.timeText, spokenTime = uiState.spokenTime)
+                // 오전·오후는 위 날짜 줄이 말한다 — 시계는 숫자만(가운데).
+                RingingClock(ampm = "", time = uiState.timeText, spokenTime = uiState.spokenTime)
 
                 // 문구는 시계와 컨트롤 사이의 빈 공간에서 **위쪽 1/3 지점**에 앉는다(실기 S23 Ultra 에서
                 // 시계 바로 아래 붙이니 화면 가운데가 통째로 비어 보였다). 위 0.5 : 아래 1 비율.

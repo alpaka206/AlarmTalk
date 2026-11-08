@@ -3,7 +3,6 @@ package com.alarmtalk.app
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.data.datedFireAtMillis
 import com.alarmtalk.app.data.rehearsalCloneAlarm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -168,28 +167,6 @@ class RingInNoticeTest {
         )
     }
 
-    @Test
-    @Config(qualifiers = "ko")
-    fun `날짜 지정 알람은 그 날짜까지 남은 시간이다`() {
-        val trip = datedAlarm(id = "trip", targetDate = "2026-11-12")
-        val notice = checkNotNull(noNotice.after(RingInEvent.Applied(trip, T0)))
-
-        assertEquals(trip.datedFireAtMillis(), notice.fireAtMillis)
-        val twoDaysThreeHoursBefore = notice.fireAtMillis - (2 * DAY + 3 * HOUR)
-        assertEquals("2일 3시간 후에 울려요.", ringInSentence(context, notice.fireAtMillis, twoDaysThreeHoursBefore))
-    }
-
-    @Test
-    fun `날짜가 지난 날짜 지정 알람의 안내는 띄우지 않는다`() {
-        val trip = datedAlarm(id = "trip", targetDate = "2026-11-12")
-        val notice = checkNotNull(noNotice.after(RingInEvent.Applied(trip, T0)))
-
-        assertEquals(
-            RingInAction.Drop,
-            ringInAction(notice, onTabScreen = true, nowMillis = trip.fireAtMillis + HOUR, nowElapsedMillis = T0),
-        )
-    }
-
     // ── 색 ────────────────────────────────────────────────────────────────────────────────
 
     @Test
@@ -221,19 +198,6 @@ class RingInNoticeTest {
 
     private fun alarm(id: String, enabled: Boolean = true, fireAtMillis: Long = NOW + 7 * HOUR): AlarmEntity =
         rehearsalCloneAlarm(id = id).copy(enabled = enabled, fireAtMillis = fireAtMillis)
-
-    /** 날짜 지정 알람 — 예약 시각은 그 날짜·시간대의 7시(저장소가 정하는 값과 같은 계산)다. */
-    private fun datedAlarm(id: String, targetDate: String): AlarmEntity {
-        val row = rehearsalCloneAlarm(id = id).copy(
-            hour = 7,
-            minute = 0,
-            repeatDaysMask = 0,
-            targetDate = targetDate,
-            targetTimezone = "Asia/Seoul",
-            enabled = true,
-        )
-        return row.copy(fireAtMillis = checkNotNull(row.datedFireAtMillis()))
-    }
 
     private companion object {
         const val NOW = 1_800_000_000_000L

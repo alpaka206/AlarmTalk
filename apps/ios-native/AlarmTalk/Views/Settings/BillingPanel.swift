@@ -486,10 +486,15 @@ struct BillingPanel: View {
     private func purchaseMessage(for pending: PlanTier) -> String {
         let name = pending.displayLabel
         // 카드에 쓰는 것과 **같은 가격**이다(`SubscriptionManager.priceLabel(for:)`).
-        let price = subscriptions.priceLabel(for: pending) ?? ""
+        // 체험이 있으면 카드 버튼 아래와 **같은 문장**(첫 결제일·금액·해지)을 쓴다.
+        if let disclosure = subscriptions.trialDisclosure(for: pending) {
+            return disclosure
+        }
+        // 주기를 붙인다 — 카드와 같은 "월 ₩3,900"(안드로이드 `billing_plan_monthly_price`).
+        let price = subscriptions.priceLabel(for: pending).map { String(localized: "월 \(String($0))") } ?? ""
         return price.isEmpty
             ? String(localized: "\(name) 이용권을 App Store로 안전하게 결제해요. 가격은 결제 화면에서 확인할 수 있고, 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.")
-            : String(localized: "\(name) 이용권은 \(price)이에요. App Store로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.")
+            : String(localized: "\(name) 이용권은 \(String(price))이에요. App Store로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.")
     }
 
     private func purchase(_ product: SubscriptionProduct) async {

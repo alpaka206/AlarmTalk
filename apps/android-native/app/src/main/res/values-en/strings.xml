@@ -77,6 +77,11 @@
     <string name="billing_plan_free_price">Free</string>
     <string name="billing_plan_monthly_price_fallback">KRW %1$,d/month</string>
     <string name="billing_plan_monthly_price">%1$s/month</string>
+    <string name="billing_plan_trial_headline">%1$s free</string>
+    <string name="billing_plan_trial_then">then %1$s</string>
+    <string name="billing_plan_trial_start">Start your %1$s free trial</string>
+    <string name="billing_plan_trial_disclosure">You won\'t be charged today. From %1$s, %2$s will be charged every month. You can cancel anytime in Google Play before then.</string>
+    <string name="billing_plan_price_fallback">KRW %1$,d</string>
     <string name="billing_plan_personal_feature_messages_in_voice">Weather and fortune messages in your registered voice</string>
     <string name="billing_plan_personal_feature_voice">Register 1 voice of your choice</string>
     <string name="billing_plan_personal_feature_manual">Type it yourself: 30 a month (incl. your registered voice)</string>
@@ -98,7 +103,12 @@
     <string name="billing_status_end_scheduled">Your current plan is scheduled to end.</string>
     <string name="billing_status_in_use">This is your active plan.</string>
     <string name="common_alarm_delete">Delete</string>
-    <string name="common_alarm_warning_reschedule_failed">We couldn\'t reschedule the alarm. Please check the time and save again.</string>
+    <string name="common_alarm_warning_reschedule_failed">Couldn\'t schedule this alarm.</string>
+    <string name="alarm_status_failed_title">Couldn\'t schedule an alarm</string>
+    <string name="alarm_status_turned_off_one">Your %1$s alarm was turned off. Tap to turn it back on.</string>
+    <string name="alarm_status_turned_off_many">%1$d alarms were turned off. Tap to turn them back on.</string>
+    <string name="notification_alarm_status_name">Alarm status</string>
+    <string name="notification_alarm_status_description">Tells you when an alarm couldn\'t be scheduled</string>
     <string name="common_google_continue">Continue with Google</string>
     <string name="common_google_login">Sign in with Google</string>
     <string name="common_permission_gate_allow_action">Allow</string>
@@ -194,6 +204,8 @@
     <string name="editor_play_mode_alarm_only">Alarm</string>
     <string name="editor_play_mode_title">Playback mode</string>
     <string name="editor_play_mode_voice_only">Voice</string>
+    <string name="editor_play_mode_voice_caption">Your chosen voice reads the message.</string>
+    <string name="editor_play_mode_alarm_caption">Only the alarm sound plays.</string>
     <string name="editor_msg_section">Message</string>
     <string name="editor_msg_mode_manual">Type it yourself</string>
     <string name="editor_msg_mode_preset">Default greeting</string>
@@ -689,8 +701,6 @@
     <string name="voices_not_ready_message">Downloading the voice for this alarm.\nPlease stay connected to the internet for a moment.</string>
     <string name="voices_default_download_progress">Downloading %1$d%%</string>
     <string name="personal_promo_plan_line">Plus free until %1$s</string>
-    <string name="billing_plan_trial_price">%1$s free trial, then %2$s</string>
-    <string name="billing_plan_trial_terms">After the trial you are charged automatically. Cancel anytime in Google Play before it ends and you will not be charged.</string>
     <plurals name="billing_trial_days">
         <item quantity="one">%d day</item>
         <item quantity="other">%d days</item>

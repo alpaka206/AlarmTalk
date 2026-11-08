@@ -70,6 +70,12 @@ object NotificationChannels {
      */
     const val CLIP_PREFETCH_CHANNEL_ID = "voice_alarm_clip_prefetch_v1"
 
+    /**
+     * 예약하지 못해 **꺼 둔** 알람을 알린다(`AlarmStatusNotifications`, 스펙 alarm-lifecycle §1-6). 사용자가 할 일이 있는
+     * 알림이라 기본 중요도(소리는 기기 기본)다 — 울림 채널과 섞지 않는다.
+     */
+    const val ALARM_STATUS_CHANNEL_ID = "alarm_status_v1"
+
     // 폴백 채널 진동 패턴(대기, 진동, 대기, 진동…). 정상 경로는 RingingService 가 per-alarm 패턴으로 직접 진동한다.
     private val FALLBACK_VIBRATION_PATTERN = longArrayOf(0L, 600L, 400L, 600L, 400L, 600L)
 
@@ -147,6 +153,15 @@ object NotificationChannels {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
 
+        val alarmStatusChannel = NotificationChannel(
+            ALARM_STATUS_CHANNEL_ID,
+            context.getString(R.string.notification_alarm_status_name),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = context.getString(R.string.notification_alarm_status_description)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
+
         // 옛 울림 채널을 지운다 — 남겨 두면 설정 화면에 죽은 채널이 보이고, 무엇보다
         // 이미 깔린 기기가 계속 옛 importance 로 배너를 띄운다.
         RETIRED_RINGING_CHANNEL_IDS.forEach(notificationManager::deleteNotificationChannel)
@@ -156,6 +171,7 @@ object NotificationChannels {
         notificationManager.createNotificationChannel(quietRingingChannel)
         notificationManager.createNotificationChannel(fallbackChannel)
         notificationManager.createNotificationChannel(socialChannel)
+        notificationManager.createNotificationChannel(alarmStatusChannel)
     }
 
     // 실제 기본 알람음 → 없으면 시스템 기본 알람 → 최후에 기본 벨소리로 폴백.

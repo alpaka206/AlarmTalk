@@ -43,19 +43,12 @@ final class RingInNoticeTests: XCTestCase {
         XCTAssertEqual(text(firingIn: 3600), "1시간 후에 울려요.")
     }
 
-    func test_날짜_지정_알람은_그_날짜까지의_남은_시간이다() throws {
-        var record = LocalAlarmRecord(label: "한 번", hour: 7, minute: 30, fireAtMillis: 0, enabled: true)
-        record.targetDate = "2026-11-12"
-        record.targetTimezone = "Asia/Seoul"
-        let fire = try XCTUnwrap(record.datedFireAtMillis)
-        record.fireAtMillis = fire
-        let threeHoursAndTwoDaysBefore = Date(timeIntervalSince1970: TimeInterval(fire) / 1000 - (2 * 86_400 + 3 * 3600))
-
-        XCTAssertEqual(
-            RingInNotice.text(for: record, alarmAuthorized: true, now: threeHoursAndTwoDaysBefore),
-            "2일 3시간 후에 울려요."
-        )
-        // 그 날짜가 지났으면 켜지지 않은 알람이다 — 띄우지 않는다(지난 날짜 알럿이 따로 있다).
+    func test_며칠_뒤_알람은_일과_시간으로_말하고_지난_시각이면_띄우지_않는다() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let fire = Int64((now.timeIntervalSince1970 + 2 * 86_400 + 3 * 3600) * 1000)
+        let record = LocalAlarmRecord(label: "주말", hour: 7, minute: 30, fireAtMillis: fire, enabled: true)
+        XCTAssertEqual(RingInNotice.text(for: record, alarmAuthorized: true, now: now), "2일 3시간 후에 울려요.")
+        // 그 시각이 지났으면 띄우지 않는다.
         let afterFire = Date(timeIntervalSince1970: TimeInterval(fire) / 1000 + 60)
         XCTAssertNil(RingInNotice.text(for: record, alarmAuthorized: true, now: afterFire))
     }

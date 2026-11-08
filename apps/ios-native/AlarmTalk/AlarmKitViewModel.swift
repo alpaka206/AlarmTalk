@@ -812,6 +812,8 @@ final class AlarmKitViewModel: ObservableObject {
         }
         var recovered = 0
         var completed = true
+        // 이번 회차에 **꺼 둔** 알람 — 다 돈 뒤 알림 하나로 알린다(`AlarmStatusNotifier`, 스펙 alarm-lifecycle §1-6).
+        var turnedOff: [LocalAlarmRecord] = []
 
         for record in candidates {
             // PR3 FIX: double-arm race guard. rearmIfHolidayOffOneShot(dismiss 경로)나
@@ -864,6 +866,10 @@ final class AlarmKitViewModel: ObservableObject {
                     nowMillis: nowMillis,
                     isHoliday: holidayPredicate
                 ) else {
+                    // 1회성 알람의 시각이 지나 다시 걸 수 없었다 — 저장소가 끄고 실패로 적었다. 알림으로 알린다.
+                    if let after = store.record(id: record.id), !after.enabled, after.runtimeStateEnum == .failed {
+                        turnedOff.append(after)
+                    }
                     continue
                 }
                 prepared = recovered
@@ -884,8 +890,20 @@ final class AlarmKitViewModel: ObservableObject {
                 // 위 진입 확인 뒤 대기하는 사이에 이 행이 다른 계정 것으로 새겨졌을 수
                 // 있고, 그때 `markFailed` 는 **남의 행**에 "다시 예약하지 못했어요" 를
                 // 새긴다(§1-6). 복구 후보는 언제나 켜진 행이라 no-op 으로 넘어가지도 않는다.
-                store.markFailed(id: prepared.id)
+                //
+                // ⚠ **켜 둔 채 두지 않는다 — 끄고 알린다**(2026-11-09 오너). 단 **AlarmKit 권한이 없어서** 실패한 것이면 표시하지
+                // 않는다 — 홈 권한 배너가 말하고, 권한이 돌아오면 다음 복구가 그대로 다시 건다(끄면 그게 막힌다).
+                if AlarmManager.shared.authorizationState == .authorized {
+                    if record.alarmKitUUID != nil {
+                        _ = await cancelScheduledAlarm(record: record)
+                    }
+                    store.markFailedTurningOff(id: prepared.id)
+                    if let after = store.record(id: prepared.id) { turnedOff.append(after) }
+                }
             }
+        }
+        if !turnedOff.isEmpty {
+            await AlarmStatusNotifier.notifyTurnedOff(turnedOff)
         }
 
         if recovered > 0 {

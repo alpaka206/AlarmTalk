@@ -310,7 +310,7 @@ struct AlarmRow: View {
         if alarm.runtimeStateEnum == .failed {
             // 예약 자체가 실패해 **정말 안 울린다.** 다시 저장해 달라고 해야 한다.
             return RowNotice(
-                text: String(localized: "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요."),
+                text: String(localized: "알람 예약에 실패했어요."),
                 isError: true
             )
         }

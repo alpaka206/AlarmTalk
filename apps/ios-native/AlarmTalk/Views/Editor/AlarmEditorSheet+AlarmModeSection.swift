@@ -34,6 +34,15 @@ extension AlarmEditorSheet {
                         }
                     }
 
+                // 고른 쪽의 뜻을 한 줄로 말한다(2026-11-09 오너 — 고르기 시안 A). 세그먼트만으로는 무엇이 바뀌는지 말해 주지
+                // 않았다. 안드로이드 `PlayModeCard` 의 `editor_play_mode_*_caption` 과 같은 문장이다.
+                Text(draft.playMode == .alarmOnly
+                    ? String(localized: "알람음만 울려요.")
+                    : String(localized: "고른 목소리가 문구를 읽어 줘요."))
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                 if draft.playMode != .alarmOnly {
                     // ⚠ **'목소리 / 녹음·파일' 세그먼트를 되살리지 말 것.** 안드로이드에는
                     // 그런 세그먼트가 없다 — '직접 녹음' 은 목소리 목록의 **마지막 항목**이다

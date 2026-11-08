@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
+import com.alarmtalk.app.alarm.AlarmStatusNotifications
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
@@ -1658,6 +1659,8 @@ class AlarmRepository(
             startDate = currentLocalDate(now),
         )
         var scheduled = 0
+        // 이번 회차에 **꺼 둔** 알람 — 다 돈 뒤 알림 하나로 알린다(`AlarmStatusNotifications`, 스펙 alarm-lifecycle §1-6).
+        val turnedOff = mutableListOf<AlarmEntity>()
 
         val currentUser = currentUserIdProvider()
         enabledAlarms.forEach { alarm ->
@@ -1862,6 +1865,7 @@ class AlarmRepository(
                             state = AlarmStates.FAILED,
                             updatedAtMillis = now,
                         ).also { alarmDao.upsert(it) }
+                        turnedOff += alarm
                         return@forEach
                     }
                 }
@@ -1886,13 +1890,23 @@ class AlarmRepository(
                 scheduled += 1
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to restore alarm id=${alarm.id}", error)
+                // ⚠ **켜 둔 채 두지 않는다 — 끄고 알린다**(2026-11-09 오너 "off 되도록 하고 알림을 띄우는 게 맞지 않아?").
+                // 예전에는 켜진 채 빨간 문장만 붙어, 스위치는 켜져 있는데 울리지 않았다. 남아 있을지 모르는 옛 등록도
+                // 함께 걷는다. 권한 때문이 아니다 — 정확한 알람 권한이 없으면 `AlarmScheduler.schedule` 은 던지지 않고
+                // 비정확 폴백으로 건다(그 경우는 홈 권한 배너가 말한다).
+                runCatching { alarmScheduler.cancel(alarm.id) }
                 alarmDao.setState(
                     id = alarm.id,
                     state = AlarmStates.FAILED,
-                    enabled = true,
+                    enabled = false,
                     updatedAtMillis = System.currentTimeMillis(),
                 )
+                turnedOff += alarm
             }
+        }
+        if (turnedOff.isNotEmpty()) {
+            runCatching { AlarmStatusNotifications.notifyTurnedOff(context, turnedOff) }
+                .onFailure { AlarmTalkLog.reportError("Failed to post the turned-off alarm notice", it) }
         }
 
         Log.i(TAG, "Boot restore complete pending=${enabledAlarms.size} scheduled=$scheduled")

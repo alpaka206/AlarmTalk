@@ -77,6 +77,11 @@
     <string name="billing_plan_free_price">無料</string>
     <string name="billing_plan_monthly_price_fallback">月額%1$,dウォン</string>
     <string name="billing_plan_monthly_price">月額%1$s</string>
+    <string name="billing_plan_trial_headline">%1$s無料</string>
+    <string name="billing_plan_trial_then">その後%1$s</string>
+    <string name="billing_plan_trial_start">%1$s無料で始める</string>
+    <string name="billing_plan_trial_disclosure">本日は請求されません。%1$sから毎月%2$sが請求されます。それまでにGoogle Playでいつでも解約できます。</string>
+    <string name="billing_plan_price_fallback">%1$,dウォン</string>
     <string name="billing_plan_personal_feature_messages_in_voice">登録した声で聞く天気・運勢メッセージ</string>
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
     <string name="billing_plan_personal_feature_manual">自分で入力 月30回(登録した声も)</string>
@@ -98,7 +103,12 @@
     <string name="billing_status_end_scheduled">現在の利用券は終了予定です。</string>
     <string name="billing_status_in_use">ご利用中の利用券です。</string>
     <string name="common_alarm_delete">削除</string>
-    <string name="common_alarm_warning_reschedule_failed">アラームを再設定できませんでした。時間を確認して、もう一度保存してください。</string>
+    <string name="common_alarm_warning_reschedule_failed">アラームを予約できませんでした。</string>
+    <string name="alarm_status_failed_title">アラームを予約できませんでした</string>
+    <string name="alarm_status_turned_off_one">%1$sのアラームをオフにしました。タップしてもう一度オンにしてください。</string>
+    <string name="alarm_status_turned_off_many">アラーム%1$d件をオフにしました。タップしてもう一度オンにしてください。</string>
+    <string name="notification_alarm_status_name">アラームの状態</string>
+    <string name="notification_alarm_status_description">予約できなかったアラームをお知らせします</string>
     <string name="common_google_continue">Googleで続ける</string>
     <string name="common_google_login">Googleでログイン</string>
     <string name="common_permission_gate_allow_action">許可する</string>
@@ -194,6 +204,8 @@
     <string name="editor_play_mode_alarm_only">アラーム</string>
     <string name="editor_play_mode_title">再生方式</string>
     <string name="editor_play_mode_voice_only">声</string>
+    <string name="editor_play_mode_voice_caption">選んだ声がメッセージを読み上げます。</string>
+    <string name="editor_play_mode_alarm_caption">アラーム音だけが鳴ります。</string>
     <string name="editor_msg_section">文</string>
     <string name="editor_msg_mode_manual">自分で入力</string>
     <string name="editor_msg_mode_preset">基本のあいさつ</string>
@@ -689,8 +701,6 @@
     <string name="voices_not_ready_message">このアラームで使う声をダウンロードしています。\nインターネットに接続したまま少しお待ちください。</string>
     <string name="voices_default_download_progress">ダウンロード中 %1$d%%</string>
     <string name="personal_promo_plan_line">プラス無料利用中 · %1$sまで</string>
-    <string name="billing_plan_trial_price">%1$s無料トライアル、その後%2$s</string>
-    <string name="billing_plan_trial_terms">トライアル終了後は自動で課金されます。終了前にGoogle Playでいつでも解約でき、解約すれば課金されません。</string>
     <plurals name="billing_trial_days">
         <item quantity="other">%d日間</item>
     </plurals>

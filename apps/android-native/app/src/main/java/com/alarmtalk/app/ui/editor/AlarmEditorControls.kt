@@ -51,6 +51,13 @@ import com.alarmtalk.app.data.AlarmTimeCalculator
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.RecordVoiceOver
+import androidx.compose.material.icons.Icons
+import androidx.compose.ui.graphics.vector.ImageVector
 
 @Composable
 internal fun ScheduleDetailsCard(
@@ -349,6 +356,20 @@ internal fun PlayModeCard(
             voiceLocked = voiceLocked,
             onLockedVoiceClick = onLockedVoiceClick,
         )
+        // ⚠ **고른 쪽의 뜻을 한 줄로 말한다**(2026-11-09 오너 — 고르기 시안 A). 세그먼트만으로는 '목소리'·'알람' 이 무엇을
+        // 바꾸는지 말해 주지 않았다. iOS 짝은 `VoicePlayModePicker` 아래 같은 문장이다.
+        Text(
+            text = stringResource(
+                if (AlarmPlayModes.normalize(selected) == AlarmPlayModes.ALARM_ONLY) {
+                    R.string.editor_play_mode_alarm_caption
+                } else {
+                    R.string.editor_play_mode_voice_caption
+                },
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 
@@ -385,6 +406,11 @@ internal fun PlayModeSelector(
             }
         },
         lockedValues = if (voiceLocked) setOf(AlarmPlayModes.VOICE_ONLY) else emptySet(),
+        // 칸마다 아이콘 — 목소리는 하단 탭과 같은 사람 + 음파, 알람은 종(iOS `person.wave.2`·`bell`).
+        icons = mapOf(
+            AlarmPlayModes.VOICE_ONLY to Icons.Outlined.RecordVoiceOver,
+            AlarmPlayModes.ALARM_ONLY to Icons.Outlined.Notifications,
+        ),
     )
 }
 
@@ -401,6 +427,8 @@ internal fun EditorSegmentedSelector(
     modifier: Modifier = Modifier,
     /// 자물쇠 배지를 달 값들(무료 등급에서 못 고르는 칸). 눌리기는 하되 호출부가 안내를 띄운다.
     lockedValues: Set<String> = emptySet(),
+    /// 칸 글자 앞에 붙일 아이콘(값 → 아이콘). 없으면 글자만이다.
+    icons: Map<String, ImageVector> = emptyMap(),
 ) {
     // ⚠ **선택 표시는 배경 하나가 미끄러져 옮겨간다.** 예전에는 칸마다 색이 즉시
     // 바뀌어(`Surface(color=...)`) 전환이 툭 끊겼다 — iOS 는 `matchedGeometryEffect` 로
@@ -459,6 +487,7 @@ internal fun EditorSegmentedSelector(
                             locked = lockedValues.contains(value),
                             onClick = { onSelect(value) },
                             modifier = Modifier.weight(1f),
+                            icon = icons[value],
                         )
                     }
                 }
@@ -474,6 +503,7 @@ internal fun PlayModeChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     locked: Boolean = false,
+    icon: ImageVector? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     // ⚠ **칸은 배경을 그리지 않는다.** 선택 표시는 트랙의 미끄러지는 배경이 맡는다
@@ -502,23 +532,38 @@ internal fun PlayModeChip(
                 .padding(horizontal = 10.dp, vertical = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = label,
+            val chipColor = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else if (locked) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            }
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else if (locked) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-            )
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = chipColor,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    color = chipColor,
+                )
+            }
             if (locked && !selected) {
                 FeatureLockBadge(
                     modifier = Modifier.align(Alignment.TopEnd),

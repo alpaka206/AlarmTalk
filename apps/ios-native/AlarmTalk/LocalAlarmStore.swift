@@ -492,6 +492,18 @@ final class LocalAlarmStore: ObservableObject {
         persist()
     }
 
+    /// 예약을 다시 걸지 못한 알람을 **끄고** 실패로 표시한다(2026-11-09 오너 — "off 되도록 하고 알림을 띄우는 게 맞지 않아?").
+    /// 켜 둔 채 빨간 문장만 붙이면 스위치는 켜져 있는데 울리지 않는다. 다시 켜면(`setEnabled`) 표시가 걷힌다.
+    /// 호출부가 옛 AlarmKit 핸들을 먼저 취소한다. 안드로이드 `reschedulePendingAlarmsLocked` 의 실패 갈래와 같다.
+    func markFailedTurningOff(id: String) {
+        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
+        alarms[index].enabled = false
+        alarms[index].state = AlarmRuntimeState.failed.rawValue
+        alarms[index].alarmKitID = nil
+        alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        persist()
+    }
+
     func markFailed(id: String) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
         // ⚠ **꺼진 알람에는 실패를 새기지 않는다**(2026-08-19 실기기 확인).

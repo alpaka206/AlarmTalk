@@ -69,8 +69,10 @@ enum NativeTab: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .alarms: return "alarm"
-        case .voices: return "mic"
-        case .menu: return "line.3.horizontal"
+        // 목소리 탭은 '등록한 목소리 목록' 이라 마이크('지금 녹음하기')가 아니라 사람 + 음파다. 더보기는 서랍 메뉴 기호(≡)가
+        // 아니라 ··· 다(2026-11-09 오너 — 고르기 시안 A). 안드로이드 짝은 `RecordVoiceOver`·`MoreHoriz`.
+        case .voices: return "person.wave.2"
+        case .menu: return "ellipsis"
         }
     }
 
@@ -78,8 +80,8 @@ enum NativeTab: String, CaseIterable, Identifiable {
     var selectedSystemImage: String {
         switch self {
         case .alarms: return "alarm.fill"
-        case .voices: return "mic.fill"
-        case .menu: return "line.3.horizontal"
+        case .voices: return "person.wave.2.fill"
+        case .menu: return "ellipsis"
         }
     }
 }
