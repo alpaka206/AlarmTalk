@@ -233,6 +233,22 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   오프라인 + 폰에 없음)은 같다.
 - 나머지 사유(목소리·날씨·운세·빈 직접 입력·클립 과도기)는 메모리 값만 보므로 그대로 누르는 순간 판정한다.
 
+## 7. 알람을 켜면 화면 아래에 "N 후에 울려요" 를 잠깐 띄운다 (2026-11-09)
+
+오너 요청: "알람 설정하면 하단에 잠시 몇 분 후에 알림이 울려요 이런 건 있으면 좋겠어". 휴대폰 기본 시계 앱처럼, 알람을 켠 순간
+**그 알람이** 얼마 뒤에 우는지 아래쪽에 잠깐 보여 준다.
+
+- **언제**: ① 편집기에서 저장에 성공했고 저장된 알람이 켜져 있을 때(새 알람·기존 알람 모두) ② 알람 목록에서 스위치로 알람을 **켰을 때**
+  (실제로 반영된 뒤 — iOS 는 연타를 합친 마지막 값이 켜짐일 때 한 번). 끄기·삭제·여러 개 삭제·다시 울림에는 띄우지 않는다.
+- **무엇을**: 홈 헤드라인과 **같은 문장·같은 계산**이다 — 안드로이드 `hs_status_ring_in` + `remainingDurationLabel`, iOS
+  `NextAlarmHeadline.remainingLabel` + "%@ 후에 울려요.". 기준은 **방금 켠 그 알람의 예약 시각**이다(전체의 다음 알람이 아니다).
+  올림이라 1분 미만도 "1분 후에 울려요." 다. 날짜 지정 알람은 그 날짜까지의 남은 시간이다("2일 3시간 후에 울려요.").
+- **어디에·얼마나**: 화면 아래(하단 탭 위)에 약 3초. 안드로이드는 기존 스낵바(정보, 액션 없음), iOS 는 같은 자리·같은 결의 캡슐 안내.
+  누르거나 화면을 옮겨도 막지 않는다. 스크린 리더에는 같은 문장을 알린다.
+- **권한이 모자랄 때**: 안드로이드는 그래도 울리므로(CLAUDE.md 「알람 권한 3종」) 같은 문장을 띄운다. iOS 는 AlarmKit 권한이 없으면
+  예약이 안 되므로 띄우지 않는다(헤드라인과 같은 판단).
+- 지난 날짜의 날짜 지정 알람처럼 켜지지 않은 경우에는 띄우지 않는다(그 경우의 알럿이 따로 있다).
+
 ## iOS 중복 시각 알람 교체의 실패 처리
 
 새 알람의 저장·예약이 성공한 뒤 충돌 알람을 **차례로** 지운다(예약 취소 → 행 삭제 — 기기의 예약과 행뿐이다. 서버에는
@@ -263,6 +279,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 규칙 | Android | iOS |
 | --- | --- | --- |
 | 타임휠 전체 | `ui/editor/AlarmTimePicker.kt` | `Views/Editor/TimeWheelPicker.swift` |
+| 켜면 "N 후에 울려요" 하단 안내(§7) | 저장 성공·목록 켜기 → 스낵바 (`remainingDurationLabel`·`hs_status_ring_in`) | 저장 성공·목록 켜기 → 하단 캡슐 (`NextAlarmHeadline.remainingLabel`) |
 | 교체 중 충돌 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`(`deleteLocal` 하나 — 서버 삭제 단계는 2026-10-29 에 지웠다)·`rollbackAlarmReplacement` — 회귀 `DuplicateAlarmReplacementTests` |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
