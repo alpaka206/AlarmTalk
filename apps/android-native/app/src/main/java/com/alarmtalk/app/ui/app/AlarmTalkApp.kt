@@ -1133,12 +1133,29 @@ internal fun AlarmTalkApp(
     // 알람을 켠 순간의 "N 후에 울려요."(`docs/spec/alarm-editor.md` §7) — 위쪽 안내(`message`)와 **호스트를 따로** 둔다.
     // 같은 호스트에 실으면 화면 위에 뜨고, 앞선 안내 뒤에 줄을 서서 늦게 뜬다(그때는 이미 틀린 시간이다).
     // 안내가 바뀌면(다른 알람을 켬) 이 효과가 다시 돌며 앞 안내를 걷고, 거두면(그 알람을 끔·지움) 걷기만 한다.
-    // ⚠ **하단바가 있는 화면(탭)에서만 띄운다.** 편집기 같은 하위 화면은 맨 아래에 취소·저장이 있어, 남은 안내가 그 위에
-    //   얹혀 누르는 것을 가로챈다. 그래서 띄운 뒤 하위 화면으로 옮기면 걷고 버린다(돌아왔을 때 지난 안내가 다시 뜨지 않게).
-    //   저장 직후처럼 편집기가 닫히는 사이에 온 안내는 띄우지 않고 기다렸다가, 탭이 돌아오면 띄운다.
+    // 띄울지는 `ringInAction` 한 곳이 정한다(`ui/main/RingInNotice.kt`):
+    // - **하단바가 있는 화면(탭)에서만 띄운다.** 편집기 같은 하위 화면은 하단 탭이 없고 맨 아래에 취소·저장이 있어 안내가
+    //   그 위를 덮는다. 그래서 띄운 뒤 하위 화면으로 옮기면 걷고 버린다(돌아왔을 때 지난 안내가 다시 뜨지 않게). 저장 직후처럼
+    //   편집기가 닫히는 사이에 온 안내는 버리지 않고 기다렸다가(`Wait`), 탭이 돌아오면 띄운다.
+    // - 그 시각이 지났거나 생긴 지 오래돼 더는 맞는 말이 아니면 띄우지 않고 버린다(`Drop`) — 화면이 꺼진 동안 끝난 저장의
+    //   안내가, 그 사이 울리고 꺼진 알람을 두고 돌아온 뒤에 "1분 후에 울려요." 라고 말하지 않게.
     LaunchedEffect(viewModel.ringInNotice, showAppChrome) {
         val notice = viewModel.ringInNotice ?: return@LaunchedEffect
-        if (!showAppChrome) return@LaunchedEffect
+        when (
+            ringInAction(
+                notice,
+                onTabScreen = showAppChrome,
+                nowMillis = System.currentTimeMillis(),
+                nowElapsedMillis = android.os.SystemClock.elapsedRealtime(),
+            )
+        ) {
+            RingInAction.Wait -> return@LaunchedEffect
+            RingInAction.Drop -> {
+                viewModel.consumeRingInNotice(notice)
+                return@LaunchedEffect
+            }
+            RingInAction.Show -> Unit
+        }
         // 기준은 방금 켠 그 알람의 예약 시각이고, 문장·계산은 홈 헤드라인과 같은 함수다.
         val text = ringInSentence(context, notice.fireAtMillis, System.currentTimeMillis())
         // 약 3초. 접근성 설정에서 안내 시간을 늘렸으면 그만큼 — 기본 스낵바가 제 시간을 정하는 방식과 같다.
@@ -1163,9 +1180,12 @@ internal fun AlarmTalkApp(
         // 알람을 켠 순간의 "N 후에 울려요."(§7) 하나만 여기 싣는다 — 하단바 바로 위, ＋ 버튼이 떠 있으면 그 위다(Material 의
         // 배치라 버튼을 가리지 않는다). 정보 안내라 액션이 없고 색·아이콘은 다른 안내와 같은 규칙이다(`SnackbarSeverity.kt`).
         // 나머지 안내는 화면 위쪽 호스트(본문 끝의 `SnackbarHost`)로 간다.
+        // ⚠ **누르는 것을 받지 않는다**(`passTouchesThrough`) — 이 띠는 목록의 마지막 행과 스크롤로 지나가는 행 위에 얹힌다.
+        //   M3 스낵바로 그리면 3초 동안 그 행의 스위치를 눌러도 아무 일이 없다(스펙 §7 「누르거나 화면을 옮겨도 막지 않는다」).
+        //   스크린 리더 안내는 `SnackbarHost` 가 그대로 맡는다.
         snackbarHost = {
             SnackbarHost(hostState = ringInSnackbarHostState) { data ->
-                PrettySnackbar(message = data.visuals.message)
+                PrettySnackbar(message = data.visuals.message, passTouchesThrough = true)
             }
         },
         bottomBar = {
@@ -1800,6 +1820,3 @@ private val BottomBarTabRoutes =
     setOf(NativeTab.Alarms.route, NativeTab.Voices.route, NativeTab.Menu.route)
 
 private const val PUSH_TRANSITION_MILLIS = 220
-
-/** 알람을 켠 순간의 하단 안내가 머무는 시간 — 약 3초(`docs/spec/alarm-editor.md` §7). */
-private const val RING_IN_NOTICE_MILLIS = 3_000L
