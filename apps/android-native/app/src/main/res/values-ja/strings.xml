@@ -47,7 +47,6 @@
     <string name="auth_landing_preview_pause">プレビューを一時停止</string>
     <string name="auth_landing_preview_play">声をプレビュー</string>
     <string name="auth_landing_sample_message">おじいちゃん、おはようございます\n今日は雨が降るそうです\n出かけるときは傘を忘れずに</string>
-    <string name="auth_landing_voice_greeting">%1$sの声のあいさつです</string>
     <string name="auth_password_hide">パスワードを隠す</string>
     <string name="auth_password_mismatch">パスワードが一致しません。</string>
     <string name="auth_error_email_invalid">メールアドレスの形式が正しくありません。ご確認ください。</string>

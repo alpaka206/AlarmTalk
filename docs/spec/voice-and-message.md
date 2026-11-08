@@ -206,9 +206,11 @@
   그 목소리를 처음 고른 **새 알람** 편집기를 연다. 직전 선택(전역)·기존 알람은 바꾸지 않고, 저장에 성공해야 직전 선택이
   된다. 편집기에서 다시 고르면 그것이 이긴다(안드로이드 `AppRoute.alarmCreate(preferredVoiceId)`, iOS
   `AlarmEditorTarget.preferredVoiceID`).
-- **로그인 전 랜딩의 기본 목소리 4종 칩**(같은 날). 번들된 인사 샘플을 서버 없이 들려주고, 고른 목소리는 로그인한 계정이
-  **아직 목소리를 고른 적이 없을 때만** 직전 선택으로 한 번 옮긴다(`LandingVoicePick` / `DefaultVoicePreferenceStore.
-  adoptLandingVoicePick`). 하나를 꼭 고르게 하지는 않는다.
+- **로그인 전 랜딩은 미나 샘플 하나만 튼다 — 기본 목소리 4종 칩은 없앴다**(2026-11-09, 오너 — 출시 전에 1.2.16 으로
+  되돌림). 같은 날(10-26) 카드 아래에 칩을 붙여 그 목소리의 짧은 인사를 들려주고, 고른 목소리를 로그인 뒤 첫 알람의 직전
+  선택으로 옮겼다(안드로이드 `LandingVoicePick`, iOS `DefaultVoicePreferenceStore.adoptLandingVoicePick` — 둘 다 지웠다).
+  이제 카드는 미나의 3문장 샘플(`landing_voice_preview.mp3`) 하나만 틀고, 자막은 언제나 그 3문장 전문이다 — 재생 중에도
+  바뀌지 않는다(안드로이드 `ui/auth/LandingScreen.kt`·iOS `Views/Auth/LandingView.swift` 의 `VoicePreviewCard`). 되살리지 말 것.
 
 ### 무엇을 기억하고, 무엇을 건드리지 않는가
 

@@ -111,47 +111,21 @@ struct LandingView: View {
     }
 }
 
-/// 목소리 미리듣기 카드 — 안드로이드 `LandingScreen.kt:454-537` `VoicePreviewCard`.
+/// 목소리 미리듣기 카드 — 안드로이드 `ui/auth/LandingScreen.kt` 의 `VoicePreviewCard`.
 ///
 /// ⚠ **씬 위에 얹히는 글라스 카드다.** 테마 `surface` 로 칠하면 라이트 기기에서 흰 카드가
 /// 일출 하늘을 가린다. 안드로이드는 반투명 흰색(`GlassFill`/`GlassBorder`)뿐이다.
 ///
 /// 내용은 **실제로 재생되는 대사 3줄**이다. '내일 아침 / 07:30' 은 안드로이드에 없던
 /// 문구였고, 무엇보다 이 카드의 요점(어떤 목소리가 무슨 말을 해 주는지)을 못 보여준다.
+/// 미나의 그 3문장 샘플 **하나만** 틀고, 자막은 재생 중에도 그대로다.
+/// ⚠ 카드 아래의 기본 목소리 4종 칩(2026-10-26 v1.3 W04)은 출시 전에 없앴다(2026-11-09 오너) — 되살리지 말 것
+/// (`docs/spec/voice-and-message.md` §4).
 private struct VoicePreviewCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @StateObject private var preview = LandingPreviewController()
 
-    private let voices = bundledSystemVoiceProfiles()
-
     var body: some View {
-        VStack(spacing: 10) {
-            card
-            // 기본 목소리 4종 — 눌러 보면 그 목소리의 짧은 인사(번들 `voice_greeting_*`)가 나온다(2026-10-26 v1.3 W04).
-            // 고른 목소리는 로그인한 계정이 아직 고른 적이 없으면 첫 알람의 기본이 된다. 하나를 꼭 고르게 하지는 않는다.
-            HStack(spacing: 8) {
-                ForEach(voices, id: \.id) { voice in
-                    let selected = preview.selectedVoiceID == voice.id
-                    Button {
-                        preview.select(voiceID: voice.id)
-                        DefaultVoicePreferenceStore().setLandingVoicePick(voice.id)
-                    } label: {
-                        Text(voice.displayName)
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                            .foregroundStyle(AuthSceneColors.text)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(selected ? AuthSceneColors.accent.opacity(0.22) : AuthSceneColors.glassFill))
-                            .overlay(Capsule().stroke(selected ? AuthSceneColors.accent.opacity(0.7) : AuthSceneColors.glassBorder, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    private var card: some View {
         HStack(alignment: .center, spacing: 14) {
             Button {
                 preview.toggle()
@@ -168,9 +142,7 @@ private struct VoicePreviewCard: View {
             .accessibilityLabel(preview.isPlaying ? String(localized: "미리듣기 일시정지") : String(localized: "목소리 미리듣기"))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(preview.selectedVoiceID.map { id in
-                    String(localized: "\(systemVoiceDisplayName(id: id, fallback: "")) 목소리의 인사예요")
-                } ?? String(localized: "할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요"))
+                Text(String(localized: "할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요"))
                     .font(theme.typography.bodyMedium)
                     .fontWeight(.medium)
                     .foregroundStyle(AuthSceneColors.text)
@@ -193,7 +165,7 @@ private struct VoicePreviewCard: View {
 }
 
 /// 30바 미니 파형. 재생된 만큼 왼쪽부터 accent 로 채워진다.
-/// 안드로이드 `LandingScreen.kt:539-567` `MiniWaveform` 의 levels 를 그대로 옮겼다.
+/// 안드로이드 `ui/auth/LandingScreen.kt` 의 `MiniWaveform` levels 를 그대로 옮겼다.
 private struct MiniWaveform: View {
     let progress: Double
 
@@ -232,35 +204,14 @@ private struct MiniWaveform: View {
 private final class LandingPreviewController: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var progress: Double = 0
-    /// 칩으로 고른 기본 목소리 — nil 이면 랜딩 샘플을 튼다.
-    @Published private(set) var selectedVoiceID: String?
 
     private let player = AudioPreviewPlayer()
     private var tickerTask: Task<Void, Never>?
     private var started = false
 
-    private let landingURL = Bundle.main.url(forResource: "landing_voice_preview", withExtension: "mp3")
-
-    private var bundledURL: URL? {
-        guard let id = selectedVoiceID,
-              let name = bundledSystemGreetingResource(voiceProfileId: id, appLanguage: VoiceStudioViewModel.appVoiceLanguage())
-        else { return landingURL }
-        return Bundle.main.url(forResource: name, withExtension: "mp3") ?? landingURL
-    }
+    private let bundledURL = Bundle.main.url(forResource: "landing_voice_preview", withExtension: "mp3")
 
     var hasAudio: Bool { bundledURL != nil }
-
-    /// 칩을 고르면 그 목소리를 처음부터 곧바로 튼다 — 고른 것과 들리는 것이 같아야 한다.
-    func select(voiceID: String) {
-        player.pause()
-        tickerTask?.cancel()
-        tickerTask = nil
-        isPlaying = false
-        progress = 0
-        started = false
-        selectedVoiceID = voiceID
-        toggle()
-    }
 
     func toggle() {
         guard let url = bundledURL else { return }
@@ -291,7 +242,7 @@ private final class LandingPreviewController: ObservableObject {
     private func startTicker() {
         tickerTask?.cancel()
         tickerTask = Task { @MainActor [weak self] in
-            // 안드로이드도 80ms 마다 currentPosition 을 읽는다(LandingScreen.kt:471-477).
+            // 안드로이드도 80ms 마다 currentPosition 을 읽는다(`ui/auth/LandingScreen.kt` 의 `VoicePreviewCard`).
             while !Task.isCancelled {
                 guard let self, self.isPlaying else { return }
                 self.progress = self.player.playbackProgress

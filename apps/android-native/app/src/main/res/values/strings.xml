@@ -49,7 +49,6 @@
     <string name="auth_landing_preview_pause">미리듣기 일시정지</string>
     <string name="auth_landing_preview_play">목소리 미리듣기</string>
     <string name="auth_landing_sample_message">할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요</string>
-    <string name="auth_landing_voice_greeting">%1$s 목소리의 인사예요</string>
     <string name="auth_password_hide">비밀번호 숨기기</string>
     <string name="auth_password_mismatch">비밀번호가 일치하지 않아요.</string>
     <string name="auth_error_email_invalid">이메일 주소 형식이 올바르지 않아요. 다시 확인해 주세요.</string>

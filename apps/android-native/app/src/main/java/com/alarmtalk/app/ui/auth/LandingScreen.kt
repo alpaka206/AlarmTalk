@@ -453,24 +453,18 @@ private fun DrawScope.drawWave(
 /**
  * 경량 "목소리 미리듣기" 글라스 카드 — 어두운 장면 위에 얹는 반투명 버전.
  *
- * 처음에는 랜딩 샘플(인사·날씨·당부)을 튼다. 아래 **기본 목소리 4종 칩**을 누르면 그 목소리의 짧은 인사(번들된
- * `voice_greeting_*` — 서버 왕복 없음)로 바뀐다(2026-10-26 v1.3 W04). 고른 목소리는 [LandingVoicePick] 에 남아, 로그인한 계정이
- * 아직 목소리를 고른 적이 없으면 첫 알람의 기본 목소리가 된다. 하나를 꼭 고르게 하지는 않는다.
+ * 미나의 3문장 샘플(`landing_voice_preview`) **하나만** 튼다. 자막은 언제나 그 3문장 전문이고 재생 중에도 바뀌지 않는다.
+ * ⚠ 카드 아래의 기본 목소리 4종 칩(2026-10-26 v1.3 W04)은 출시 전에 없앴다(2026-11-09 오너) — 되살리지 말 것
+ * (`docs/spec/voice-and-message.md` §4).
  */
 @Composable
 private fun VoicePreviewCard(accent: Color) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val appLanguage = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]?.language ?: "ko"
-    val voices = remember { com.alarmtalk.app.data.bundledSystemVoiceProfiles() }
-    var selectedVoiceId by remember { mutableStateOf<String?>(null) }
-    val sourceRes = selectedVoiceId
-        ?.let { com.alarmtalk.app.data.bundledSystemGreetingRes(it, appLanguage) }
-        ?: R.raw.landing_voice_preview
-    val previewPlayer = remember(context, sourceRes) { MediaPlayer.create(context, sourceRes) }
+    val previewPlayer = remember(context) {
+        MediaPlayer.create(context, R.raw.landing_voice_preview)
+    }
     var isPlaying by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
-    // 칩을 누를 때마다 하나씩 올린다 — 이미 고른 칩을 다시 눌러도 다시 들려야 하는데, 고른 id 만 키로 두면 같은 값이라 안 돈다.
-    var playRequest by remember { mutableStateOf(0) }
 
     DisposableEffect(previewPlayer) {
         previewPlayer?.setOnCompletionListener { p ->
@@ -497,97 +491,53 @@ private fun VoicePreviewCard(accent: Color) {
         }
         p.start(); isPlaying = true
     }
-    // 칩을 고르면 그 목소리를 곧바로 튼다 — 고른 것과 들리는 것이 같아야 한다.
-    LaunchedEffect(previewPlayer, playRequest) {
-        if (playRequest > 0 && previewPlayer != null) {
-            previewPlayer.seekTo(0)
-            progress = 0f
-            previewPlayer.start()
-            isPlaying = true
-        }
-    }
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = WakerPanelShape,
-            color = GlassFill,
-            border = BorderStroke(1.dp, GlassBorder),
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerPanelShape,
+        color = GlassFill,
+        border = BorderStroke(1.dp, GlassBorder),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Row(
-                modifier = Modifier.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            Surface(
+                // 람다로 넘긴다 — 지역 함수 참조는 캡처가 달라도 같은 값으로 보여 Compose 가 건너뛴다(CLAUDE.md 「Compose 콜백에 지역 함수 참조」).
+                onClick = { toggle() },
+                modifier = Modifier.size(48.dp),
+                shape = WakerPillShape,
+                color = accent.copy(alpha = 0.18f),
+                contentColor = accent,
+                border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
             ) {
-                Surface(
-                    // 람다로 넘긴다 — 함수 참조는 캡처한 플레이어가 바뀌어도 같은 값으로 보여 해제된 옛 플레이어를 붙잡는다(CLAUDE.md 「Compose 콜백에 지역 함수 참조」).
-                    onClick = { toggle() },
-                    modifier = Modifier.size(48.dp),
-                    shape = WakerPillShape,
-                    color = accent.copy(alpha = 0.18f),
-                    contentColor = accent,
-                    border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = if (isPlaying) {
-                                stringResource(R.string.auth_landing_preview_pause)
-                            } else {
-                                stringResource(R.string.auth_landing_preview_play)
-                            },
-                            modifier = Modifier.size(26.dp),
-                        )
-                    }
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = selectedVoiceId?.let { id ->
-                            stringResource(
-                                R.string.auth_landing_voice_greeting,
-                                com.alarmtalk.app.data.systemVoiceDisplayName(context, id, ""),
-                            )
-                        } ?: stringResource(R.string.auth_landing_sample_message),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = TextOnScene,
-                        // 자막 = 실제 미리듣기 음성 대사 3문장(인사·날씨·당부) 전문. 줄 수 제한 없음 —
-                        // 카드가 커지는 극단 케이스(접근성 확대 등)는 랜딩 콘텐츠 영역 스크롤이 흡수하고
-                        // '시작하기' CTA 는 스크롤 밖에 고정이라 항상 도달 가능하다.
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (isPlaying) {
+                            stringResource(R.string.auth_landing_preview_pause)
+                        } else {
+                            stringResource(R.string.auth_landing_preview_play)
+                        },
+                        modifier = Modifier.size(26.dp),
                     )
-                    MiniWaveform(progress = progress, accent = accent)
                 }
             }
-        }
-        // 기본 목소리 4종 — 눌러 보면 그 목소리의 짧은 인사가 나온다. 글자는 장면 위의 밝은 글자, 고른 칩만 강조색 테두리.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            voices.forEach { voice ->
-                val selected = voice.id == selectedVoiceId
-                Surface(
-                    onClick = {
-                        previewPlayer?.takeIf { it.isPlaying }?.pause()
-                        isPlaying = false
-                        selectedVoiceId = voice.id
-                        com.alarmtalk.app.data.LandingVoicePick(context).set(voice.id)
-                        playRequest += 1
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = WakerPillShape,
-                    color = if (selected) accent.copy(alpha = 0.22f) else GlassFill,
-                    contentColor = TextOnScene,
-                    border = BorderStroke(1.dp, if (selected) accent.copy(alpha = 0.7f) else GlassBorder),
-                ) {
-                    Text(
-                        text = com.alarmtalk.app.data.systemVoiceDisplayName(context, voice.id, voice.name),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        maxLines = 1,
-                    )
-                }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.auth_landing_sample_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = TextOnScene,
+                    // 자막 = 실제 미리듣기 음성 대사 3문장(인사·날씨·당부) 전문. 줄 수 제한 없음 —
+                    // 카드가 커지는 극단 케이스(접근성 확대 등)는 랜딩 콘텐츠 영역 스크롤이 흡수하고
+                    // '시작하기' CTA 는 스크롤 밖에 고정이라 항상 도달 가능하다.
+                )
+                MiniWaveform(progress = progress, accent = accent)
             }
         }
     }

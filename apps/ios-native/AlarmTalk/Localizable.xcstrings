@@ -12528,29 +12528,6 @@
         }
       }
     },
-    "%@ 목소리의 인사예요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A hello from %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@の声のあいさつです"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 목소리의 인사예요"
-          }
-        }
-      }
-    },
     "아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
