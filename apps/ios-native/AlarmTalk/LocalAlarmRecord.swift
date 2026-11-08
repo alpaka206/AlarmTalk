@@ -219,8 +219,11 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // ⚠ 이 술어와 `PaidVoiceGate.usesFreeSystemVoice` 는 **한 쌍이다 — 항상 같이 고친다.**
         // 한쪽만 고치면 '예약은 목소리로 되는데 앱을 껐다 켜면 잠긴다'(또는 그 반대)가 된다.
         if voiceSourceEnum == .localAudio, localAudioUri?.nilIfBlank != nil { return false }
-        // 추가 음성팩 목소리 알람은 무료 고정 콘텐츠다 — `PaidVoiceGate.usesFreeSystemVoice` 의 `isFreeFixedVoiceID` 짝.
-        if voiceSourceEnum != .localAudio, isVoicePackVoiceID(voiceProfileId) { return false }
+        // ⚠ **기본(시스템) 목소리·추가 음성팩 알람은 무엇을 말하든 무료다** — `PaidVoiceGate.usesFreeSystemVoice` 의
+        // `isFreeFixedVoiceID` 짝(2026-11-09 iOS 출시 검토 blocker). 1.3 에서 짝 쪽만 바뀌어, 무료가 만든 '기본 목소리 +
+        // 직접 입력' 알람이 다음 실행의 무료 잠금에서 유료로 읽혀 음성을 잃고 인사말로 울렸다. 안드로이드는
+        // `lockPaidAlarmTalks` 가 `usesFreeSystemVoiceAlarm()`(같은 `isFreeFixedVoiceId`)으로 건너뛴다.
+        if voiceSourceEnum != .localAudio, isFreeFixedVoiceID(voiceProfileId) { return false }
         let stockVoiceOnly =
             localAudioUri.nilIfBlank == nil &&
             rawAudioUri.nilIfBlank == nil &&

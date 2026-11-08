@@ -314,7 +314,9 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertFalse(alarm.isPaidVoiceForDowngrade)
     }
 
-    func test_customSystemGeneratedAudioIsPaidVoiceForDowngrade() {
+    /// 기본 목소리로 만든 직접 입력 결과는 **무료**다(1.3, 2026-11-09 iOS 출시 검토 blocker) — 예전에는 유료로 읽혀
+    /// 다음 실행의 무료 잠금이 음성을 떼고 인사말로 바꿨다. 등록(클론) 목소리 결과만 유료다(아래 두 번째 단언).
+    func test_systemVoiceManualAudioIsNotPaidVoiceForDowngrade_cloneIs() {
         let alarm = LocalAlarmRecord(
             label: "Custom",
             hour: 7,
@@ -334,7 +336,10 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             ttsMessageId: "message-2"
         )
 
-        XCTAssertTrue(alarm.isPaidVoiceForDowngrade)
+        XCTAssertFalse(alarm.isPaidVoiceForDowngrade)
+        var clone = alarm
+        clone.voiceProfileId = "clone-voice-1"
+        XCTAssertTrue(clone.isPaidVoiceForDowngrade)
     }
 
     /// ⚠ 회귀 방지: `preLockPlayMode`·`ownerUserId`·`bucketId` 는 한때 `CodingKeys` 에

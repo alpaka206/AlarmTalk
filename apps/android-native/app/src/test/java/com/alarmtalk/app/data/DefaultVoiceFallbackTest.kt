@@ -412,4 +412,18 @@ class DefaultVoiceFallbackTest {
         // 조건을 못 받았으면 마지막(안내) 클립 — 클론 날씨와 같은 규칙.
         assertEquals(8, rehearsalCloneAlarm().copy(contextVariantIndex = null).defaultVoiceVariantIndex("weather", keys))
     }
+
+    /**
+     * 테마 없이 잠긴 직접 입력 행에 **새 문구를 만들어** 저장한 것은 사용자의 편집이다 — 잠금을 잇지 않는다(2026-11-09 출시
+     * 검토). 이으면 나중에 복원이 그 문구를 옛 문구로 말없이 되돌린다. 시각만 고친 저장은 그대로 잇는다. iOS `saveKeepsLock` 짝.
+     */
+    @Test
+    fun aNewManualAudioOnAThemelessLockIsAnEdit() {
+        val locked = rehearsalCloneAlarm(bucketId = null, voiceRandomContext = null, audioCacheKey = "hash-abc")
+            .lockedToDefaultVoice(TEST_SYSTEM_VOICE_ID, null, null, null, 5_000L)
+        assertTrue(locked.hasLockedPaidVoice())
+        val remade = locked.copy(voiceText = "약 먹고 물 마셔", audioCacheKey = "hash-new", localAudioUri = "file:///tts/new.mp3")
+        assertFalse(lockSurvivesSave(saved = remade, editing = locked))
+        assertTrue(lockSurvivesSave(saved = locked.copy(hour = 9), editing = locked))
+    }
 }

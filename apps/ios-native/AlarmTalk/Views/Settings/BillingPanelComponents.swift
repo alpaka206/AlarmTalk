@@ -45,7 +45,10 @@ extension SubscriptionManager {
         }
         guard let firstCharge = Calendar.current.date(byAdding: component, value: period.value, to: now) else { return nil }
         let date = firstCharge.formatted(.dateTime.month(.wide).day())
-        return String(localized: "오늘은 결제되지 않아요. \(String(date))부터 매월 \(String(price))씩 결제되고, 그 전에 App Store에서 언제든 해지할 수 있어요.")
+        // ⚠ **App Store 는 체험 종료 24시간 전까지 해지해야 청구되지 않는다**(2026-11-09 iOS 출시 검토 — 같은 화면 각주
+        // `SubscriptionTermsFootnote` 의 갱신 규칙과 맞춘다). "그 전에 언제든" 이라고 쓰면 마지막 하루에 해지한 사람이 청구된다.
+        // 안드로이드(Google Play)는 체험 종료 전이면 언제든이라 문장이 다르다.
+        return String(localized: "오늘은 결제되지 않아요. \(String(date))부터 매월 \(String(price))씩 결제돼요. 체험이 끝나기 24시간 전까지 App Store에서 해지하면 결제되지 않아요.")
     }
 }
 import StoreKit

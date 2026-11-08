@@ -13509,24 +13509,24 @@
         }
       }
     },
-    "오늘은 결제되지 않아요. %@부터 매월 %@씩 결제되고, 그 전에 App Store에서 언제든 해지할 수 있어요." : {
+    "오늘은 결제되지 않아요. %@부터 매월 %@씩 결제돼요. 체험이 끝나기 24시간 전까지 App Store에서 해지하면 결제되지 않아요." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You won't be charged today. From %1$@, %2$@ will be charged every month. You can cancel anytime in the App Store before then."
+            "value" : "You won't be charged today. From %1$@, %2$@ will be charged every month. Cancel in the App Store at least 24 hours before the trial ends and you won't be charged."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本日は請求されません。%1$@から毎月%2$@が請求されます。それまでにApp Storeでいつでも解約できます。"
+            "value" : "本日は請求されません。%1$@から毎月%2$@が請求されます。無料期間が終わる24時間前までにApp Storeで解約すれば請求されません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "오늘은 결제되지 않아요. %1$@부터 매월 %2$@씩 결제되고, 그 전에 App Store에서 언제든 해지할 수 있어요."
+            "value" : "오늘은 결제되지 않아요. %1$@부터 매월 %2$@씩 결제돼요. 체험이 끝나기 24시간 전까지 App Store에서 해지하면 결제되지 않아요."
           }
         }
       }

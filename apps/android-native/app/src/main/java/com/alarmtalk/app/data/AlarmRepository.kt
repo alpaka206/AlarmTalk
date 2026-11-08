@@ -1260,7 +1260,23 @@ class AlarmRepository(
             // 이미 새 모양(기본 목소리 + 보관본)으로 잠긴 행 — 기본 목소리로 잘 울리고 있다.
             // ⚠ 아래 '되돌리기' 갈래로 떨어뜨리지 말 것: 이 행은 이제 기본 목소리 알람이라
             // `usesFreeSystemVoiceAlarm` 이 참이고, 그대로 두면 보관본을 버린 채 풀려 버린다.
-            if (alarm.hasLockedPaidVoice()) return@forEach
+            //
+            // ⚠ **단, 보관본을 되돌리면 지금 규칙으로 무료인 잠금은 푼다**(2026-11-09 출시 검토). 1.2.16 은 기본 목소리 직접
+            // 입력을 유료로 읽어 잠갔는데, 무료로 남는 동안은 복원(유료일 때만)이 없어 영영 그 목소리의 인사말로 울렸다.
+            // **매 회차** 본다(일회성 이전이 아니다 — 기기는 어느 판에서든 올라온다). 잠긴 뒤 직접 입력을 새로 만들어 저장했으면
+            // 그 편집이 이긴다(보관본만 버린다). iOS 짝은 `FreePlanLockSelection.toRelease`·`released`.
+            if (alarm.hasLockedPaidVoice()) {
+                val restored = alarm.restoredFromLock(now)
+                if (restored.usesFreeSystemVoiceAlarm() && ownedByCurrentSession(alarm, currentUser, ownershipSettled)) {
+                    val editedSinceLock = alarm.bucketId.isNullOrBlank() &&
+                        !alarm.audioCacheKey.isNullOrBlank() &&
+                        alarm.audioCacheKey != restored.audioCacheKey
+                    val released = if (editedSinceLock) alarm.finalizedLock(now) else restored
+                    if (released.enabled) alarmScheduler.schedule(released)
+                    alarmDao.upsertPreservingServerSyncFields(released)
+                }
+                return@forEach
+            }
     // ⚠ **재생 방식만으로 '유료 목소리' 라고 하지 말 것**(2026-08-18, 실계정 확인).
     // `playMode != ALARM_ONLY` 를 단독 조건으로 두면 **말할 자원이 하나도 없는 알람**
     // (profileId·ttsMessageId·오디오 전부 없음)이 유료로 잡혀, **한 번도 유료였던 적 없는

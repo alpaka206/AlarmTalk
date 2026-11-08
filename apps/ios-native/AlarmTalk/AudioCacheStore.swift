@@ -997,6 +997,18 @@ final class AudioCacheStore {
 
             // 고아 사이드카: 본체 음원이 사라졌으면 즉시 제거.
             if audioNames.isEmpty {
+                // ⚠ **직접 입력 '같은 입력' 별칭은 본체 없는 사이드카다 — 가리키는 음원이 남아 있으면 지우지 않는다**
+                // (2026-11-09 iOS 출시 검토). 예전에는 앱을 켤 때마다 별칭이 지워져, 폰에 있는 음성을 새 알람이 다시 쓰지
+                // 못하고 서버에서 다시 받으며 월 횟수가 한 번 더 깎였다(오프라인이면 저장이 막혔다). 안드로이드
+                // `sweepStaleCache` 는 나이로만 지운다. 가리키는 음원이 나중에 지워지면 조회(`resolveTtsInput`)가 nil 이 된다.
+                if let metaName = grouped.first(where: { Self.splitName($0).ext == "meta.json" }),
+                   let data = try? Data(contentsOf: directory.appendingPathComponent(metaName)),
+                   let meta = try? JSONDecoder().decode(AudioCacheMetadata.self, from: data),
+                   meta.source == "tts_input_alias",
+                   let target = meta.aliasOf.map({ Self.safeCacheKey($0) }),
+                   namesByBase[target]?.contains(where: { Self.splitName($0).ext != "meta.json" }) == true {
+                    continue
+                }
                 for name in grouped {
                     try? fileManager.removeItem(at: directory.appendingPathComponent(name))
                 }
