@@ -180,6 +180,22 @@ final class AlarmToggleCoalescerTests: XCTestCase {
         XCTAssertEqual(log.values, [], "켠 적이 없다 — 알릴 것이 없다")
     }
 
+    func test_켜져_있던_알람을_껐다_도로_켜면_보낸_것이_없어도_켬을_한_번_알린다() async {
+        let gates = Gates()
+        let coalescer = AlarmToggleCoalescer(settleDelay: { await gates.wait() })
+        let alarm = FakeAlarm(enabled: true)
+        let log = SettledLog()
+
+        toggle(coalescer, alarm, false, settled: log.record)
+        toggle(coalescer, alarm, true, settled: log.record)
+        await until { gates.count == 2 }
+        gates.releaseAll()
+        await until { coalescer.shown["a1"] == nil }
+
+        XCTAssertEqual(alarm.applied, [], "마지막 값이 이미 저장된 값이라 보내지 않는다")
+        XCTAssertEqual(log.values, [true], "그래도 켬으로 끝났다 — 연타를 합친 마지막 값이 켜짐이면 한 번 알린다(스펙 §7)")
+    }
+
     func test_켜는_사이_끄면_켬을_알리지_않고_마지막에_반영한_끔을_알린다() async {
         let gates = Gates()
         let hold = Gates()

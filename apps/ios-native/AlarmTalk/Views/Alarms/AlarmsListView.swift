@@ -154,13 +154,15 @@ struct AlarmsListView: View {
                                     guard let fresh = store.record(id: id) else { return }
                                     await setAlarm(fresh, enabled: want)
                                 },
-                                // 연타를 합친 마지막 값이 켜짐으로 반영됐으면 그 알람이 언제 우는지 화면 아래에 잠깐 띄운다
-                                // (스펙 alarm-editor.md §7). 켜기가 실패해 되돌아갔으면(권한·지난 날짜·예약 실패) 행이 꺼져
-                                // 있어 띄우지 않는다 — 판정은 `RingInNotice.text` 하나다.
-                                settled: { applied in
-                                    guard applied else { return }
-                                    RingInNoticePresenter.shared.present(
-                                        for: store.record(id: id),
+                                // 연타를 다 합쳐 반영한 뒤(스펙 alarm-editor.md §7) — 켬으로 끝났으면 그 알람이 언제 우는지
+                                // 화면 아래에 잠깐 띄우고, 꺼졌으면 떠 있던 **그 알람의** 안내를 거둔다. 켜기가 실패해 되돌아갔으면
+                                // (권한·지난 날짜·예약 실패) 행이 꺼져 있어 띄우지 않는다. 판정은 반영된 뒤의 행으로 프레젠터가
+                                // 한다(`listToggleSettled`).
+                                settled: { enabled in
+                                    RingInNoticePresenter.shared.listToggleSettled(
+                                        alarmID: id,
+                                        enabled: enabled,
+                                        row: store.record(id: id),
                                         alarmAuthorized: alarmKit.alarmAuthorized
                                     )
                                 }
@@ -380,6 +382,8 @@ struct AlarmsListView: View {
             actionMessage = alarmKit.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
             return
         }
+        // 지운 알람의 "N 후에 울려요." 가 떠 있으면 거둔다 — 남기면 없는 알람의 남은 시간을 말한다(§7). 여러 개 삭제도 이 길이다.
+        RingInNoticePresenter.shared.withdraw(alarmID: alarm.id)
     }
 }
 

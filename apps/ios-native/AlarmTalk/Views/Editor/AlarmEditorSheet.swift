@@ -3008,8 +3008,24 @@ struct AlarmEditorSheet: View {
             return false
         }
         store.upsertPreservingServerSyncFields(merged)
-        let scheduled = await alarmKit.schedule(record: merged, store: store)
-        guard scheduled else {
+        // 예약 직후의 행 — 교체 정리가 실패하면 롤백이 이 사본과 견줘 그 사이 바뀐 행은 덮지 않는다(`rollbackAlarmReplacement`).
+        var staged: LocalAlarmRecord?
+        // 충돌을 지우는 사이 계정이 바뀌었으면(자동 401 포함) 그것도 정리 실패다 — 임시 저장을 롤백한다.
+        var clearConflicts: (@MainActor () async -> Bool)?
+        if let beforeCompletion {
+            clearConflicts = { await beforeCompletion() && auth.session?.user.id == ownerID }
+        }
+        // 걸음은 `runAlarmSaveSteps` 하나가 정한다 — 성공 마무리(아래)는 `.completed` 에서만 돈다.
+        let outcome = await runAlarmSaveSteps(
+            schedule: {
+                guard await alarmKit.schedule(record: merged, store: store) else { return false }
+                staged = store.record(id: merged.id)
+                return true
+            },
+            clearConflicts: clearConflicts
+        )
+        switch outcome {
+        case .scheduleFailed:
             if let existing, auth.session?.user.id == ownerID, store.record(id: merged.id) != nil {
                 store.upsertPreservingServerSyncFields(existing)
             } else if existing == nil, auth.session?.user.id == ownerID {
@@ -3024,9 +3040,7 @@ struct AlarmEditorSheet: View {
                 message: alarmKit.statusMessage ?? String(localized: "알람 예약에 실패했어요.")
             )
             return false
-        }
-        let staged = store.record(id: merged.id)
-        if let beforeCompletion, !(await beforeCompletion()) || auth.session?.user.id != ownerID {
+        case .replacementFailed:
             // 새 예약만 해제한다. 기존 편집본의 옛 예약은 아직 취소하지 않아 롤백할 수 있다.
             if let staged {
                 await rollbackAlarmReplacement(staged: staged, previous: existing, store: store) {
@@ -3038,6 +3052,8 @@ struct AlarmEditorSheet: View {
                 message: String(localized: "알람 삭제에 실패했어요")
             )
             return false
+        case .completed:
+            break
         }
         if let existing {
             await alarmKit.cancelScheduledAlarm(record: existing)
@@ -3067,9 +3083,14 @@ struct AlarmEditorSheet: View {
         }
         recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
-        // 켠 알람이 언제 우는지 화면 아래에 잠깐 띄운다(스펙 alarm-editor.md §7) — 저장(교체 포함)이 끝까지 성공했을 때만,
-        // 방금 저장한 **그 알람의** 예약 시각으로. 편집기가 닫히는 동안에도 보이게 띄우는 자리는 스택 밖이다(`MainTabsView`).
-        RingInNoticePresenter.shared.present(for: store.record(id: merged.id), alarmAuthorized: alarmKit.alarmAuthorized)
+        // 켠 알람이 언제 우는지 화면 아래에 잠깐 띄운다(스펙 alarm-editor.md §7) — 저장(교체 포함)이 끝까지 성공했을 때만
+        // (`outcome` 이 `.completed` 일 때만 — 판정은 프레젠터가 한다), 방금 저장한 **그 알람의** 예약 시각으로. 지금은 편집기가
+        // 하단 탭을 가리고 있어 기다렸다가, 바로 아래 `onSchedulingDidFinish` 가 편집기를 닫아 탭이 돌아오면 뜬다(`hostShown`).
+        RingInNoticePresenter.shared.present(
+            after: outcome,
+            for: store.record(id: merged.id),
+            alarmAuthorized: alarmKit.alarmAuthorized
+        )
         onSchedulingDidFinish()
         return true
     }

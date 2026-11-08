@@ -224,8 +224,16 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 오너 요청: "알람 설정하면 하단에 잠시 몇 분 후에 알림이 울려요 이런 건 있으면 좋겠어". 휴대폰 기본 시계 앱처럼, 알람을 켠 순간
 **그 알람이** 얼마 뒤에 우는지 아래쪽에 잠깐 보여 준다.
 
-- **언제**: ① 편집기에서 저장에 성공했고 저장된 알람이 켜져 있을 때(새 알람·기존 알람 모두) ② 알람 목록에서 스위치로 알람을 **켰을 때**
-  (실제로 반영된 뒤 — iOS 는 연타를 합친 마지막 값이 켜짐일 때 한 번). 끄기·삭제·여러 개 삭제·다시 울림에는 띄우지 않는다.
+- **언제**: ① 편집기에서 저장에 성공했고 저장된 알람이 켜져 있을 때(새 알람·기존 알람 모두. 같은 시각 교체는 충돌 정리까지 끝났을 때만 —
+  예약이 실패했거나 정리가 실패해 롤백했으면 띄우지 않는다) ② 알람 목록에서 스위치로 알람을 **켰을 때**
+  (실제로 반영된 뒤 — iOS 는 연타를 합친 마지막 값이 켜짐일 때 한 번. 켜져 있던 알람을 껐다 도로 켜 보낸 것이 없어도 한 번).
+  끄기·삭제·여러 개 삭제·다시 울림에는 띄우지 않는다.
+- **거둔다**: 안내가 떠 있는 동안 **그 알람을** 끄거나 지우면(여러 개 삭제 포함) 곧바로 거둔다. 다른 알람의 안내는 둔다. 끄기가 실패해
+  알람이 켜진 채면 그대로 둔다 — 그 알람은 그대로 운다. 남기면 꺼진 알람을 두고 "N 후에 울려요" 라고 말해, 방금 끈 사람이 안 꺼졌나 하고
+  도로 켠다.
+- **하단 탭이 있는 화면에서만**: 편집기·설정·이용권 같은 하위 화면으로 옮기면 걷고 버린다(돌아와도 다시 띄우지 않는다) — 하위 화면 위에
+  남으면 어느 알람의 것인지 표시가 없어 지금 고치는 알람의 시각처럼 읽힌다. 하위 화면에 있는 동안 켠 것(저장 직후 편집기가 닫히는 사이
+  포함)은 탭으로 돌아온 뒤 **그때의 남은 시간**으로 띄운다. 그사이 그 알람을 껐거나 지웠으면 띄우지 않는다.
 - **무엇을**: 홈 헤드라인과 **같은 문장·같은 계산**이다 — 안드로이드 `hs_status_ring_in` + `remainingDurationLabel`, iOS
   `NextAlarmHeadline.remainingLabel` + "%@ 후에 울려요.". 기준은 **방금 켠 그 알람의 예약 시각**이다(전체의 다음 알람이 아니다).
   올림이라 1분 미만도 "1분 후에 울려요." 다.
@@ -265,7 +273,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 규칙 | Android | iOS |
 | --- | --- | --- |
 | 타임휠 전체 | `ui/editor/AlarmTimePicker.kt` | `Views/Editor/TimeWheelPicker.swift` |
-| 켜면 "N 후에 울려요" 하단 안내(§7) | 저장 성공·목록 켜기 → 스낵바 (`remainingDurationLabel`·`hs_status_ring_in`) | 저장 성공·목록 켜기 → 하단 캡슐 (`NextAlarmHeadline.remainingLabel`) |
+| 켜면 "N 후에 울려요" 하단 안내(§7) | 저장 성공·목록 켜기 → 스낵바 (`remainingDurationLabel`·`hs_status_ring_in`) | 저장 성공(`runAlarmSaveSteps` 가 `.completed` 일 때만 — `RingInNoticePresenter.present(after:)`)·목록 켜기(`AlarmToggleCoalescer` 의 `settled` → `listToggleSettled`) → 하단 캡슐(`Views/Alarms/RingInNotice.swift`, 문장은 `NextAlarmHeadline.remainingLabel`) · 끄기·삭제는 그 알람 것만 `withdraw` · 하위 화면은 `MainTabsView` 가 `hostHidden`·`hostShown` 으로 알린다 |
 | 교체 중 충돌 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`(`deleteLocal` 하나 — 서버 삭제 단계는 2026-10-29 에 지웠다)·`rollbackAlarmReplacement` — 회귀 `DuplicateAlarmReplacementTests` |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
@@ -298,6 +306,8 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 알람 전용 → 목소리 = 직전 선택(없으면 기본 인사말), 빈 직접 입력은 요청 전 차단 | `AlarmEditorStateTest`(안드로이드) · `AlarmTalkTests/MessageContextMemoryTests.swift`(iOS) |
 | 저장 버튼의 로컬 확인은 IO 에서 한 번 · 도는 동안의 탭은 버림 · 찾으면 서버 없이 저장 · 그 사이 편집기가 바뀌었으면 버림 · 저장 사유는 파일을 읽지 않는다(§6) | `ManualAudioReuseGateTest`(안드로이드 — `aLookupResultIsDroppedWhenTheEditorChangedMeanwhile`) |
 | 선택 시트에 '닫기' 가 없는가 | `AlarmTalkUITests/VoiceSheetScreenshotUITests.swift` |
+| 켜면 "N 후에 울려요"(§7) — 헤드라인과 같은 문장·그 알람의 예약 시각, 권한·꺼짐·지난 시각은 띄우지 않음, 끄기·삭제는 그 알람 안내만 거둠, 하위 화면에서는 걷고 가려진 동안 켠 것은 돌아오면 그때의 행으로, 편집기는 끝까지 성공했을 때만 | iOS `AlarmTalkTests/RingInNoticeTests.swift` · 저장의 걸음(충돌은 예약 뒤에만) `AlarmTalkTests/DuplicateAlarmReplacementTests.swift` 의 `test_saveStepsClearConflictsOnlyAfterSchedulingSucceeds` |
+| 목록 연타 — 다 합쳐 반영한 뒤 한 번만 알림, 켬으로 끝나면 보낸 것이 없어도 알림, 끔으로 끝나고 보낸 것이 없으면 알리지 않음(§7) | iOS `AlarmTalkTests/AlarmToggleCoalescerTests.swift` 의 「다 합쳐 반영한 뒤 한 번 알린다」 묶음 |
 
 ⚠ **계산부 테스트만으로는 부족하다.** 식이 맞는지만 보고 **연결돼 있는지**는 보지 못한다 —
 N칸을 즉시 대입하던 옛 코드도 계산부 테스트는 통과한다. 그래서 UI 테스트가 손을 뗀
