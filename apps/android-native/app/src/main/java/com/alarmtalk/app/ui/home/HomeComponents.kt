@@ -5,6 +5,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.Box
+import android.content.Context
 import android.icu.text.MeasureFormat
 import android.icu.util.Measure
 import android.icu.util.MeasureUnit
@@ -39,6 +40,7 @@ import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import com.alarmtalk.app.network.AuthSession
@@ -58,6 +60,7 @@ internal fun HomeHeader(
     //   시각이라 앱을 오래 백그라운드에 두었다 돌아와도 재시작하지 않는다 — 그 사이
     //   `delay` 가 밀리면 낡은 값으로 한 프레임을 그린다.
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
 
     // 절대 시각은 바로 아래 카드에 이미 있으니 헤더는 '남은 시간'을 말한다.
     // 분이 바뀌는 경계마다 갱신해 화면을 켜둔 채로도 어긋나지 않게 한다.
@@ -91,7 +94,7 @@ internal fun HomeHeader(
             // ⚠ **'곧 울려요' 분기를 되살리지 말 것**(2026-08-18 지시). 1분 미만일 때만
             // 다른 문장이 되면 같은 자리의 말이 갑자기 바뀐다. 올림이라 1분 미만도
             // "1분 후에 울려요" 로 읽힌다.
-            stringResource(R.string.hs_status_ring_in, remainingDurationLabel(nextAlarm.fireAtMillis - now))
+            ringInSentence(context, nextAlarm.fireAtMillis, now)
         }
         hasAnyAlarm -> stringResource(R.string.hs_status_inactive)
         else -> stringResource(R.string.hs_status_no_alarm)
@@ -111,6 +114,15 @@ internal fun HomeHeader(
         )
     }
 }
+
+/**
+ * "13시간 40분 후에 울려요." — 알람 하나가 [fireAtMillis] 에 울리기까지 남은 시간을 말하는 문장.
+ *
+ * 홈 헤드라인(다음 알람)과 알람을 켠 순간의 하단 안내(방금 켠 그 알람 — `docs/spec/alarm-editor.md` §7)가
+ * **같이 부른다.** 문장이나 계산을 한쪽에서만 고치면 같은 알람이 두 자리에서 다른 시간으로 읽힌다.
+ */
+internal fun ringInSentence(context: Context, fireAtMillis: Long, nowMillis: Long): String =
+    context.getString(R.string.hs_status_ring_in, remainingDurationLabel(fireAtMillis - nowMillis))
 
 /** "13시간 40분"/"2일 5시간" — 다음 울림까지 남은 시간(분 단위 올림, 상위 두 단위만 노출). */
 internal fun remainingDurationLabel(remainingMillis: Long): String {

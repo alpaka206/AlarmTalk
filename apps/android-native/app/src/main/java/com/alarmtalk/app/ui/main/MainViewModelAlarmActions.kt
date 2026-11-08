@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmDraft
+import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
@@ -64,6 +65,28 @@ private suspend fun MainViewModel.withResolvedWeatherVariant(draft: AlarmDraft):
     return draft.copy(contextVariantIndex = resolved, contextResolvedNow = true)
 }
 
+/**
+ * 알람을 켠 순간의 하단 안내 "N 후에 울려요."(`docs/spec/alarm-editor.md` §7)의 대상 — 알람 하나와 그 예약 시각.
+ * 문장은 화면이 띄우는 순간 홈 헤드라인과 같은 함수(`ringInSentence`)로 만든다.
+ */
+data class RingInNotice(val alarmId: String, val fireAtMillis: Long)
+
+/**
+ * 저장·켜기가 **반영된 뒤의 행**으로 안내를 정한다 — 켜진 행이면 그 알람의 예약 시각, 꺼진 행이면 null(울릴 시각이 없다).
+ * 지난 날짜라 켜지지 않은 날짜 알람은 저장소가 예외로 돌려보내 여기까지 오지 않는다(그때는 알럿이 말한다).
+ */
+internal fun ringInNoticeFor(alarm: AlarmEntity): RingInNotice? =
+    if (alarm.enabled) RingInNotice(alarm.id, alarm.fireAtMillis) else null
+
+private fun MainViewModel.announceRingIn(saved: AlarmEntity) {
+    ringInNoticeFor(saved)?.let { ringInNotice = it }
+}
+
+/** 끄거나 지운 알람의 안내가 떠 있으면 거둔다 — 남기면 꺼진 알람을 두고 "N 후에 울려요" 라고 말한다. 다른 알람의 안내는 둔다. */
+private fun MainViewModel.withdrawRingIn(alarmId: String) {
+    if (ringInNotice?.alarmId == alarmId) ringInNotice = null
+}
+
 /** 저장 시도의 끝(`alarm_ready`) — OS 예약과 오디오 파일이 둘 다 갖춰졌을 때만. 기록 실패는 저장을 막지 않는다. */
 private fun MainViewModel.recordAlarmReadyIfReady(saved: com.alarmtalk.app.data.AlarmEntity) {
     val ready = runCatching { repository.isReadyToRing(saved) }.getOrDefault(false)
@@ -96,8 +119,9 @@ internal fun MainViewModel.createAlarm(
             com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
             com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)
             requestCloneCheerSupplementIfNeeded(saved, previous = null)
-            // 성공 토스트는 띄우지 않는다 — 저장 즉시 리스트에 행이 생기고 홈 헤더가
-            // '몇 시간 후에 울려요'를 이미 말해준다(안내 중복 소음).
+            // '저장했어요' 같은 성공 토스트는 띄우지 않는다 — 리스트에 행이 생기는 것이 곧 결과다. 대신 그 알람이
+            // 언제 우는지를 화면 아래에 잠깐 말한다(`docs/spec/alarm-editor.md` §7 — 전체의 다음 알람이 아니라 이 알람).
+            announceRingIn(saved)
             onDone()
         }.onFailure { error ->
             if (error is DuplicateAlarmTimeException) {
@@ -141,7 +165,8 @@ internal fun MainViewModel.updateAlarm(
             com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
             com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)
             requestCloneCheerSupplementIfNeeded(saved, previous)
-            // 생성과 동일 — 성공 토스트 생략(리스트/헤더가 결과를 보여준다).
+            // 생성과 동일 — 성공 토스트는 생략하고, 고친 알람이 언제 우는지만 아래에 잠깐(§7).
+            announceRingIn(saved)
             onDone()
         }.onFailure { error ->
             if (error is DuplicateAlarmTimeException) {
@@ -186,8 +211,10 @@ internal fun MainViewModel.setAlarmEnabled(alarmId: String, enabled: Boolean) {
     viewModelScope.launch {
         runCatching {
             repository.setEnabled(alarmId, enabled)
-        }.onSuccess {
+        }.onSuccess { updated ->
             message = null
+            // 반영된 뒤에야 말한다(§7) — 켰으면 그 알람이 언제 우는지, 껐으면 떠 있던 그 알람의 안내를 거둔다.
+            if (enabled) announceRingIn(updated) else withdrawRingIn(alarmId)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to change alarm enabled id=$alarmId", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_toggle_failed))
@@ -201,6 +228,7 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
             repository.deleteAlarm(alarmId)
         }.onSuccess {
             // 성공 토스트 생략 — 행이 리스트에서 사라지는 것이 곧 결과다(실패 안내만 유지).
+            withdrawRingIn(alarmId)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to delete alarm id=$alarmId", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_delete_failed))

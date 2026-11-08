@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.res.stringResource
 import android.Manifest
@@ -43,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -147,6 +149,9 @@ internal fun AlarmTalkApp(
     }
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
+    // 알람을 켠 순간의 하단 안내(§7) 전용 — 띄우는 효과는 `Scaffold` 바로 앞, 그리는 자리는 `Scaffold` 의 `snackbarHost`.
+    val ringInSnackbarHostState = remember { SnackbarHostState() }
+    val accessibilityManager = LocalAccessibilityManager.current
     // **기본 목소리 교체가 아직 안 끝났는가.**
     // ⚠ **지금 계정의 미완료일 때만 막는다**(2026-09-03 리뷰 18차). 상태는 프로세스
     //   전역인데 작업은 유니크·KEEP 이라, 계정 A 의 실행 결과가 남아 B 를 가둘 수 있다.
@@ -1125,7 +1130,44 @@ internal fun AlarmTalkApp(
         !viewModel.updateRequired && !viewModel.consentUnsupported &&
         !stockReplacementPending && !viewModel.showVoiceSetup && isRootTab
 
+    // 알람을 켠 순간의 "N 후에 울려요."(`docs/spec/alarm-editor.md` §7) — 위쪽 안내(`message`)와 **호스트를 따로** 둔다.
+    // 같은 호스트에 실으면 화면 위에 뜨고, 앞선 안내 뒤에 줄을 서서 늦게 뜬다(그때는 이미 틀린 시간이다).
+    // 안내가 바뀌면(다른 알람을 켬) 이 효과가 다시 돌며 앞 안내를 걷고, 거두면(그 알람을 끔·지움) 걷기만 한다.
+    // ⚠ **하단바가 있는 화면(탭)에서만 띄운다.** 편집기 같은 하위 화면은 맨 아래에 취소·저장이 있어, 남은 안내가 그 위에
+    //   얹혀 누르는 것을 가로챈다. 그래서 띄운 뒤 하위 화면으로 옮기면 걷고 버린다(돌아왔을 때 지난 안내가 다시 뜨지 않게).
+    //   저장 직후처럼 편집기가 닫히는 사이에 온 안내는 띄우지 않고 기다렸다가, 탭이 돌아오면 띄운다.
+    LaunchedEffect(viewModel.ringInNotice, showAppChrome) {
+        val notice = viewModel.ringInNotice ?: return@LaunchedEffect
+        if (!showAppChrome) return@LaunchedEffect
+        // 기준은 방금 켠 그 알람의 예약 시각이고, 문장·계산은 홈 헤드라인과 같은 함수다.
+        val text = ringInSentence(context, notice.fireAtMillis, System.currentTimeMillis())
+        // 약 3초. 접근성 설정에서 안내 시간을 늘렸으면 그만큼 — 기본 스낵바가 제 시간을 정하는 방식과 같다.
+        val shownMillis = accessibilityManager?.calculateRecommendedTimeoutMillis(
+            RING_IN_NOTICE_MILLIS,
+            containsIcons = true,
+            containsText = true,
+        ) ?: RING_IN_NOTICE_MILLIS
+        try {
+            // 시간이 다 되면 `showSnackbar` 가 취소되며 스낵바를 걷는다.
+            withTimeoutOrNull(shownMillis) {
+                ringInSnackbarHostState.showSnackbar(text, duration = SnackbarDuration.Indefinite)
+            }
+        } finally {
+            // 다 보였거나 도중에 걷혔다(하위 화면으로 옮김·화면이 다시 만들어짐) — 어느 쪽이든 이 안내는 끝났다.
+            // 그 사이 다른 알람의 안내로 바뀌었으면 그건 두는 것이 `consumeRingInNotice` 다.
+            viewModel.consumeRingInNotice(notice)
+        }
+    }
+
     Scaffold(
+        // 알람을 켠 순간의 "N 후에 울려요."(§7) 하나만 여기 싣는다 — 하단바 바로 위, ＋ 버튼이 떠 있으면 그 위다(Material 의
+        // 배치라 버튼을 가리지 않는다). 정보 안내라 액션이 없고 색·아이콘은 다른 안내와 같은 규칙이다(`SnackbarSeverity.kt`).
+        // 나머지 안내는 화면 위쪽 호스트(본문 끝의 `SnackbarHost`)로 간다.
+        snackbarHost = {
+            SnackbarHost(hostState = ringInSnackbarHostState) { data ->
+                PrettySnackbar(message = data.visuals.message)
+            }
+        },
         bottomBar = {
             // 편집기 등 풀스크린 목적지로 갈 때 하단바가 '먼저 툭' 사라지는 하드컷 대신,
             // 페이지 슬라이드와 같은 박자로 아래로 미끄러져 하나의 페이지 이동으로 읽히게 한다.
@@ -1758,3 +1800,6 @@ private val BottomBarTabRoutes =
     setOf(NativeTab.Alarms.route, NativeTab.Voices.route, NativeTab.Menu.route)
 
 private const val PUSH_TRANSITION_MILLIS = 220
+
+/** 알람을 켠 순간의 하단 안내가 머무는 시간 — 약 3초(`docs/spec/alarm-editor.md` §7). */
+private const val RING_IN_NOTICE_MILLIS = 3_000L

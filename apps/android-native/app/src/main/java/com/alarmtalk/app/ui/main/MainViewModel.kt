@@ -1256,6 +1256,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 구독 조회(`GET /billing/subscription`)의 답 순번 — 앞서 떠난 조회의 늦은 답이 새 상태를 덮지 않게(`applySubscriptionResponse`). */
     internal val billingAnswers = AnswerSequence()
 
+    /**
+     * 알람을 켠 순간 화면 아래에 잠깐 띄우는 "N 후에 울려요." 의 대상(`docs/spec/alarm-editor.md` §7) — 방금 켠 **그 알람**과
+     * 그 예약 시각이다(전체의 다음 알람이 아니다). 채우는 곳은 저장 성공·목록 켜기(`ringInNoticeFor`), 거두는 곳은 그 알람의
+     * 끄기·삭제다. 화면(`AlarmTalkApp`)이 띄우고 나면 — 다 보였든 하위 화면으로 옮겨 도중에 걷혔든 — [consumeRingInNotice] 로
+     * 비운다. 남기면 화면이 다시 만들어질 때(다크 모드 전환 등)나 탭으로 돌아올 때 지난 안내가 또 뜬다.
+     */
+    var ringInNotice by mutableStateOf<RingInNotice?>(null)
+        internal set
+
+    /** 띄운 안내를 비운다. 그 사이 다른 알람을 켜 안내가 바뀌었으면 새 안내는 그대로 둔다. */
+    fun consumeRingInNotice(shown: RingInNotice) {
+        if (ringInNotice == shown) ringInNotice = null
+    }
+
     fun requestPermissionGate(target: PermissionTarget) {
         permissionGateRequest = target
     }
