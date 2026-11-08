@@ -3067,6 +3067,9 @@ struct AlarmEditorSheet: View {
         }
         recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+        // 켠 알람이 언제 우는지 화면 아래에 잠깐 띄운다(스펙 alarm-editor.md §7) — 저장(교체 포함)이 끝까지 성공했을 때만,
+        // 방금 저장한 **그 알람의** 예약 시각으로. 편집기가 닫히는 동안에도 보이게 띄우는 자리는 스택 밖이다(`MainTabsView`).
+        RingInNoticePresenter.shared.present(for: store.record(id: merged.id), alarmAuthorized: alarmKit.alarmAuthorized)
         onSchedulingDidFinish()
         return true
     }

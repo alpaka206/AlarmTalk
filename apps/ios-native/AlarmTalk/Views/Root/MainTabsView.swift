@@ -159,14 +159,14 @@ struct MainTabsView: View {
                         Image(systemName: "plus")
                             .font(.system(size: 24, weight: .medium))
                             .foregroundStyle(theme.palette.onPrimary)
-                            .frame(width: 56, height: 56)
+                            .frame(width: FloatingChrome.fabSize, height: FloatingChrome.fabSize)
                             .background(theme.palette.primary, in: Circle())
-                            .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
+                            .floatingChromeShadow()
                     }
                     .buttonStyle(.plain)
-                    .padding(.trailing, 20)
-                    // 하단바(76) 위에 얹는다.
-                    .padding(.bottom, 92)
+                    .padding(.trailing, FloatingChrome.fabTrailingInset)
+                    // 하단바 위에 얹는다. 켜면 뜨는 안내(`RingInNoticeHost`)가 이 바로 위에 뜨므로 자리 값은 `FloatingChrome` 한 곳이다.
+                    .padding(.bottom, FloatingChrome.bottomInset)
                     .accessibilityLabel(String(localized: "알람 만들기"))
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
@@ -261,6 +261,9 @@ struct MainTabsView: View {
                 await refreshForSelectedTab(selectedTab)
             }
         }
+        // 알람을 켜면 "N 후에 울려요" 를 하단 탭 위에 잠깐 띄운다(스펙 alarm-editor.md §7). 스택 **밖**에 단다 — 편집기에서
+        // 저장하면 편집기가 닫히는 동안에도 보이고, 화면을 옮겨도 남는다(누르는 것은 막지 않는다 — `RingInNoticeHost`).
+        .overlay(alignment: .bottom) { RingInNoticeHost() }
     }
 
     /// 알람 탭을 **뺀** 나머지 탭 — 위 `body` 의 공용 `ScrollView` 안에 들어간다.

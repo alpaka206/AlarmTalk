@@ -153,6 +153,16 @@ struct AlarmsListView: View {
                                 apply: { want in
                                     guard let fresh = store.record(id: id) else { return }
                                     await setAlarm(fresh, enabled: want)
+                                },
+                                // 연타를 합친 마지막 값이 켜짐으로 반영됐으면 그 알람이 언제 우는지 화면 아래에 잠깐 띄운다
+                                // (스펙 alarm-editor.md §7). 켜기가 실패해 되돌아갔으면(권한·지난 날짜·예약 실패) 행이 꺼져
+                                // 있어 띄우지 않는다 — 판정은 `RingInNotice.text` 하나다.
+                                settled: { applied in
+                                    guard applied else { return }
+                                    RingInNoticePresenter.shared.present(
+                                        for: store.record(id: id),
+                                        alarmAuthorized: alarmKit.alarmAuthorized
+                                    )
                                 }
                             )
                         },
