@@ -127,8 +127,6 @@
     <string name="editor_block_weather_message">Weather messages need a region. Pick one on the message screen.</string>
     <string name="editor_block_fortune_title">No fortune details</string>
     <string name="editor_block_fortune_message">Fortune messages need your gender, birth date and birth time. Add them on the message screen.</string>
-    <string name="editor_block_manual_quota_title">You\'ve used this month\'s creations</string>
-    <string name="editor_block_manual_quota_message">You can create %1$d new custom messages a month. Messages you already made still work.</string>
     <string name="editorp_random_manual_ad_credits">%1$s (%2$d from ads)</string>
     <string name="editor_ad_reward_watch">Watch an ad to use once</string>
     <string name="editor_ad_reward_offer_title">You\'ve used this month\'s free creations</string>
@@ -146,8 +144,6 @@
     <string name="editor_ad_reward_no_fill_message">There\'s no ad to watch right now. Voices you made and the basic messages still work.</string>
     <string name="editor_ad_reward_granted_message">Save again to create it once with this reward.</string>
     <string name="editor_ad_reward_granted_title">Ad reward received</string>
-    <string name="editor_block_ad_reward_title">No ad reward left</string>
-    <string name="editor_block_ad_reward_message">To create this message, watch an ad from “Type it yourself” on the message screen. Messages you already made still work.</string>
     <string name="editor_block_offline_title">Connection needed</string>
     <string name="editor_block_offline_message">This message\'s audio isn\'t on this device yet. Save again once you\'re back online.</string>
     <string name="editor_block_preparing_title">Preparing the message</string>

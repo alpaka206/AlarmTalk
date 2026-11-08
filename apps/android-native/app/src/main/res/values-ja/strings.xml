@@ -127,8 +127,6 @@
     <string name="editor_block_weather_message">天気の文章には地域が必要です。文章の画面で地域を選んでください。</string>
     <string name="editor_block_fortune_title">占いの情報がありません</string>
     <string name="editor_block_fortune_message">占いの文章には性別・生年月日・生まれた時間が必要です。文章の画面で入力してください。</string>
-    <string name="editor_block_manual_quota_title">今月の作成回数を使い切りました</string>
-    <string name="editor_block_manual_quota_message">直接入力の文言は1か月に%1$d回まで新しく作成できます。すでに作成した文言はそのまま使えます。</string>
     <string name="editorp_random_manual_ad_credits">%1$s（広告特典 %2$d回）</string>
     <string name="editor_ad_reward_watch">広告を見て1回使う</string>
     <string name="editor_ad_reward_offer_title">今月の無料作成をすべて使いました</string>
@@ -146,8 +144,6 @@
     <string name="editor_ad_reward_no_fill_message">今は表示できる広告がありません。作成済みの音声と基本の文言はそのまま使えます。</string>
     <string name="editor_ad_reward_granted_message">もう一度保存すると、この特典で1回作成します。</string>
     <string name="editor_ad_reward_granted_title">広告特典を受け取りました</string>
-    <string name="editor_block_ad_reward_title">広告特典がありません</string>
-    <string name="editor_block_ad_reward_message">この文言を新しく作成するには、文言画面の「自分で入力」で広告を1回見てください。すでに作成した文言はそのまま使えます。</string>
     <string name="editor_block_offline_title">接続が必要です</string>
     <string name="editor_block_offline_message">この文言の音声はまだこの端末にありません。接続できたら、もう一度保存してください。</string>
     <string name="editor_block_preparing_title">文章を準備しています</string>

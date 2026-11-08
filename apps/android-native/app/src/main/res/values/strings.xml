@@ -133,8 +133,6 @@
     <string name="editor_block_weather_message">날씨 문구를 쓰려면 지역이 필요해요. 문구 화면에서 지역을 골라 주세요.</string>
     <string name="editor_block_fortune_title">운세 정보가 없어요</string>
     <string name="editor_block_fortune_message">운세 문구를 쓰려면 성별과 생년월일, 태어난 시간이 필요해요. 문구 화면에서 입력해 주세요.</string>
-    <string name="editor_block_manual_quota_title">이번 달 만들기 횟수를 다 썼어요</string>
-    <string name="editor_block_manual_quota_message">직접 입력 문구는 한 달에 %1$d번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요.</string>
     <string name="editorp_random_manual_ad_credits">%1$s (광고 보상 %2$d번)</string>
     <string name="editor_ad_reward_watch">광고 보고 한 번 쓰기</string>
     <string name="editor_ad_reward_offer_title">이번 달 무료 만들기를 다 썼어요</string>
@@ -152,8 +150,6 @@
     <string name="editor_ad_reward_no_fill_message">지금은 볼 수 있는 광고가 없어요. 만들어 둔 음성과 기본 문구는 그대로 쓸 수 있어요.</string>
     <string name="editor_ad_reward_granted_message">다시 저장하면 이 보상으로 한 번 만들어요.</string>
     <string name="editor_ad_reward_granted_title">광고 보상을 받았어요</string>
-    <string name="editor_block_ad_reward_title">광고 보상이 없어요</string>
-    <string name="editor_block_ad_reward_message">이 문구를 새로 만들려면 문구 화면의 직접 입력에서 광고를 한 번 봐 주세요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요.</string>
     <string name="editor_block_offline_title">연결이 필요해요</string>
     <string name="editor_block_offline_message">이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요.</string>
     <string name="editor_block_preparing_title">문구를 준비하고 있어요</string>

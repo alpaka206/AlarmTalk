@@ -665,23 +665,6 @@
         }
       }
     },
-    "60초 이상 녹음한 뒤 학습을 등록해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Record at least 60 seconds, then start training."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "60秒以上録音してから学習を登録してください。"
-          }
-        }
-      }
-    },
     "AlarmTalk" : {
       "shouldTranslate" : false
     },
@@ -1040,23 +1023,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "共有"
-          }
-        }
-      }
-    },
-    "공유하기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Share"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共有する"
           }
         }
       }
@@ -2044,40 +2010,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ニックネーム"
-          }
-        }
-      }
-    },
-    "닉네임 수정" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit nickname"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ニックネームを編集"
-          }
-        }
-      }
-    },
-    "닉네임은 %lld자 이내로 써 주세요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Please keep the nickname within %lld characters"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ニックネームは%lld文字以内で入力してください"
           }
         }
       }
@@ -3951,23 +3883,6 @@
         }
       }
     },
-    "새 알람을 만들면 기기에 바로 예약돼요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A new alarm is scheduled on your device right away."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新しいアラームを作ると、すぐに端末へ予約されます。"
-          }
-        }
-      }
-    },
     "새 음성을 생성하고 로컬에 저장했어요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4484,23 +4399,6 @@
         }
       }
     },
-    "시작 시간" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start time"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開始時間"
-          }
-        }
-      }
-    },
     "시작하기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4569,23 +4467,6 @@
         }
       }
     },
-    "아직 사용할 수 있는 목소리가 없어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You don't have any voices to use yet."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "まだ使える声がありません。"
-          }
-        }
-      }
-    },
     "아직 알람이 없어요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4599,23 +4480,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "まだアラームがありません。"
-          }
-        }
-      }
-    },
-    "아직 예약한 알람이 없어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You haven't scheduled any alarms yet."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "まだ予約したアラームがありません。"
           }
         }
       }
@@ -4787,23 +4651,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "アラームを作成"
-          }
-        }
-      }
-    },
-    "알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This is the name shown in the alarm list and the Voices tab. It can't be left empty."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アラーム一覧と声タブに表示される名前です。名前は空にできません。"
           }
         }
       }
@@ -5393,23 +5240,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "英字と数字を含む"
-          }
-        }
-      }
-    },
-    "예: 규원" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "e.g. Gyuwon"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "例：りん"
           }
         }
       }
@@ -6128,23 +5958,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "この声で保存しますか?"
-          }
-        }
-      }
-    },
-    "이 문구를 그대로 읽어 드려요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We'll read this phrase exactly as written."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この文言をそのまま読み上げます。"
           }
         }
       }
@@ -7192,23 +7005,6 @@
         }
       }
     },
-    "종료 시간" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End time"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "終了時間"
-          }
-        }
-      }
-    },
     "종료일에 해지" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7758,23 +7554,6 @@
         }
       }
     },
-    "탈퇴 취소에 실패했어요. 다시 시도해 주세요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't cancel the deletion. Please try again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退会のキャンセルに失敗しました。もう一度お試しください。"
-          }
-        }
-      }
-    },
     "태어난 시간" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8053,23 +7832,6 @@
         }
       }
     },
-    "허용됨" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Granted"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "許可済み"
-          }
-        }
-      }
-    },
     "현재 이용권" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8240,23 +8002,6 @@
         }
       }
     },
-    "회원 탈퇴가 완료됐어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your account has been deleted."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退会が完了しました。"
-          }
-        }
-      }
-    },
     "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8270,40 +8015,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "退会の申請を受け付けました。30日以内に再度ログインすると取り消せます。"
-          }
-        }
-      }
-    },
-    "회원 탈퇴를 취소했어요. 계정이 복구됐어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your account deletion was canceled. Your account has been restored."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退会をキャンセルしました。アカウントが復元されました。"
-          }
-        }
-      }
-    },
-    "회원 탈퇴에 실패했어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't delete your account."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退会に失敗しました。"
           }
         }
       }
@@ -8579,23 +8290,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "メールアドレスまたはパスワードをご確認ください。"
-          }
-        }
-      }
-    },
-    "이미 사라진 알람이에요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This alarm no longer exists."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このアラームはすでに削除されています。"
           }
         }
       }
@@ -9901,28 +9595,6 @@
         }
       }
     },
-    "무단 등록, 저작권·인격권 침해, 사칭으로 생기는 책임이 등록한 사람에게 있음을 확인합니다." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I understand that responsibility for unauthorised registration, copyright or personality-rights infringement, and impersonation lies with the person who registers the voice."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無断登録、著作権・人格権の侵害、なりすましによる責任は登録した本人にあることを確認します。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "무단 등록, 저작권·인격권 침해, 사칭으로 생기는 책임이 등록한 사람에게 있음을 확인합니다."
-          }
-        }
-      }
-    },
     "미동의" : {
       "localizations" : {
         "en" : {
@@ -9941,28 +9613,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "미동의"
-          }
-        }
-      }
-    },
-    "본인 또는 권한과 동의를 받은 사람의 목소리만 등록합니다." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I will only register my own voice, or a voice I have permission and consent to use."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本人、または権限と同意を得た人の声のみを登録します。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "본인 또는 권한과 동의를 받은 사람의 목소리만 등록합니다."
           }
         }
       }
@@ -10481,28 +10131,6 @@
         }
       }
     },
-    "알람 변경사항을 저장하지 못했어요. 잠시 후 다시 시도해 주세요." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't save your alarm changes. Please try again in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アラームの変更を保存できませんでした。しばらくしてからもう一度お試しください。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "알람 변경사항을 저장하지 못했어요. 잠시 후 다시 시도해 주세요."
-          }
-        }
-      }
-    },
     "어두운 모드" : {
       "localizations" : {
         "en" : {
@@ -10645,23 +10273,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "このテーマの文言をまだ受信していません。しばらくしてからもう一度お試しください。"
-          }
-        }
-      }
-    },
-    "이번 달 만들기 횟수를 다 썼어요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You've used this month's creations"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "今月の作成回数を使い切りました"
           }
         }
       }
@@ -11286,23 +10897,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "週末"
-          }
-        }
-      }
-    },
-    "직접 입력 문구는 한 달에 %lld번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can create %1$lld new custom messages a month. Messages you already made still work."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "直接入力の文言は1か月に%1$lld回まで新しく作成できます。すでに作成した文言はそのまま使えます。"
           }
         }
       }
