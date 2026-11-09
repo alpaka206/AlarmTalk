@@ -95,27 +95,20 @@ struct LoginView: View {
             // ⚠ **시스템 뒤로가기를 쓰지 않는다.** OS 버전마다 컨테이너 모양이 바뀌므로
             // 앱 공용 `WakerBackButton`이 원형 표면·크기·색을 고정한다. 글리프만 각 플랫폼의
             // 기본 방향 아이콘을 쓴다. Android 대응: `ui/components/WakerBackButton.kt`.
-            WakerBackButton(tint: AuthSceneColors.text) { dismiss() }
-                .padding(.horizontal, 22)
-                .padding(.top, 18)
+            //
+            // 제목은 다른 하위 화면처럼 **위쪽 가운데**, 뒤로가기와 한 줄이다(2026-11-09 오너). 예전에는 뒤로가기만 위에 두고
+            // 제목을 폼 첫 줄에 크게 세웠다. 안드로이드 짝 `AuthScreen` 의 `AuthTopBar`.
+            WakerTopBar(
+                title: mode == .login ? "로그인" : "회원가입",
+                onBack: { dismiss() },
+                tint: AuthSceneColors.text
+            )
+            .padding(.top, 18)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    // 안드로이드는 세그먼트 피커가 없다(AuthScreen.kt:212-229) — 화면 안에
-                    // 제목을 두고, 로그인↔가입은 **맨 아래 전환 행**에서 고른다. 피커를
-                    // 위에 두면 아직 계정이 있는지도 모르는 사람에게 먼저 답을 강요하게 된다.
-                    Text(mode == .login ? String(localized: "로그인") : String(localized: "회원가입"))
-                        .font(theme.typography.headlineSmall)
-                        .fontWeight(.bold)
-                        .foregroundStyle(AuthSceneColors.text)
-                        .padding(.top, 6)
-
-                    Text(mode == .login
-                         ? String(localized: "좋아하는 목소리 알람을 다시 불러올게요.")
-                         : String(localized: "목소리 알람을 만들 계정을 준비해요."))
-                        .font(theme.typography.bodyMedium)
-                        .foregroundStyle(AuthSceneColors.textDim)
-
+                    // 로그인↔가입은 세그먼트 피커가 아니라 **맨 아래 전환 행**에서 고른다(안드로이드와 같다). 피커를 위에 두면
+                    // 아직 계정이 있는지도 모르는 사람에게 먼저 답을 강요하게 된다.
                     // 가입에서 이미 가입된 이메일이라 로그인으로 넘어온 경우 — 왜 화면이 바뀌었는지 여기서 말한다
                     // (안드로이드 `ui/auth/AuthScreen.kt` 의 `authNotice` 자리).
                     if mode == .login, let notice = auth.authNotice {
@@ -193,14 +186,20 @@ struct LoginView: View {
         // 같은 시점이다. 남겨 두면 이미 고친 값 아래에 옛 경고가 붙어 있다.
         // 가입 쪽 인라인 오류(`emailCodeError`)도 같은 시점에 지운다 — 안드로이드는 한 콜백이
         // 로그인·가입 오류를 함께 지운다.
+        // '이미 가입된 이메일' 안내(`authNotice`)도 입력을 고치면 지운다 — 안드로이드 `onClearLoginError` 와 같다.
         .onChange(of: password) { _, _ in
             auth.clearLoginError()
             auth.clearEmailCodeError()
+            auth.clearAuthNotice()
         }
         .onChange(of: email) { _, _ in
             auth.clearLoginError()
             auth.clearEmailCodeError()
+            auth.clearAuthNotice()
         }
+        // 화면을 떠나면(랜딩으로 돌아가기·로그인 성공) 지운다 — 안 지우면 다음에 연 로그인 화면에 앞 회차의 안내가 그대로
+        // 떠 있다. 안드로이드는 `authRoute` 가 로그인 밖으로 바뀔 때 지운다(`ui/app/AlarmTalkApp.kt`).
+        .onDisappear { auth.clearAuthNotice() }
         // 로그인↔가입을 오갈 때도 지운다(안드로이드는 `authRoute` 가 바뀔 때 지운다) —
         // 가입 화면에서는 이 자리에 비밀번호 규칙이 온다.
         // 가입 쪽 인라인 오류도 함께 지운다 — 안드로이드의 그 자리도 `registerError` 를 지운다. 남기면

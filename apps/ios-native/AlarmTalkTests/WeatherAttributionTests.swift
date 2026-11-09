@@ -1,8 +1,9 @@
 import XCTest
 @testable import AlarmTalk
 
-/// 지역 시트의 **날씨 출처 줄은 서버가 원천을 말할 때만** 보인다(코덱스 #845) — 규칙은
-/// `docs/spec/voice-and-message.md` 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」.
+/// **날씨 출처 줄은 서버가 원천을 말할 때만** 보인다(코덱스 #845) — 규칙은
+/// `docs/spec/voice-and-message.md` 「날씨 출처 줄 — 서버가 원천을 말할 때만」. 자리는 2026-11-09 부터 지역 시트가 아니라
+/// '약관 및 개인정보 처리 동의' 화면 맨 아래다(`ConsentHistoryView.weatherAttributionLine`).
 ///
 /// 앱이 "기상청 · 気象庁 · 미국 기상청(NWS)" 을 스스로 단정하면, 서버가 아직 Open-Meteo 를 쓰는 동안(원천 교체가
 /// 늦거나 되돌려진 경우 포함) 쓰지 않는 기관을 출처로 적는다. 그래서 `GET /api/app/version` 의

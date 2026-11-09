@@ -29,6 +29,27 @@ extension SubscriptionManager {
         SubscriptionProduct.make(tier: tier).flatMap(product(for:))?.displayPrice
             ?? FallbackPlanPrice.label(for: tier)
     }
+
+    /// 체험이 있을 때 결제 버튼 아래(와 결제 확인 알럿)에 두는 한 문장 — "12월 9일부터 매월 ₩3,900씩 결제돼요. …"(2026-11-09
+    /// 오너 — 고르기 시안 '무료 기간 크게 + 첫 결제일'. 같은 날 "오늘은 결제되지 않아요." 는 뺐다). 첫 결제일은 **오늘 + 체험 기간**이다.
+    /// 안드로이드 짝은 `trialDisclosureText`(`ui/billing/BillingPanels.kt`).
+    func trialDisclosure(for tier: PlanTier, now: Date = Date()) -> String? {
+        guard let period = freeTrialPeriod(for: tier), let price = priceLabel(for: tier) else { return nil }
+        let component: Calendar.Component
+        switch period.unit {
+        case .day: component = .day
+        case .week: component = .weekOfYear
+        case .month: component = .month
+        case .year: component = .year
+        @unknown default: return nil
+        }
+        guard let firstCharge = Calendar.current.date(byAdding: component, value: period.value, to: now) else { return nil }
+        let date = firstCharge.formatted(.dateTime.month(.wide).day())
+        // ⚠ **App Store 는 체험 종료 24시간 전까지 해지해야 청구되지 않는다**(2026-11-09 iOS 출시 검토 — 같은 화면 각주
+        // `SubscriptionTermsFootnote` 의 갱신 규칙과 맞춘다). "그 전에 언제든" 이라고 쓰면 마지막 하루에 해지한 사람이 청구된다.
+        // 안드로이드(Google Play)는 체험 종료 전이면 언제든이라 문장이 다르다.
+        return String(localized: "\(String(date))부터 매월 \(String(price))씩 결제돼요. 체험이 끝나기 24시간 전까지 App Store에서 해지하면 결제되지 않아요.")
+    }
 }
 import StoreKit
 
@@ -120,10 +141,22 @@ struct PlanCard: View {
 
             // 가격은 **플랜 이름 바로 아래**다(안드로이드와 같은 자리). 버튼에 넣으면
             // 액션 라벨과 가격이 한 덩어리가 되어 무엇을 누르는지 흐려진다.
-            if let priceLabel = priceLabel {
-                // 체험을 받을 수 있으면 "1개월 무료 체험, 이후 월 3,900원" — 결제 시트가 처음 청구할 금액이 0 이라는 것을
-                // 카드가 먼저 말한다(안드로이드 `billing_plan_trial_price`). 결제 버튼이 없는 카드에는 붙이지 않는다.
-                Text(trialLabel.map { String(localized: "\(String($0)) 무료 체험, 이후 \(String(priceLabel))") } ?? priceLabel)
+            if let priceLabel = priceLabel, let trialLabel {
+                // ⚠ **무료 기간을 크게, 그 뒤 가격을 옆에**(2026-11-09 오너 — 고르기 시안 '무료 기간 크게 + 첫 결제일').
+                // 결제 시트가 처음 청구할 금액이 0 이라는 것을 카드가 먼저 말한다. 안드로이드 `billing_plan_trial_headline`·
+                // `billing_plan_trial_then` 과 같은 자리다.
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
+                    Text(String(localized: "\(String(trialLabel)) 무료"))
+                        .font(theme.typography.headlineSmall)
+                        .fontWeight(.bold)
+                        .foregroundStyle(theme.palette.onSurface)
+                    Text(String(localized: "이후 \(String(priceLabel))"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(theme.palette.primary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let priceLabel = priceLabel {
+                Text(priceLabel)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(theme.palette.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -145,16 +178,18 @@ struct PlanCard: View {
                 }
             }
 
-            if trialLabel != nil {
-                // 자동 결제와 해지를 결제 버튼 **앞에서** 말한다(App Store 지침 3.1.2 — 체험 뒤 청구를 숨기지 않는다).
-                Text(String(localized: "체험이 끝나면 자동으로 결제돼요. 끝나기 전에 App Store 에서 언제든 해지할 수 있고, 해지하면 결제되지 않아요."))
-                    .font(.footnote)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
             if tier != .free {
                 purchaseButtons
+            }
+
+            if trialLabel != nil, let disclosure = subscriptions.trialDisclosure(for: tier) {
+                // 자동 결제와 해지를 **결제 버튼 바로 아래 한 문장**으로 — 첫 결제일·금액·해지(App Store 지침 3.1.2: 체험 기간,
+                // 체험 뒤 가격·주기, 결제 시점, 해지 방법을 결제 전에 보인다). 결제 확인 알럿도 같은 문장을 쓴다.
+                Text(disclosure)
+                    .font(.footnote)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
             }
 
             // ⚠ **개인 카드의 '선물하기' 를 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1 두 번째 반려).
@@ -215,7 +250,7 @@ struct PlanCard: View {
                         // ⚠ **버튼에 가격을 넣지 말 것**(2026-08-11 요청). 가격은 카드 위쪽
                         // 제 자리에 있고, 버튼은 **무엇을 하는지**만 말한다 — 안드로이드도
                         // 액션 라벨만 둔다.
-                        Text(String(localized: "결제하기"))
+                        Text(trialLabel.map { String(localized: "\(String($0)) 무료로 시작하기") } ?? String(localized: "결제하기"))
                             .font(.subheadline.weight(.semibold))
                     }
                 }

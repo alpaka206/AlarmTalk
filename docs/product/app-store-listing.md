@@ -344,7 +344,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 
 ## 설명 — (D) v1.3 레코드(무료 직접 입력 · 스토어 무료 체험)
 
-**다음 버전 제출 때 쓸 원문이다 — 아직 어디에도 올리지 않았다**(2026-10-26 작성). (C) 에서 아래 다섯 군데만 다르고
+**다음 버전 제출 때 쓸 원문이다 — 아직 어디에도 올리지 않았다**(2026-10-26 작성). (C) 에서 아래 여섯 군데만 다르고
 나머지는 한 글자도 같다:
 
 - 「무료」 절: 직접 입력 한 줄(기본 목소리로 새로 만들기 월 3회).
@@ -353,6 +353,9 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 - 「목소리와 개인정보」: 이용권이 끝나면 등록한 목소리를 쓰던 알람이 기본 목소리(미나)로 울리고, 3일 안에 다시 시작하면
   원래 목소리로 돌아온다(`docs/spec/billing-lifecycle.md` — 대체 목소리는 미나 하나).
 - 「이용 안내」: 직접 입력 횟수의 초기화(한국 시간 매월 1일)와 이 폰에 남아 있는 음성의 재사용 무차감.
+- 서버에 알람이 없다(2026-10-29 #147, 2026-11-09 출시 전 검토에서 고침): 탈퇴 때 지우는 서버 데이터의 예시에서 알람을 빼고
+  (목소리·직접 입력 문구와 그 음성), 인터넷이 필요한 일에서 동기화를 뺐다. 1.3 에 실리는 8판 처리방침(알람 설정은 기기 안에만
+  둔다)과 어긋나지 않게 한 것이다. (C) 는 지금 게재 중인 1.2.16 레코드의 기록이라 그대로 둔다(App Store 설명은 버전과 함께만 바뀐다).
 - 「이용권과 결제」: 첫 구독 1개월 무료 체험과 체험 뒤 자동 결제. 자동 갱신 고지 문장은 그대로 두고 '체험이 있으면 체험이
   끝날 때 청구'·'현재 기간(무료 체험 포함)' 을 끼워 넣어 두 문장이 어긋나지 않게 했다.
 
@@ -373,7 +376,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 - 2.3 · 2.3.1 — 메타데이터는 그 버전의 실제 기능이어야 한다 → F.
 - 3.1.1 — 코드로 유료 기능을 연다는 말을 쓰지 않는다(`scripts/check-paid-unlock-codes.py`).
 
-### ko (2415/4000)
+### ko (2422/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -408,12 +411,12 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 ■ 목소리와 개인정보
 • 등록한 목소리는 내 알람에만 쓰이고, 원본 음성을 앱 밖으로 내려받는 기능은 없어요.
 • 이용권이 끝나 무료로 돌아가도 알람은 남고, 등록한 목소리를 쓰던 알람은 기본 목소리(미나)로 울려요. 등록한 목소리는 3일 보관한 뒤 삭제돼요(3일 안에 이용권을 다시 시작하면 원래 목소리로 돌아와요).
-• 탈퇴를 신청하면 30일 뒤 계정과 서버에 저장된 데이터(알람·목소리 등)가 삭제되고, 그 전에 다시 로그인해 탈퇴를 취소할 수 있어요. 단, 법령이나 처리방침에 따라 따로 보관하는 기록(결제·거래 기록은 최대 5년 등)과 백업·로그는 각 보관 기간이 끝나면 삭제돼요. 폰에 저장된 알람과 소리 파일은 알람이나 앱을 지울 때까지 남을 수 있어요.
+• 탈퇴를 신청하면 30일 뒤 계정과 서버에 저장된 데이터(목소리·직접 입력 문구와 그 음성 등)가 삭제되고, 그 전에 다시 로그인해 탈퇴를 취소할 수 있어요. 단, 법령이나 처리방침에 따라 따로 보관하는 기록(결제·거래 기록은 최대 5년 등)과 백업·로그는 각 보관 기간이 끝나면 삭제돼요. 폰에 저장된 알람과 소리 파일은 알람이나 앱을 지울 때까지 남을 수 있어요.
 • 음성 생체정보 처리 동의를 철회하면 등록한 목소리와 녹음 원본이 삭제돼요.
 
 ■ 이용 안내
 • 로그인이 필요해요(이메일 또는 간편 로그인).
-• 목소리 등록, 문구 준비, 동기화에는 인터넷이 필요해요.
+• 목소리 등록과 문구 준비에는 인터넷이 필요해요.
 • 알람 권한을 허용해야 제시간에 울려요.
 • 직접 입력 횟수는 한국 시간 매월 1일에 다시 채워지고, 이 폰에 남아 있는 음성을 다시 쓰면 줄지 않아요.
 • 앱 화면은 한국어·영어·일본어를 지원해요.
@@ -430,7 +433,7 @@ Apple 標準使用許諾契約 (EULA): https://www.apple.com/legal/internet-serv
 Apple 표준 사용권 계약(EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### en-US (3482/4000)
+### en-US (3500/4000)
 
 ```text
 Wake up to a voice you love.
@@ -458,11 +461,11 @@ No math, no shaking.
 • Rings on time offline (sounds are saved in advance, even in airplane mode), on the lock screen, repeating the voice while it rings
 • Your registered voice is used only for your own alarms, and original recordings can't be downloaded from the app
 • If your plan ends, alarms stay, and those that used your registered voice ring in a default voice (Mina); your voice is deleted after 3 days unless you restart a plan
-• Deleting your account removes it and its server data (alarms, voices, etc.) after 30 days unless you sign in and cancel first. Records kept by law or our Privacy Policy (e.g., payment records, up to 5 years), backups and logs are deleted when retention ends; files on your phone may stay until you delete them or the app
+• Deleting your account removes it and its server data (voices, typed messages and their audio, etc.) after 30 days unless you sign in and cancel first. Records kept by law or our Privacy Policy (e.g., payment records, up to 5 years), backups and logs are deleted when retention ends; files on your phone may stay until you delete them or the app
 • Withdrawing voice biometric consent deletes your voice and original recordings
 
 ■ Good to know
-• Sign-in required; registering a voice, preparing messages and sync need internet
+• Sign-in required; registering a voice and preparing messages need internet
 • Allow alarm permission so alarms ring on time
 • Typed-message counts refill on the 1st of each month (Korea time); reusing audio that's still on this phone doesn't count
 
@@ -478,7 +481,7 @@ Privacy Policy: https://alarm-talk.com/en/privacy/
 Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
-### ja (2294/4000)
+### ja (2301/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -513,12 +516,12 @@ Apple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/st
 ■ 声とプライバシー
 • 登録した声は自分のアラームにだけ使われます。元の音声をアプリの外にダウンロードする機能はありません。
 • プランが終わって無料に戻ってもアラームは残り、登録した声を使っていたアラームは基本の声(ミナ)で鳴ります。登録した声は3日間保管したあと削除されます(3日以内にプランを再開すれば元の声に戻ります)。
-• 退会を申請すると、30日後にアカウントとサーバーに保存されたデータ(アラーム・声など)が削除されます。それまでに再ログインすれば退会を取り消せます。ただし、法令やプライバシーポリシーに基づき別途保管する記録(決済・取引記録は最長5年など)とバックアップ・ログは、それぞれの保管期間が終わると削除されます。スマホに保存したアラームや音声ファイルは、アラームやアプリを削除するまで残ることがあります。
+• 退会を申請すると、30日後にアカウントとサーバーに保存されたデータ(声・入力したメッセージとその音声など)が削除されます。それまでに再ログインすれば退会を取り消せます。ただし、法令やプライバシーポリシーに基づき別途保管する記録(決済・取引記録は最長5年など)とバックアップ・ログは、それぞれの保管期間が終わると削除されます。スマホに保存したアラームや音声ファイルは、アラームやアプリを削除するまで残ることがあります。
 • 音声の生体情報の処理への同意を撤回すると、登録した声と元の録音が削除されます。
 
 ■ ご利用にあたって
 • ログインが必要です(メールまたは簡単ログイン)。
-• 声の登録、メッセージの準備、同期にはインターネット接続が必要です。
+• 声の登録とメッセージの準備にはインターネット接続が必要です。
 • 時間どおりに鳴らすには、アラームの権限を許可してください。
 • 自分で入力の回数は韓国時間の毎月1日にまた使えるようになり、このスマホに残っている音声をもう一度使っても減りません。
 • アプリは日本語・韓国語・英語に対応しています。
@@ -606,7 +609,8 @@ alarmtalk,alarm-talk,alarm,voice,talking,custom,record,message,morning,ai,ringto
 | 프로모션 — 상시판 | 170자 | 82 | 133 | 65 |
 | 설명 — (C) | 4000자 | 2206 | 3070 | 2091 |
 | 설명 — INTERIM | 4000자 | 2128 | 2986 | 2015 |
-| 설명 — (D) | 4000자 | 2415 | 3482 | 2294 |
+| 설명 — (D) | 4000자 | 2422 | 3500 | 2301 |
 
 글자 수는 유니코드 코드 포인트 수, 바이트는 UTF-8 이다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.
 (2026-10-26: (C)·INTERIM 의 설명 글자 수가 이용권 이름을 '플러스' 로 바꾸기 전 값으로 남아 있어 다시 셌다. 줄바꿈은 1자로 센다.)
+(2026-11-09: (D) 의 탈퇴·인터넷 두 문장을 서버 알람 사본 삭제(#147)에 맞춰 고치고 다시 셌다.)

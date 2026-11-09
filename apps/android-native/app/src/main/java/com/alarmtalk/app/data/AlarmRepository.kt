@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
+import com.alarmtalk.app.alarm.AlarmStatusNotifications
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
@@ -223,17 +224,9 @@ class AlarmRepository(
 
     suspend fun createAlarm(draft: AlarmDraft, replaceExisting: Boolean = false): AlarmEntity = restoreMutex.withLock {
         validateDraft(draft)
-        val now = System.currentTimeMillis()
-        // 날짜 알람은 지난 시각을 새로 예약하지 않는다 — 편집기가 먼저 막고, 이건 그 사이 시각이 지난 경우의 그물이다.
-        requireDatedFireAhead(draft, now)
-        val conflict = findReplaceableConflict(
-            draft.hour,
-            draft.minute,
-            excludeAlarmId = null,
-            replaceExisting = replaceExisting,
-            dated = draft.isDated(),
-        )
+        val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = null, replaceExisting = replaceExisting)
 
+        val now = System.currentTimeMillis()
         val holidayPredicate = holidayCalendarStore.holidayPredicate(
             countryCode = currentHolidayCountry(),
             startDate = currentLocalDate(now),
@@ -245,8 +238,8 @@ class AlarmRepository(
             hour = draft.hour,
             minute = draft.minute,
             fireAtMillis = fireAtMillis,
-            repeatDaysMask = if (draft.isDated()) 0 else draft.repeatDaysMask,
-            holidayOff = draft.holidayOff && !draft.isDated(),
+            repeatDaysMask = draft.repeatDaysMask,
+            holidayOff = draft.holidayOff,
             snoozeEnabled = draft.snoozeEnabled,
             snoozeMinutes = draft.snoozeMinutes,
             snoozeRepeatLimit = draft.snoozeRepeatLimit,
@@ -295,8 +288,6 @@ class AlarmRepository(
             updatedAtMillis = now,
             cheerMode = draft.cheerMode.takeIf { draft.bucketId == CHEER_BUCKET_ID },
             cheerPinnedContentId = draft.cheerPinnedContentId.takeIf { draft.bucketId == CHEER_BUCKET_ID },
-            targetDate = draft.targetDate.takeIf { draft.isDated() },
-            targetTimezone = draft.targetTimezone.takeIf { draft.isDated() },
         )
         // 새 알람은 첫 회차의 응원을 지금 고른다(스펙 voice-and-message §5-4 — 저장이 새 회차를 확정한다).
         val alarm = built.preparedCheer(built.fireAtMillis, cheerCandidates(built), explicitChange = true)
@@ -321,15 +312,8 @@ class AlarmRepository(
     ): AlarmEntity = restoreMutex.withLock {
         validateDraft(draft)
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
+        val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = alarmId, replaceExisting = replaceExisting)
         val now = System.currentTimeMillis()
-        requireDatedFireAhead(draft, now)
-        val conflict = findReplaceableConflict(
-            draft.hour,
-            draft.minute,
-            excludeAlarmId = alarmId,
-            replaceExisting = replaceExisting,
-            dated = draft.isDated(),
-        )
         val holidayPredicate = holidayCalendarStore.holidayPredicate(
             countryCode = currentHolidayCountry(),
             startDate = currentLocalDate(now),
@@ -360,10 +344,8 @@ class AlarmRepository(
             hour = draft.hour,
             minute = draft.minute,
             fireAtMillis = nextFireAt,
-            repeatDaysMask = if (draft.isDated()) 0 else draft.repeatDaysMask,
-            holidayOff = draft.holidayOff && !draft.isDated(),
-            targetDate = draft.targetDate.takeIf { draft.isDated() },
-            targetTimezone = draft.targetTimezone.takeIf { draft.isDated() },
+            repeatDaysMask = draft.repeatDaysMask,
+            holidayOff = draft.holidayOff,
             snoozeEnabled = draft.snoozeEnabled,
             snoozeMinutes = draft.snoozeMinutes,
             snoozeRepeatLimit = draft.snoozeRepeatLimit,
@@ -438,7 +420,7 @@ class AlarmRepository(
             cheerPrepared
         }
 
-        // ⚠ **새 예약을 먼저 건다**(`docs/spec/alarm-lifecycle.md` §4-5). 같은 `PendingIntent` 라 거는 순간 옛 예약을
+        // ⚠ **새 예약을 먼저 건다**(`docs/spec/alarm-lifecycle.md` §1-8). 같은 `PendingIntent` 라 거는 순간 옛 예약을
         //   대신한다 — 먼저 취소하면 거는 데 실패했을 때 옛 정상 예약까지 잃는다.
         scheduleKeepingPrevious(previous = current, next = updated)
         // 전체행 upsert 대신 서버 발급 필드(remoteAlarmId/lastSyncedAtMillis) 보존 커밋을 쓴다.
@@ -482,11 +464,6 @@ class AlarmRepository(
     suspend fun setEnabled(alarmId: String, enabled: Boolean): AlarmEntity = restoreMutex.withLock {
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()
-        // 날짜가 지난 날짜 알람은 켜지 않는다 — 다시 켜려면 날짜를 다시 고른다(§4-4). 아무것도 바꾸기 전에 본다.
-        if (enabled && current.isDated()) {
-            val fixed = current.datedFireAtMillis()
-            if (fixed == null || fixed <= now) throw DatedAlarmPastException()
-        }
         alarmScheduler.cancel(alarmId)
         // 끄는 것도 '목록에서 사라짐' 과 같다 — 지금 울리고 있으면 소리를 먼저 끈다.
         if (!enabled) stopRingingIfThisAlarm(alarmId)
@@ -496,7 +473,7 @@ class AlarmRepository(
                 countryCode = currentHolidayCountry(),
                 startDate = currentLocalDate(now),
             )
-            val nextFireAt = current.datedFireAtMillis() ?: AlarmTimeCalculator.nextFireAtMillis(
+            val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
                 hour = current.hour,
                 minute = current.minute,
                 repeatDaysMask = current.repeatDaysMask,
@@ -1283,7 +1260,23 @@ class AlarmRepository(
             // 이미 새 모양(기본 목소리 + 보관본)으로 잠긴 행 — 기본 목소리로 잘 울리고 있다.
             // ⚠ 아래 '되돌리기' 갈래로 떨어뜨리지 말 것: 이 행은 이제 기본 목소리 알람이라
             // `usesFreeSystemVoiceAlarm` 이 참이고, 그대로 두면 보관본을 버린 채 풀려 버린다.
-            if (alarm.hasLockedPaidVoice()) return@forEach
+            //
+            // ⚠ **단, 보관본을 되돌리면 지금 규칙으로 무료인 잠금은 푼다**(2026-11-09 출시 검토). 1.2.16 은 기본 목소리 직접
+            // 입력을 유료로 읽어 잠갔는데, 무료로 남는 동안은 복원(유료일 때만)이 없어 영영 그 목소리의 인사말로 울렸다.
+            // **매 회차** 본다(일회성 이전이 아니다 — 기기는 어느 판에서든 올라온다). 잠긴 뒤 직접 입력을 새로 만들어 저장했으면
+            // 그 편집이 이긴다(보관본만 버린다). iOS 짝은 `FreePlanLockSelection.toRelease`·`released`.
+            if (alarm.hasLockedPaidVoice()) {
+                val restored = alarm.restoredFromLock(now)
+                if (restored.usesFreeSystemVoiceAlarm() && ownedByCurrentSession(alarm, currentUser, ownershipSettled)) {
+                    val editedSinceLock = alarm.bucketId.isNullOrBlank() &&
+                        !alarm.audioCacheKey.isNullOrBlank() &&
+                        alarm.audioCacheKey != restored.audioCacheKey
+                    val released = if (editedSinceLock) alarm.finalizedLock(now) else restored
+                    if (released.enabled) alarmScheduler.schedule(released)
+                    alarmDao.upsertPreservingServerSyncFields(released)
+                }
+                return@forEach
+            }
     // ⚠ **재생 방식만으로 '유료 목소리' 라고 하지 말 것**(2026-08-18, 실계정 확인).
     // `playMode != ALARM_ONLY` 를 단독 조건으로 두면 **말할 자원이 하나도 없는 알람**
     // (profileId·ttsMessageId·오디오 전부 없음)이 유료로 잡혀, **한 번도 유료였던 적 없는
@@ -1682,6 +1675,8 @@ class AlarmRepository(
             startDate = currentLocalDate(now),
         )
         var scheduled = 0
+        // 이번 회차에 **꺼 둔** 알람 — 다 돈 뒤 알림 하나로 알린다(`AlarmStatusNotifications`, 스펙 alarm-lifecycle §1-6).
+        val turnedOff = mutableListOf<AlarmEntity>()
 
         val currentUser = currentUserIdProvider()
         enabledAlarms.forEach { alarm ->
@@ -1867,25 +1862,6 @@ class AlarmRepository(
                                 .also { alarmDao.upsertPreservingServerSyncFields(it) }
                         }
                     }
-                    // **날짜 알람은 벽시계로 다시 계산하지 않는다**(§4-2·4-4). 시간대가 바뀌어도 고른 시간대의 그 시각
-                    // 이고, 지났으면(울리지 못했다) 아래 '만료된 1회성' 갈래와 같이 끄고 `.failed` 다.
-                    alarm.isDated() -> {
-                        val fixed = alarm.datedFireAtMillis()
-                        if (fixed == null || fixed <= now) {
-                            alarm.copy(
-                                enabled = false,
-                                state = AlarmStates.FAILED,
-                                updatedAtMillis = now,
-                            ).also { alarmDao.upsert(it) }
-                            return@forEach
-                        }
-                        if (fixed == alarm.fireAtMillis && alarm.state == AlarmStates.SCHEDULED) {
-                            alarm
-                        } else {
-                            alarm.withNextFireAt(fixed).copy(state = AlarmStates.SCHEDULED, updatedAtMillis = now)
-                                .also { alarmDao.upsert(it) }
-                        }
-                    }
                     alarm.repeatDaysMask != 0 || recomputeFireTime -> alarm.withNextFireAt(
                         AlarmTimeCalculator.nextFireAtMillis(
                             hour = alarm.hour,
@@ -1905,6 +1881,7 @@ class AlarmRepository(
                             state = AlarmStates.FAILED,
                             updatedAtMillis = now,
                         ).also { alarmDao.upsert(it) }
+                        turnedOff += alarm
                         return@forEach
                     }
                 }
@@ -1928,14 +1905,28 @@ class AlarmRepository(
                 alarmScheduler.schedule(alarmToSchedule)
                 scheduled += 1
             }.onFailure { error ->
+                // ⚠ **취소는 예약 실패가 아니다**(Codex #984 P2) — 복구가 취소되면(뷰모델 범위가 닫힘·워커 중단) 그 예외가
+                //   안쪽 Room 쓰기에서 `runCatching` 에 잡혀 여기로 온다. 그걸 실패로 읽으면 멀쩡한 옛 등록을 걷고 행까지 꺼
+                //   버린다. 다시 던져 켠 채로 멈추고, 다음 복구가 다시 건다(iOS 짝 `recoverScheduledAlarms` 의 `Task.isCancelled`).
+                if (error is kotlin.coroutines.cancellation.CancellationException) throw error
                 AlarmTalkLog.reportError("Failed to restore alarm id=${alarm.id}", error)
+                // ⚠ **켜 둔 채 두지 않는다 — 끄고 알린다**(2026-11-09 오너 "off 되도록 하고 알림을 띄우는 게 맞지 않아?").
+                // 예전에는 켜진 채 빨간 문장만 붙어, 스위치는 켜져 있는데 울리지 않았다. 남아 있을지 모르는 옛 등록도
+                // 함께 걷는다. 권한 때문이 아니다 — 정확한 알람 권한이 없으면 `AlarmScheduler.schedule` 은 던지지 않고
+                // 비정확 폴백으로 건다(그 경우는 홈 권한 배너가 말한다).
+                runCatching { alarmScheduler.cancel(alarm.id) }
                 alarmDao.setState(
                     id = alarm.id,
                     state = AlarmStates.FAILED,
-                    enabled = true,
+                    enabled = false,
                     updatedAtMillis = System.currentTimeMillis(),
                 )
+                turnedOff += alarm
             }
+        }
+        if (turnedOff.isNotEmpty()) {
+            runCatching { AlarmStatusNotifications.notifyTurnedOff(context, turnedOff) }
+                .onFailure { AlarmTalkLog.reportError("Failed to post the turned-off alarm notice", it) }
         }
 
         Log.i(TAG, "Boot restore complete pending=${enabledAlarms.size} scheduled=$scheduled")
@@ -1986,7 +1977,7 @@ class AlarmRepository(
         )
         // 저장 경로(createAlarm)와 같은 계산으로 발사 시각을 구해야, 해결한 날짜와 실제
         // 울리는 날짜가 어긋나지 않는다.
-        val fireAtMillis = runCatching { fireAtFor(draft, now, holidayPredicate) }.getOrElse { return null }
+        val fireAtMillis = fireAtFor(draft, now, holidayPredicate)
         val zone = java.time.ZoneId.systemDefault()
         val targetDate = java.time.Instant.ofEpochMilli(fireAtMillis)
             .atZone(zone)
@@ -2128,16 +2119,10 @@ class AlarmRepository(
     }
 
     /**
-     * 초안의 발사 시각. 날짜 알람은 고른 날짜·시간대의 고정 시각(지났어도 그대로), 아니면 다음 회차다.
-     * 저장·날씨 조건 해결이 같은 계산을 쓴다 — 갈리면 해결한 날짜와 울리는 날짜가 어긋난다.
+     * 초안의 다음 발사 시각. 저장·날씨 조건 해결이 같은 계산을 쓴다 — 갈리면 해결한 날짜와 울리는 날짜가 어긋난다.
      */
-    private fun fireAtFor(draft: AlarmDraft, now: Long, holidayPredicate: (java.time.LocalDate) -> Boolean): Long {
-        if (draft.isDated()) {
-            return requireNotNull(
-                AlarmTimeCalculator.datedFireAtMillis(draft.targetDate, draft.targetTimezone, draft.hour, draft.minute),
-            ) { "Invalid target date or timezone." }
-        }
-        return AlarmTimeCalculator.nextFireAtMillis(
+    private fun fireAtFor(draft: AlarmDraft, now: Long, holidayPredicate: (java.time.LocalDate) -> Boolean): Long =
+        AlarmTimeCalculator.nextFireAtMillis(
             hour = draft.hour,
             minute = draft.minute,
             repeatDaysMask = draft.repeatDaysMask,
@@ -2145,18 +2130,10 @@ class AlarmRepository(
             nowMillis = now,
             isHoliday = holidayPredicate,
         )
-    }
-
-    /** 날짜 알람이면 그 시각이 아직 와야 한다(§4-3 의 저장소 그물). */
-    private fun requireDatedFireAhead(draft: AlarmDraft, now: Long) {
-        if (!draft.isDated()) return
-        val fixed = AlarmTimeCalculator.datedFireAtMillis(draft.targetDate, draft.targetTimezone, draft.hour, draft.minute)
-        if (fixed == null || fixed <= now) throw DatedAlarmPastException()
-    }
 
     /**
-     * 새 예약을 걸고, 실패하면 **옛 예약을 되살린 뒤** 실패를 던진다(§4-5). 행은 부르는 쪽이 이 뒤에 쓰므로
-     * 실패하면 바뀌지 않는다.
+     * 새 예약을 걸고, 실패하면 **옛 예약을 되살린 뒤** 실패를 던진다(`docs/spec/alarm-lifecycle.md` §1-8). 행은 부르는
+     * 쪽이 이 뒤에 쓰므로 실패하면 바뀌지 않는다.
      */
     private fun scheduleKeepingPrevious(previous: AlarmEntity, next: AlarmEntity) {
         try {
@@ -2183,10 +2160,6 @@ class AlarmRepository(
         require(draft.voiceSource in VoiceSources.all) { "Unknown voice source." }
         if (draft.playMode != AlarmPlayModes.ALARM_ONLY) {
             require(!draft.localAudioUri.isNullOrBlank()) { "Voice audio must be cached before saving this alarm." }
-        }
-        if (draft.isDated()) {
-            require(draft.repeatDaysMask == 0) { "A dated alarm cannot repeat." }
-            require(!draft.targetTimezone.isNullOrBlank()) { "A dated alarm needs its timezone." }
         }
     }
 
@@ -2218,7 +2191,6 @@ class AlarmRepository(
         minute: Int,
         excludeAlarmId: String?,
         replaceExisting: Boolean,
-        dated: Boolean = false,
     ): AlarmEntity? {
         // 교체 대상도 '이 계정에 보이는 알람'만이다. 앞 계정 알람을 고르면 사용자가 본 적도
         // 없는 알람과 그 음성 캐시를 지우게 되는데, 내 알람은 서버에서 되받는 경로가 없다.
@@ -2228,9 +2200,6 @@ class AlarmRepository(
             callerUserId = currentUserIdProvider(),
             excludeId = excludeAlarmId,
         ) ?: return null
-        // ⚠ **날짜 알람은 다른 알람을 교체하지 않는다**(`docs/spec/alarm-lifecycle.md` §4-3). 내일 한 번을 위해 매일
-        //   울리는 알람을 지우지 않는다 — 교체 질문 대신 '다른 시각을 고르라' 로 끝난다. 편집기가 먼저 막는다.
-        if (dated) throw DatedAlarmConflictException(hour = hour, minute = minute)
         if (!replaceExisting) {
             throw DuplicateAlarmTimeException(
                 existingAlarmId = existing.id,
@@ -2504,16 +2473,6 @@ class DuplicateAlarmTimeException(
     val minute: Int,
     val existingLabel: String?,
 ) : Exception("이미 ${"%02d:%02d".format(hour, minute)} 에 알람이 있어요.")
-
-/**
- * 날짜 알람의 시각이 이미 지났다 — 새로 예약하지도, 다시 켜지도 않는다(`docs/spec/alarm-lifecycle.md` §4-3·4-4).
- * 화면 문구는 부르는 쪽이 정한다.
- */
-class DatedAlarmPastException : Exception("Dated alarm time has already passed.")
-
-/** 날짜 알람이 같은 시각의 다른 알람과 겹친다 — 교체하지 않는다(§4-3). */
-class DatedAlarmConflictException(val hour: Int, val minute: Int) :
-    Exception("Another alarm is set at ${"%02d:%02d".format(hour, minute)}.")
 
 /**
  * [AlarmRepository.refreshHolidayOffAlarms] 의 결과. [calendarReady] 가 false 면 새 나라(JP·US)의 공휴일을

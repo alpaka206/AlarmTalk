@@ -278,6 +278,35 @@ final class MessageContextMemoryTests: XCTestCase {
         XCTAssertFalse(keeps(text: "   "))
     }
 
+    /// 날씨·운세 **테마** 알람을 시각만 고쳐 다시 저장해도 지역·사주가 남는다(1.2.16 부터 지워졌다 — 그 뒤 매일 '날씨를
+    /// 못 알아봤어요' 클립이 울었다). 테마를 붙이면 `voiceRandomPrompt` 는 꺼진 채 저장된다.
+    func testThemeAlarmKeepsRegionAndBirthInfoOnResave() {
+        func keeps(
+            voice: Bool = true,
+            random: Bool = false,
+            context: RandomPromptContext = .preset,
+            bucket: FreeBucket? = nil
+        ) -> (weather: Bool, fortune: Bool) {
+            AlarmEditDraft.savesPromptContext(voiceMode: voice, randomPrompt: random, context: context, stockBucket: bucket)
+        }
+        // 테마 알람 — 랜덤은 꺼져 있어도 그 테마의 값은 남긴다.
+        XCTAssertTrue(keeps(bucket: .weather).weather)
+        XCTAssertFalse(keeps(bucket: .weather).fortune)
+        XCTAssertTrue(keeps(bucket: .fortune).fortune)
+        XCTAssertFalse(keeps(bucket: .fortune).weather)
+        // 다른 테마·직접 입력은 남기지 않는다.
+        XCTAssertFalse(keeps(bucket: .medication).weather)
+        XCTAssertFalse(keeps(bucket: .medication).fortune)
+        XCTAssertFalse(keeps().weather)
+        // 라이브 생성 문구는 예전 그대로 종류를 따른다.
+        XCTAssertTrue(keeps(random: true, context: .wakeWeather).weather)
+        XCTAssertTrue(keeps(random: true, context: .wakeFortune).fortune)
+        XCTAssertFalse(keeps(random: true, context: .wakeWeather).fortune)
+        // 알람 전용이면 아무것도 남기지 않는다.
+        XCTAssertFalse(keeps(voice: false, bucket: .weather).weather)
+        XCTAssertFalse(keeps(voice: false, random: true, context: .wakeFortune).fortune)
+    }
+
     /// 직접 입력 '음성 만들기' 의 같은 요청 id(`voice-and-message.md` §8, Codex #942) — 같은 입력의 재시도는 같은 id, 입력이
     /// 바뀌면 새 id. 안드로이드 `ManualRequestIdsTest` 짝.
     @MainActor

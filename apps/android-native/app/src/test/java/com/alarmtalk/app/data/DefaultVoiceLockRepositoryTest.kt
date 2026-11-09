@@ -355,6 +355,53 @@ class DefaultVoiceLockRepositoryTest {
     }
 
     /**
+     * 1.2.16 이 옛 규칙(기본 목소리 직접 입력 = 유료)으로 잠근 알람은 **지금 규칙으로 무료**라, 무료 계정의 잠금 회차가 푼다
+     * (2026-11-09 출시 검토). 보관본을 되돌려 원래 문구·음원으로 운다. 잠긴 뒤 직접 입력을 새로 만들었으면 그 편집이 이긴다.
+     */
+    @Test
+    fun aDefaultVoiceManualAlarmLockedBy1216IsReleased() = runBlocking {
+        manifest = null
+        val original = rehearsalCloneAlarm(
+            voiceProfileId = TEST_SYSTEM_VOICE_ID,
+            bucketId = null,
+            voiceRandomContext = null,
+            localAudioUri = "file:///tts/manual-1.mp3",
+            audioCacheKey = "tts-manual-1",
+            ttsMessageId = "manual-1",
+        )
+        dao.upsert(original.lockedToDefaultVoice(TEST_SYSTEM_VOICE_ID, null, null, null, 5_000L))
+        assertTrue(dao.getById("rehearsal-1")!!.hasLockedPaidVoice())
+
+        assertEquals(0, repository.lockPaidAlarmTalks())
+
+        val after = dao.getById("rehearsal-1")!!
+        assertFalse(after.hasLockedPaidVoice())
+        assertEquals("file:///tts/manual-1.mp3", after.localAudioUri)
+        assertEquals("tts-manual-1", after.audioCacheKey)
+    }
+
+    @Test
+    fun aRemadeManualAlarmKeepsTheEditWhenReleased() = runBlocking {
+        manifest = null
+        val original = rehearsalCloneAlarm(
+            voiceProfileId = TEST_SYSTEM_VOICE_ID,
+            bucketId = null,
+            voiceRandomContext = null,
+            localAudioUri = "file:///tts/manual-1.mp3",
+            audioCacheKey = "tts-manual-1",
+            ttsMessageId = "manual-1",
+        )
+        val locked = original.lockedToDefaultVoice(TEST_SYSTEM_VOICE_ID, null, null, null, 5_000L)
+        dao.upsert(locked.copy(audioCacheKey = "tts-manual-2", localAudioUri = "file:///tts/manual-2.mp3"))
+
+        repository.lockPaidAlarmTalks()
+
+        val after = dao.getById("rehearsal-1")!!
+        assertFalse(after.hasLockedPaidVoice())
+        assertEquals("tts-manual-2", after.audioCacheKey)
+    }
+
+    /**
      * 대체 목소리는 **미나 하나**다(2026-09-29 "미나로 통일도 해") — 그 계정이 마지막에 쓴 기본
      * 목소리(시우)를 따르지 않는다. 예전에는 잠금만 그 기억값을 따라, 같은 계정의 알람이 잠금이면
      * 시우·삭제면 미나처럼 경로마다 다른 목소리가 됐다.

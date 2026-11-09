@@ -749,7 +749,7 @@ internal fun MainViewModel.checkAppVersion() {
             // 이 판정 결과를 InAppUpdateManager 가 그대로 소비한다(버전 비교 중복 구현 금지).
             updateRequired = appVersionCode in 1 until policy.minSupportedVersion
             updateRecommended = appVersionCode in 1 until policy.latestVersion
-            // 지역 시트의 날씨 출처 줄 — 서버가 지금 쓰는 원천을 말할 때만 그린다(`showsWeatherAttribution`).
+            // 날씨 출처 줄(약관 및 개인정보 처리 동의 화면) — 서버가 지금 쓰는 원천을 말할 때만 그린다(`showsWeatherAttribution`).
             weatherAttribution = policy.weatherAttribution
         }.onFailure { error ->
             Log.w(TAG, "Failed to check app version", error)

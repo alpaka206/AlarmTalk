@@ -19,7 +19,7 @@ import java.util.Locale
  * 분류:
  * - 성공: 사용자가 한 일이 끝났다(저장·등록·발송·해지) 또는 기다리던 것이 도착했다.
  * - 오류: 하려던 일이 실패했거나 거절됐다. 실패 갈래에서 나오는 문구는 이유를 말해도 오류다.
- * - 안내: 그 밖 — 하기 전에 필요한 것(입력·로그인·권한·이용권·동의), 진행 중, 결과 없음.
+ * - 안내: 그 밖 — 하기 전에 필요한 것(입력·로그인·권한·이용권·동의), 진행 중, 결과 없음, 켠 알람이 언제 우는지.
  *
  * ⚠ **스낵바로 가는 문구를 새로 만들면 셋 중 하나에 넣는다.** `SnackbarSeverityTest` 가 뷰모델
  * 소스(`ui/main/MainViewModel*.kt`)와 공용 오류 표가 쓰는 문구를 전부 훑어 빠진 것을 잡는다.
@@ -97,8 +97,6 @@ internal object SnackbarSeverities {
         R.string.msg_voice_monthly_change_limit,
         R.string.msg_voice_delete_failed,
         R.string.msg_voice_info_update_failed,
-        R.string.msg_voice_prerender_retry_failed,
-        R.string.msg_voice_speech_style_retry_failed,
         R.string.rd_audio_duration_unreadable,
         R.string.rd_audio_extract_failed,
         R.string.rd_audio_mp3_trim_failed,
@@ -180,6 +178,9 @@ internal object SnackbarSeverities {
         R.string.msg_voice_replacement_settling,
         R.string.msg_verification_code_debug,
         R.string.r3app_update_downloaded,
+        // 알려 주는 것 — 방금 켠 알람이 언제 우는지(`docs/spec/alarm-editor.md` §7, 화면 아래 호스트). 저장이 끝났다는
+        // 성공 표시가 아니라 정보다.
+        R.string.hs_status_ring_in,
     )
 
     @Volatile

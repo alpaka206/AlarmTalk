@@ -96,15 +96,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 값 하나를 행에 적어 두면 캐시와 무관하게 무엇을 골랐는지 남는다.
     var bucketId: String?
 
-    /// **날짜 지정 알람**의 날짜(`YYYY-MM-DD`). 있으면 이 알람은 그날 한 번만 운다 — 요일 반복과
-    /// 배타적이다(`repeatDaysMask = 0`). 스펙 `docs/spec/alarm-lifecycle.md` §4. 서버 `target_date` 와 왕복한다.
-    /// 옛 저장값에는 없어 nil 로 읽힌다(지금까지의 알람은 전부 날짜 없는 알람이다).
-    var targetDate: String?
-
-    /// 날짜 알람의 시간대(IANA). **저장하는 순간 사용자가 확인한 값**으로 고정한다 — 기기 시간대가
-    /// 바뀌어도 이 시간대의 그 시각에 운다(`DatedAlarmTime`). 날짜 알람이 아니면 nil.
-    var targetTimezone: String?
-
     /// 이 테마에 묶인 클립들의 캐시 키. 안드로이드 `AlarmEntity.bucketClipKeysJson` 미러.
     ///
     /// ⚠ **한 개만 들고 있지 말 것.** 무료 테마는 울릴 때마다 다음 클립으로 넘어가는 게
@@ -228,8 +219,11 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // ⚠ 이 술어와 `PaidVoiceGate.usesFreeSystemVoice` 는 **한 쌍이다 — 항상 같이 고친다.**
         // 한쪽만 고치면 '예약은 목소리로 되는데 앱을 껐다 켜면 잠긴다'(또는 그 반대)가 된다.
         if voiceSourceEnum == .localAudio, localAudioUri?.nilIfBlank != nil { return false }
-        // 추가 음성팩 목소리 알람은 무료 고정 콘텐츠다 — `PaidVoiceGate.usesFreeSystemVoice` 의 `isFreeFixedVoiceID` 짝.
-        if voiceSourceEnum != .localAudio, isVoicePackVoiceID(voiceProfileId) { return false }
+        // ⚠ **기본(시스템) 목소리·추가 음성팩 알람은 무엇을 말하든 무료다** — `PaidVoiceGate.usesFreeSystemVoice` 의
+        // `isFreeFixedVoiceID` 짝(2026-11-09 iOS 출시 검토 blocker). 1.3 에서 짝 쪽만 바뀌어, 무료가 만든 '기본 목소리 +
+        // 직접 입력' 알람이 다음 실행의 무료 잠금에서 유료로 읽혀 음성을 잃고 인사말로 울렸다. 안드로이드는
+        // `lockPaidAlarmTalks` 가 `usesFreeSystemVoiceAlarm()`(같은 `isFreeFixedVoiceId`)으로 건너뛴다.
+        if voiceSourceEnum != .localAudio, isFreeFixedVoiceID(voiceProfileId) { return false }
         let stockVoiceOnly =
             localAudioUri.nilIfBlank == nil &&
             rawAudioUri.nilIfBlank == nil &&
@@ -254,7 +248,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// AlarmKit 네이티브 timezone 적응 + 자동 재무장을 그대로 유지한다.
     /// makeSchedule / recoverScheduledAlarms 후보 필터 / markStopped / BackgroundSyncTask
     /// 가 모두 이 헬퍼로 동일한 분기를 표현해 inline 술어 분기 발산을 막는다.
-    var isHolidayOffRecurring: Bool { isRecurring && holidayOff }
+    var isHolidayOffRecurring: Bool { repeatDaysMask != 0 && holidayOff }
 
     var timeString: String {
         String(format: "%02d:%02d", hour, minute)
@@ -283,15 +277,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         let formatter = DateFormatter()
         formatter.locale = .autoupdatingCurrent
         formatter.setLocalizedDateFormatFromTemplate("MMMEd")
-        // 날짜 알람은 **그 알람의 날짜**를 말한다 — 기기 시간대로 읽으면 시간대가 다를 때 하루가 밀린다.
-        // 기기 시각은 `datedTimezoneNote` 가 따로 말한다(스펙 alarm-lifecycle.md §4-2).
-        if let targetDate = targetDate.nilIfBlank {
-            let zone = DatedAlarmTime.timeZone(targetTimezone)
-            if let date = DatedAlarmTime.pickerDate(for: targetDate, in: zone) {
-                formatter.timeZone = zone
-                return formatter.string(from: date)
-            }
-        }
         // ⚠ **꺼진 알람은 저장된 시각이 아니라 다시 계산한 다음 울림을 말한다**(2026-10-29 두 앱 비교 — 안드로이드
         //   `ui/components/ControlsAndPermissions.kt` 의 `AlarmRow` 짝). 끄거나 한 번 울고 꺼진 알람은 `fireAtMillis` 를 그대로
         //   둔다 — 그 값을 읽으면 어제 울린 일회성·지난주에 끈 반복 알람이 지난 날짜를 보였다. 켜진 알람은 실제 예약값이다.
@@ -317,13 +302,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 이 행의 시각·요일·공휴일 설정으로 **다시 계산한** 다음 울림 시각.
     /// 울릴 날이 없으면 던진다 — 폴백은 부르는 쪽이 정한다.
     func nextFireAtMillis(nowMillis: Int64, isHoliday: (Date) -> Bool) throws -> Int64 {
-        // 날짜 알람은 **고정 시각**이다 — 지났어도 다음 날로 넘기지 않는다(스펙 alarm-lifecycle.md §4-4).
-        // 지났는지는 부르는 쪽이 `datedTimeHasPassed` 로 가른다.
-        if isDated {
-            guard let fixed = datedFireAtMillis else { throw AlarmTimeCalculator.CalculatorError.invalidTargetDate }
-            return fixed
-        }
-        return try AlarmTimeCalculator.nextFireAtMillis(
+        try AlarmTimeCalculator.nextFireAtMillis(
             hour: hour,
             minute: minute,
             repeatDaysMask: repeatDaysMask,
@@ -493,8 +472,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case bucketRotationIndex
         case contextVariantIndex
         case contextResolvedAtMillis
-        case targetDate
-        case targetTimezone
         case cheerMode
         case cheerPinnedContentId
         case cheerHistory
@@ -597,9 +574,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.bucketRotationIndex = try c.decodeIfPresent(Int.self, forKey: .bucketRotationIndex)
         self.contextVariantIndex = try c.decodeIfPresent(Int.self, forKey: .contextVariantIndex)
         self.contextResolvedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .contextResolvedAtMillis)
-        // 옛 저장값에는 없다 — nil(날짜 없는 알람)로 읽는다.
-        self.targetDate = try c.decodeIfPresent(String.self, forKey: .targetDate)
-        self.targetTimezone = try c.decodeIfPresent(String.self, forKey: .targetTimezone)
         self.cheerMode = try c.decodeIfPresent(String.self, forKey: .cheerMode)
         self.cheerPinnedContentId = try c.decodeIfPresent(String.self, forKey: .cheerPinnedContentId)
         self.cheerHistory = (try? c.decodeIfPresent([String].self, forKey: .cheerHistory)) ?? nil
@@ -677,8 +651,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(bucketRotationIndex, forKey: .bucketRotationIndex)
         try c.encodeIfPresent(contextVariantIndex, forKey: .contextVariantIndex)
         try c.encodeIfPresent(contextResolvedAtMillis, forKey: .contextResolvedAtMillis)
-        try c.encodeIfPresent(targetDate, forKey: .targetDate)
-        try c.encodeIfPresent(targetTimezone, forKey: .targetTimezone)
         try c.encodeIfPresent(cheerMode, forKey: .cheerMode)
         try c.encodeIfPresent(cheerPinnedContentId, forKey: .cheerPinnedContentId)
         try c.encodeIfPresent(cheerHistory, forKey: .cheerHistory)
@@ -717,7 +689,6 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
     case unknownVoiceSource
     case voiceAudioRequired
     case duplicateTime
-    case invalidTargetDate
 
     var errorDescription: String? {
         switch self {
@@ -733,7 +704,6 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
         case .unknownVoiceSource: return String(localized: "지원하지 않는 음성 소스예요.")
         case .voiceAudioRequired: return String(localized: "음성 알람은 음원을 먼저 캐싱해야 해요.")
         case .duplicateTime: return String(localized: "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요.")
-        case .invalidTargetDate: return String(localized: "날짜나 시각을 다시 골라 주세요.")
         }
     }
 }

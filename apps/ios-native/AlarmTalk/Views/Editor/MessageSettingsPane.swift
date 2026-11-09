@@ -139,25 +139,14 @@ struct MessageSettingsPane: View {
         .buttonStyle(.plain)
     }
 
-    /// **처음에 접어 두는 종류 — 운세·약**(2026-10-26 v1.3 W04). 첫 화면은 날씨·응원·직접 입력이면 충분하다. 지우지 않는다 —
-    /// 지금 고른 것이 그 둘이면 처음부터 펼쳐 둔다. 안드로이드 `FoldedMessageContexts` 짝.
-    static let foldedContextIDs: Set<String> = ["wake_fortune", "medication"]
-
-    @State private var moreContextsShown: Bool?
-
-    private var allVisibleOptions: [(id: String, label: String)] {
+    /// 실제로 그릴 행. '직접 입력' 은 잠겨 있어도 **언제나 남는다**([onManualLocked] 주석).
+    ///
+    /// ⚠ **접지 않는다 — 전부 편다**(2026-11-09 오너). v1.3 W04 에서 운세·약을 '더 보기' 뒤로 접었다가 출시 전에
+    /// 되돌렸다 — 다 펴도 다섯 줄이고, 접어 두면 있는 줄도 모른다. 안드로이드 `ui/editor/AlarmRandomPromptSettings.kt` 짝.
+    private var visibleOptions: [(id: String, label: String)] {
         Self.options.filter {
             ($0.id == MessageSettingsResult.manualContext && manualAvailable) || availableContexts.contains($0.id)
         }
-    }
-
-    private var showsMoreContexts: Bool {
-        moreContextsShown ?? Self.foldedContextIDs.contains(initialContext)
-    }
-
-    /// 실제로 그릴 행. '직접 입력' 은 잠겨 있어도 **언제나 남는다**([onManualLocked] 주석).
-    private var visibleOptions: [(id: String, label: String)] {
-        showsMoreContexts ? allVisibleOptions : allVisibleOptions.filter { !Self.foldedContextIDs.contains($0.id) }
     }
 
     var body: some View {
@@ -174,19 +163,6 @@ struct MessageSettingsPane: View {
                                     select(option.id)
                                 }
                             }
-                        }
-                        if !showsMoreContexts, allVisibleOptions.contains(where: { Self.foldedContextIDs.contains($0.id) }) {
-                            AlarmSettingDivider()
-                            Button {
-                                moreContextsShown = true
-                            } label: {
-                                Text(String(localized: "더 보기 (운세·약)"))
-                                    .font(theme.typography.bodyLarge)
-                                    .foregroundStyle(theme.palette.primary)
-                                    .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
                         }
                     }
 

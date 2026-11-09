@@ -70,9 +70,6 @@ struct AlarmEditorSheet: View {
     @State var didLoadInitial = false
     @State var validationAlert: ValidationAlertContent?
     @State var duplicateAlarmConfirm: DuplicateAlarmConfirmContent?
-    /// '날짜 지정' 의 날짜 고르기 시트(`AlarmEditorSheet+DatedAlarm`).
-    @State var datedPickerOpen = false
-    @State var datedPickerDate = Date()
     @State var isWorking = false
     /// 저장이 **확정 단계**에 들어섰다(음원 준비가 끝나 알람 행을 만들고 날씨 조회·예약을 기다리는 중) — 이때는 편집을 막는다.
     /// 그 뒤에 바꾼 것은 반영할 자리가 없어 말없이 사라진다. 안드로이드 `AlarmEditorScreen` 의 `if (saving)` 덮개 짝.
@@ -331,9 +328,6 @@ struct AlarmEditorSheet: View {
                     // 이미 정했고, 다가오는 공휴일 목록은 이 자리에서 결정에 쓰이지 않는다.
                     // 카드만 길어져 아래 여백이 사라진다.
                 }
-                // '날짜 지정(한 번)' — 요일과 배타적이다. 켜면 요일이 풀려 위 공휴일 행이 사라진다
-                // (스펙 alarm-editor.md §2-1).
-                datedAlarmSection
 
                 // ⚠ **알람 이름(라벨) 입력창을 되살리지 말 것.** 안드로이드
                 // `ScheduleDetailsCard`(`AlarmEditorControls.kt`)에는 라벨 입력이
@@ -539,15 +533,6 @@ struct AlarmEditorSheet: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
         }
-        .formSheet(
-            isPresented: $datedPickerOpen,
-            title: String(localized: "날짜 고르기"),
-            saveTitle: String(localized: "완료"),
-            onCancel: { datedPickerOpen = false },
-            onSave: { confirmDatedPicker() }
-        ) {
-            datedPickerContent
-        }
         .alert(item: $duplicateAlarmConfirm) { content in
             Alert(
                 title: Text(String(localized: "같은 시각 알람이 있어요")),
@@ -712,10 +697,6 @@ struct AlarmEditorSheet: View {
         .onChange(of: draft.repeatDaysMask) { _, newMask in
             if newMask == 0, draft.holidayOff {
                 draft.holidayOff = false
-            }
-            // 요일을 하나라도 고르면 날짜 지정이 꺼진다 — 둘은 배타적이다(스펙 alarm-editor.md §2-1).
-            if newMask != 0, draft.isDated {
-                draft.leaveDatedMode()
             }
         }
         .onChange(of: localRecorder.elapsedSeconds) { _, seconds in
@@ -951,9 +932,7 @@ struct AlarmEditorSheet: View {
     /// 지금 draft 로 계산한 다음 울림 시각. 계산이 실패하면(울릴 날이 없음) 오늘/내일
     /// 그 시각으로 둔다.
     private func draftFireAtMillis(now: Int64) -> Int64 {
-        // 날짜 알람은 고른 날짜·시간대의 고정 시각이다 — 지났어도 내일로 넘기지 않는다(저장이 막는다).
-        if let dated = draft.datedFireAtMillis { return dated }
-        return (try? AlarmTimeCalculator.nextFireAtMillis(
+        (try? AlarmTimeCalculator.nextFireAtMillis(
             hour: draft.hour,
             minute: draft.minute,
             repeatDaysMask: draft.repeatDaysMask,
@@ -975,17 +954,6 @@ struct AlarmEditorSheet: View {
         if mask != 0 {
             let days: String = mask.repeatDays.map(\.shortLabel).joined(separator: " ")
             return String(localized: "매주: \(days)")
-        }
-        // 날짜 알람: 그 날짜를 그 알람의 시간대로 말한다(오늘·내일이면 그 말을 붙인다 — 아래와 같다).
-        if let targetDate = draft.targetDate {
-            let zone = datedTimeZone
-            guard let date = DatedAlarmTime.pickerDate(for: targetDate, in: zone) else { return datedDateLabel }
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = zone
-            let label = datedDateLabel
-            if calendar.isDateInToday(date) { return String(localized: "오늘 · \(String(label))") }
-            if calendar.isDateInTomorrow(date) { return String(localized: "내일 · \(String(label))") }
-            return label
         }
         // mask == 0 : 한 번만 — 다음 발화 날짜를 보여준다(공휴일 OFF 는 의미 없지만 계산은 동일).
         let fireAt = draftFireAtMillis(now: Int64(Date().timeIntervalSince1970 * 1000))
@@ -1225,7 +1193,10 @@ struct AlarmEditorSheet: View {
     /// 만 보여줬는데, 이제 4개를 미리 받아 두므로 알람마다 자유롭게 고를 수 있어야 한다
     /// (안드로이드 `VoiceAudioCard.kt:104-107` 주석).
     var voiceProfileOptions: [VoiceSelectionSheet.Option] {
-        let own = voiceStudio.profiles
+        // ⚠ **무료면 내 목소리를 아예 보이지 않는다**(2026-11-09 오너: "잠금 표시도 할 필요 없이 노출할 필요 자체가 없어").
+        //   예전 iOS 는 자물쇠를 달아 두고 누르면 이용권 알럿을 띄웠다. 무료는 기본 목소리만 쓸 수 있으니(서버 `tts.ts`) 고를 수
+        //   없는 것을 늘어놓지 않는다 — 안드로이드 `editorVisibleVoiceProfiles` 와 같다(무료면 기본 목소리만).
+        let own = (freeVoiceTier ? [] : voiceStudio.profiles)
             .filter { $0.isReadyForAlarmSelection && !isSystemVoice($0) }
             .map {
                 VoiceSelectionSheet.Option(
@@ -1233,8 +1204,7 @@ struct AlarmEditorSheet: View {
                     name: $0.displayName,
                     // 관계 라벨이 아니라 '내 목소리' — 안드로이드 `ownedVoiceDetail`.
                     detail: ownVoiceOptionDetail(),
-                    // 무료 등급은 시스템 목소리만 쓸 수 있다(서버 `tts.ts:684-693`).
-                    locked: freeVoiceTier,
+                    locked: false,
                     // 교체 정리가 끝나지 않은 목소리는 **자리에 두되 못 고른다** — 감추면
                     // 사라진 것으로 보여 고장으로 읽힌다.
                     unavailableReason: voiceStudio.isReplacementSettling($0.id)
@@ -1275,7 +1245,8 @@ struct AlarmEditorSheet: View {
             VoiceSelectionSheet.Option(
                 id: Self.recordingOptionID,
                 name: String(localized: "직접 녹음"),
-                detail: String(localized: "이 알람에만 쓸 소리를 직접 녹음하기"),
+                // 설명 줄은 없다(2026-11-09 오너 — '이 알람에만 쓸 소리를 직접 녹음하기' 삭제). 이름이 이미 말한다.
+                detail: nil,
                 // ⚠ **잠그지 말 것** — 직접 녹음은 유료 기능이 아니다(2026-08-12 확정).
                 // 예전 주석은 "안드로이드 `VoiceAudioCard.kt` 와 같은 판정" 이라고 했지만
                 // 안드로이드의 `VoiceProfileOption` 에는 `locked` 필드가 **아예 없다** —
@@ -1358,16 +1329,20 @@ struct AlarmEditorSheet: View {
         didApplyPreferredVoice = true
         // ⚠ **추가 음성팩은 직접 입력을 쓸 수 없다**(`docs/spec/voice-packs.md` §1·§7) — 쳐 둔 문구를 버리고 직전 테마
         // (없으면 추가 입력이 필요 없는 첫 테마 = 응원)로 잇는다. 확인 알럿(`pendingVoiceSwitch`)을 지난 뒤에만 여기 온다.
-        let dropsManualForPack = isVoicePackVoiceID(option.id)
-            && !voiceStudio.randomPrompt
+        // ⚠ **기본 목소리도 같다** — 알럿이 "지금 입력한 문구가 지워져요" 라고 말한 그 경우(`losesManualText`)에는 실제로
+        // 지운다. 예전에는 팩만 지워서 알럿을 지나도 직접 입력이 남았고, 저장하면 월 한도가 깎였다(안드로이드
+        // `AlarmEditorState.selectVoiceProfile` 은 지운다 — `docs/spec/voice-and-message.md` §3).
+        let dropsManualText = !voiceStudio.randomPrompt
             && selectedBucketDraft == nil
-        if dropsManualForPack {
+            && option.id != voiceStudio.selectedProfileID
+            && (isVoicePackVoiceID(option.id) || losesManualText(switchingTo: option))
+        if dropsManualText {
             voiceStudio.ttsText = ""
             voiceStudio.preparedAlarm = nil
             pendingFreeBucket = FreeBucket.stored(DynamicPromptPreferenceStore().lastFreeBucket(userID: auth.session?.user.id))
         }
         commitVoiceSelection(option.id)
-        if dropsManualForPack { applyPendingFreeBucketIfNeeded() }
+        if dropsManualText { applyPendingFreeBucketIfNeeded() }
     }
 
     /// 목소리(TTS) 선택을 **확정**한다 — 바로 고른 것과 '기본 목소리로 바꿀까요?' 확인이 모두 여기로 온다.
@@ -1518,7 +1493,9 @@ struct AlarmEditorSheet: View {
     /// 언제나 `true` 로 굳어 있어 **경고가 아예 뜨지 않았고**, 직접 입력한 문장이
     /// 말없이 버려졌다(기존 알람에서는 반대로 잃을 게 없는데 경고가 떴다).
     func losesManualText(switchingTo option: VoiceSelectionSheet.Option) -> Bool {
+        // 같은 목소리를 다시 고르면 바뀌는 게 없다 — 지운다고 묻지 않는다(지우지도 않는다).
         isFreeFixedVoiceID(option.id)
+            && option.id != voiceStudio.selectedProfileID
             && !voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !voiceStudio.randomPrompt
             && selectedBucketDraft == nil
@@ -2073,13 +2050,18 @@ struct AlarmEditorSheet: View {
     /// 표시 문구이고 '마지막에 쓴 직접 입력 문구' 로 기억되는 것도 그 값이다. 번역이
     /// 켜진 기기에서는 둘이 달라서, 원문 키만 남기면 다음 새 알람이 표시 문구로 열려
     /// 캐시를 빗나간다 — '재생성도 한도 차감도 없다' 던 약속이 조용히 깨진다.
-    func rememberTtsInputAlias(for prepared: PreparedAlarmTalk, listenerTitle: String?) {
-        guard let inputKey = ttsInputKeyForReuse(listenerTitle: listenerTitle) else { return }
+    ///
+    /// ⚠ **키는 요청을 보내기 전 값으로 만든 것을 받는다**(`inputKey`). 음성을 만드는 사이 문구·목소리를 바꾸면 지금 값으로
+    /// 만든 키가 옛 음성에 묶이고, 다시 도는 저장이 그 별칭으로 옛 음성을 재사용한다 — 고쳐 저장해도 계속 옛 문구로 운다.
+    /// 표시 문구 키의 목소리도 지금 고른 것이 아니라 **그 음성을 만든 목소리**(`prepared.voiceProfileID`)다.
+    /// 안드로이드 `AlarmEditorScreen` 도 생성 전에 `ttsInputKey` 를 만들어 그 키로 묶는다.
+    func rememberTtsInputAlias(for prepared: PreparedAlarmTalk, inputKey: String?, listenerTitle: String?) {
+        guard let inputKey else { return }
         let store = AudioCacheStore.shared
         store.linkTtsInput(inputKey: inputKey, serverCacheKey: prepared.audioCacheKey, displayText: prepared.text)
 
         guard let userID = (auth.session?.user.id).nilIfBlank,
-              let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return }
+              let profileID = prepared.voiceProfileID.nilIfBlank else { return }
         let displayTextKey = AudioCacheStore.ttsInputKey(
             userId: userID,
             profileId: profileID,
@@ -2412,8 +2394,21 @@ struct AlarmEditorSheet: View {
     }
 
     func applyVoicePromptState(to record: inout LocalAlarmRecord) {
-        let enabled = record.playModeEnum != .alarmOnly && voiceStudio.randomPrompt
+        let voiceMode = record.playModeEnum != .alarmOnly
+        let enabled = voiceMode && voiceStudio.randomPrompt
         let context = RandomPromptContext.normalized(voiceStudio.randomContext)
+        // ⚠ **테마(스톡 클립) 알람도 그 테마가 날씨·운세면 지역·사주를 남긴다.** 테마를 붙이면 `voiceRandomPrompt` 는 꺼지지만
+        //   울릴 클립을 고르는 데(날씨 조건·운세 개인화) 그 값을 쓴다. 예전에는 `enabled` 하나로 갈라서, 테마 알람을 열어 시각만
+        //   고쳐 저장해도 지역·사주가 지워졌다 — 그 뒤 매일 '날씨를 못 알아봤어요' 클립이 울고 갱신도 못 했다(1.2.16 부터).
+        //   안드로이드 `AlarmEditorState.weatherContextForSave`·`fortuneContextForSave` 짝.
+        let keeps = AlarmEditDraft.savesPromptContext(
+            voiceMode: voiceMode,
+            randomPrompt: voiceStudio.randomPrompt,
+            context: context,
+            stockBucket: selectedBucketDraft
+        )
+        let keepsWeather = keeps.weather
+        let keepsFortune = keeps.fortune
         record.voiceRandomPrompt = enabled
         record.voiceRandomContext = enabled ? context.rawValue : nil
         // 지역은 **옛 앱이 읽는 표준 글자**로 적는다(목록으로 되짚히는 값이면). 알람 행에는 키 칸이
@@ -2423,11 +2418,11 @@ struct AlarmEditorSheet: View {
             country: voiceStudio.weatherCountry,
             city: voiceStudio.weatherCity
         )
-        record.voiceWeatherCountry = enabled && context.usesWeather ? weatherLabels.country : nil
-        record.voiceWeatherCity = enabled && context.usesWeather ? weatherLabels.city : nil
-        record.voiceFortuneGender = enabled && context.usesFortune ? (voiceStudio.fortuneGender).nilIfBlank : nil
-        record.voiceFortuneBirthDate = enabled && context.usesFortune ? (voiceStudio.fortuneBirthDate).nilIfBlank : nil
-        record.voiceFortuneBirthTime = enabled && context.usesFortune ? (voiceStudio.fortuneBirthTime).nilIfBlank : nil
+        record.voiceWeatherCountry = keepsWeather ? weatherLabels.country : nil
+        record.voiceWeatherCity = keepsWeather ? weatherLabels.city : nil
+        record.voiceFortuneGender = keepsFortune ? (voiceStudio.fortuneGender).nilIfBlank : nil
+        record.voiceFortuneBirthDate = keepsFortune ? (voiceStudio.fortuneBirthDate).nilIfBlank : nil
+        record.voiceFortuneBirthTime = keepsFortune ? (voiceStudio.fortuneBirthTime).nilIfBlank : nil
     }
 
     func showVoicePlanLockedAlert() {
@@ -2647,13 +2642,6 @@ struct AlarmEditorSheet: View {
             recordSaveBlocked("invalid_draft")
             return
         }
-        // 날짜 알람: 지난 시각·같은 시각 알람은 **누르는 순간** 다시 재 막는다 — 음성을 만들기 전이다
-        // (스펙 alarm-lifecycle.md §4-3). 교체 흐름을 타지 않는다.
-        if let datedBlock = datedSaveBlock(nowMillis: Int64(Date().timeIntervalSince1970 * 1000)) {
-            validationAlert = datedBlock.alert
-            recordSaveBlocked(datedBlock.reason)
-            return
-        }
 
         // 권한 확인은 **TTS 생성보다 먼저**여야 한다.
         // `alarmKit.schedule()` 안에도 확인이 있지만 그건 서버 호출이 끝난 뒤라,
@@ -2798,6 +2786,9 @@ struct AlarmEditorSheet: View {
             } else {
             // ① 로컬 확인 → (오프라인이면 위에서 막는다 — 요청 없음) → ② 생성 요청. 남은 횟수로 막지 않는다(§8).
             await refreshManualQuotaBeforeGenerate()
+            // 재사용 키는 **보내기 전 값으로** 만든다(`rememberTtsInputAlias` 주석) — 기다리는 사이 바꾼 입력이 이 음성에 묶이지 않게.
+            let listenerTitleAtRequest = currentListenerTitle
+            let inputKeyAtRequest = ttsInputKeyForReuse(listenerTitle: listenerTitleAtRequest)
             let prepared = await voiceStudio.generateTTS(
                 session: auth.session,
                 alarmHour: draft.hour,
@@ -2818,7 +2809,7 @@ struct AlarmEditorSheet: View {
                 showSaveFailureAlert()
                 return
             }
-            rememberTtsInputAlias(for: prepared, listenerTitle: currentListenerTitle)
+            rememberTtsInputAlias(for: prepared, inputKey: inputKeyAtRequest, listenerTitle: listenerTitleAtRequest)
             }
         }
 
@@ -3009,16 +3000,6 @@ struct AlarmEditorSheet: View {
             excludingID: existing?.id,
             ownerUserId: auth.session?.user.id
         )
-        // 날짜 알람은 교체를 묻지 않는다 — 음성을 만드는 사이에 같은 시각 알람이 생긴 경합의 그물이다
-        // (첫 판정은 `datedSaveBlockAlert`, 스펙 alarm-lifecycle.md §4-3).
-        if !conflicts.isEmpty, merged.isDated {
-            validationAlert = datedSaveBlockAlert(nowMillis: Int64(Date().timeIntervalSince1970 * 1000))
-                ?? ValidationAlertContent(
-                    title: String(localized: "같은 시각에 다른 알람이 있어요"),
-                    message: String(localized: "날짜 알람은 다른 알람을 바꾸지 않아요. 다른 시각을 골라 주세요.")
-                )
-            return
-        }
         if !conflicts.isEmpty {
             duplicateAlarmConfirm = DuplicateAlarmConfirmContent(
                 timeLabel: String(format: "%02d:%02d", merged.hour, merged.minute),
@@ -3057,8 +3038,24 @@ struct AlarmEditorSheet: View {
             return false
         }
         store.upsertPreservingServerSyncFields(merged)
-        let scheduled = await alarmKit.schedule(record: merged, store: store)
-        guard scheduled else {
+        // 예약 직후의 행 — 교체 정리가 실패하면 롤백이 이 사본과 견줘 그 사이 바뀐 행은 덮지 않는다(`rollbackAlarmReplacement`).
+        var staged: LocalAlarmRecord?
+        // 충돌을 지우는 사이 계정이 바뀌었으면(자동 401 포함) 그것도 정리 실패다 — 임시 저장을 롤백한다.
+        var clearConflicts: (@MainActor () async -> Bool)?
+        if let beforeCompletion {
+            clearConflicts = { await beforeCompletion() && auth.session?.user.id == ownerID }
+        }
+        // 걸음은 `runAlarmSaveSteps` 하나가 정한다 — 성공 마무리(아래)는 `.completed` 에서만 돈다.
+        let outcome = await runAlarmSaveSteps(
+            schedule: {
+                guard await alarmKit.schedule(record: merged, store: store) else { return false }
+                staged = store.record(id: merged.id)
+                return true
+            },
+            clearConflicts: clearConflicts
+        )
+        switch outcome {
+        case .scheduleFailed:
             if let existing, auth.session?.user.id == ownerID, store.record(id: merged.id) != nil {
                 store.upsertPreservingServerSyncFields(existing)
             } else if existing == nil, auth.session?.user.id == ownerID {
@@ -3073,9 +3070,7 @@ struct AlarmEditorSheet: View {
                 message: alarmKit.statusMessage ?? String(localized: "알람 예약에 실패했어요.")
             )
             return false
-        }
-        let staged = store.record(id: merged.id)
-        if let beforeCompletion, !(await beforeCompletion()) || auth.session?.user.id != ownerID {
+        case .replacementFailed:
             // 새 예약만 해제한다. 기존 편집본의 옛 예약은 아직 취소하지 않아 롤백할 수 있다.
             if let staged {
                 await rollbackAlarmReplacement(staged: staged, previous: existing, store: store) {
@@ -3087,6 +3082,8 @@ struct AlarmEditorSheet: View {
                 message: String(localized: "알람 삭제에 실패했어요")
             )
             return false
+        case .completed:
+            break
         }
         if let existing {
             await alarmKit.cancelScheduledAlarm(record: existing)
@@ -3109,15 +3106,6 @@ struct AlarmEditorSheet: View {
                 userID: ownerID
             )
         }
-        // 날짜 지정 알람 저장(`dated_alarm_saved`) — 날짜·시간대는 싣지 않는다. 안드로이드 `recordDatedAlarmSaved` 짝.
-        if merged.isDated {
-            UsageEventQueue.shared.record(
-                .datedAlarmSaved,
-                alarmID: merged.id,
-                voiceProfileID: merged.voiceProfileId,
-                userID: ownerID
-            )
-        }
         // 팩 목소리 사용(`pack_selected`) — 같은 자리·같은 계정. 팩 목록은 그 계정의 것일 때만 본다.
         if voicePacks.activeUserID == ownerID,
            let props = VoicePacks.packSelectionProps(for: merged, held: voicePacks.held) {
@@ -3125,6 +3113,14 @@ struct AlarmEditorSheet: View {
         }
         recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+        // 켠 알람이 언제 우는지 화면 아래에 잠깐 띄운다(스펙 alarm-editor.md §7) — 저장(교체 포함)이 끝까지 성공했을 때만
+        // (`outcome` 이 `.completed` 일 때만 — 판정은 프레젠터가 한다), 방금 저장한 **그 알람의** 예약 시각으로. 지금은 편집기가
+        // 하단 탭을 가리고 있어 기다렸다가, 바로 아래 `onSchedulingDidFinish` 가 편집기를 닫아 탭이 돌아오면 뜬다(`hostShown`).
+        RingInNoticePresenter.shared.present(
+            after: outcome,
+            for: store.record(id: merged.id),
+            alarmAuthorized: alarmKit.alarmAuthorized
+        )
         onSchedulingDidFinish()
         return true
     }

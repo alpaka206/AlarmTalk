@@ -47,7 +47,6 @@
     <string name="auth_landing_preview_pause">プレビューを一時停止</string>
     <string name="auth_landing_preview_play">声をプレビュー</string>
     <string name="auth_landing_sample_message">おじいちゃん、おはようございます\n今日は雨が降るそうです\n出かけるときは傘を忘れずに</string>
-    <string name="auth_landing_voice_greeting">%1$sの声のあいさつです</string>
     <string name="auth_password_hide">パスワードを隠す</string>
     <string name="auth_password_mismatch">パスワードが一致しません。</string>
     <string name="auth_error_email_invalid">メールアドレスの形式が正しくありません。ご確認ください。</string>
@@ -57,8 +56,7 @@
     <string name="auth_password_rule_min">8文字以上</string>
     <string name="auth_password_show">パスワードを表示</string>
     <string name="auth_processing">処理中</string>
-    <string name="auth_subtitle_login">お気に入りの声のアラームを、もう一度読み込みます。</string>
-    <string name="auth_subtitle_register">声のアラームを作るアカウントを準備しましょう。</string>    <string name="auth_title_login">ログイン</string>
+    <string name="auth_title_login">ログイン</string>
     <string name="auth_title_register">会員登録</string>
     <string name="auth_verification_code_hint">メールに届いた6桁のコードを入力してください。</string>
     <string name="billing_cancel_at_date">%1$sに解約</string>
@@ -66,7 +64,7 @@
     <string name="billing_cancel_description_no_date">解約のタイミングを選択してください。終了日での解約は今の利用期間までそのまま使えます。今すぐ解約すると残り期間の料金は日割りで返金されます。</string>
     <string name="billing_cancel_description_with_date">終了日での解約は%1$sまでそのまま使えます。今すぐ解約すると残り期間の料金は日割りで返金され、利用券はすぐに終了します。</string>
     <string name="billing_cancel_dialog_title">利用券を解約しますか？</string>
-    <string name="billing_cancel_immediate_description">残り期間の料金は日割りで返金され、利用券はすぐに終了します。声は3日間保管され、その間に利用券を購読し直せばそのまま使えます。過ぎると完全に削除されます。</string>
+    <string name="billing_cancel_immediate_description">残り期間の料金は日割りで返金され、利用券はすぐに終了します。</string>
     <string name="billing_cancel_immediate_title">今すぐ解約しますか？</string>
     <string name="billing_cancel_now">今すぐ解約</string>
     <string name="billing_cancel_pass">利用券を解約</string>
@@ -78,6 +76,12 @@
     <string name="billing_plan_free_name">無料</string>
     <string name="billing_plan_free_price">無料</string>
     <string name="billing_plan_monthly_price_fallback">月額%1$,dウォン</string>
+    <string name="billing_plan_monthly_price">月額%1$s</string>
+    <string name="billing_plan_trial_headline">%1$s無料</string>
+    <string name="billing_plan_trial_then">その後%1$s</string>
+    <string name="billing_plan_trial_start">%1$s無料で始める</string>
+    <string name="billing_plan_trial_disclosure">%1$sから毎月%2$sが請求されます。それまでにGoogle Playでいつでも解約できます。</string>
+    <string name="billing_plan_price_fallback">%1$,dウォン</string>
     <string name="billing_plan_personal_feature_messages_in_voice">登録した声で聞く天気・運勢メッセージ</string>
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
     <string name="billing_plan_personal_feature_manual">自分で入力 月30回(登録した声も)</string>
@@ -99,7 +103,12 @@
     <string name="billing_status_end_scheduled">現在の利用券は終了予定です。</string>
     <string name="billing_status_in_use">ご利用中の利用券です。</string>
     <string name="common_alarm_delete">削除</string>
-    <string name="common_alarm_warning_reschedule_failed">アラームを再設定できませんでした。時間を確認して、もう一度保存してください。</string>
+    <string name="common_alarm_warning_reschedule_failed">アラームを予約できませんでした。</string>
+    <string name="alarm_status_failed_title">アラームを予約できませんでした</string>
+    <string name="alarm_status_turned_off_one">%1$sのアラームをオフにしました。タップしてもう一度オンにしてください。</string>
+    <string name="alarm_status_turned_off_many">アラーム%1$d件をオフにしました。タップしてもう一度オンにしてください。</string>
+    <string name="notification_alarm_status_name">アラームの状態</string>
+    <string name="notification_alarm_status_description">予約できなかったアラームをお知らせします</string>
     <string name="common_google_continue">Googleで続ける</string>
     <string name="common_google_login">Googleでログイン</string>
     <string name="common_permission_gate_allow_action">許可する</string>
@@ -128,8 +137,6 @@
     <string name="editor_block_weather_message">天気の文章には地域が必要です。文章の画面で地域を選んでください。</string>
     <string name="editor_block_fortune_title">占いの情報がありません</string>
     <string name="editor_block_fortune_message">占いの文章には性別・生年月日・生まれた時間が必要です。文章の画面で入力してください。</string>
-    <string name="editor_block_manual_quota_title">今月の作成回数を使い切りました</string>
-    <string name="editor_block_manual_quota_message">直接入力の文言は1か月に%1$d回まで新しく作成できます。すでに作成した文言はそのまま使えます。</string>
     <string name="editorp_random_manual_ad_credits">%1$s（広告特典 %2$d回）</string>
     <string name="editor_ad_reward_watch">広告を見て1回使う</string>
     <string name="editor_ad_reward_offer_title">今月の無料作成をすべて使いました</string>
@@ -147,8 +154,6 @@
     <string name="editor_ad_reward_no_fill_message">今は表示できる広告がありません。作成済みの音声と基本の文言はそのまま使えます。</string>
     <string name="editor_ad_reward_granted_message">もう一度保存すると、この特典で1回作成します。</string>
     <string name="editor_ad_reward_granted_title">広告特典を受け取りました</string>
-    <string name="editor_block_ad_reward_title">広告特典がありません</string>
-    <string name="editor_block_ad_reward_message">この文言を新しく作成するには、文言画面の「自分で入力」で広告を1回見てください。すでに作成した文言はそのまま使えます。</string>
     <string name="editor_block_offline_title">接続が必要です</string>
     <string name="editor_block_offline_message">この文言の音声はまだこの端末にありません。接続できたら、もう一度保存してください。</string>
     <string name="editor_block_preparing_title">文章を準備しています</string>
@@ -187,19 +192,6 @@
     <string name="editor_error_weather_location_required">天気を含む文には、地域を選んでください。</string>
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
     <string name="editor_holiday_off_subtitle">振替休日・臨時祝日を含む</string>
-    <string name="editor_dated_title">日付を指定</string>
-    <string name="editor_dated_subtitle">選んだ日に一度だけ鳴ります</string>
-    <string name="editor_dated_date_label">日付</string>
-    <string name="editor_dated_picker_title">日付を選択</string>
-    <string name="editor_dated_picker_done">完了</string>
-    <string name="editor_dated_tz_note">%1$s 基準 · この端末の時刻 %2$s</string>
-    <string name="editor_block_dated_past_title">すでに過ぎた時刻です</string>
-    <string name="editor_block_dated_past_message">日付か時刻を選び直してください。</string>
-    <string name="editor_block_dated_conflict_title">同じ時刻に別のアラームがあります</string>
-    <string name="editor_block_dated_conflict_message">日付アラームは他のアラームを置き換えません。別の時刻を選んでください。</string>
-    <string name="dated_alarm_past_enable_title">日付が過ぎたアラームです</string>
-    <string name="dated_alarm_past_enable_message">編集で日付を選び直してください。</string>
-    <string name="dated_alarm_notice_ok">確認</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
     <string name="editor_manual_input_placeholder">アラームで流す文を入力してください</string>
     <string name="editor_no_voice_profile">まだ使用できる声がありません。</string>
@@ -234,7 +226,6 @@
     <string name="editor_block_voice_settling_title">まだ準備中です</string>
     <string name="msg_voice_replacement_settling">変更した音声を整理しています。しばらくしてからもう一度選んでください。</string>
     <string name="editor_voice_source_local">自分で録音</string>
-    <string name="editor_voice_local_detail">このアラームだけに使う音をその場で録音</string>
     <string name="editor_voice_volume_preview_hint">実際のアラーム文言ではなく、あいさつのサンプルを再生します。</string>
     <string name="editor_voice_volume">声の大きさ</string>
     <string name="editor_volume">音量</string>
@@ -262,7 +253,6 @@
     <string name="editorp_cheer_pinned_hint">選んだ言葉だけが流れます。</string>
     <string name="editorp_random_manual_title">入力した文面</string>
     <string name="editor_manual_charge_notice">新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。このスマホに残っている音声はもう一度使っても回数を使いませんが、スマホにない音声をもう一度受け取ると1回使います。</string>
-    <string name="editorp_random_more_contexts">もっと見る（運勢・お薬）</string>
     <string name="editorp_random_fortune_title">占い情報</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>
@@ -287,8 +277,7 @@
     <string name="region_picker_legacy_hint">リストから選び直してください</string>
     <string name="region_picker_legacy_value_hint">「%1$s」はリストにありません。選び直してください。</string>
     <string name="region_picker_hint">リストから地域を選んでください。位置情報の権限は使いません。</string>
-    <string name="region_picker_seat_description">%1$sの天気</string>
-    <string name="region_picker_weather_attribution">天気情報：韓国気象庁・気象庁・米国国立気象局（NWS）の予報をもとにAlarmTalkが加工</string>
+    <string name="legal_weather_attribution">天気情報：韓国気象庁・気象庁・米国国立気象局（NWS）の予報をもとにAlarmTalkが加工</string>
     <string name="settings_logout_confirm_title">ログアウトしますか？</string>
     <string name="settings_marketing_load_failed">読み込めませんでした · タップで再試行</string>
     <string name="hs_empty_card_helper">聞きたい声が起こしてくれます。</string>
@@ -324,7 +313,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">今の利用期間まではそのまま使えます。次のお支払いはありません。</string>
     <string name="msg_gb_subscription_cancel_failed">解約に失敗しました。</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">利用券を解約しました。声は3日間保管され、その間に購読し直せばそのまま使えます。過ぎると完全に削除されます</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">利用券を解約しました</string>
 
 
 
@@ -358,8 +347,6 @@
     <string name="msg_voice_create_login_required">声を作成するには、まずログインしてください。</string>
     <string name="msg_voice_delete_failed">声の削除に失敗しました。</string>
     <string name="msg_voice_delete_login_required">声を削除するには、まずログインしてください。</string>
-    <string name="msg_voice_prerender_retry_failed">再試行できませんでした。しばらくしてからもう一度お試しください。</string>
-    <string name="msg_voice_speech_style_retry_failed">話し方の分析に失敗しました。しばらくしてからもう一度お試しください。</string>
     <string name="msg_voice_edit_login_required">声を編集するには、まずログインしてください。</string>
     <string name="msg_voice_fetch_failed">声を読み込めませんでした。</string>
     <string name="msg_voice_fetch_login_required">音声を読み込むには、まずログインしてください。</string>
@@ -476,8 +463,6 @@
     <string name="voicesr_more">もっと見る</string>
     <string name="voicesr_pause">一時停止</string>
     <string name="voicesr_prerender_progress">アラーム音声を準備中 %1$d%%</string>
-    <string name="voicesr_prerender_failed">生成に失敗しました</string>
-    <string name="voicesr_prerender_retry">再試行</string>
     <string name="voicesr_preview">プレビュー</string>
     <string name="voicesr_relationship_custom_label">関係を直接入力</string>
     <string name="voicesr_relationship_custom_placeholder">例:孫娘、恋人、同僚</string>
@@ -485,8 +470,6 @@
     <string name="voicesr_relationship_placeholder">関係を選んでください</string>
     <string name="voicesr_required_field">必ず入力してください。</string>
     <string name="voicesr_save">保存</string>
-    <string name="voicesr_speech_style_failed">話し方の分析に失敗しました</string>
-    <string name="voicesr_speech_style_retry">もう一度分析</string>
     <string name="voicesr_status_creating">作成中</string>
     <string name="voicesr_status_deleting">削除中</string>
     <string name="voicesr_voice_name_label">声の名前</string>
@@ -709,8 +692,6 @@
     <string name="voices_not_ready_message">このアラームで使う声をダウンロードしています。\nインターネットに接続したまま少しお待ちください。</string>
     <string name="voices_default_download_progress">ダウンロード中 %1$d%%</string>
     <string name="personal_promo_plan_line">プラス無料利用中 · %1$sまで</string>
-    <string name="billing_plan_trial_price">%1$s無料トライアル、その後%2$s</string>
-    <string name="billing_plan_trial_terms">トライアル終了後は自動で課金されます。終了前にGoogle Playでいつでも解約でき、解約すれば課金されません。</string>
     <plurals name="billing_trial_days">
         <item quantity="other">%d日間</item>
     </plurals>
@@ -756,12 +737,6 @@
     <string name="voice_registration_consent_title">声を登録する前に</string>
     <string name="voice_registration_consent_body">自分の声、または声の持ち主が音声の複製とアラームでの使用に明示的に同意した声のみ登録してください。声の持ち主の同意を確認しており、無断登録、権利侵害、なりすましによる責任は登録した本人にあることを確認します。</string>
     <string name="voice_registration_consent_agree">同意する</string>
-    <string name="next_alarm_status_title">次のアラーム</string>
-    <string name="next_alarm_status_title_voice">次のアラーム · %1$s</string>
-    <string name="next_alarm_status_ready">次のアラームと声の準備ができています。</string>
-    <string name="next_alarm_status_preparing">標準の声をダウンロードしています。その間もアラームは鳴ります。</string>
-    <string name="next_alarm_status_weather">天気をまだ更新できていません。接続されたら再取得します。</string>
-    <string name="next_alarm_status_voice_ending">登録した声は%1$sまで使えます。その後は標準の声で鳴ります。</string>
     <!-- 추가 음성팩(docs/spec/voice-packs.md) -->
     <string name="voice_pack_section_title">追加パック</string>
     <string name="voice_pack_empty">利用できる追加パックはまだありません。</string>

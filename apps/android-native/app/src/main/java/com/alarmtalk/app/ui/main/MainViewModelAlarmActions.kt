@@ -4,9 +4,8 @@ import android.app.Application
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmDraft
+import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
-import com.alarmtalk.app.data.DatedAlarmConflictException
-import com.alarmtalk.app.data.DatedAlarmPastException
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
 import kotlinx.coroutines.launch
@@ -66,6 +65,15 @@ private suspend fun MainViewModel.withResolvedWeatherVariant(draft: AlarmDraft):
     return draft.copy(contextVariantIndex = resolved, contextResolvedNow = true)
 }
 
+/**
+ * 저장·스위치가 **반영된 뒤의 그 행**을 알람을 켠 순간의 하단 안내(`docs/spec/alarm-editor.md` §7)에 알린다 — 켜진 행이면
+ * 그 알람이 언제 우는지 띄우고, 꺼진 행이면 떠 있던 그 알람의 안내를 거둔다(규칙은 `ui/main/RingInNotice.kt` 의 `after`).
+ * 성공 갈래에서만 부른다. 실패(지난 날짜라 켜지지 않은 날짜 알람 포함)는 그 경우의 알럿·안내가 따로 말한다.
+ */
+private fun MainViewModel.noteRingInApplied(row: AlarmEntity) {
+    applyRingInEvent(RingInEvent.Applied(row, android.os.SystemClock.elapsedRealtime()))
+}
+
 /** 저장 시도의 끝(`alarm_ready`) — OS 예약과 오디오 파일이 둘 다 갖춰졌을 때만. 기록 실패는 저장을 막지 않는다. */
 private fun MainViewModel.recordAlarmReadyIfReady(saved: com.alarmtalk.app.data.AlarmEntity) {
     val ready = runCatching { repository.isReadyToRing(saved) }.getOrDefault(false)
@@ -97,13 +105,12 @@ internal fun MainViewModel.createAlarm(
             rememberMessageChoiceUsed(draft)
             com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
             com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)
-            com.alarmtalk.app.data.recordDatedAlarmSaved(getApplication(), saved, ownerUserId)
             requestCloneCheerSupplementIfNeeded(saved, previous = null)
-            // 성공 토스트는 띄우지 않는다 — 저장 즉시 리스트에 행이 생기고 홈 헤더가
-            // '몇 시간 후에 울려요'를 이미 말해준다(안내 중복 소음).
+            // '저장했어요' 같은 성공 토스트는 띄우지 않는다 — 리스트에 행이 생기는 것이 곧 결과다. 대신 그 알람이
+            // 언제 우는지를 화면 아래에 잠깐 말한다(`docs/spec/alarm-editor.md` §7 — 전체의 다음 알람이 아니라 이 알람).
+            noteRingInApplied(saved)
             onDone()
         }.onFailure { error ->
-            if (showDatedAlarmSaveNotice(error)) return@onFailure
             if (error is DuplicateAlarmTimeException) {
                 // 같은 시각 알람이 있으면 교체 여부를 모달로 묻고, 동의 시 교체로 재시도.
                 promptReplaceDuplicateAlarm(error) { createAlarm(draft, replaceExisting = true, onDone) }
@@ -144,12 +151,11 @@ internal fun MainViewModel.updateAlarm(
             rememberMessageChoiceUsed(draft)
             com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
             com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)
-            com.alarmtalk.app.data.recordDatedAlarmSaved(getApplication(), saved, ownerUserId)
             requestCloneCheerSupplementIfNeeded(saved, previous)
-            // 생성과 동일 — 성공 토스트 생략(리스트/헤더가 결과를 보여준다).
+            // 생성과 동일 — 성공 토스트는 생략하고, 고친 알람이 언제 우는지만 아래에 잠깐(§7).
+            noteRingInApplied(saved)
             onDone()
         }.onFailure { error ->
-            if (showDatedAlarmSaveNotice(error)) return@onFailure
             if (error is DuplicateAlarmTimeException) {
                 promptReplaceDuplicateAlarm(error) {
                     updateAlarm(alarmId, draft, replaceExisting = true, onDone)
@@ -164,32 +170,6 @@ internal fun MainViewModel.updateAlarm(
       }
     }
 }
-
-/**
- * 날짜 알람 저장이 저장소 그물(`AlarmRepository` 의 지난 시각·같은 시각)에 걸렸으면 알럿으로 말하고 true.
- * 편집기가 누르는 순간 먼저 막으므로 여기 오는 것은 그 사이 시각이 지났거나 다른 알람이 생긴 경우다
- * (`docs/spec/alarm-lifecycle.md` §4-3). 교체를 묻지 않는다.
- */
-private fun MainViewModel.showDatedAlarmSaveNotice(error: Throwable): Boolean {
-    datedAlarmNotice = when (error) {
-        is DatedAlarmPastException -> DatedAlarmNotice(
-            titleRes = R.string.editor_block_dated_past_title,
-            messageRes = R.string.editor_block_dated_past_message,
-        )
-        is DatedAlarmConflictException -> DatedAlarmNotice(
-            titleRes = R.string.editor_block_dated_conflict_title,
-            messageRes = R.string.editor_block_dated_conflict_message,
-        )
-        else -> return false
-    }
-    return true
-}
-
-/** 날짜 알람 알럿의 (제목, 본문) — [MainViewModel.datedAlarmNotice]. */
-data class DatedAlarmNotice(
-    @androidx.annotation.StringRes val titleRes: Int,
-    @androidx.annotation.StringRes val messageRes: Int,
-)
 
 /** 같은 시각 알람 충돌 시 교체 확인 모달을 띄운다. 동의하면 [onReplace] 로 교체 재시도. */
 private fun MainViewModel.promptReplaceDuplicateAlarm(
@@ -218,17 +198,11 @@ internal fun MainViewModel.setAlarmEnabled(alarmId: String, enabled: Boolean) {
     viewModelScope.launch {
         runCatching {
             repository.setEnabled(alarmId, enabled)
-        }.onSuccess {
+        }.onSuccess { updated ->
             message = null
+            // 반영된 뒤에야 말한다(§7) — 켰으면 그 알람이 언제 우는지, 껐으면 떠 있던 그 알람의 안내를 거둔다.
+            noteRingInApplied(updated)
         }.onFailure { error ->
-            // 날짜가 지난 날짜 알람은 켜지 않는다 — 사고가 아니라 규칙이라 보고하지 않고 이유를 말한다(§4-4).
-            if (error is DatedAlarmPastException) {
-                datedAlarmNotice = DatedAlarmNotice(
-                    titleRes = R.string.dated_alarm_past_enable_title,
-                    messageRes = R.string.dated_alarm_past_enable_message,
-                )
-                return@onFailure
-            }
             AlarmTalkLog.reportError("Failed to change alarm enabled id=$alarmId", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_toggle_failed))
         }
@@ -240,7 +214,8 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
         runCatching {
             repository.deleteAlarm(alarmId)
         }.onSuccess {
-            // 성공 토스트 생략 — 행이 리스트에서 사라지는 것이 곧 결과다(실패 안내만 유지).
+            // 성공 토스트 생략 — 행이 리스트에서 사라지는 것이 곧 결과다(실패 안내만 유지). 떠 있던 그 알람의 안내는 거둔다(§7).
+            applyRingInEvent(RingInEvent.Deleted(alarmId))
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to delete alarm id=$alarmId", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_delete_failed))

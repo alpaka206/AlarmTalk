@@ -45,8 +45,7 @@ final class AlarmEditorLocalizationTests: XCTestCase {
     }
 
     func testEditorMessagesKeepTheirNumericAndTextArguments() throws {
-        let quota = "직접 입력 문구는 한 달에 %lld번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요."
-        XCTAssertEqual(String(format: try localized(quota, language: "en"), Int64(10)), "You can create 10 new custom messages a month. Messages you already made still work.")
+        // (옛 직접 입력 한도 화면의 "…%lld번까지…" 문장은 화면째 지워 2026-11-09 에 카탈로그에서도 뺐다.)
         XCTAssertEqual(String(format: try localized("매주: %@", language: "ja"), "月、水"), "毎週：月、水")
         for key in ["클래식", "운세 정보", "알람 권한이 필요해요", "이 기기에서는 알람음을 고를 수 없어 기본 알람음으로 울려요.", "실제 알람 문구가 아니라 인사말로 들려드려요.", "녹음하거나 파일을 선택해 주세요.", "기본 인사말", "날씨", "운세", "응원", "약", "직접 입력"] {
             for language in ["en", "ja"] {

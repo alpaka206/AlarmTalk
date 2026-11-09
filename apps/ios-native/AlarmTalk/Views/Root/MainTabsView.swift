@@ -6,6 +6,7 @@ import SwiftUI
 /// 설정/보조/편집 화면을 같은 `NavigationStack`의 push 화면으로 관리한다.
 struct MainTabsView: View {
     @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
@@ -159,14 +160,14 @@ struct MainTabsView: View {
                         Image(systemName: "plus")
                             .font(.system(size: 24, weight: .medium))
                             .foregroundStyle(theme.palette.onPrimary)
-                            .frame(width: 56, height: 56)
+                            .frame(width: FloatingChrome.fabSize, height: FloatingChrome.fabSize)
                             .background(theme.palette.primary, in: Circle())
-                            .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
+                            .floatingChromeShadow()
                     }
                     .buttonStyle(.plain)
-                    .padding(.trailing, 20)
-                    // 하단바(76) 위에 얹는다.
-                    .padding(.bottom, 92)
+                    .padding(.trailing, FloatingChrome.fabTrailingInset)
+                    // 하단바 위에 얹는다. 켜면 뜨는 안내(`RingInNoticeHost`)가 이 바로 위에 뜨므로 자리 값은 `FloatingChrome` 한 곳이다.
+                    .padding(.bottom, FloatingChrome.bottomInset)
                     .accessibilityLabel(String(localized: "알람 만들기"))
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
@@ -260,6 +261,39 @@ struct MainTabsView: View {
             .task(id: selectedTab) {
                 await refreshForSelectedTab(selectedTab)
             }
+        }
+        // 알람을 켜면 "N 후에 울려요" 를 하단 탭 위에 잠깐 띄운다(스펙 alarm-editor.md §7). 스택 **밖**에 단다 — 편집기에서
+        // 저장하면 편집기가 닫히는 동안에도 보이고, 탭을 옮겨도 남는다(누르는 것은 막지 않는다 — `RingInNoticeHost`).
+        .overlay(alignment: .bottom) { RingInNoticeHost() }
+        // ⚠ **하단 탭이 가려진 동안에는 띄우지 않는다.** 편집기·설정·이용권 위에 남으면 어느 알람의 것인지 표시가 없어 지금 고치는
+        //   알람의 시각처럼 읽힌다. 가려지면 떠 있던 것을 걷고, 다시 보이면 가려진 동안 켠 것을 그때의 행으로 띄운다(저장하면
+        //   `onSchedulingDidFinish` 가 같은 턴에 편집기를 닫으니 그 안내는 편집기가 닫히며 뜬다). 안드로이드도 하단바가 있는
+        //   화면(`showAppChrome`)에서만 띄운다.
+        .onAppear { syncRingInNoticeHost() }
+        .onChange(of: tabChromeHidden) { _, _ in syncRingInNoticeHost() }
+        .onDisappear { RingInNoticePresenter.shared.reset() }
+        // 백그라운드로 가면 떠 있던 것·기다리던 것을 버린다 — 3초가 다 가기 전에 잠그면 다음에 열 때 옛 남은 시간이 보인다.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { RingInNoticePresenter.shared.reset() }
+        }
+    }
+
+    /// 하단 탭이 가려져 있는가 — 편집기·설정·이용권은 push 화면이라 하단바·＋FAB 가 함께 사라진다.
+    private var tabChromeHidden: Bool {
+        editorTarget != nil || settingsPresented || auxiliaryScreen != nil
+    }
+
+    /// 하단 탭이 보이는지를 "N 후에 울려요" 안내에 알린다(§7). 다시 보일 때는 가려진 동안 켠 알람을 **지금의 행**으로 다시
+    /// 판정한다 — 그사이 꺼졌거나 지워졌으면 띄우지 않는다.
+    private func syncRingInNoticeHost() {
+        let presenter = RingInNoticePresenter.shared
+        if tabChromeHidden {
+            presenter.hostHidden()
+        } else {
+            presenter.hostShown(
+                currentRecord: { store.record(id: $0) },
+                alarmAuthorized: alarmKit.alarmAuthorized
+            )
         }
     }
 

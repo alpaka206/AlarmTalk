@@ -14,6 +14,8 @@ struct ConsentHistoryView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var alarmStore: LocalAlarmStore
+    /// 버전 확인이 받아 온 서버의 날씨 원천 토큰(`AppVersionGate.weatherAttribution`) — 맨 아래 출처 줄을 그릴지 정한다.
+    @EnvironmentObject private var versionGate: AppVersionGate
 
     let onOpenTerms: () -> Void
     let onOpenPrivacy: () -> Void
@@ -49,6 +51,7 @@ struct ConsentHistoryView: View {
                 if adPrivacyOptionsRequired {
                     adsSection
                 }
+                weatherAttributionLine
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
@@ -86,6 +89,22 @@ struct ConsentHistoryView: View {
             // 데이터가 지워지는 데다 다음 실행에 동의 게이트로 앱이 잠긴다 — 30일 유예로
             // 되돌릴 수 있는 회원 탈퇴가 더 안전하고 정직한 경로라 그쪽으로 안내한다.
             ConsentRow(label: "음성 AI 국외 이전 동의", record: records["overseas_transfer"], onOpen: onOpenPrivacy)
+        }
+    }
+
+    /// 날씨 정보 출처 — 화면 **맨 아래 한 줄**(2026-11-09 지역 시트에서 옮겼다 — 오너 "약관 및 개인정보 처리 동의 이런 데
+    /// 넣으면 안 되는 거야?"). 원천과 가공해 쓴다는 사실은 기상법(출처 표시)과 気象庁 공공데이터 이용규약(가공 시 그 사실)이
+    /// 요구하고, 둘 다 자리는 정하지 않는다. 안드로이드 `ConsentHistoryScreen` 의 `legal_weather_attribution` 과 같은 문장이다.
+    /// ⚠ **서버가 그 원천을 쓴다고 말할 때만 그린다**(`WeatherAttribution.showsLine`) — 늘 그리면 원천 교체가 늦거나
+    /// 되돌려진 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 그리는 자리는 앱 전체에 이 하나다.
+    @ViewBuilder
+    private var weatherAttributionLine: some View {
+        if WeatherAttribution.showsLine(versionGate.weatherAttribution) {
+            Text(String(localized: "날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공"))
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
         }
     }
 
@@ -223,17 +242,20 @@ private struct ConsentRow: View {
 
     var body: some View {
         let row = HStack(spacing: 12) {
-            Text(label)
-                .font(theme.typography.bodyLarge)
-                .fontWeight(.semibold)
-                .foregroundStyle(theme.palette.onSurface)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if showStatus {
-                Text(statusText)
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            // ⚠ **동의 날짜는 이름 아래 줄이다**(2026-11-09) — 오른쪽에 날짜·'동의 철회'·화살표를 다 두면 이름이 눌려
+            // 두 줄로 감겼다. 안드로이드 `ConsentHistoryScreen` 의 `ConsentRow` 와 같다.
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(theme.typography.bodyLarge)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(theme.palette.onSurface)
+                if showStatus {
+                    Text(statusText)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // 철회는 동의한 상태에서만 뜻이 있다.
             if let onWithdraw, record?.agreed == true {
@@ -300,19 +322,23 @@ private struct ConsentToggleRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(label)
-                .font(theme.typography.bodyLarge)
-                .fontWeight(.semibold)
-                .foregroundStyle(theme.palette.onSurface)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(theme.typography.bodyLarge)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(theme.palette.onSurface)
+                // 값을 못 읽었으면 'off' 로 오인되지 않게 스위치 대신 다시 시도 줄을 보여준다 — **이름 아래**다
+                // (2026-11-09, 오른쪽에 두면 이름이 눌려 두 줄로 감겼다).
+                if loadFailed && agreed == nil {
+                    Button(String(localized: "불러오지 못했어요 · 다시 시도"), action: onRetry)
+                        .font(theme.typography.bodySmall)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            if loadFailed && agreed == nil {
-                // 값을 못 읽었으면 'off' 로 오인되지 않게 스위치 대신 다시 시도 행을 보여준다.
-                Button(String(localized: "불러오지 못했어요 · 다시 시도"), action: onRetry)
-                    .font(theme.typography.bodyMedium)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-            } else {
+            if !(loadFailed && agreed == nil) {
                 Toggle("", isOn: Binding(get: { agreed == true }, set: onChange))
                     .labelsHidden()
                     .alarmTalkSwitch()

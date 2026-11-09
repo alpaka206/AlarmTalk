@@ -757,7 +757,7 @@ struct AppVersionResponse: Decodable, Equatable {
     var platform: String = "ios"
     var minSupportedVersion: Int = 1
     var storeUrl: String = ""
-    /// 지역 시트의 날씨 출처 줄을 켜는 서버 신호(`weather_attribution`, 불투명 토큰). 정확히 `"kma_jma_nws"` 일
+    /// 날씨 출처 줄(약관 및 개인정보 처리 동의 화면)을 켜는 서버 신호(`weather_attribution`, 불투명 토큰). 정확히 `"kma_jma_nws"` 일
     /// 때만 줄을 그린다(`WeatherAttribution.showsLine`). **옵셔널이어야 한다** — 필드가 없는 옛 서버의 응답도
     /// 디코딩이 깨지지 않고 nil(숨김)이 된다.
     var weatherAttribution: String? = nil

@@ -44,9 +44,8 @@ enum UsageEventType: String, Codable {
     case rewardGranted = "reward_granted"
     case rewardSpent = "reward_spent"
     /// 콘텐츠 — `contentSelected`·`packSelected` 는 알람 저장 성공(`CheerVariety.contentSelectionProps`·
-    /// `VoicePacks.packSelectionProps`)이 적는다. `datedAlarmSaved` 는 스키마만 — 그 기능 PR 이 심는다.
+    /// `VoicePacks.packSelectionProps`)이 적는다.
     case contentSelected = "content_selected"
-    case datedAlarmSaved = "dated_alarm_saved"
     case packSelected = "pack_selected"
     case paywallViewed = "paywall_viewed"
     case storePurchaseVerified = "store_purchase_verified"

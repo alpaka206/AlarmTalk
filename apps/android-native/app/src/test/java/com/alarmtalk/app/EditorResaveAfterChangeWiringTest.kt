@@ -56,14 +56,14 @@ class EditorResaveAfterChangeWiringTest {
         assertTrue(body.contains("saveEditor()"))
     }
 
-    /** 다시 저장도 누르는 순간과 같은 차단 검사를 지난다 — 바꾼 사이 날짜 알람의 시각이 지났거나 지역이 빠졌으면 이유를 말한다. */
+    /** 다시 저장도 누르는 순간과 같은 차단 검사를 지난다 — 바꾼 사이 지역이 빠졌으면 이유를 말한다. */
     @Test
     fun 다시_저장도_누를_때와_같은_차단_검사를_지난다() {
         val effect = editor.indexOf("LaunchedEffect(resaveAfterChange, busy)")
         val body = editor.substring(effect, editor.indexOf("\n    }\n", effect))
         assertTrue(
             "다시 저장이 차단 검사를 건너뛴다",
-            body.contains("datedSaveBlockReason(editor, otherAlarmTimes) ?: editorSaveBlockReason"),
+            body.contains("val reason = editorSaveBlockReason"),
         )
         assertTrue(body.contains("if (reason == null) saveEditor() else showSaveBlockAlert(reason)"))
         assertTrue("사유 판정보다 앞에 두면 그 값을 볼 수 없다", effect > editor.indexOf("val editorSaveBlockReason: SaveBlockReason?"))

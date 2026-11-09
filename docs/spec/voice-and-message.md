@@ -121,6 +121,11 @@
 인덱스를 못 골라 **매번 같은 클립**이 나간다. 스톡 클립 알람은 `voiceRandomPrompt = false`
 로 저장되므로 라이브 경로의 검사에 걸리지 않는다 — 둘 다 따로 막는다.
 
+⚠ **같은 이유로 저장도 그 값을 행에 남긴다** — 날씨 테마면 지역, 운세 테마면 사주. `voiceRandomPrompt` 하나로 가르면
+테마 알람을 열어 시각만 고쳐 저장해도 지역·사주가 지워지고, 그 뒤 매일 '날씨를 못 알아봤어요' 클립이 운다(iOS 가 1.2.16
+부터 그랬다, 2026-11-09 수정). 안드로이드 `AlarmEditorState` 의 `weatherContextForSave`·`fortuneContextForSave`, iOS
+`AlarmEditDraft.savesPromptContext`(회귀 `MessageContextMemoryTests`).
+
 ⚠ **직접 녹음에는 이 강제를 걸지 않는다.** 녹음본은 그냥 로컬 오디오 재생이라 플랜·목소리
 종류와 무관하게 허용된다. 상태 강제가 소스를 TTS 로 되돌리면 **녹음해 둔 것이 지워진다** —
 특히 유료 사용자가 기본 목소리를 고른 채 녹음했을 때 그렇다. **소스가 TTS 일 때만** 적용한다.
@@ -200,15 +205,17 @@
 - **기본 목소리의 첫 추천은 응원이다**(2026-10-26 v1.3 W04). 고른 적이 없으면 지역을 이미 고른 사람도 첫 알람은 응원이다
   (`FirstRecommendedBucket` / `FreeBucket.firstRecommended`). 응원 클립이 아직 없을 때만 위의 '추가 입력이 필요 없는 첫
   테마' 다. 기존 알람·직전 선택·지역은 바꾸지 않는다.
-- **문구 목록은 운세·약을 처음에 접어 둔다**(같은 날). '더 보기 (운세·약)' 를 누르면 펼친다. 지금 고른 것이 그 둘이면
-  처음부터 펼쳐 둔다 — 지우는 것이 아니다(`FoldedMessageContexts` / `MessageSettingsPane.foldedContextIDs`).
+- **문구 목록은 접지 않는다 — 전부 편다**(2026-11-09 오너, 출시 전에 되돌림). 같은 날(10-26) 운세·약을 '더 보기 (운세·약)'
+  뒤로 접었는데, 다 펴도 다섯 줄이라 한 화면에 들어가고 접어 두면 운세·약이 있는 줄도 모른다. 되살리지 말 것.
 - **목소리 탭의 '이 목소리로 새 알람 만들기'**(같은 날 — iOS 의 모호한 '이 목소리 사용' 을 대신한다). 내 목소리 행 메뉴에서
   그 목소리를 처음 고른 **새 알람** 편집기를 연다. 직전 선택(전역)·기존 알람은 바꾸지 않고, 저장에 성공해야 직전 선택이
   된다. 편집기에서 다시 고르면 그것이 이긴다(안드로이드 `AppRoute.alarmCreate(preferredVoiceId)`, iOS
   `AlarmEditorTarget.preferredVoiceID`).
-- **로그인 전 랜딩의 기본 목소리 4종 칩**(같은 날). 번들된 인사 샘플을 서버 없이 들려주고, 고른 목소리는 로그인한 계정이
-  **아직 목소리를 고른 적이 없을 때만** 직전 선택으로 한 번 옮긴다(`LandingVoicePick` / `DefaultVoicePreferenceStore.
-  adoptLandingVoicePick`). 하나를 꼭 고르게 하지는 않는다.
+- **로그인 전 랜딩은 미나 샘플 하나만 튼다 — 기본 목소리 4종 칩은 없앴다**(2026-11-09, 오너 — 출시 전에 1.2.16 으로
+  되돌림). 같은 날(10-26) 카드 아래에 칩을 붙여 그 목소리의 짧은 인사를 들려주고, 고른 목소리를 로그인 뒤 첫 알람의 직전
+  선택으로 옮겼다(안드로이드 `LandingVoicePick`, iOS `DefaultVoicePreferenceStore.adoptLandingVoicePick` — 둘 다 지웠다).
+  이제 카드는 미나의 3문장 샘플(`landing_voice_preview.mp3`) 하나만 틀고, 자막은 언제나 그 3문장 전문이다 — 재생 중에도
+  바뀌지 않는다(안드로이드 `ui/auth/LandingScreen.kt`·iOS `Views/Auth/LandingView.swift` 의 `VoicePreviewCard`). 되살리지 말 것.
 
 ### 무엇을 기억하고, 무엇을 건드리지 않는가
 
@@ -831,7 +838,7 @@
     **어느 회차의 어느 요청도 그 마감을 넘기지 않는다** — 토큰 발급은 min(8초, 남은 시간), 생성 요청은
     min(15초, 남은 시간)이고, 둘 다 **그 요청을 보내기 직전에** 잰다. 마감이 이미 지났으면 보내지 않는다. 마감이
     넉넉한 첫 회차는 예전 그대로(토큰 8초·생성 15초)다. 형식 오류·확신 낮음·잘린 답은 다시 묻지 않는다(같은 요청은
-    같은 답을 낸다). 재시도 버튼(`POST /voice/:id/speech-style/retry`, 동기)도 같은 함수라 같은 규칙이다.
+    같은 답을 낸다). 재시도(`POST /voice/:id/speech-style/retry`, 동기 — 2026-11-09 부터 버튼이 아니라 앱이 말없이 부른다)도 같은 함수라 같은 규칙이다.
     - ⚠ 생성 상한을 토큰 발급 **앞에서** 미리 재 두지 말 것(2026-10-01 리뷰). 다시 묻는 회차의 토큰 발급이 8초 걸리면
       미리 잰 상한이 그 8초를 모른 채 남아 생성 요청이 마감을 넘기고, `waitUntil` 에 잘려 상태가 `pending` 에 갇힌다.
   - ⚠ **`failed` 는 다시 하면 될 수 있는 것만이다 — 녹음의 답은 `done` 이다**(2026-10-11). 분석 결과는 셋이다:
@@ -1323,16 +1330,18 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
     체크 표시 대신 이 줄이다).
   - 보이는 글자: 나라 칸이 아는 나라(옛 앱이 자동으로 붙인 `대한민국` 등)면 도시만, 모르는 글자면
     옛 입력칸이 첫 낱말을 나라 칸으로 떼어 간 것이라 둘을 이어 붙인다("Birmingham England").
-- **지역 시트**: 위에 나라 세그먼트, 아래에 그 나라의 지역(목록 순서). 날씨를 재는 대표 도시가 이름과
-  다르면 행 설명에 "수원 날씨" 를 붙인다. 처음 보일 나라는 고른 지역의 나라, 없으면 **이 기기의
-  공휴일 국가**(없으면 기기 지역이 KR·JP·US 면 그 나라, 아니면 KR)다.
+- **지역 시트**: 위에 나라 세그먼트, 아래에 그 나라의 지역을 **3열 칩**으로(목록 순서, 2026-11-09 오너 — 고르기 시안 A).
+  대한민국 17곳이 스크롤 없이 한 화면에 보이고 고른 칩이 강조 배경·테두리로 바로 보인다. 칩 높이는 같고(52) 긴 이름은 두 줄까지
+  감는다. 처음 보일 나라는 고른 지역의 나라, 없으면 **이 기기의 공휴일 국가**(없으면 기기 지역이 KR·JP·US 면 그 나라, 아니면
+  KR)다.
   - **나라 세그먼트는 제자리에 남고 목록만 스크롤한다** — 미국(69곳)을 내려가서 나라를 바꾸려고 맨 위로
     되돌아가지 않게.
   - **열면 고른 지역이 보이는 자리로 스크롤한다**(목록 끝의 제주·미국의 뒤쪽 지역도).
   - **나라를 바꾸면 목록은 곧바로 맨 위다**(애니메이션 없이). 고른 지역이 있는 나라로 되돌아와도 같다 —
     고른 지역을 찾아가는 것은 시트를 연 직후 한 번뿐이다(2026-09-30 사용자 지시).
   - **시트는 화면의 90% 까지만** 올라온다 — 꽉 채우면 뒤의 스크림이 사라져 바깥을 눌러 닫을 곳이 없다.
-  - **목록 아래 날씨 출처 한 줄** — 문장·보이는 조건·iOS 높이 규칙은 바로 아래 「지역 시트의 날씨 출처 줄」 한 곳에 있다.
+  - **지역 행은 이름 한 줄이다**(2026-11-09 오너). 날씨를 재는 곳이 이름과 다른 지역(경기 → 수원)에 붙던 둘째 줄
+    ("수원 날씨")과 목록 아래 날씨 출처 줄을 뺐다. 출처는 「날씨 출처 줄」의 새 자리(법적 정보 화면)로 옮겼다.
 - **새 알람**은 행에 옛 앱용 글자를 적고, `prerender-variant` 요청에 **`region=<키>` 를 함께** 보낸다
   (`country`·`city` 도 계속 보낸다 — 새 서버가 배포되기 전 창과 옛 서버 호환).
 - **공휴일 국가 = 지역의 나라.** 설정 화면의 '공휴일 달력' 행은 없다 — 규칙은
@@ -1345,11 +1354,17 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
   일본어 목록은 일본 도시 8개였는데 나라는 `대한민국` 으로 보냈다. 이 값들은 전부 위 규칙으로
   되짚힌다(회귀 테스트가 main·develop 의 옛 목록을 전부 돈다).
 
-##### 지역 시트의 날씨 출처 줄 — **서버가 원천을 말할 때만** (2026-10-05)
+##### 날씨 출처 줄 — **서버가 원천을 말할 때만** (2026-10-05, 자리는 2026-11-09 에 옮김)
 
-지역 시트(설정·편집기 공용 — 지역을 고르는 곳은 이 시트 하나다)의 목록 **아래에 고정**한 한 줄이 날씨의 출처를
-말한다. 원천과 가공했다는 사실을 적는 것은 기상법 제12조의3 ⑤(출처 표시)와 気象庁 공공데이터 이용규약(가공했으면
-그 사실을 적고, 국가가 만든 것처럼 보이게 하지 않는다)이 요구한다. 문장은 세 언어 그대로이고 두 앱이 같다:
+**더보기 › 내 정보 › 약관 및 개인정보 처리 동의** 화면 **맨 아래 한 줄**이 날씨의 출처를 말한다(안드로이드
+`ConsentHistoryScreen`, iOS `ConsentHistoryView.weatherAttributionLine`). 원천과 가공했다는 사실을 적는 것은 기상법 제12조의3
+⑤(출처 표시)와 気象庁 공공데이터 이용규약(가공했으면 그 사실을 적고, 국가가 만든 것처럼 보이게 하지 않는다)이 요구하고,
+**둘 다 자리는 정하지 않는다.**
+- 2026-10-05~11-09 에는 지역 시트(설정·편집기 공용)의 목록 아래에 고정해 두었다. 오너가 시트에서 빼고("날씨 고르는 거
+  아래에 정보 출처 적은 것도 없애") 법적 정보 화면에 두기로 했다("약관 및 개인정보 처리 동의 이런 데 넣으면 안 되는
+  거야?"). **약관 본문 속 한 문장으로 묻지 않는다** — 찾을 수 없으면 표기의 뜻이 없다. 그리는 자리는 앱 전체에 하나다.
+
+문장은 세 언어 그대로이고 두 앱이 같다:
 
 - ko `날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공`
 - en `Weather data: forecasts from KMA (Korea), JMA (Japan) and the U.S. National Weather Service, processed by AlarmTalk`
@@ -1369,8 +1384,6 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
     동안에는 세 원천을 부르는 코드가 있다.
 - **보이는 규칙**: 토큰이 **정확히** `"kma_jma_nws"` 일 때만 그린다. 그 밖 — 모르는 값·`null`·필드가 없는 옛 서버·버전
   확인 실패·아직 응답 전 — 은 숨긴다(대소문자·공백을 고쳐 읽지 않는다).
-  - iOS 는 그 줄의 실측 높이(+ 그 위 간격)를 목록 높이 상한에서 **그릴 때만** 뺀다 — 그리는데 안 빼면 시트가 화면을
-    꽉 채워 스크림이 사라지고, 안 그리는데 빼면 목록만 짧아진다.
 - **값은 이 프로세스 동안만** 들고 있다 — 저장하지 않고, 이것 때문에 새로 묻지도 않는다. 버전 확인(안드로이드
   `checkAppVersion` — 앱 화면이 뜰 때, iOS `AppVersionGate.checkAppVersion` — 실행 때 한 번)이 받아 온 값을 쓰고,
   확인이 **실패하면 지운다** — 앞 응답의 원천을 계속 말하지 않는다. 서버가 원천을 되돌리면 **다음 확인부터** 숨는다
@@ -1710,7 +1723,7 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
   FAQ 의 '독자 예보'(허가 없이 예보를 만드는 것) 우려 때문이다. `null` → 클립 8.
 - ⚠ **날씨 숫자의 원천을 LLM(Gemini) 으로 바꾸지 말 것.** 모델은 관측·예보 값을 가진 곳이 아니다 — 그럴듯한
   숫자를 지어낸다.
-- **출처 표기(양 앱, 결정 D4)**: 문장·근거·보이는 조건(서버 토큰 `weather_attribution`)은 위 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」 한 곳에 있다.
+- **출처 표기(양 앱, 결정 D4)**: 문장·근거·보이는 조건(서버 토큰 `weather_attribution`)은 위 「날씨 출처 줄 — 서버가 원천을 말할 때만」 한 곳에 있다.
 - **개인정보**: 원천으로 나가는 것은 **고정 격자·예보구역 코드와 날짜뿐**이고 이용자 식별자가 없다. 호출은 전부
   서버(Cloudflare Worker)에서 나가 원천은 이용자 단말 IP 도 보지 못한다. `docs/qa/cleanup-audit-2026-08-01.md` 의
   Open-Meteo 판정과 같은 논리로 **위탁·국외이전 고지 대상이 아니다**(다시 볼 조건도 같다 — 정밀 좌표·식별자 전송,
@@ -1721,7 +1734,7 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 - **PR A(앱, #845 — develop 머지 2026-10-05)**: 출처 줄(서버 토큰이 `"kma_jma_nws"` 일 때만 그린다)과 주석. 다음
   스토어 빌드에 싣는다.
 - **PR B(백엔드·shared·스펙, #846)**: 원천 교체와 출처 토큰(`"kma_jma_nws"`)을 함께 낸다. prod 에는 **두 앱의 출처
-  표기 버전이 두 스토어에 모두 게재된 뒤** 간다(위 「지역 시트의 날씨 출처 줄」의 '순서') — develop 에 먼저 머지하면
+  표기 버전이 두 스토어에 모두 게재된 뒤** 간다(위 「날씨 출처 줄」의 '순서') — develop 에 먼저 머지하면
   그때까지 main 머지를 붙잡는다(결정 D5). 그 사이 prod 는 Open-Meteo 무료(비상업 약관) 그대로다.
   - 머지 전: 유닛 테스트(실측 픽스처) + 읽기 전용 점검(`npm run check:weather`).
   - dev 하루 관측: 슬롯 4개, `weather.fetch` 의 source 별 200/00, `cpuTime`, Sentry 0건.
@@ -1742,7 +1755,7 @@ Open-Meteo 무료 엔드포인트는 비상업용이고 유료 키는 사지 않
 | D1 | 섞인 강수(KR PTY 2, JP 雨か雪, US rain_snow·sleet) | **눈**(세 나라 일관) | `MIXED_PRECIPITATION_IS_SNOW`(`lib/weather-source.ts`) |
 | D2 | US 안개 | patchy 제외 | `lib/weather-nws.ts` |
 | D3 | 흐림 임계값 | KR 낮 SKY ≥ 3 이 절반 이상 / US 07~19시 하늘 평균 > 50 / JP くもり 계열 | 각 어댑터 |
-| D4 | 출처 문구 | 「지역 시트의 날씨 출처 줄」의 '가공' 문구. 랜딩에 전문 출처(공공누리 1유형 문구와 링크)를 둘지는 미정 | 앱 문자열 |
+| D4 | 출처 문구 | 「날씨 출처 줄」의 '가공' 문구. 랜딩에 전문 출처(공공누리 1유형 문구와 링크)를 둘지는 미정 | 앱 문자열 |
 | D5 | 순서 | 출처 줄을 그리는 앱이 두 스토어에 모두 게재된 뒤에 백엔드를 prod 로 | 배포 |
 | D6 | 전환 | 원천별 캐시를 분리해 전환·롤백 모두 출처가 섞이지 않게 한다 | 마이그레이션 #127 |
 | D7 | 강수확률만으로 비라고 보는 하한 | 강수 **형태**를 주는 원천(KR PTY·PCP, JP 날씨 코드)은 형태가 1차이고 강수확률은 **60** 부터, NWS 는 **30**('Chance') 그대로. 예전 공통 30 은 원천이 '강수 없음'이라고 한 날도 비로 만들었다(2026-10-01 실측: KR 비 판정 34건 중 33건이 PTY 전 시간 0, JP 54건 중 33건이 晴·くもり) | `CODED_SOURCE_RAIN_PROBABILITY_THRESHOLD`(`lib/weather-signal.ts`) ← `finalizeSourceDay` 의 `source` |
@@ -1930,6 +1943,12 @@ AlarmKit 예약을 다시 만들 수 있다.
     위 세 줄은 해당이 없다 — 달라진 것이 없다.
 - **실패는 재시도한다.** 서버 생성 실패는 `POST /voice/:id/prerender-retry`(큐를 pending
   으로 되돌린다), 다운로드 실패는 그 클립만 다시 받는다.
+- ⚠ **실패를 사용자에게 보이지 않는다 — 앱이 스스로 다시 건다**(2026-11-09 오너: "생성에 실패했어요·말투 분석에 실패했어요를
+  하지 말고 실패했으면 그냥 생성되고 재시도해야지"). 목소리 탭이 사전렌더 `failed`(cron 이 5번 시도하고 멈춤)를 보면
+  `prerender-retry` 를, 말투 분석 `failed` 를 보면 `speech-style/retry` 를 **말없이** 부른다 — 한 목소리에 **앱 실행당 한 번**
+  (다음 실행이 또 건다). 그동안 행은 '알람 음성 준비 중 n%' 로 보이고 실패 줄·'다시 시도'·'다시 분석' 버튼·재시도 실패 안내는
+  없다. 말투 분석이 실패해도 클립은 기본 말투로 만들어지므로 막는 것이 없다. 안드로이드·iOS 모두 `VoiceAutoRetry`.
+- **목소리 탭의 섹션(내 목소리·기본 목소리)은 접지 않는다**(2026-11-09 오너 — 접기 표시와 기능 삭제).
 - **받기 한 회차에는 끝이 있다**(안드로이드 기본 목소리 받기 워커, 2026-10-11). 약한 망에서 한 회차가
   끝없이 붙잡지 않게 셋을 둔다:
   - **시간 예산 6분** — 회차를 시작하고 6분이 지났으면 **다음 배치를 시작하지 않고** 다시 시도로 넘긴다.
@@ -1964,7 +1983,9 @@ AlarmKit 예약을 다시 만들 수 있다.
   막히면 알럿 「목소리를 아직 받는 중이에요」 가 **그 목소리가 몇 퍼센트인지**와 함께 이유를 말하고, 그 목소리를 **먼저** 받게
   순서를 적고(아래 「받는 순서」) 받기를 다시 건다(누를 버튼을 따로 두지 않는다). 알람 켜기·끄기·삭제는 막지 않는다.
 - **편집기에서 다른 기본 목소리를 고를 때도 같다.** 폰에 다 받지 못한 기본 목소리는 고르지 못하고 준비 화면으로 간다(진행·
-  다시 시도) — 그 목소리를 먼저 받게 순서를 적는다. 고른 목소리는 다 받기 전까지 **적용하지 않는다** — 지금 목소리가 그대로
+  다시 시도) — 그 목소리를 먼저 받게 순서를 적는다. 준비 화면의 진행률·'준비됐어요'·'다시 시도'·폴링 멈춤은 **그 목소리 하나**로
+  센다(안드로이드 `shownPreparationReadiness`, iOS `ClipPreparationView.shownVoices` — 전부를 세면 고른 목소리를 다 받아도 다른
+  목소리 때문에 100% 에 닿지 못한다, 코덱스 #952. iOS 는 2026-11-09 에 맞췄다). 고른 목소리는 다 받기 전까지 **적용하지 않는다** — 지금 목소리가 그대로
   남는다(몰래 다른 목소리로 저장하지 않는다). 다 받았는지 모르면(매니페스트 없음) 막지 않는다 — 저장이 그 자리에서 받는다
   (`bindStockBucketClips` 는 캐시에 없으면 받는다).
 - **판정: 서버 매니페스트에 실제로 있는 그 목소리의 클립**(그 목소리 × 기기 언어 × 무료 테마)이 **전부 캐시에 있는가.**
@@ -2511,8 +2532,6 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
   달에 플러스가 되면 남은 27회).
 - 입력은 200자까지다 — 숫자의 원본은 shared `MANUAL_TTS_TEXT_MAX_LENGTH` 이고 서버 `POST /tts` 가 같은 값으로 거절한다
   (`TEXT_TOO_LONG`).
-- 날짜 지정 알람([alarm-lifecycle.md](alarm-lifecycle.md) §4)도 이 경로 그대로다. 만든 뒤 날짜가 지나거나 저장을 취소해도
-  돌려주지 않는다. 한도의 달은 **만든 순간**의 서울 달력월이고 알람의 날짜·시간대와 무관하다.
 
 ### 무엇을 세는가
 
@@ -2952,8 +2971,8 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 계정 설정 `weather.region`(알맞으면 옛 글자로 덮고, 모르면 그 칸만 버리고, 없으면 옛 글자를 되짚는다 — 읽을 때도 같다) | 보낼 때 `toDynamicPromptSettings`(키를 글자에서 되짚어 싣는다), 받을 때 `toPromptPreferences`·`resolvedRegion`(키가 글자를 이긴다) | 보낼 때 `DynamicPromptPreferences.toSettings`, 받을 때 `DynamicPromptPreferences.from(settings:)` | `normalizeWeatherSetting`(`lib/dynamic-prompt-settings.ts`) → `WeatherRegions.normalizeSetting`, 회귀 `weather-region-settings.test.ts` |
 | 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만), 프로필 저장은 바꾼 칸만 지금 세션 위에(`AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit`, 끝나면 확인 조회), 밀린 응답도 받아 적기 — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest`·`ProfileSaveKeepsAccountAnswerTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation` ← `SettingsView.observation(of:)`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만 — 바꾼 칸만 응답 뒤의 세션 위에, 끝나면 `refreshUser`), 떠날 때 `beginLeavingAccount` + 세션을 비운 뒤 다시 지우기 — 회귀 `AccountPromptSettingsAdoptionTests`(`editBase` 판정 — ⚠ 화면의 두 호출부 `onSelect`·`saveFortuneDraft` 는 SwiftUI 라 유닛 테스트가 닿지 않는다)·`AuthViewModelTests`(관찰 축·재로그인·로그아웃 창) | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
 | 편집기 문구 화면 → 내 계정 설정(직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
-| 지역 시트: 나라 세그먼트 고정 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
-| 지역 시트 날씨 출처 줄(목록 아래 고정 · ko·en·ja 같은 문장) — **서버 토큰이 정확히 `"kma_jma_nws"` 일 때만**, 그 밖·확인 실패·응답 전은 숨김 | `WeatherLocationDialog` 의 `if (showsAttribution)` ← 판정 `showsWeatherAttribution` ← `LocalWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`, `MainActivity` 가 내려 준다) · 문장 `region_picker_weather_attribution`(`res/values{,-en,-ja}/strings.xml`, 그리는 자리는 이 하나) — 회귀 `WeatherAttributionTest` | `WeatherRegionPickerSheet` 의 `showsAttribution`(그릴 때만 `attributionHeight` 를 `reservedListHeight` 에서 뺀다) ← 판정 `WeatherAttribution.showsLine` · `Localizable.xcstrings` — 회귀 `WeatherAttributionTests` | — |
+| 지역 시트: 나라 세그먼트 고정 · 3열 칩 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`, `LazyVerticalGrid` + `WeatherRegionChip`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`, 3열 칩 `chip`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
+| 날씨 출처 줄(약관 및 개인정보 처리 동의 화면 맨 아래 · ko·en·ja 같은 문장 · 2026-11-09 지역 시트에서 옮김) — **서버 토큰이 정확히 `"kma_jma_nws"` 일 때만**, 그 밖·확인 실패·응답 전은 숨김 | `ConsentHistoryScreen` 의 `if (showsWeatherAttribution(LocalWeatherAttribution.current))` ← 판정 `showsWeatherAttribution` ← `LocalWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`, `MainActivity` 가 내려 준다) · 문장 `legal_weather_attribution`(`res/values{,-en,-ja}/strings.xml`, 그리는 자리는 이 하나) — 회귀 `WeatherAttributionTest` | `ConsentHistoryView.weatherAttributionLine` ← 판정 `WeatherAttribution.showsLine` · `Localizable.xcstrings` — 회귀 `WeatherAttributionTests` | — |
 | 날씨 출처 토큰 계약 — `GET /api/app/version` 의 `weather_attribution`(불투명 토큰 · 지금 `"kma_jma_nws"` — 원천 교체(#846)가 올렸다, 되돌리면 `null`) · 저장하지 않고 새로 묻지 않는다 · 확인이 실패하면 지운다 | `AppVersionResponse.weatherAttribution`(`network/AuthApi.kt`) → `MainViewModel.weatherAttribution` ← `checkAppVersion`(실패면 null) — 회귀 `WeatherAttributionTest` | `AppVersionResponse.weatherAttribution`(`AlarmTalkAPIModels.swift`) → `AppVersionGate.weatherAttribution` ← `checkAppVersion`(실패면 nil) — 회귀 `AppVersionGateTests`·`WeatherAttributionTests` | `WEATHER_ATTRIBUTION`(`lib/weather-attribution.ts`) → `GET /api/app/version`(`index.ts`) — 회귀 `app-version.test.ts`(필드가 실리고 `"kma_jma_nws"` · Open-Meteo 를 부르는 코드가 남아 있으면 `null` · 이 토큰을 말하는 동안 세 원천을 부르는 코드가 있다) |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |
 | 서버 미리 계산 · 현지 슬롯(21시 내일~+3 / 06시 오늘~+3) · due([내일, +3]) · 틱 예산(SELECT 1 + fetch 12(KMA 6·JMA 8·NWS 4) + batch 1) · 실패 세 갈래(설정 실패는 원천 전체 / 그 지역의 칸 — 지역의 칸이면 원천을 끄지 않는다 · 예산 소진은 틱 상한이면 그 지역만 넘기고 워커 한도면 멈춘다) · 슬롯 끝 경보(마지막 틱은 날씨를 5분 틱의 맨 앞에서 — 경보도 subrequest 라 새 예산으로 · 그래도 한도면 DB 에 있는 행만 센다) · 오늘 극값 메우기(원천 → 36h 저장 행 → 남은 시각 근사값) · 읽기 36h·지평 가드([오늘, +3] 밖은 네트워크 없이 null) · 표가 없으면 저장 없이 즉석 계산 | — | — | 마이그레이션 #127 `weather_region_daily_official`(옛 캐시와 분리) · `hasOpenWeatherSlot`·`hasWeatherSlotLastTick`·`openWeatherSlot`·`refreshWeatherRegionDaily`(`evaluateSlotEnds`) · 읽기 `resolveRegionVariantIndex` — `lib/weather-region-daily.ts` · 마지막 틱의 순서 `scheduled`(`isWeatherSlotLastTick` → `weatherRegionDailyTick`, `src/index.ts`) · 원천 디스패치·실패 분류(`SourceFailureScope`)·이어받기·근사값 `lib/weather-source.ts`(`finalizeSourceDay`) · 어댑터 `lib/weather-kma.ts`·`weather-jma.ts`·`weather-nws.ts`(지역의 칸 404 는 `scope: 'region'`), 회귀 `weather-region-daily.test.ts`(실제 libSQL)·`weather-kma`·`weather-jma`·`weather-nws.test.ts`(2026-10-01 실측 픽스처)·`scheduled-weather-last-tick.test.ts`(실행 하나의 subrequest 모형) |
@@ -3008,7 +3027,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
   test/scheduled-weather-last-tick.test.ts test/weather-sources-dry-run.test.ts test/app-version.test.ts` — 픽스처는
   2026-10-01 실측 응답이다(키 없음). `scheduled-weather-last-tick` 은 마지막 틱의 순서(날씨가 5분 틱의 맨 앞 — 「실패」),
   `weather-sources-dry-run` 은 점검 스크립트의 드라이런 분류와 JP 오늘의 시각별 기대값(아래)을, `app-version` 은 출처
-  토큰이 실제 원천과 맞는지(「지역 시트의 날씨 출처 줄」)를 지킨다.
+  토큰이 실제 원천과 맞는지(「날씨 출처 줄」)를 지킨다.
   `packages/shared` 의 `weather-regions.test.ts` 가 KR 격자를 LCC 로 다시 계산한다. ⚠ 이 절의 규칙에 회귀 테스트
   파일을 더하면 이 명령에도 더한다 — 「구현 지도」가 대는 파일이 여기서 빠지면 로컬에서 그 회귀가 보이지 않는다.
 - **읽기 전용 점검**(DB 무접촉, 키는 출력하지 않는다): `npm run check:weather -- --env-file .dev.vars.dev` — NWS

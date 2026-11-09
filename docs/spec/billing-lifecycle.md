@@ -990,6 +990,15 @@ Vibration disabled for ringing alarm
 기본 목소리로, 미나로 해 그냥" — 그때는 공유가 있었다). 업데이트 전에 받아 둔 가족 알람도 같은 미나에서
 시작한다(아래 「받은 알람은 내 알람으로 바뀐다」).
 
+⚠ **잠그는 것은 등록(클론) 목소리 알람뿐이다 — 기본(시스템) 목소리·음성팩 알람은 무엇을 말하든 무료다**(1.3, 2026-11-09 iOS
+출시 검토 blocker). iOS 무료 잠금의 판정식(`LocalAlarmRecord.isPaidVoiceForDowngrade`)이 짝(`PaidVoiceGate.usesFreeSystemVoice`)과
+갈라져, 무료가 만든 '기본 목소리 + 직접 입력' 알람을 다음 실행에 잠가 인사말로 울렸다. 둘은 같은 `isFreeFixedVoiceID` 를 본다.
+- **지금 규칙으로 무료인 옛 잠금은 매 회차 푼다**(두 앱 — 안드로이드 `lockPaidAlarmTalks`, iOS `FreePlanLockSelection.toRelease`).
+  1.2.16 은 기본 목소리 직접 입력을 유료로 읽어 잠갔는데, 무료로 남는 동안은 복원(유료일 때만)이 없어 영영 인사말로 울렸다. 보관본을
+  되돌린 행이 무료면 되돌린다. **일회성 이전이 아니다** — 기기는 어느 판에서든 올라온다.
+- **잠긴 직접 입력 알람에 새 문구를 만들어 저장한 것은 편집이다** — 잠금을 잇지 않는다(`lockSurvivesSave`·`saveKeepsLock`). 풀 때도
+  잠긴 뒤 자기 음원이 새로 붙었으면 보관본만 버리고 그 편집을 남긴다. 이으면 나중의 복원이 새 문구를 옛 문구로 말없이 되돌린다.
+
 | 무엇 | 규칙 |
 | --- | --- |
 | 어느 기본 목소리 | 알람이 이미 기본 목소리면 **그 목소리**. 아니면 **미나** — 대체 목소리는 어느 경로든(잠금 · 울릴 때 대체 · 목소리를 잃은 알람) **미나 하나**다(안드로이드 `SUBSTITUTE_SYSTEM_VOICE_ID` ← `pickDefaultSystemVoiceId`, iOS `substituteSystemVoiceID` ← `DefaultVoiceSubstitute.pickVoiceID`). ⚠ **마지막에 쓴 목소리를 보지 않는다**(2026-09-29 "미나로 통일도 해"). 그전에는 잠금만 그 계정의 마지막 기본 목소리(`DefaultVoicePreferenceStore`/`lastUsedVoiceId`)를 따라, 같은 계정의 알람이 잠금이면 시우·삭제면 미나처럼 경로마다 달랐다. 내장 인사말이 없는 새 기본 목소리의 인사말 폴백도 미나다 |

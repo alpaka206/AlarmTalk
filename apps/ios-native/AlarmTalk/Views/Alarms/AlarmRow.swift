@@ -13,6 +13,9 @@ struct AlarmRow: View {
     /// 둘째 줄에 붙는 '누구 목소리로 울리는지'. 이 앱에서 알람을 구분하는 고유 정보라
     /// 라벨 없는 목록에서 구분자 역할도 겸한다(안드로이드 `AlarmRow(voiceName=)`).
     var voiceName: String?
+    /// 권한이 없어 **어느 알람도 울리지 않는다** — 켜짐·꺼짐과 상관없이 스위치를 회색으로 그린다(2026-11-09 오너). 누르는 동작은
+    /// 그대로다(켜면 권한을 요청한다) — 스위치는 저장된 `enabled` 에만 묶는다.
+    var switchMuted: Bool = false
     /// 다중 선택 모드인가. 켜지면 스위치 자리에 선택 표시가 들어간다.
     var selectionMode: Bool = false
     var selected: Bool = false
@@ -160,14 +163,6 @@ struct AlarmRow: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
-                        // 날짜 알람인데 기기 시간대가 다르면 **어떤 시각으로 예약됐는지** 말한다
-                        // (스펙 alarm-lifecycle.md §4-2). 같으면 아무것도 덧붙이지 않는다.
-                        if let note = alarm.datedTimezoneNote() {
-                            Text(note)
-                                .font(.pretendard(.regular, size: 13))
-                                .fixedSize(horizontal: false, vertical: true)
-                                .foregroundStyle(theme.palette.onSurfaceVariant)
-                        }
                     }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // 행 전체가 하나의 버튼으로 읽히게 한다(VoiceOver).
@@ -199,7 +194,7 @@ struct AlarmRow: View {
                     // ⚠ `.tint` 로 직접 칠하지 말 것 — 그건 트랙만 바꾸고 손잡이는 흰색
                     // 그대로라 옅은 하늘색 트랙 위에서 바래 보인다. 공용 스타일이 트랙·
                     // 손잡이를 **둘 다** 안드로이드와 같은 규칙으로 정한다.
-                    .alarmTalkSwitch()
+                    .alarmTalkSwitch(muted: switchMuted)
                     .accessibilityLabel(Text(alarm.enabled ? String(localized: "알람 끄기") : String(localized: "알람 켜기")))
                 }
             }
@@ -318,7 +313,7 @@ struct AlarmRow: View {
         if alarm.runtimeStateEnum == .failed {
             // 예약 자체가 실패해 **정말 안 울린다.** 다시 저장해 달라고 해야 한다.
             return RowNotice(
-                text: String(localized: "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요."),
+                text: String(localized: "알람 예약에 실패했어요."),
                 isError: true
             )
         }

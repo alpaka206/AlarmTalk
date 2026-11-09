@@ -22,6 +22,37 @@ final class DuplicateAlarmReplacementTests: XCTestCase {
         XCTAssertEqual(events, ["local:first", "local:second"])
     }
 
+    // 저장의 걸음(`runAlarmSaveSteps`) — 충돌은 새 알람이 예약된 뒤에만 지우고, 성공 마무리("N 후에 울려요" 포함)는
+    // `.completed` 하나에서만 돈다(스펙 alarm-editor.md §7).
+    func test_saveStepsClearConflictsOnlyAfterSchedulingSucceeds() async {
+        var events: [String] = []
+        let failed = await runAlarmSaveSteps(
+            schedule: { events.append("schedule"); return false },
+            clearConflicts: { events.append("conflicts"); return true }
+        )
+        XCTAssertEqual(failed, .scheduleFailed)
+        XCTAssertEqual(events, ["schedule"], "예약이 실패하면 충돌 알람을 지우지 않는다")
+
+        events = []
+        let rolledBack = await runAlarmSaveSteps(
+            schedule: { events.append("schedule"); return true },
+            clearConflicts: { events.append("conflicts"); return false }
+        )
+        XCTAssertEqual(rolledBack, .replacementFailed)
+        XCTAssertEqual(events, ["schedule", "conflicts"])
+
+        events = []
+        let completed = await runAlarmSaveSteps(
+            schedule: { events.append("schedule"); return true },
+            clearConflicts: { events.append("conflicts"); return true }
+        )
+        XCTAssertEqual(completed, .completed)
+        XCTAssertEqual(events, ["schedule", "conflicts"])
+
+        let withoutConflicts = await runAlarmSaveSteps(schedule: { true }, clearConflicts: nil)
+        XCTAssertEqual(withoutConflicts, .completed)
+    }
+
     func test_failedConflictDeleteRestoresEditedAlarmAndItsLiveOldHandle() async {
         await assertRollbackAfterFailedConflictDelete(isNew: false)
     }

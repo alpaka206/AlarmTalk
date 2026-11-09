@@ -34,7 +34,9 @@ final class SignUpFlowUITests: XCTestCase {
             app.staticTexts["회원가입"].waitForExistence(timeout: 20),
             "회원가입 화면에 도달하지 못했다"
         )
-        XCTAssertTrue(app.staticTexts["목소리 알람을 만들 계정을 준비해요."].exists, "부제가 없다")
+        // 제목 아래 부제는 2026-11-09 에 지웠다 — 가입 화면의 고정 요소는 '이메일 인증' 버튼이다.
+        XCTAssertTrue(app.buttons["이메일 인증"].exists, "'이메일 인증' 버튼이 없다")
+        XCTAssertFalse(app.staticTexts["목소리 알람을 만들 계정을 준비해요."].exists, "지운 부제가 다시 나온다")
     }
 
     /// 비밀번호 규칙 3종이 입력에 따라 실제로 켜지는가.
@@ -69,8 +71,9 @@ final class SignUpFlowUITests: XCTestCase {
             : matches.firstMatch
         if !target.isHittable { app.swipeUp() }
         target.tap()
+        // 로그인 모드에만 있는 행으로 판별한다(제목 아래 부제는 2026-11-09 에 지웠다).
         XCTAssertTrue(
-            app.staticTexts["좋아하는 목소리 알람을 다시 불러올게요."].waitForExistence(timeout: 8),
+            app.staticTexts["비밀번호를 잊으셨나요?"].waitForExistence(timeout: 8),
             "하단 전환 행으로 로그인 모드에 못 갔다"
         )
     }

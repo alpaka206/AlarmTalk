@@ -228,7 +228,7 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
 });
 
 // 앱 버전 정책 (인증 불필요) — 구버전 앱이 로그인 전에도 강제/권장 업데이트를 판단한다.
-// `weather_attribution` 은 지역 시트의 날씨 출처 줄을 켜는 신호다(`lib/weather-attribution.ts`) — 두 앱이 이미
+// `weather_attribution` 은 앱의 날씨 출처 줄(약관 및 개인정보 처리 동의 화면)을 켜는 신호다(`lib/weather-attribution.ts`) — 두 앱이 이미
 // 부르는 이 응답에 실어 새 요청 없이 받게 한다. 캐시하지 않으므로(noStore) 원천을 되돌리면 다음 확인부터 꺼진다.
 app.get('/api/app/version', noStore, async (c) => {
   const { appVersionPolicy } = await import('./lib/app-version');

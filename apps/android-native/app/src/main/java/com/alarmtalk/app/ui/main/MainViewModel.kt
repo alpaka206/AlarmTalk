@@ -874,7 +874,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
-    private val landingVoicePick = com.alarmtalk.app.data.LandingVoicePick(application)
     internal val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
 
     /** 계정 설정(지역·사주) 올리기를 한 번에 하나씩 — `updateDynamicPromptSettings`. */
@@ -1217,7 +1216,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var updateStoreUrl by mutableStateOf("")
         internal set
     /**
-     * 서버가 알려 준 날씨 원천 토큰 — `GET /api/app/version` 의 `weather_attribution`. 지역 시트가 출처 줄을
+     * 서버가 알려 준 날씨 원천 토큰 — `GET /api/app/version` 의 `weather_attribution`. 법적 정보 화면(약관 및 개인정보 처리 동의)이 출처 줄을
      * 그릴지 이 값으로 정한다(`showsWeatherAttribution`) — 앱이 원천을 스스로 단정하지 않는다.
      * 저장하지 않고 새로 묻지도 않는다: [checkAppVersion] 이 받아 온 값을 이 뷰모델이 사는 동안만 들고,
      * 확인이 실패하면 null(숨김)로 되돌린다. 화면에는 `MainActivity` 가 `LocalWeatherAttribution` 으로 내려 준다.
@@ -1257,12 +1256,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 구독 조회(`GET /billing/subscription`)의 답 순번 — 앞서 떠난 조회의 늦은 답이 새 상태를 덮지 않게(`applySubscriptionResponse`). */
     internal val billingAnswers = AnswerSequence()
 
-    // 날짜 알람이 저장·켜기에서 막힌 이유(지난 시각·같은 시각). null 이면 닫힘(`docs/spec/alarm-lifecycle.md` §4).
-    var datedAlarmNotice by mutableStateOf<DatedAlarmNotice?>(null)
+    /**
+     * 알람을 켠 순간 화면 아래에 잠깐 띄우는 "N 후에 울려요." 의 대상(`docs/spec/alarm-editor.md` §7) — 방금 켠 **그 알람**과
+     * 그 예약 시각이다(전체의 다음 알람이 아니다). 바꾸는 곳은 [applyRingInEvent] 하나다: 저장 성공·목록 스위치가 반영된 행,
+     * 그 알람의 삭제, 화면의 표시 완료. 화면(`AlarmTalkApp`)이 띄우고 나면 — 다 보였든, 하위 화면으로 옮겨 도중에 걷혔든,
+     * 띄우기 전에 낡아 버렸든 — [consumeRingInNotice] 로 비운다. 남기면 화면이 다시 만들어질 때(다크 모드 전환 등)나 탭으로
+     * 돌아올 때 지난 안내가 또 뜬다.
+     */
+    var ringInNotice by mutableStateOf<RingInNotice?>(null)
         internal set
 
-    fun dismissDatedAlarmNotice() {
-        datedAlarmNotice = null
+    /** 안내를 [event] 뒤로 옮긴다 — 규칙은 순수 함수 `after`(`ui/main/RingInNotice.kt`) 한 곳이다. */
+    internal fun applyRingInEvent(event: RingInEvent) {
+        ringInNotice = ringInNotice.after(event)
+    }
+
+    /** 띄운(또는 버린) 안내를 비운다. 그 사이 다른 알람을 켜 안내가 바뀌었으면 새 안내는 그대로 둔다. */
+    fun consumeRingInNotice(shown: RingInNotice) {
+        applyRingInEvent(RingInEvent.Finished(shown))
     }
 
     fun requestPermissionGate(target: PermissionTarget) {
@@ -1302,9 +1313,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
-        // 로그인 전 랜딩에서 고른 기본 목소리 — 이 계정이 아직 고른 적이 없을 때만 한 번 잇는다(`LandingVoicePick`).
-        val landingPick = landingVoicePick.take()
-        if (defaultVoiceStore.read(userId) == null && landingPick != null) defaultVoiceStore.set(userId, landingPick)
         lastUsedVoiceId = defaultVoiceStore.read(userId)
         val needsSetup = voiceSetupProbe.needsSetup(skipped = defaultVoiceStore.hasSkipped(userId))
         if (authSession?.user?.id != userId) return

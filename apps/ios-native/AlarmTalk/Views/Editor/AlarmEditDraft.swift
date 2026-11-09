@@ -21,13 +21,6 @@ struct AlarmEditDraft: Equatable {
     var repeatDaysMask: Int // 0..0x7f
     var holidayOff: Bool
 
-    /// '날짜 지정(한 번)' 의 날짜(`YYYY-MM-DD`). nil 이면 날짜 없는 알람이다 — 요일과 배타적이다
-    /// (스펙 `docs/spec/alarm-editor.md` §2-1). 새 알람은 언제나 nil 로 연다(직전 선택을 잇지 않는다).
-    var targetDate: String? = nil
-    /// 그 날짜의 시간대(IANA). 스위치를 켤 때의 기기 시간대, 저장된 알람이면 **저장값**이다 — 날짜를 다시
-    /// 골라도 바꾸지 않는다(사용자가 확인한 값).
-    var targetTimezone: String? = nil
-
     var playMode: AlarmPlayMode
 
     var snoozeEnabled: Bool
@@ -94,8 +87,6 @@ struct AlarmEditDraft: Equatable {
         self.minute = record.minute
         self.repeatDaysMask = record.repeatDaysMask
         self.holidayOff = record.holidayOff
-        self.targetDate = record.targetDate.nilIfBlank
-        self.targetTimezone = record.targetDate.nilIfBlank == nil ? nil : record.targetTimezone.nilIfBlank
         self.playMode = record.playModeEnum
         self.snoozeEnabled = record.snoozeEnabled
         self.snoozeMinutes = max(1, min(30, record.snoozeMinutes))
@@ -166,41 +157,6 @@ struct AlarmEditDraft: Equatable {
         self.voiceFortuneBirthTime = voiceFortuneBirthTime
         self.voiceRepeat = voiceRepeat
         self.voiceVolumePercent = voiceVolumePercent
-    }
-
-    // MARK: - 날짜 지정
-
-    var isDated: Bool { targetDate != nil }
-
-    /// '날짜 지정' 스위치를 켠다 — 요일을 모두 풀고, 날짜는 지금 고른 시각이 아직 오지 않았으면 오늘·지났으면
-    /// 내일, 시간대는 지금 기기 시간대(스펙 alarm-editor.md §2-1). 이미 켜져 있으면 아무것도 바꾸지 않는다.
-    mutating func enterDatedMode(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
-                                 timeZone: TimeZone = .current) {
-        guard targetDate == nil else { return }
-        repeatDaysMask = 0
-        holidayOff = false
-        targetTimezone = timeZone.identifier
-        targetDate = DatedAlarmTime.defaultTargetDate(hour: hour, minute: minute, nowMillis: nowMillis, timeZone: timeZone)
-    }
-
-    /// 날짜 지정을 끈다(스위치를 끄거나 요일 칩을 눌렀을 때).
-    mutating func leaveDatedMode() {
-        targetDate = nil
-        targetTimezone = nil
-    }
-
-    /// 날짜 알람의 발사 시각. 날짜 알람이 아니면 nil.
-    var datedFireAtMillis: Int64? {
-        guard let targetDate else { return nil }
-        return DatedAlarmTime.fireAtMillis(targetDate: targetDate, hour: hour, minute: minute, timeZoneID: targetTimezone)
-    }
-
-    /// 날짜 알람인데 이미 지난 시각인가 — **저장을 누르는 순간** 다시 잰다(스펙 alarm-lifecycle.md §4-3).
-    func datedTimeHasPassed(nowMillis: Int64) -> Bool {
-        guard let targetDate else { return false }
-        return DatedAlarmTime.hasPassed(
-            targetDate: targetDate, hour: hour, minute: minute, timeZoneID: targetTimezone, nowMillis: nowMillis
-        )
     }
 
     // MARK: - Validation
@@ -445,6 +401,24 @@ struct AlarmEditDraft: Equatable {
             && ttsText.nilIfBlank != nil
     }
 
+    /// **저장에 지역(날씨)·사주(운세)를 남기는가** — 라이브 생성 문구가 그 종류이거나, 그 테마의 스톡 클립 알람이면.
+    ///
+    /// ⚠ 테마를 붙이면 `voiceRandomPrompt` 가 꺼지지만 울릴 클립을 고르는 데(날씨 조건·운세 개인화) 이 값을 쓴다.
+    /// `randomPrompt` 하나만 보면 테마 알람을 시각만 고쳐 다시 저장해도 지역·사주가 지워진다(1.2.16 부터 있던 결함).
+    /// 안드로이드 `AlarmEditorState.weatherContextForSave`·`fortuneContextForSave` 짝. 알람 전용이면 둘 다 남기지 않는다.
+    static func savesPromptContext(
+        voiceMode: Bool,
+        randomPrompt: Bool,
+        context: RandomPromptContext,
+        stockBucket: FreeBucket?
+    ) -> (weather: Bool, fortune: Bool) {
+        guard voiceMode else { return (false, false) }
+        return (
+            weather: (randomPrompt && context.usesWeather) || stockBucket == .weather,
+            fortune: (randomPrompt && context.usesFortune) || stockBucket == .fortune
+        )
+    }
+
     // MARK: - Convert to record
 
     /// Draft → record 변환. 기존 record 가 있다면 *시트 외부* 에서만 의미 있는
@@ -467,9 +441,8 @@ struct AlarmEditDraft: Equatable {
             hour: hour,
             minute: minute,
             fireAtMillis: fireAtMillis,
-            // 날짜 알람은 요일·공휴일 끄기와 배타적이다(스펙 alarm-lifecycle.md §4-1).
-            repeatDaysMask: isDated ? 0 : repeatDaysMask,
-            holidayOff: isDated ? false : holidayOff,
+            repeatDaysMask: repeatDaysMask,
+            holidayOff: holidayOff,
             snoozeEnabled: snoozeEnabled,
             snoozeMinutes: snoozeMinutes,
             snoozeRepeatLimit: snoozeRepeatLimit.rawValue,
@@ -523,8 +496,6 @@ struct AlarmEditDraft: Equatable {
             alarmKitID: nil
         )
         carryOverNonEditableFields(from: existing, to: &record)
-        record.targetDate = targetDate
-        record.targetTimezone = isDated ? (targetTimezone ?? TimeZone.current.identifier) : nil
         // 응원 저장값 — 테마가 응원이 아니게 되면 저장 경로(`AlarmEditorSheet.saveFlow`)가 비운다.
         record.cheerMode = cheerMode.rawValue
         record.cheerPinnedContentId = cheerMode == .pinned ? cheerPinnedContentId : nil
