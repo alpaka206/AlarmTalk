@@ -828,6 +828,11 @@ final class AlarmKitViewModel: ObservableObject {
                 completed = false
                 break
             }
+            // 백그라운드 실행 시간이 다 돼 취소됐다 — 더 걸지 않고 멈춘다. 남은 행은 켜 둔 채 다음 회차가 잇는다(아래 `Task.isCancelled`).
+            guard !Task.isCancelled else {
+                completed = false
+                break
+            }
             guard let live = store.record(id: record.id), live.enabled else { continue }
             // 또 다른 recovery sweep 가 같은 record 를 await schedule() 중이면 건너뛴다.
             // (`.fixed` one-shot 이 중복 schedule 되어 다음 회차가 이중 발화하는 것을 방지)
@@ -880,6 +885,13 @@ final class AlarmKitViewModel: ObservableObject {
             // 띄우게 되는데(§1-6), 그건 그 사람이 할 수 있는 일이 아니다.
             guard mayScheduleRecord(prepared) else { continue }
             let scheduled = await schedule(record: prepared, store: store)
+            // ⚠ **취소는 예약 실패가 아니다**(Codex #984 P1). 백그라운드 실행 시간이 다 되면 `BackgroundSyncTask.runAndSchedule` 이
+            // 이 작업을 취소하고, `schedule` 은 방금 만든 예약을 되돌린 뒤 false 를 돌려준다. 그걸 아래 실패 갈래로 보내면
+            // 시간 제한 하나로 알람이 **꺼진 채** 남는다 — 켠 채로 멈추고, 다음 복구(전경 복귀·다음 백그라운드)가 다시 건다.
+            if !scheduled, Task.isCancelled {
+                completed = false
+                break
+            }
             if scheduled {
                 recovered += 1
                 if record.alarmKitUUID != nil {
