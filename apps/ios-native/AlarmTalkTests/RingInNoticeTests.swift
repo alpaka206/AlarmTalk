@@ -201,21 +201,51 @@ final class RingInNoticeTests: XCTestCase {
         XCTAssertNil(presenter.current, "걷은 안내는 버린다 — 탭으로 돌아와도 다시 뜨지 않는다")
     }
 
-    func test_가려진_동안_켠_것은_탭이_돌아오면_그때의_남은_시간으로_띄운다() {
+    func test_가려진_동안_켠_것은_5초_안에_탭이_돌아오면_그때의_남은_시간으로_띄운다() {
         let spoken = Spoken()
         let presenter = RingInNoticePresenter(visibleDuration: {}, announce: { spoken.texts.append($0) })
-        let saved = alarm(id: "a", firingIn: 3 * 3600)
+        let saved = alarm(id: "a", firingIn: 3600 + 90)
 
         presenter.hostHidden()
         presenter.present(for: saved, alarmAuthorized: true, now: now)
         XCTAssertNil(presenter.current, "가려진 동안에는 띄우지 않는다")
         XCTAssertEqual(spoken.texts, [], "보이지 않는 안내를 스크린 리더에 알리지 않는다")
 
-        // 한 시간 뒤에 탭으로 돌아왔다 — 남은 시간은 그때 다시 센다.
-        presenter.hostShown(currentRecord: { $0 == "a" ? saved : nil }, alarmAuthorized: true, now: now.addingTimeInterval(3600))
-        XCTAssertEqual(presenter.current?.text, "2시간 후에 울려요.")
+        // 4초 뒤에 탭으로 돌아왔다(저장 뒤 편집기가 닫힘) — 남은 시간은 그때 다시 센다.
+        presenter.hostShown(currentRecord: { $0 == "a" ? saved : nil }, alarmAuthorized: true, now: now.addingTimeInterval(4))
         XCTAssertEqual(presenter.current?.alarmID, "a")
-        XCTAssertEqual(spoken.texts, ["2시간 후에 울려요."])
+        XCTAssertEqual(spoken.texts.count, 1)
+    }
+
+    /// 생긴 지 5초 넘게 못 뜬 안내는 버린다(안드로이드 `RING_IN_NOTICE_FRESH_MILLIS`) — 켜고 곧바로 편집기에 들어가 3분 머물다
+    /// 저장하지 않고 나왔을 때, 3분 전에 켠 알람의 안내가 맥락 없이 뜨던 것을 막는다.
+    func test_가려진_동안_켠_것이_5초를_넘겨_돌아오면_버린다() {
+        let spoken = Spoken()
+        let presenter = RingInNoticePresenter(visibleDuration: {}, announce: { spoken.texts.append($0) })
+        let saved = alarm(id: "a", firingIn: 3 * 3600)
+
+        presenter.hostHidden()
+        presenter.present(for: saved, alarmAuthorized: true, now: now)
+        presenter.hostShown(currentRecord: { $0 == "a" ? saved : nil }, alarmAuthorized: true, now: now.addingTimeInterval(180))
+        XCTAssertNil(presenter.current)
+        XCTAssertNil(presenter.waitingAlarmID, "버린 것은 다음에 돌아와도 뜨지 않는다")
+        XCTAssertEqual(spoken.texts, [])
+    }
+
+    /// 앱이 백그라운드일 때 끝난 적용(잠근 직후의 목록 스위치 — 백그라운드 보호로 잠시 돈다)은 띄우지도 기다리지도 않는다.
+    func test_백그라운드에서는_띄우지도_기다리지도_않는다() {
+        let spoken = Spoken()
+        let presenter = RingInNoticePresenter(
+            visibleDuration: {},
+            announce: { spoken.texts.append($0) },
+            isAppInBackground: { true }
+        )
+        presenter.present(for: alarm(id: "a", firingIn: 3600), alarmAuthorized: true, now: now)
+        XCTAssertNil(presenter.current)
+        presenter.hostHidden()
+        presenter.present(for: alarm(id: "b", firingIn: 3600), alarmAuthorized: true, now: now)
+        XCTAssertNil(presenter.waitingAlarmID)
+        XCTAssertEqual(spoken.texts, [])
     }
 
     func test_가려진_동안_켠_알람이_그사이_꺼졌거나_지워졌거나_거뒀으면_띄우지_않는다() {

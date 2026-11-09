@@ -35,16 +35,18 @@ struct WakerTopBar: View {
     let title: LocalizedStringKey
     var onBack: (() -> Void)?
     var backEnabled = true
+    /// 고정 팔레트 화면(로그인·가입)의 글자·뒤로가기 색. 없으면 테마의 `onSurface`.
+    var tint: Color? = nil
 
     var body: some View {
         ZStack {
             Text(title)
                 .font(theme.typography.titleMedium)
                 .fontWeight(.semibold)
-                .foregroundStyle(theme.palette.onSurface)
+                .foregroundStyle(tint ?? theme.palette.onSurface)
                 .lineLimit(1)
             if let onBack {
-                WakerBackButton(enabled: backEnabled, action: onBack)
+                WakerBackButton(enabled: backEnabled, tint: tint, action: onBack)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }

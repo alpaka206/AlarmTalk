@@ -33,13 +33,9 @@ struct AlarmsListView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
-                        // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
-                        // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
-                        // ⚠ 이 자리에 있던 '다음 알람 상태 카드'(v1.3 W06)는 2026-11-09 오너가 지웠다 — 권한 부족은 다시 이 배너 하나가 말한다.
-                        if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
-                            alarmPermissionBanner
-                        }
+                        // ⚠ **권한 배너를 두지 않는다**(2026-11-09 오너: 위 헤드라인이 "권한이 꺼져 있어 알람이 울리지 않아요." 라고
+                        //   이미 말하는데 그 아래 "알람 권한이 없어 알람이 예약되지 않아요." 를 또 둘 필요가 없다). 고치는 길은 그
+                        //   헤드라인이다 — 누르면 권한을 요청하거나 설정을 연다(`pinnedHeader`).
                         // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
                         // (로그인 필요 / push 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
                         // Android syncNow / msg_sync_*_partial_failed parity.
@@ -108,11 +104,32 @@ struct AlarmsListView: View {
                 // 만들기 액션은 **＋FAB 하나**다(MainTabsView). 헤드라인 옆에 버튼을 또 두면
                 // 같은 일을 하는 진입점이 둘이 되고, 헤드라인('다음 알람까지 …')이 눌릴 자리를
                 // 뺏겨 짧게 잘린다. 안드로이드도 FAB 하나뿐이다.
-                NextAlarmHeadline(
-                    nextAlarm: nextAlarmForHeadline,
-                    hasAnyAlarm: !visibleAlarms.isEmpty,
-                    alarmPermissionMissing: !alarmKit.alarmAuthorized
-                )
+                if !alarmKit.alarmAuthorized && nextAlarmForHeadline != nil {
+                    // 권한이 없어 울리지 않는다는 헤드라인 — **누르면 고치러 간다**(지운 권한 배너가 하던 일). 거부가 굳었으면
+                    // 설정으로, 아니면 권한 요청으로(`openCreateAlarm` 과 같은 갈래).
+                    Button {
+                        if alarmKit.permissionRecoveryNeeded {
+                            openAppSettings()
+                        } else {
+                            Task { await alarmKit.requestAuthorization() }
+                        }
+                    } label: {
+                        NextAlarmHeadline(
+                            nextAlarm: nextAlarmForHeadline,
+                            hasAnyAlarm: !visibleAlarms.isEmpty,
+                            alarmPermissionMissing: true
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(Text(String(localized: "알람 권한을 허용하러 가요")))
+                } else {
+                    NextAlarmHeadline(
+                        nextAlarm: nextAlarmForHeadline,
+                        hasAnyAlarm: !visibleAlarms.isEmpty,
+                        alarmPermissionMissing: !alarmKit.alarmAuthorized
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
@@ -133,6 +150,8 @@ struct AlarmsListView: View {
                     AlarmRow(
                         alarm: displayed(alarm),
                         voiceName: voiceName(for: alarm),
+                        // 권한이 없어 어느 알람도 울리지 않는다 — 켜짐·꺼짐과 상관없이 스위치를 회색으로(2026-11-09 오너).
+                        switchMuted: !alarmKit.alarmAuthorized,
                         selectionMode: selectionMode,
                         selected: selectedAlarmIDs.contains(alarm.id),
                         onEnterSelection: { selectedAlarmIDs = [alarm.id] },
@@ -186,47 +205,6 @@ struct AlarmsListView: View {
         let present = Set(visibleAlarms.map(\.id))
         let pruned = selectedAlarmIDs.intersection(present)
         if pruned != selectedAlarmIDs { selectedAlarmIDs = pruned }
-    }
-
-    /// 권한 한 줄 배너 — 탭하면 모달을 거치지 않고 곧바로 권한 요청으로 간다.
-    /// 안드로이드 `ControlsAndPermissions.kt` 의 슬림 배너(`AlarmPermissionWarningBanner`).
-    ///
-    /// 문구는 **iOS 의 사실**을 말한다: AlarmKit 권한이 없으면 예약 자체가 안 되므로
-    /// 정말로 울리지 않는다. (안드로이드는 권한 셋 중 무엇이 빠져도 울리기는 해서
-    /// "울리지 않아요" 라고 쓰지 않는다 — 그쪽 문구를 그대로 베끼지 말 것.)
-    private var alarmPermissionBanner: some View {
-        Button {
-            // ⚠ **거부가 굳었으면 설정으로 보낸다**(2026-11-09 iOS 출시 검토). 그때는 프롬프트가 뜨지 않아 버튼이 무반응이었다 —
-            // 카드를 지운 뒤 이 배너가 홈의 유일한 권한 안내다. `openCreateAlarm` 과 같은 갈래, 안드로이드도 설정으로 보낸다.
-            if alarmKit.permissionRecoveryNeeded {
-                openAppSettings()
-            } else {
-                Task { await alarmKit.requestAuthorization() }
-            }
-        } label: {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "exclamationmark.circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(theme.palette.error)
-                Text(String(localized: "알람 권한이 없어 알람이 예약되지 않아요."))
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurface)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity)
-            .background(
-                theme.palette.surface,
-                in: RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous)
-                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     /// 알람 행 둘째 줄에 붙일 목소리 이름. 관계 라벨(엄마·할머니)은 쓰지 않는다 — 저장된

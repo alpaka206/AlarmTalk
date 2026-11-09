@@ -285,7 +285,8 @@ struct BillingPanel: View {
             }
             Button(String(localized: "취소"), role: .cancel) {}
         } message: {
-            Text(String(localized: "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 구독하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요."))
+            // 목소리 3일 보관 안내는 뺐다(2026-11-09 오너). 안드로이드 `billing_cancel_immediate_description` 과 같은 문장이다.
+            Text(String(localized: "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요."))
         }
     }
 

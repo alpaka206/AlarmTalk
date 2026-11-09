@@ -51,9 +51,7 @@ struct VoiceProfileManagementPanel: View {
 
     /// 사전렌더(알람 음성 준비) 상태 — 목소리 id → 상태. 5초 폴링으로 채운다.
     @State private var prerenderStatuses: [String: VoicePrerenderStatus] = [:]
-    @State private var retryingPrerenderIDs: Set<String> = []
     @State private var downloadProgress: [String: (done: Int, total: Int)] = [:]
-    @State private var retryingSpeechStyleIDs: Set<String> = []
 
     /// 시스템(스톡) 목소리 = 무료에서도 쓰는 기본 목소리. 내 목소리와 분리해 노출.
     private var systemVoices: [VoiceProfile] {
@@ -189,6 +187,11 @@ struct VoiceProfileManagementPanel: View {
         // 사전렌더 진행 폴링 — 준비 중인 목소리가 하나라도 있는 동안만 돈다.
         .task(id: ownVoices.map(\.id).joined(separator: ",")) {
             await pollPrerenderStatuses()
+        }
+        // 말투 분석이 실패한 목소리는 **말없이 다시 건다**(2026-11-09 오너, `VoiceAutoRetry`) — 한 목소리에 이번 실행 한 번.
+        // 실패해도 클립은 기본 말투로 만들어지므로 막는 것이 없고, 실패 안내도 띄우지 않는다.
+        .task(id: ownVoices.filter { $0.speechStyleStatus == "failed" }.map(\.id).joined(separator: ",")) {
+            await retryFailedSpeechStylesQuietly()
         }
         .task(id: "\(auth.session?.user.id ?? "-")|\(ownVoices.map(\.id).joined(separator: ","))") {
             downloadProgress = [:]
@@ -375,17 +378,8 @@ struct VoiceProfileManagementPanel: View {
                         if let status = prerenderStatuses[profile.id] {
                             VoicePrerenderStatusRow(
                                 status: status,
-                                retrying: retryingPrerenderIDs.contains(profile.id),
-                                onRetry: { Task { await retryPrerender(profile) } },
                                 // 생성이 끝난 뒤의 몫 — 받는 중에도 진행률이 이어진다.
                                 downloadProgress: downloadProgress[profile.id]
-                            )
-                        }
-                        // 말투 분석 실패 — 서버에 재시도 라우트가 있는데 부를 길이 없었다.
-                        if profile.speechStyleStatus == "failed" {
-                            VoiceSpeechStyleFailedRow(
-                                retrying: retryingSpeechStyleIDs.contains(profile.id),
-                                onRetry: { Task { await retrySpeechStyle(profile) } }
                             )
                         }
                     }
@@ -564,6 +558,17 @@ struct VoiceProfileManagementPanel: View {
                 if previous == "pending", status.status == "done" {
                     _ = await voice.loadStockClips(session: auth.session, force: true)
                 }
+                // ⚠ **실패를 보이지 않고 다시 건다**(2026-11-09 오너, `VoiceAutoRetry`) — 이 목소리에 이번 실행 처음이면 재시도
+                //   라우트를 부르고 계속 묻는다(서버 cron 이 다시 5번 시도한다). 이미 한 번 걸었으면 '준비 중' 으로 둔 채 멈춘다 —
+                //   다음 실행이 또 건다. 안드로이드 짝 `VoiceProfileManagementPanel` 의 같은 루프.
+                if status.status == "failed", VoiceAutoRetry.claimPrerender(profile.id),
+                   (try? await AlarmTalkAPI.shared.retryVoicePrerender(id: profile.id, token: token)) == true {
+                    var resumed = status
+                    resumed.status = "pending"
+                    prerenderStatuses[profile.id] = resumed
+                    anyPending = true
+                    continue
+                }
                 if status.status == "pending" {
                     anyPending = true
                     // 앱이 열려 있는 동안은 cron 을 기다리지 않고 우리가 앞당긴다
@@ -576,30 +581,15 @@ struct VoiceProfileManagementPanel: View {
         }
     }
 
-    private func retryPrerender(_ profile: VoiceProfile) async {
+    /// 말투 분석이 실패한 목소리를 **말없이** 다시 건다(`VoiceAutoRetry` — 한 목소리에 이번 실행 한 번). 실패해도 아무것도 띄우지
+    /// 않는다 — 클립은 기본 말투로 만들어지고, 다음 실행이 또 건다. 성공하면 목록을 새로 읽어 상태를 맞춘다.
+    private func retryFailedSpeechStylesQuietly() async {
         guard let token = auth.session?.token else { return }
-        retryingPrerenderIDs.insert(profile.id)
-        defer { retryingPrerenderIDs.remove(profile.id) }
-        guard (try? await AlarmTalkAPI.shared.retryVoicePrerender(id: profile.id, token: token)) != nil else {
-            voice.statusMessage = String(localized: "다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요.")
-            return
+        var retried = false
+        for profile in ownVoices where profile.speechStyleStatus == "failed" && VoiceAutoRetry.claimSpeechStyle(profile.id) {
+            if (try? await AlarmTalkAPI.shared.retryVoiceSpeechStyle(id: profile.id, token: token)) == true { retried = true }
         }
-        await pollPrerenderStatuses()
-    }
-
-    /// 말투 분석 재시도. 서버에 라우트가 있는데 부를 길이 없어 실패가 영구였다.
-    private func retrySpeechStyle(_ profile: VoiceProfile) async {
-        guard let token = auth.session?.token else { return }
-        retryingSpeechStyleIDs.insert(profile.id)
-        defer { retryingSpeechStyleIDs.remove(profile.id) }
-        do {
-            _ = try await AlarmTalkAPI.shared.retryVoiceSpeechStyle(id: profile.id, token: token)
-            // 상태는 서버가 다시 계산하므로 목록을 새로 읽어 실패 행이 사라지게 한다. `force` — 진행 중인 갱신에 막혀
-            // 건너뛰면 실패 행이 그대로 남는다(2026-10-29 두 앱 비교, 안드로이드는 그 자리 상태를 곧바로 고친다).
-            await voice.refresh(session: auth.session, force: true)
-        } catch {
-            voice.statusMessage = String(localized: "말투 분석을 다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요.")
-        }
+        if retried { await voice.refresh(session: auth.session, force: true) }
     }
 
     /// `.alert` 는 `item:` 형태가 없어 Bool 바인딩으로 감싼다.

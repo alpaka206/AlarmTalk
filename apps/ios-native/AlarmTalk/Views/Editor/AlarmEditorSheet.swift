@@ -1193,7 +1193,10 @@ struct AlarmEditorSheet: View {
     /// 만 보여줬는데, 이제 4개를 미리 받아 두므로 알람마다 자유롭게 고를 수 있어야 한다
     /// (안드로이드 `VoiceAudioCard.kt:104-107` 주석).
     var voiceProfileOptions: [VoiceSelectionSheet.Option] {
-        let own = voiceStudio.profiles
+        // ⚠ **무료면 내 목소리를 아예 보이지 않는다**(2026-11-09 오너: "잠금 표시도 할 필요 없이 노출할 필요 자체가 없어").
+        //   예전 iOS 는 자물쇠를 달아 두고 누르면 이용권 알럿을 띄웠다. 무료는 기본 목소리만 쓸 수 있으니(서버 `tts.ts`) 고를 수
+        //   없는 것을 늘어놓지 않는다 — 안드로이드 `editorVisibleVoiceProfiles` 와 같다(무료면 기본 목소리만).
+        let own = (freeVoiceTier ? [] : voiceStudio.profiles)
             .filter { $0.isReadyForAlarmSelection && !isSystemVoice($0) }
             .map {
                 VoiceSelectionSheet.Option(
@@ -1201,8 +1204,7 @@ struct AlarmEditorSheet: View {
                     name: $0.displayName,
                     // 관계 라벨이 아니라 '내 목소리' — 안드로이드 `ownedVoiceDetail`.
                     detail: ownVoiceOptionDetail(),
-                    // 무료 등급은 시스템 목소리만 쓸 수 있다(서버 `tts.ts:684-693`).
-                    locked: freeVoiceTier,
+                    locked: false,
                     // 교체 정리가 끝나지 않은 목소리는 **자리에 두되 못 고른다** — 감추면
                     // 사라진 것으로 보여 고장으로 읽힌다.
                     unavailableReason: voiceStudio.isReplacementSettling($0.id)
@@ -1243,7 +1245,8 @@ struct AlarmEditorSheet: View {
             VoiceSelectionSheet.Option(
                 id: Self.recordingOptionID,
                 name: String(localized: "직접 녹음"),
-                detail: String(localized: "이 알람에만 쓸 소리를 직접 녹음하기"),
+                // 설명 줄은 없다(2026-11-09 오너 — '이 알람에만 쓸 소리를 직접 녹음하기' 삭제). 이름이 이미 말한다.
+                detail: nil,
                 // ⚠ **잠그지 말 것** — 직접 녹음은 유료 기능이 아니다(2026-08-12 확정).
                 // 예전 주석은 "안드로이드 `VoiceAudioCard.kt` 와 같은 판정" 이라고 했지만
                 // 안드로이드의 `VoiceProfileOption` 에는 `locked` 필드가 **아예 없다** —
@@ -2391,8 +2394,21 @@ struct AlarmEditorSheet: View {
     }
 
     func applyVoicePromptState(to record: inout LocalAlarmRecord) {
-        let enabled = record.playModeEnum != .alarmOnly && voiceStudio.randomPrompt
+        let voiceMode = record.playModeEnum != .alarmOnly
+        let enabled = voiceMode && voiceStudio.randomPrompt
         let context = RandomPromptContext.normalized(voiceStudio.randomContext)
+        // ⚠ **테마(스톡 클립) 알람도 그 테마가 날씨·운세면 지역·사주를 남긴다.** 테마를 붙이면 `voiceRandomPrompt` 는 꺼지지만
+        //   울릴 클립을 고르는 데(날씨 조건·운세 개인화) 그 값을 쓴다. 예전에는 `enabled` 하나로 갈라서, 테마 알람을 열어 시각만
+        //   고쳐 저장해도 지역·사주가 지워졌다 — 그 뒤 매일 '날씨를 못 알아봤어요' 클립이 울고 갱신도 못 했다(1.2.16 부터).
+        //   안드로이드 `AlarmEditorState.weatherContextForSave`·`fortuneContextForSave` 짝.
+        let keeps = AlarmEditDraft.savesPromptContext(
+            voiceMode: voiceMode,
+            randomPrompt: voiceStudio.randomPrompt,
+            context: context,
+            stockBucket: selectedBucketDraft
+        )
+        let keepsWeather = keeps.weather
+        let keepsFortune = keeps.fortune
         record.voiceRandomPrompt = enabled
         record.voiceRandomContext = enabled ? context.rawValue : nil
         // 지역은 **옛 앱이 읽는 표준 글자**로 적는다(목록으로 되짚히는 값이면). 알람 행에는 키 칸이
@@ -2402,11 +2418,11 @@ struct AlarmEditorSheet: View {
             country: voiceStudio.weatherCountry,
             city: voiceStudio.weatherCity
         )
-        record.voiceWeatherCountry = enabled && context.usesWeather ? weatherLabels.country : nil
-        record.voiceWeatherCity = enabled && context.usesWeather ? weatherLabels.city : nil
-        record.voiceFortuneGender = enabled && context.usesFortune ? (voiceStudio.fortuneGender).nilIfBlank : nil
-        record.voiceFortuneBirthDate = enabled && context.usesFortune ? (voiceStudio.fortuneBirthDate).nilIfBlank : nil
-        record.voiceFortuneBirthTime = enabled && context.usesFortune ? (voiceStudio.fortuneBirthTime).nilIfBlank : nil
+        record.voiceWeatherCountry = keepsWeather ? weatherLabels.country : nil
+        record.voiceWeatherCity = keepsWeather ? weatherLabels.city : nil
+        record.voiceFortuneGender = keepsFortune ? (voiceStudio.fortuneGender).nilIfBlank : nil
+        record.voiceFortuneBirthDate = keepsFortune ? (voiceStudio.fortuneBirthDate).nilIfBlank : nil
+        record.voiceFortuneBirthTime = keepsFortune ? (voiceStudio.fortuneBirthTime).nilIfBlank : nil
     }
 
     func showVoicePlanLockedAlert() {

@@ -54,6 +54,10 @@ final class AlarmToggleCoalescer: ObservableObject {
         pending[id]?.cancel()
         let delay = settleDelay
         pending[id] = Task { @MainActor in
+            // ⚠ **백그라운드 보호**(출시 전 검토). 켜고 곧바로(0.45초 안에) 잠그면 적용 전에 앱이 멈춰 AlarmKit 예약이 다음
+            //   전경까지 밀린다 — 그사이 그 알람은 울리지 않는다. 기다림과 적용이 끝날 때까지 시간을 빌린다(만료되면 반납만 한다).
+            let grant = BackgroundExecutionGrant(name: "alarm-toggle-settle")
+            defer { grant.end() }
             await delay()
             guard !Task.isCancelled else { return }
             await self.settle(id: id, current: current, apply: apply, settled: settled)

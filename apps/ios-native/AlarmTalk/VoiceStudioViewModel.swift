@@ -970,12 +970,11 @@ final class VoiceStudioViewModel: ObservableObject {
             // 로 캐시 우선이다.
             if let url = AudioCacheStore.shared.cachedURL(for: stockKey),
                !AudioCacheStore.shared.isStale(cacheKey: stockKey, remoteAudioUri: clip.audioUrl) {
-                let cached = CachedVoiceAudio(
-                    url: url,
-                    fileName: url.lastPathComponent,
-                    format: url.pathExtension.isEmpty ? "mp3" : url.pathExtension,
-                    cacheKey: stockKey
-                )
+                // ⚠ **옛 별칭 이름을 넘긴다** — 다른 갈래(`cacheServerAudio`·`reuseStockPreviewCache`)와 같다. 미리듣기 재생과
+                //   저장 뒤 준비 기록은 `localAudioFileName` 을 옛 디렉터리(`AudioCacheStore.url(for:)`)에서 찾는데, 선다운로드는
+                //   정본(`stock_<id>`)만 쓴다. 정본 이름을 그대로 넘기면 그 자리에 파일이 없어 내 목소리 미리듣기가 소리 없이
+                //   '재생 중' 으로 멈췄고, 테마 알람을 저장해도 `alarm_ready` 가 적히지 않았다(울림은 캐시 키로 찾아 멀쩡했다).
+                let cached = try legacyAliasedStockAudio(canonicalURL: url, messageId: clip.messageId, cacheKey: stockKey)
                 let prepared = makeStockPrepared(clip: clip, cached: cached, rawAudioURL: nil)
                 preparedAlarm = prepared
                 return prepared
@@ -1044,6 +1043,16 @@ final class VoiceStudioViewModel: ObservableObject {
             enforceMaxDuration: false
         )
         return CachedVoiceAudio(url: legacyURL, fileName: legacyName, format: format, cacheKey: stockKey)
+    }
+
+    /// 캐시의 정본 파일을 옛 별칭 `<messageId>.<ext>` 로도 둔다 — 편집기의 재생·저장이 `localAudioFileName` 을 옛 디렉터리에서
+    /// 찾는다. 같은 메시지를 다시 구웠을 수 있으니 별칭은 정본(낡지 않은 것을 확인했다)으로 언제나 새로 쓴다.
+    private func legacyAliasedStockAudio(canonicalURL url: URL, messageId: String, cacheKey: String) throws -> CachedVoiceAudio {
+        let format = url.pathExtension.isEmpty ? "mp3" : url.pathExtension
+        let legacyName = "\(messageId).\(format)"
+        let legacyURL = try AudioCacheStore.legacyAudioDirectory().appendingPathComponent(legacyName)
+        try Data(contentsOf: url).write(to: legacyURL, options: [.atomic])
+        return CachedVoiceAudio(url: legacyURL, fileName: legacyName, format: format, cacheKey: cacheKey)
     }
 
     private func makeStockPrepared(clip: StockClip, cached: CachedVoiceAudio, rawAudioURL: String?) -> PreparedAlarmTalk {

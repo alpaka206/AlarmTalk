@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// **알람을 켜면 화면 아래에 "N 후에 울려요." 를 잠깐 띄운다**(2026-11-09, 스펙 `docs/spec/alarm-editor.md` §7).
 ///
@@ -7,7 +8,7 @@ import SwiftUI
 /// `AlarmToggleCoalescer` 가 연타를 합친 마지막 값을 반영한 뒤 `RingInNoticePresenter.listToggleSettled`). 끄기·삭제는 띄우지
 /// 않고, 떠 있던 **그 알람의** 안내를 거둔다(`withdraw`). 다시 울림은 부르지 않는다.
 ///
-/// 안드로이드 짝은 스펙 §7 대로 스낵바(`PrettySnackbar` — 안내, 액션 없음)로 같은 문장을 띄운다.
+/// 안드로이드 짝은 같은 모양의 캡슐(`RingInCapsule`)로 같은 문장을 띄운다.
 ///
 /// 메인 액터에 둔다 — 헤드라인의 계산(`NextAlarmHeadline.remainingLabel`)이 뷰의 것이라 메인 액터에 묶여 있고, 부르는 곳(표시
 /// 객체·편집기·목록)도 모두 메인 액터다.
@@ -35,7 +36,12 @@ enum RingInNotice {
 /// - 안내는 **알람 하나의 것**이다(`Notice.alarmID`). 그 알람을 끄거나 지우면 그 안내만 거두고, 다른 알람의 안내는 둔다.
 /// - **하단 탭이 보일 때만 띄운다**(스펙 §7 — 하단 탭 위). 편집기·설정·이용권으로 옮기면 떠 있던 것을 걷고 버린다
 ///   (`hostHidden`). 가려진 동안 켠 것은 — 저장하면 편집기가 닫히며 탭이 돌아오는 그 사이도 여기다 — 탭이 다시 보일 때
-///   **그때의 행**으로 다시 판정해 띄운다(`hostShown`). 안드로이드도 하단바가 있는 화면에서만 띄우고 같은 규칙으로 기다린다.
+///   **그때의 행**으로 다시 판정해 띄운다(`hostShown`). 단 **생긴 지 5초(`freshInterval`) 넘게 못 떴으면 버린다** — 정상
+///   경로는 곧바로 돌아오므로, 그만큼 늦었다면 하위 화면에 오래 머물렀다는 뜻이고 그때 뜨면 맥락이 없다. 안드로이드
+///   `ringInAction`(`RING_IN_NOTICE_FRESH_MILLIS`)과 같은 규칙이다.
+/// - **앱이 백그라운드면 띄우지 않는다** — 목록 스위치의 적용은 잠근 뒤에도 잠시 돈다(`AlarmToggleCoalescer` 의 백그라운드
+///   보호). 그때 띄우면 다음에 앱을 열 때 옛 남은 시간이 적힌 캡슐이 보인다. 백그라운드로 가면 떠 있던 것·기다리던 것도
+///   버린다(`MainTabsView` 가 `reset` 을 부른다).
 /// - 스크린 리더에는 같은 문장을 알린다. 캡슐 자체는 접근성 트리에서 뺀다 — 3초 뒤 사라지는 요소에 초점이 가 있으면
 ///   사라질 때 초점이 튄다.
 @MainActor
@@ -52,27 +58,37 @@ final class RingInNoticePresenter: ObservableObject {
     @Published private(set) var current: Notice?
     /// 하단 탭이 가려진 동안 켠 알람 — 탭이 다시 보이면 그때의 행으로 다시 판정해 띄운다(`hostShown`).
     private(set) var waitingAlarmID: String?
+    /// 그 안내가 생긴 때 — 탭이 돌아왔을 때 `freshInterval` 을 넘었으면 버린다.
+    private var waitingSince: Date?
+    /// 생긴 지 이만큼 지나도록 띄우지 못한 안내는 버린다 — 안드로이드 `RING_IN_NOTICE_FRESH_MILLIS`(5초) 짝.
+    static let freshInterval: TimeInterval = 5
     /// 하단 탭이 보이는가 — `MainTabsView` 가 하위 화면을 열고 닫을 때마다 알린다(`hostHidden`·`hostShown`).
     private var hostVisible = true
 
     private var dismissal: Task<Void, Never>?
     private let visibleDuration: @Sendable () async -> Void
     private let announce: @MainActor (String) -> Void
+    private let isAppInBackground: @MainActor () -> Bool
 
     init(
         visibleDuration: @escaping @Sendable () async -> Void = { try? await Task.sleep(for: .seconds(3)) },
-        announce: @escaping @MainActor (String) -> Void = { RingInNoticePresenter.announceToScreenReader($0) }
+        announce: @escaping @MainActor (String) -> Void = { RingInNoticePresenter.announceToScreenReader($0) },
+        isAppInBackground: @escaping @MainActor () -> Bool = { UIApplication.shared.applicationState == .background }
     ) {
         self.visibleDuration = visibleDuration
         self.announce = announce
+        self.isAppInBackground = isAppInBackground
     }
 
     /// 방금 켠 알람의 안내를 띄운다. 띄울 것이 없으면(`RingInNotice.text` 가 nil) 떠 있는 안내도 건드리지 않는다.
     /// 하단 탭이 가려져 있으면 띄우지 않고 기다린다 — 탭이 다시 보일 때 그때의 행으로 띄운다(`hostShown`).
     func present(for record: LocalAlarmRecord?, alarmAuthorized: Bool, now: Date = Date()) {
         guard let record, let text = RingInNotice.text(for: record, alarmAuthorized: alarmAuthorized, now: now) else { return }
+        // 백그라운드에서 끝난 적용(잠근 직후의 목록 스위치)은 띄우지도 기다리지도 않는다 — 돌아왔을 때는 맥락이 없다.
+        guard !isAppInBackground() else { return }
         guard hostVisible else {
             waitingAlarmID = record.id
+            waitingSince = now
             return
         }
         show(Notice(id: UUID(), alarmID: record.id, text: text))
@@ -103,7 +119,10 @@ final class RingInNoticePresenter: ObservableObject {
     /// 그 알람을 끄거나 지웠다 — 떠 있던(또는 기다리던) **그 알람의** 안내만 거둔다. 다른 알람의 안내는 둔다.
     /// 남기면 꺼졌거나 없는 알람을 두고 "N 후에 울려요." 라고 말해, 방금 끈 사람이 안 꺼졌나 하고 도로 켠다.
     func withdraw(alarmID: String) {
-        if waitingAlarmID == alarmID { waitingAlarmID = nil }
+        if waitingAlarmID == alarmID {
+            waitingAlarmID = nil
+            waitingSince = nil
+        }
         guard current?.alarmID == alarmID else { return }
         clearCurrent()
     }
@@ -116,11 +135,14 @@ final class RingInNoticePresenter: ObservableObject {
     }
 
     /// 하단 탭이 다시 보인다 — 가려진 동안 켠 알람이 있으면 **지금의 행·지금의 남은 시간**으로 다시 판정해 띄운다. 그사이
-    /// 꺼졌거나 지워졌거나 시각이 지났으면 띄우지 않는다.
+    /// 꺼졌거나 지워졌거나 시각이 지났으면 띄우지 않는다. 생긴 지 `freshInterval` 을 넘었으면 버린다(안드로이드와 같다).
     func hostShown(currentRecord: (String) -> LocalAlarmRecord?, alarmAuthorized: Bool, now: Date = Date()) {
         hostVisible = true
         guard let id = waitingAlarmID else { return }
+        let since = waitingSince
         waitingAlarmID = nil
+        waitingSince = nil
+        if let since, now.timeIntervalSince(since) > Self.freshInterval { return }
         present(for: currentRecord(id), alarmAuthorized: alarmAuthorized, now: now)
     }
 
@@ -129,6 +151,7 @@ final class RingInNoticePresenter: ObservableObject {
     /// 전체 화면 덮개가 편집기 위에서 이걸 불렀을 때 편집기가 떠 있는데도 안내가 뜬다.
     func reset() {
         waitingAlarmID = nil
+        waitingSince = nil
         clearCurrent()
     }
 
@@ -191,17 +214,12 @@ struct RingInNoticeHost: View {
         .accessibilityHidden(true)
     }
 
+    /// ⚠ **아이콘 없이 글자만**(2026-11-09 오너 — ⓘ 를 빼고 두 앱을 이 캡슐로 맞췄다). 안드로이드 짝 `RingInCapsule`.
     private func capsule(_ text: String) -> some View {
-        HStack(spacing: 8) {
-            // 안드로이드 스낵바의 '안내' 결(아이콘 + 보조 컨테이너 색)이다. 글리프는 iOS 것을 쓴다
-            // (CLAUDE.md 「글리프와 글자 크기 동작은 각 OS 것을 쓴다」 — 맞추는 것은 뜻과 자리다).
-            Image(systemName: "info.circle")
-                .font(.title3)
-            // 이미 번역한 문장이다(`String(localized:)`) — `Text(String)` 은 받은 글자를 그대로 그린다.
-            Text(text)
-                .font(theme.typography.labelLarge)
-                .multilineTextAlignment(.center)
-        }
+        // 이미 번역한 문장이다(`String(localized:)`) — `Text(String)` 은 받은 글자를 그대로 그린다.
+        Text(text)
+            .font(theme.typography.labelLarge)
+            .multilineTextAlignment(.center)
         .foregroundStyle(theme.palette.onSecondaryContainer)
         .padding(.horizontal, 18)
         .padding(.vertical, 12)

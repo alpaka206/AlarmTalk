@@ -6,6 +6,7 @@ import SwiftUI
 /// 설정/보조/편집 화면을 같은 `NavigationStack`의 push 화면으로 관리한다.
 struct MainTabsView: View {
     @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
@@ -271,6 +272,10 @@ struct MainTabsView: View {
         .onAppear { syncRingInNoticeHost() }
         .onChange(of: tabChromeHidden) { _, _ in syncRingInNoticeHost() }
         .onDisappear { RingInNoticePresenter.shared.reset() }
+        // 백그라운드로 가면 떠 있던 것·기다리던 것을 버린다 — 3초가 다 가기 전에 잠그면 다음에 열 때 옛 남은 시간이 보인다.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { RingInNoticePresenter.shared.reset() }
+        }
     }
 
     /// 하단 탭이 가려져 있는가 — 편집기·설정·이용권은 push 화면이라 하단바·＋FAB 가 함께 사라진다.

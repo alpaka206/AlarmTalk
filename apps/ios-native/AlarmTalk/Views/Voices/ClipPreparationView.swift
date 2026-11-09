@@ -100,9 +100,9 @@ struct ClipPreparationView: View {
                     // 숫자가 흔들리지 않게 — 퍼센트가 오르내릴 때 폭이 변하면 시선이 튄다.
                     .monospacedDigit()
                     .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.2), value: readiness.percent)
+                    .animation(.easeInOut(duration: 0.2), value: shownPercent)
 
-                ProgressView(value: Double(readiness.percent), total: 100)
+                ProgressView(value: Double(shownPercent), total: 100)
                     .tint(theme.palette.primary)
                     .frame(maxWidth: 280)
 
@@ -117,7 +117,7 @@ struct ClipPreparationView: View {
             Spacer(minLength: 0)
 
             VStack(spacing: 12) {
-                if !readiness.failedVoiceIDs.isEmpty {
+                if !shownFailedVoiceIDs.isEmpty {
                     // 서버가 만들다 실패한 목소리 — 다시 큐에 올린다. 다운로드 실패는
                     // 선다운로드가 다음 회차에 부족분만 다시 받으므로 버튼이 필요 없다.
                     Button(String(localized: "다시 시도하기")) {
@@ -131,12 +131,12 @@ struct ClipPreparationView: View {
                 }
 
                 if let onDismiss {
-                    Button(readiness.isReady ? String(localized: "완료") : String(localized: "백그라운드에서 계속")) {
+                    Button(shownIsReady ? String(localized: "완료") : String(localized: "백그라운드에서 계속")) {
                         onDismiss()
                     }
                     .font(theme.typography.bodyMedium)
                     .foregroundStyle(
-                        readiness.isReady ? theme.palette.primary : theme.palette.onSurfaceVariant
+                        shownIsReady ? theme.palette.primary : theme.palette.onSurfaceVariant
                     )
                 }
             }
@@ -220,19 +220,39 @@ struct ClipPreparationView: View {
     }
 
     private var headline: String {
-        readiness.isReady ? String(localized: "준비됐어요") : "\(readiness.percent)%"
+        shownIsReady ? String(localized: "준비됐어요") : "\(shownPercent)%"
+    }
+
+    /// 화면이 그리는 목소리 — 관문이 막은 그 목소리가 있으면 **그 하나만**(`shownVoices`).
+    private var shownReadiness: [ClipReadiness.VoiceProgress] {
+        Self.shownVoices(readiness.voices, targetVoiceID: targetVoiceID)
+    }
+    private var shownPercent: Int { ClipReadiness.percent(shownReadiness) }
+    private var shownIsReady: Bool { ClipReadiness.isReady(shownReadiness) }
+    private var shownFailedVoiceIDs: [String] { shownReadiness.filter { $0.renderFailed }.map { $0.voiceProfileID } }
+
+    /// ⚠ **편집기가 막은 목소리 하나만 센다**(안드로이드 `shownPreparationReadiness`, 코덱스 #952). 전부를 세면 고른 목소리를
+    /// 다 받아도 다른 목소리 때문에 100% 에 닿지 못하고, 다른 목소리의 생성 실패로 '다시 시도' 가 뜨며, 폴링도 멈추지 않는다.
+    /// 그 목소리가 아직 목록에 없으면(첫 회차 전) 전부를 그린다.
+    nonisolated static func shownVoices(
+        _ voices: [ClipReadiness.VoiceProgress],
+        targetVoiceID: String?
+    ) -> [ClipReadiness.VoiceProgress] {
+        guard let id = targetVoiceID, !id.isEmpty else { return voices }
+        let target = voices.filter { $0.voiceProfileID == id }
+        return target.isEmpty ? voices : target
     }
 
     /// ⚠ **무엇을 기다리는지 말한다.** 퍼센트만 있으면 멈춘 것처럼 보인다 —
     /// 특히 서버 렌더 구간은 다운로드와 달리 몇 분이 걸릴 수 있다.
     private var statusLine: String {
-        if readiness.isReady {
+        if shownIsReady {
             return String(localized: "이제 오프라인에서도 목소리로 울려요.")
         }
-        if !readiness.failedVoiceIDs.isEmpty {
+        if !shownFailedVoiceIDs.isEmpty {
             return String(localized: "목소리를 만들다 실패했어요. 다시 시도해 주세요.")
         }
-        if readiness.voices.contains(where: { $0.isRendering }) {
+        if shownReadiness.contains(where: { $0.isRendering }) {
             return String(localized: "목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.")
         }
         return String(localized: "목소리를 받고 있어요. 앱을 닫아도 계속 받아요.")
@@ -247,7 +267,7 @@ struct ClipPreparationView: View {
 
     private var preparationSettled: Bool {
         Self.pollingCanStop(
-            isReady: readiness.isReady,
+            isReady: shownIsReady,
             targetClipsLoaded: targetVoiceID.flatMap { $0.isEmpty ? nil : $0 }.map { id in
                 voiceStudio.stockClips.contains(where: { $0.voiceProfileId == id })
             } ?? true
@@ -270,7 +290,7 @@ struct ClipPreparationView: View {
         //
         // `start` 는 `guard task == nil` 이라 3초 폴링마다 불려도 겹쳐 돌지 않고, 이미 받은
         // 것은 내부에서 건너뛴다.
-        if !readiness.isReady {
+        if !shownIsReady {
             prefetcher.start(
                 session: auth.session,
                 ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs,

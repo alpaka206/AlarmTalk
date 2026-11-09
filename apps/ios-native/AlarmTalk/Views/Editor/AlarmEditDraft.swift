@@ -401,6 +401,24 @@ struct AlarmEditDraft: Equatable {
             && ttsText.nilIfBlank != nil
     }
 
+    /// **저장에 지역(날씨)·사주(운세)를 남기는가** — 라이브 생성 문구가 그 종류이거나, 그 테마의 스톡 클립 알람이면.
+    ///
+    /// ⚠ 테마를 붙이면 `voiceRandomPrompt` 가 꺼지지만 울릴 클립을 고르는 데(날씨 조건·운세 개인화) 이 값을 쓴다.
+    /// `randomPrompt` 하나만 보면 테마 알람을 시각만 고쳐 다시 저장해도 지역·사주가 지워진다(1.2.16 부터 있던 결함).
+    /// 안드로이드 `AlarmEditorState.weatherContextForSave`·`fortuneContextForSave` 짝. 알람 전용이면 둘 다 남기지 않는다.
+    static func savesPromptContext(
+        voiceMode: Bool,
+        randomPrompt: Bool,
+        context: RandomPromptContext,
+        stockBucket: FreeBucket?
+    ) -> (weather: Bool, fortune: Bool) {
+        guard voiceMode else { return (false, false) }
+        return (
+            weather: (randomPrompt && context.usesWeather) || stockBucket == .weather,
+            fortune: (randomPrompt && context.usesFortune) || stockBucket == .fortune
+        )
+    }
+
     // MARK: - Convert to record
 
     /// Draft → record 변환. 기존 record 가 있다면 *시트 외부* 에서만 의미 있는

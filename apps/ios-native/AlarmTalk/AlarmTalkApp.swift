@@ -1187,7 +1187,7 @@ private struct PreferredColorSchemeIfSet: ViewModifier {
 /// `UIApplication.beginBackgroundTask` 한 번 — 끝내는 길(일을 마침·시간 만료)이 둘이라 **한 번만** 끝내게 묶는다.
 /// 시간 만료 핸들러는 UIKit 이 메인 스레드에서 부른다(문서) — 그래서 이 타입은 메인 액터다.
 @MainActor
-private final class BackgroundExecutionGrant {
+final class BackgroundExecutionGrant {
     private var identifier: UIBackgroundTaskIdentifier = .invalid
 
     init(name: String) {
