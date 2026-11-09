@@ -187,14 +187,20 @@ struct LoginView: View {
         // 같은 시점이다. 남겨 두면 이미 고친 값 아래에 옛 경고가 붙어 있다.
         // 가입 쪽 인라인 오류(`emailCodeError`)도 같은 시점에 지운다 — 안드로이드는 한 콜백이
         // 로그인·가입 오류를 함께 지운다.
+        // '이미 가입된 이메일' 안내(`authNotice`)도 입력을 고치면 지운다 — 안드로이드 `onClearLoginError` 와 같다.
         .onChange(of: password) { _, _ in
             auth.clearLoginError()
             auth.clearEmailCodeError()
+            auth.clearAuthNotice()
         }
         .onChange(of: email) { _, _ in
             auth.clearLoginError()
             auth.clearEmailCodeError()
+            auth.clearAuthNotice()
         }
+        // 화면을 떠나면(랜딩으로 돌아가기·로그인 성공) 지운다 — 안 지우면 다음에 연 로그인 화면에 앞 회차의 안내가 그대로
+        // 떠 있다. 안드로이드는 `authRoute` 가 로그인 밖으로 바뀔 때 지운다(`ui/app/AlarmTalkApp.kt`).
+        .onDisappear { auth.clearAuthNotice() }
         // 로그인↔가입을 오갈 때도 지운다(안드로이드는 `authRoute` 가 바뀔 때 지운다) —
         // 가입 화면에서는 이 자리에 비밀번호 규칙이 온다.
         // 가입 쪽 인라인 오류도 함께 지운다 — 안드로이드의 그 자리도 `registerError` 를 지운다. 남기면

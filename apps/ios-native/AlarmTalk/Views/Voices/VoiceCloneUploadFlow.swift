@@ -293,8 +293,17 @@ struct VoiceCloneUploadFlow: View {
             submitted = false
             registrationStep = .source
         } else {
+            cancelRecordingOnLeave()
             route = .management
         }
+    }
+
+    /// 등록 창을 떠날 때 녹음을 **취소**한다(2026-11-09 iOS 출시 검토). 녹음 중에 뒤로 가도 녹음이 계속돼(최대 2분, 마이크
+    /// 켜짐) 다음 등록 창에 판정 없이 남았다. 안드로이드 `closeCreateDialog`(녹음 취소 + 고른 음원 비움)와 같다.
+    private func cancelRecordingOnLeave() {
+        voice.previewPlayer.stop()
+        if voice.recorder.isRecording { voice.recorder.stop() }
+        voice.recorder.clearLatest()
     }
 
     private var nameSection: some View {

@@ -1326,16 +1326,20 @@ struct AlarmEditorSheet: View {
         didApplyPreferredVoice = true
         // ⚠ **추가 음성팩은 직접 입력을 쓸 수 없다**(`docs/spec/voice-packs.md` §1·§7) — 쳐 둔 문구를 버리고 직전 테마
         // (없으면 추가 입력이 필요 없는 첫 테마 = 응원)로 잇는다. 확인 알럿(`pendingVoiceSwitch`)을 지난 뒤에만 여기 온다.
-        let dropsManualForPack = isVoicePackVoiceID(option.id)
-            && !voiceStudio.randomPrompt
+        // ⚠ **기본 목소리도 같다** — 알럿이 "지금 입력한 문구가 지워져요" 라고 말한 그 경우(`losesManualText`)에는 실제로
+        // 지운다. 예전에는 팩만 지워서 알럿을 지나도 직접 입력이 남았고, 저장하면 월 한도가 깎였다(안드로이드
+        // `AlarmEditorState.selectVoiceProfile` 은 지운다 — `docs/spec/voice-and-message.md` §3).
+        let dropsManualText = !voiceStudio.randomPrompt
             && selectedBucketDraft == nil
-        if dropsManualForPack {
+            && option.id != voiceStudio.selectedProfileID
+            && (isVoicePackVoiceID(option.id) || losesManualText(switchingTo: option))
+        if dropsManualText {
             voiceStudio.ttsText = ""
             voiceStudio.preparedAlarm = nil
             pendingFreeBucket = FreeBucket.stored(DynamicPromptPreferenceStore().lastFreeBucket(userID: auth.session?.user.id))
         }
         commitVoiceSelection(option.id)
-        if dropsManualForPack { applyPendingFreeBucketIfNeeded() }
+        if dropsManualText { applyPendingFreeBucketIfNeeded() }
     }
 
     /// 목소리(TTS) 선택을 **확정**한다 — 바로 고른 것과 '기본 목소리로 바꿀까요?' 확인이 모두 여기로 온다.
@@ -1486,7 +1490,9 @@ struct AlarmEditorSheet: View {
     /// 언제나 `true` 로 굳어 있어 **경고가 아예 뜨지 않았고**, 직접 입력한 문장이
     /// 말없이 버려졌다(기존 알람에서는 반대로 잃을 게 없는데 경고가 떴다).
     func losesManualText(switchingTo option: VoiceSelectionSheet.Option) -> Bool {
+        // 같은 목소리를 다시 고르면 바뀌는 게 없다 — 지운다고 묻지 않는다(지우지도 않는다).
         isFreeFixedVoiceID(option.id)
+            && option.id != voiceStudio.selectedProfileID
             && !voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !voiceStudio.randomPrompt
             && selectedBucketDraft == nil
@@ -2041,13 +2047,18 @@ struct AlarmEditorSheet: View {
     /// 표시 문구이고 '마지막에 쓴 직접 입력 문구' 로 기억되는 것도 그 값이다. 번역이
     /// 켜진 기기에서는 둘이 달라서, 원문 키만 남기면 다음 새 알람이 표시 문구로 열려
     /// 캐시를 빗나간다 — '재생성도 한도 차감도 없다' 던 약속이 조용히 깨진다.
-    func rememberTtsInputAlias(for prepared: PreparedAlarmTalk, listenerTitle: String?) {
-        guard let inputKey = ttsInputKeyForReuse(listenerTitle: listenerTitle) else { return }
+    ///
+    /// ⚠ **키는 요청을 보내기 전 값으로 만든 것을 받는다**(`inputKey`). 음성을 만드는 사이 문구·목소리를 바꾸면 지금 값으로
+    /// 만든 키가 옛 음성에 묶이고, 다시 도는 저장이 그 별칭으로 옛 음성을 재사용한다 — 고쳐 저장해도 계속 옛 문구로 운다.
+    /// 표시 문구 키의 목소리도 지금 고른 것이 아니라 **그 음성을 만든 목소리**(`prepared.voiceProfileID`)다.
+    /// 안드로이드 `AlarmEditorScreen` 도 생성 전에 `ttsInputKey` 를 만들어 그 키로 묶는다.
+    func rememberTtsInputAlias(for prepared: PreparedAlarmTalk, inputKey: String?, listenerTitle: String?) {
+        guard let inputKey else { return }
         let store = AudioCacheStore.shared
         store.linkTtsInput(inputKey: inputKey, serverCacheKey: prepared.audioCacheKey, displayText: prepared.text)
 
         guard let userID = (auth.session?.user.id).nilIfBlank,
-              let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return }
+              let profileID = prepared.voiceProfileID.nilIfBlank else { return }
         let displayTextKey = AudioCacheStore.ttsInputKey(
             userId: userID,
             profileId: profileID,
@@ -2759,6 +2770,9 @@ struct AlarmEditorSheet: View {
             } else {
             // ① 로컬 확인 → (오프라인이면 위에서 막는다 — 요청 없음) → ② 생성 요청. 남은 횟수로 막지 않는다(§8).
             await refreshManualQuotaBeforeGenerate()
+            // 재사용 키는 **보내기 전 값으로** 만든다(`rememberTtsInputAlias` 주석) — 기다리는 사이 바꾼 입력이 이 음성에 묶이지 않게.
+            let listenerTitleAtRequest = currentListenerTitle
+            let inputKeyAtRequest = ttsInputKeyForReuse(listenerTitle: listenerTitleAtRequest)
             let prepared = await voiceStudio.generateTTS(
                 session: auth.session,
                 alarmHour: draft.hour,
@@ -2779,7 +2793,7 @@ struct AlarmEditorSheet: View {
                 showSaveFailureAlert()
                 return
             }
-            rememberTtsInputAlias(for: prepared, listenerTitle: currentListenerTitle)
+            rememberTtsInputAlias(for: prepared, inputKey: inputKeyAtRequest, listenerTitle: listenerTitleAtRequest)
             }
         }
 

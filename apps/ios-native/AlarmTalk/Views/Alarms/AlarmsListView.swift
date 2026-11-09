@@ -10,6 +10,7 @@ struct AlarmsListView: View {
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
+    @EnvironmentObject private var holidayStore: HolidayStore
     @State private var actionMessage: String?
     /// 알람 스위치는 손을 멈춘 뒤의 마지막 값만 적용한다 — 누르는 동안에는 화면만 바뀐다(`AlarmToggleCoalescer`).
     @ObservedObject private var toggles = AlarmToggleCoalescer.shared
@@ -195,7 +196,13 @@ struct AlarmsListView: View {
     /// "울리지 않아요" 라고 쓰지 않는다 — 그쪽 문구를 그대로 베끼지 말 것.)
     private var alarmPermissionBanner: some View {
         Button {
-            Task { await alarmKit.requestAuthorization() }
+            // ⚠ **거부가 굳었으면 설정으로 보낸다**(2026-11-09 iOS 출시 검토). 그때는 프롬프트가 뜨지 않아 버튼이 무반응이었다 —
+            // 카드를 지운 뒤 이 배너가 홈의 유일한 권한 안내다. `openCreateAlarm` 과 같은 갈래, 안드로이드도 설정으로 보낸다.
+            if alarmKit.permissionRecoveryNeeded {
+                openAppSettings()
+            } else {
+                Task { await alarmKit.requestAuthorization() }
+            }
         } label: {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "exclamationmark.circle")
@@ -345,7 +352,10 @@ struct AlarmsListView: View {
                     return
                 }
             }
-            store.setEnabled(id: alarm.id, enabled: true)
+            // ⚠ 공휴일 판정은 편집기와 같은 술어로 한다 — 기본값은 한국 고정 공휴일뿐이라, 공휴일 나라가 다른 사람
+            // (지역의 나라)의 '공휴일에는 끄기' 알람이 남의 나라 공휴일을 건너뛰고 서버로 받은 임시공휴일은 못 본다
+            // (`docs/spec/alarm-lifecycle.md` 「공휴일 국가는 지역의 나라다」, 안드로이드 `AlarmRepository.setEnabled`).
+            store.setEnabled(id: alarm.id, enabled: true, isHoliday: holidayStore.holidayPredicate())
             guard let updated = store.record(id: alarm.id) else { return }
             let scheduled = await alarmKit.schedule(record: updated, store: store)
             if !scheduled {
