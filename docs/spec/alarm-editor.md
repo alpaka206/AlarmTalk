@@ -71,10 +71,11 @@
 
 - **목소리가 왼쪽**이고 새 알람의 기본값이다. 읽는 순서와 기본 선택이 어긋나면 첫 화면에서
   오른쪽 칸이 켜져 있어 무엇이 기본인지 흐려진다.
-- **칸마다 아이콘, 아래에 고른 쪽의 뜻 한 줄**(2026-11-09 오너 — 고르기 시안 A). 목소리는 사람 + 음파(안드로이드
-  `RecordVoiceOver`, iOS `person.wave.2` — 하단 목소리 탭과 같은 아이콘), 알람은 종(`Notifications` / `bell`).
-  한 줄은 "고른 목소리가 문구를 읽어 줘요." / "알람음만 울려요."(`editor_play_mode_*_caption`). 세그먼트만으로는
-  무엇이 바뀌는지 말해 주지 않았다. 카드 두 장·목소리 고르기에 합치기 안은 고르지 않았다.
+- **칸마다 아이콘**(2026-11-09 오너 — 고르기 시안 A). 목소리는 사람 + 음파(안드로이드 `RecordVoiceOver`, iOS
+  `person.wave.2` — 하단 목소리 탭과 같은 아이콘), 알람은 종(`Notifications` / `bell`). ⚠ **아래 설명 줄은 두지 않는다** —
+  같은 날 "고른 목소리가 문구를 읽어 줘요." / "알람음만 울려요." 를 붙였다가 오너가 지웠다. 카드 두 장·목소리 고르기에 합치기
+  안은 고르지 않았다.
+- 목소리 목록 마지막의 **'직접 녹음' 에는 설명 줄이 없다**(2026-11-09 오너 — '이 알람에만 쓸 소리를 직접 녹음하기' 삭제).
 - 선택 표시는 **트랙 안에서 배경 하나가 미끄러져 옮겨간다.** 칸마다 색을 즉시 바꾸면
   전환이 툭 끊긴다.
 - ⚠ **세그먼트 구현은 앱마다 하나다.** 트랙을 따로 그리는 두 번째 구현을 만들면, 선택
@@ -238,10 +239,18 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 - **하단 탭이 있는 화면에서만**: 편집기·설정·이용권 같은 하위 화면으로 옮기면 걷고 버린다(돌아와도 다시 띄우지 않는다) — 하위 화면 위에
   남으면 어느 알람의 것인지 표시가 없어 지금 고치는 알람의 시각처럼 읽힌다. 하위 화면에 있는 동안 켠 것(저장 직후 편집기가 닫히는 사이
   포함)은 탭으로 돌아온 뒤 **그때의 남은 시간**으로 띄운다. 그사이 그 알람을 껐거나 지웠으면 띄우지 않는다.
+- **생긴 지 5초 넘게 못 떴으면 버린다**(2026-11-09 출시 전 검토로 iOS 를 안드로이드에 맞췄다). 정상 경로(목록 스위치, 저장 뒤 편집기가
+  닫히는 전환)는 곧바로 뜨므로, 그만큼 늦었다는 것은 하위 화면에 오래 머물렀거나 앱이 멈춰 있었다는 뜻이다 — 그때 뜨면 맥락 없이 옛 알람의
+  남은 시간을 말한다(예: 켜고 곧바로 편집기에 들어가 3분 머물다 저장하지 않고 나옴). 안드로이드 `ringInAction`
+  (`RING_IN_NOTICE_FRESH_MILLIS`), iOS `RingInNoticePresenter.freshInterval`.
+- **앱이 백그라운드면 띄우지 않고, 백그라운드로 가면 떠 있던 것·기다리던 것을 버린다**(iOS). 목록 스위치의 적용은 잠근 뒤에도 잠시 돈다
+  (`AlarmToggleCoalescer` 의 백그라운드 보호 — 켜고 곧바로 잠가도 예약이 걸리게). 안드로이드는 멈춘 동안 효과가 돌지 않아 위 5초 규칙이
+  같은 일을 한다.
 - **무엇을**: 홈 헤드라인과 **같은 문장·같은 계산**이다 — 안드로이드 `hs_status_ring_in` + `remainingDurationLabel`, iOS
   `NextAlarmHeadline.remainingLabel` + "%@ 후에 울려요.". 기준은 **방금 켠 그 알람의 예약 시각**이다(전체의 다음 알람이 아니다).
   올림이라 1분 미만도 "1분 후에 울려요." 다.
-- **어디에·얼마나**: 화면 아래(하단 탭 위)에 약 3초. 안드로이드는 기존 스낵바(정보, 액션 없음), iOS 는 같은 자리·같은 결의 캡슐 안내.
+- **어디에·얼마나**: 화면 아래(하단 탭 위, ＋버튼 위) 가운데에 약 3초. **두 앱 모두 글자 폭만큼의 캡슐이고 아이콘이 없다**(2026-11-09
+  오너 — iOS 모양으로 맞추고 앞의 ⓘ 는 뺐다. 안드로이드는 그전까지 아이콘 달린 스낵바였다). 보조 컨테이너 색·`labelLarge`.
   누르거나 화면을 옮겨도 막지 않는다. 스크린 리더에는 같은 문장을 알린다.
 - **권한이 모자랄 때**: 안드로이드는 그래도 울리므로(CLAUDE.md 「알람 권한 3종」) 같은 문장을 띄운다. iOS 는 AlarmKit 권한이 없으면
   예약이 안 되므로 띄우지 않는다(헤드라인과 같은 판단).
@@ -277,7 +286,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 규칙 | Android | iOS |
 | --- | --- | --- |
 | 타임휠 전체 | `ui/editor/AlarmTimePicker.kt` | `Views/Editor/TimeWheelPicker.swift` |
-| 켜면 "N 후에 울려요" 하단 안내(§7) | 저장 성공·목록 켜기 → 스낵바 (`remainingDurationLabel`·`hs_status_ring_in`) | 저장 성공(`runAlarmSaveSteps` 가 `.completed` 일 때만 — `RingInNoticePresenter.present(after:)`)·목록 켜기(`AlarmToggleCoalescer` 의 `settled` → `listToggleSettled`) → 하단 캡슐(`Views/Alarms/RingInNotice.swift`, 문장은 `NextAlarmHeadline.remainingLabel`) · 끄기·삭제는 그 알람 것만 `withdraw` · 하위 화면은 `MainTabsView` 가 `hostHidden`·`hostShown` 으로 알린다 |
+| 켜면 "N 후에 울려요" 하단 안내(§7) | 저장 성공·목록 켜기 → 하단 캡슐(`RingInCapsule` — `ringInSnackbarHostState` 에 실어 띄운다, 문장은 `remainingDurationLabel`·`hs_status_ring_in`) | 저장 성공(`runAlarmSaveSteps` 가 `.completed` 일 때만 — `RingInNoticePresenter.present(after:)`)·목록 켜기(`AlarmToggleCoalescer` 의 `settled` → `listToggleSettled`) → 하단 캡슐(`Views/Alarms/RingInNotice.swift`, 문장은 `NextAlarmHeadline.remainingLabel`) · 끄기·삭제는 그 알람 것만 `withdraw` · 하위 화면은 `MainTabsView` 가 `hostHidden`·`hostShown` 으로 알린다 |
 | 교체 중 충돌 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`(`deleteLocal` 하나 — 서버 삭제 단계는 2026-10-29 에 지웠다)·`rollbackAlarmReplacement` — 회귀 `DuplicateAlarmReplacementTests` |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
