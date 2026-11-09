@@ -760,6 +760,22 @@ final class AlarmKitViewModel: ObservableObject {
 
     /// 달력만 바뀐 다시 걸기의 대상인가 — '공휴일에는 끄기' 반복이고 다음 발생이 아직 미래다. 스누즈·울리는 중은
     /// `recomputeHolidayOffFireTime` 이 다시 거른다.
+    /// 복구에서 예약하지 못한 행을 **끄고 알릴** 것인가(스펙 `docs/spec/alarm-lifecycle.md` §1-6). 이 경우에만
+    /// `markFailedTurningOff` + 알림이다(2026-11-09 오너 — 켜 둔 채 두지 않는다):
+    /// - 행이 아직 있고 **켜져 있다.** 기다리는 사이 사용자가 껐으면 `schedule` 이 바뀐 행을 보고 예약을 되돌린 뒤 false 를
+    ///   돌려준다 — 실패가 아니다. 낙인을 찍으면 방금 끈 사람에게 "다시 켜 주세요" 라고 말한다(Codex #984 P2).
+    /// - 이 계정이 걸 수 있는 행이다(`mayScheduleRecord` — 기다리는 사이 다른 계정 것으로 새겨진 행의 거절은 실패가 아니다,
+    ///   리뷰 40차).
+    /// - AlarmKit 권한이 있다 — 없으면 홈 헤드라인이 말하고, 권한이 돌아오면 다음 복구가 그대로 다시 건다(끄면 그게 막힌다).
+    nonisolated static func recoveryFailureTurnsOff(
+        live: LocalAlarmRecord?,
+        mayScheduleLive: Bool,
+        alarmKitAuthorized: Bool
+    ) -> Bool {
+        guard let live, live.enabled else { return false }
+        return mayScheduleLive && alarmKitAuthorized
+    }
+
     nonisolated static func isCalendarOnlyCandidate(_ record: LocalAlarmRecord, nowMillis: Int64) -> Bool {
         record.enabled && record.isHolidayOffRecurring && record.fireAtMillis > nowMillis
     }
@@ -897,20 +913,23 @@ final class AlarmKitViewModel: ObservableObject {
                 if record.alarmKitUUID != nil {
                     _ = await cancelScheduledAlarm(record: record)
                 }
-            } else if mayScheduleRecord(store.record(id: prepared.id) ?? prepared) {
-                // ⚠ **거절은 실패가 아니다 — 라이브 행으로 다시 본다**(리뷰 40차).
-                // 위 진입 확인 뒤 대기하는 사이에 이 행이 다른 계정 것으로 새겨졌을 수
-                // 있고, 그때 `markFailed` 는 **남의 행**에 "다시 예약하지 못했어요" 를
-                // 새긴다(§1-6). 복구 후보는 언제나 켜진 행이라 no-op 으로 넘어가지도 않는다.
-                //
-                // ⚠ **켜 둔 채 두지 않는다 — 끄고 알린다**(2026-11-09 오너). 단 **AlarmKit 권한이 없어서** 실패한 것이면 표시하지
-                // 않는다 — 홈 권한 배너가 말하고, 권한이 돌아오면 다음 복구가 그대로 다시 건다(끄면 그게 막힌다).
-                if AlarmManager.shared.authorizationState == .authorized {
+            } else {
+                // ⚠ **라이브 행으로 다시 본다** — 끄고 알릴지는 `recoveryFailureTurnsOff` 하나가 정한다(거절·사용자가 그사이 끔·
+                //   권한 없음은 실패가 아니다).
+                let live = store.record(id: prepared.id)
+                if Self.recoveryFailureTurnsOff(
+                    live: live,
+                    mayScheduleLive: live.map { mayScheduleRecord($0) } ?? false,
+                    alarmKitAuthorized: AlarmManager.shared.authorizationState == .authorized
+                ) {
                     if record.alarmKitUUID != nil {
                         _ = await cancelScheduledAlarm(record: record)
                     }
-                    store.markFailedTurningOff(id: prepared.id)
-                    if let after = store.record(id: prepared.id) { turnedOff.append(after) }
+                    // 옛 등록을 걷는 사이에도 사용자가 껐을 수 있다 — 그때도 낙인을 찍지 않는다.
+                    if store.record(id: prepared.id)?.enabled == true {
+                        store.markFailedTurningOff(id: prepared.id)
+                        if let after = store.record(id: prepared.id) { turnedOff.append(after) }
+                    }
                 }
             }
         }
