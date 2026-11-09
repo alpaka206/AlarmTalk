@@ -3725,6 +3725,42 @@ export const migrations: Migration[] = [
         reset_at INTEGER NOT NULL
       )`,
     ],
+  },  {
+    // **안 쓰는 칸·표를 지운다**(2026-11-09 오너 "정리해도 되는 것들은 지워 봐" — 안 쓰는 DB·코드 감사에서 '안 읽힌다'·'지워도
+    // 안전하다' 두 갈래 검증을 모두 통과한 것만). 지우지 않는 것과 그 이유는 `docs/ops/unused-schema-audit-2026-11.md` 에 있다.
+    //  - `weather_region_daily`: 공식 예보로 바꾼 #127 뒤로 읽고 쓰는 코드가 없다(새 원천은 `weather_region_daily_official`).
+    //  - 쓰기만 하고 아무도 읽지 않는 칸 — 같은 배포에서 쓰기를 뺐다: `event_likes.updated_at`, `tts_synthesis_usage.updated_at`,
+    //    `manual_tts_usage.updated_at`, `voice_profile_change_ledger.updated_at`, `retained_billing_records.amount_currency`(늘 NULL),
+    //    `voice_uploads.duration_ms`(길이는 R2 원본 메타에만 남긴다), `voice_packs.updated_at`.
+    //  - 기본값으로만 채워지고 읽히지 않는 칸 — 코드를 바꿀 것이 없다: `stock_content_releases.released_at`, `plans.created_at`,
+    //    `paid_voice_retention.created_at`, `voice_profile_change_ledger.created_at`.
+    // 배포 → 마이그레이션 창: 새 코드는 이 칸들을 부르지 않고, 빠진 칸은 모두 nullable 이거나 기본값이 있어 옛 스키마에서도 INSERT 가
+    // 그대로 통과한다. 이 칸들을 부르는 색인·뷰·트리거·CHECK·외래 키는 없다(있으면 'after drop column' 으로 빨간불이 된다).
+    // **non-atomic** 이다 — 다시 돌 때 이미 지운 칸은 'no such column' 관용(`isIdempotentDDLError`)으로 지나가야 한다.
+    id: 149,
+    name: 'drop-unused-columns-and-weather-region-daily',
+    statements: [
+      `DROP TABLE IF EXISTS weather_region_daily`,
+      `ALTER TABLE event_likes DROP COLUMN updated_at`,
+      `ALTER TABLE tts_synthesis_usage DROP COLUMN updated_at`,
+      `ALTER TABLE manual_tts_usage DROP COLUMN updated_at`,
+      `ALTER TABLE voice_profile_change_ledger DROP COLUMN updated_at`,
+      `ALTER TABLE voice_profile_change_ledger DROP COLUMN created_at`,
+      `ALTER TABLE retained_billing_records DROP COLUMN amount_currency`,
+      `ALTER TABLE voice_uploads DROP COLUMN duration_ms`,
+      `ALTER TABLE voice_packs DROP COLUMN updated_at`,
+      `ALTER TABLE stock_content_releases DROP COLUMN released_at`,
+      `ALTER TABLE plans DROP COLUMN created_at`,
+      `ALTER TABLE paid_voice_retention DROP COLUMN created_at`,
+    ],
+  },
+  {
+    // **겹치는 색인을 지운다**(2026-11-09, 같은 감사). `idx_generated_audio_assets_user(user_id, created_at DESC)` 는 #139 의
+    // `idx_generated_audio_assets_logical` 이 user_id 로 시작해 같은 조회를 받는다. 칸 DROP 과 섞지 않는다(#89/#90 선례 — 롤백
+    // 단위를 가른다). **#139 보다 뒤 번호여야 한다** — prod 는 1.3 릴리스에서 #139 가 먼저 대신할 색인을 만든다. IF EXISTS 라 멱등이다.
+    id: 150,
+    name: 'drop-redundant-generated-audio-user-index',
+    statements: [`DROP INDEX IF EXISTS idx_generated_audio_assets_user`],
   },
 ];
 // Errors that mean the statement was already applied — safe to ignore so

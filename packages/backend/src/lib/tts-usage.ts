@@ -55,15 +55,14 @@ export async function recordTtsUsage(db: DbExecutor, entry: TtsUsageEntry, now: 
     await db.execute({
       sql: `INSERT INTO tts_synthesis_usage
               (usage_day, request_kind, outcome, request_count, retry_count, character_count,
-               latency_ms_total, latency_ms_max, updated_at)
-            VALUES (?, ?, ?, 1, ?, ?, ?, ?, datetime('now'))
+               latency_ms_total, latency_ms_max)
+            VALUES (?, ?, ?, 1, ?, ?, ?, ?)
             ON CONFLICT(usage_day, request_kind, outcome) DO UPDATE SET
               request_count = request_count + 1,
               retry_count = retry_count + excluded.retry_count,
               character_count = character_count + excluded.character_count,
               latency_ms_total = latency_ms_total + excluded.latency_ms_total,
-              latency_ms_max = MAX(latency_ms_max, excluded.latency_ms_max),
-              updated_at = datetime('now')`,
+              latency_ms_max = MAX(latency_ms_max, excluded.latency_ms_max)`,
       args: [kstDay(now), entry.kind, entry.outcome, entry.retry ? 1 : 0, characters, latency, latency],
     });
   } catch (err) {

@@ -191,7 +191,7 @@ export async function pseudonymizeBillingForRetention(
         // ⚠ **스토어 증빙이 있으면 금액을 지어내지 않는다**(코덱스 #734 4차). `price_krw` 는
         //   **지금의 원화 표시가**일 뿐이다 — 스토어 가격은 지역별이고 요금제 가격은 바뀐다.
         //   증빙(거래 id·원본 페이로드)을 붙여 놓고 그 옆에 이 값을 적으면, **그 애플/Play
-        //   주문이 이 금액이었다**고 단언하는 셈이 된다. 통화(`amount_currency`)도 비어 있어
+        //   주문이 이 금액이었다**고 단언하는 셈이 된다. 통화를 적는 칸도 없어
         //   원화인지조차 말할 수 없다. 실제 금액은 그 거래 id 로 스토어에서 확인한다.
         //   (아래 일회성 갈래가 같은 이유로 처음부터 비워 둔다.)
         //   스토어 결제가 아니면(dev 스텁·프로모·바우처) 되짚을 곳이 없으므로 그대로 남긴다.
@@ -236,9 +236,9 @@ export async function pseudonymizeBillingForRetention(
       //   증빙(거래 id·원본 페이로드)을 남겨 주문에 되짚을 수 있게 한다.
       sql: `INSERT INTO retained_billing_records
               (id, pseudonym, plan_id, status, starts_at, expires_at,
-               amount_krw, amount_currency, provider, provider_transaction_id,
+               amount_krw, provider, provider_transaction_id,
                product_id, raw_payload, retained_reason, retain_until)
-            VALUES (?, ?, ?, 'one_time', ?, NULL, NULL, NULL, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
+            VALUES (?, ?, ?, 'one_time', ?, NULL, NULL, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
       args: [
         crypto.randomUUID(),
         pseudonym,

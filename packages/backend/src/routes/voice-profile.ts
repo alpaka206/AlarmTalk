@@ -248,7 +248,7 @@ async function markMonthlyOfficialVoiceChange(
   if (!ledgerId) return;
   await db.execute({
     sql: `UPDATE voice_profile_change_ledger
-          SET status = ?, updated_at = datetime('now')
+          SET status = ?
           WHERE id = ? AND status = 'reserved'`,
     args: [status, ledgerId],
   });
@@ -2130,15 +2130,14 @@ voiceProfile.post('/clone', async (c) => {
         storedUploadKey = uploadMeta.objectKey;
         await db.execute({
           sql: `INSERT INTO voice_uploads
-                (id, user_id, object_key, mime_type, size_bytes, duration_ms, original_name, voice_profile_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                (id, user_id, object_key, mime_type, size_bytes, original_name, voice_profile_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
           args: [
             crypto.randomUUID(),
             userId,
             uploadMeta.objectKey,
             uploadMeta.mimeType,
             uploadMeta.sizeBytes,
-            uploadMeta.durationMs ?? null,
             uploadMeta.originalName ?? null,
             profileId,
           ],

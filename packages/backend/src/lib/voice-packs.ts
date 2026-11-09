@@ -82,7 +82,6 @@ export type VoicePackRow = {
   published_at: string | null;
   suspended_at: string | null;
   created_at: string;
-  updated_at: string;
 };
 
 export type VoicePackClipRow = {
@@ -457,7 +456,7 @@ export async function upsertDraftVoicePack(
     }
     await tx.execute({
       sql: `UPDATE voice_packs SET speaker_name = ?, description = ?, usage_note = ?, language = ?,
-              min_android_build = ?, min_ios_build = ?, updated_at = datetime('now')
+              min_android_build = ?, min_ios_build = ?
             WHERE id = ? AND status = 'draft'`,
       args: [speaker, description, usageNote, input.language, minAndroid, minIos, packId],
     });
@@ -558,7 +557,7 @@ export async function importVoicePackClip(
         args: [clipId, packId, category, variant, text, audioKey, format, sha256, bytes.byteLength],
       });
       await tx.execute({
-        sql: `UPDATE voice_packs SET content_revision = content_revision + 1, updated_at = datetime('now') WHERE id = ?`,
+        sql: `UPDATE voice_packs SET content_revision = content_revision + 1 WHERE id = ?`,
         args: [packId],
       });
       await tx.execute(
@@ -602,7 +601,7 @@ export async function deleteVoicePackClip(
     if (!res.rows.length) throw new VoicePackAdminError('ADMIN_VOICE_PACK_NOT_FOUND', '클립을 찾지 못했어요.');
     await tx.execute({ sql: 'DELETE FROM voice_pack_clips WHERE id = ? AND pack_id = ?', args: [clipId, packId] });
     await tx.execute({
-      sql: `UPDATE voice_packs SET content_revision = content_revision + 1, updated_at = datetime('now') WHERE id = ?`,
+      sql: `UPDATE voice_packs SET content_revision = content_revision + 1 WHERE id = ?`,
       args: [packId],
     });
     await tx.execute(
@@ -695,8 +694,7 @@ export async function updateVoicePackRights(
     }
     await tx.execute({
       sql: `UPDATE voice_packs SET rights_status = ?, rights_evidence_ref = ?, rights_valid_from = ?, rights_valid_until = ?,
-              rights_allowed_text = ?, rights_allowed_regions = ?, existing_file_terms = ?, existing_playback_until = ?,
-              updated_at = datetime('now')
+              rights_allowed_text = ?, rights_allowed_regions = ?, existing_file_terms = ?, existing_playback_until = ?
             WHERE id = ? AND status = ?`,
       args: [
         next.rights_status,
@@ -759,8 +757,7 @@ export async function transitionVoicePack(
     const res = await tx.execute({
       sql: `UPDATE voice_packs SET status = ?,
               published_at = CASE WHEN ? = 'published' THEN ? ELSE published_at END,
-              suspended_at = CASE WHEN ? = 'suspended' THEN ? WHEN ? = 'published' THEN NULL ELSE suspended_at END,
-              updated_at = datetime('now')
+              suspended_at = CASE WHEN ? = 'suspended' THEN ? WHEN ? = 'published' THEN NULL ELSE suspended_at END
             WHERE id = ? AND status = ?`,
       args: [rule.to, rule.to, iso, rule.to, iso, rule.to, packId, rule.from],
     });
