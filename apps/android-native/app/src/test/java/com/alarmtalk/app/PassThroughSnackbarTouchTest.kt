@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -69,9 +70,11 @@ class PassThroughSnackbarTouchTest {
                         }
                     }
                 },
-            ) { _ ->
-                // 목록 자리 — 알람 목록처럼 `Scaffold` 여백과 상관없이 아래까지 그리고, 어디를 눌러도 눌린다.
-                Box(Modifier.fillMaxSize().clickable { taps += 1 })
+            ) { padding ->
+                // 목록 자리 — 알람 목록처럼 `Scaffold` 여백과 상관없이 아래까지 그리고, 어디를 눌러도 눌린다. 여백은 눌리는 판
+                // **안쪽**에만 건다(`clickable` 뒤) — 판 자체는 화면 전체 그대로라 안내 밑까지 눌린다(릴리스 린트
+                // `UnusedMaterial3ScaffoldPaddingParameter` 는 여백을 버리면 막는다).
+                Box(Modifier.fillMaxSize().clickable { taps += 1 }.padding(padding))
             }
         }
         settle()
