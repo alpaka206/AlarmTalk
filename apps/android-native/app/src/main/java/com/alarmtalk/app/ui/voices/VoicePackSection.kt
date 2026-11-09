@@ -106,17 +106,12 @@ internal fun VoicePackSection(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var expanded by rememberSaveable { mutableStateOf(true) }
     var detailPackId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteConfirm by remember { mutableStateOf<Pair<HeldVoicePack, Int>?>(null) }
     val rows = voicePackRows(catalog, held)
 
-    VoiceCatalogSectionHeader(
-        title = stringResource(R.string.voice_pack_section_title),
-        expanded = expanded,
-        onToggle = { expanded = !expanded },
-    )
-    if (!expanded) return
+    // 섹션은 접지 않는다(2026-11-09 — `VoiceCatalogSectionHeader`).
+    VoiceCatalogSectionHeader(title = stringResource(R.string.voice_pack_section_title))
     if (rows.isEmpty()) {
         // 조회 전에는 아무것도 말하지 않는다 — '없어요' 와 '아직 모른다' 는 다르다.
         if (catalogLoaded) {

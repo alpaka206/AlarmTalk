@@ -487,8 +487,6 @@ internal fun VoiceProfileManagementPanel(
     var profileVoiceLanguage by remember { mutableStateOf(defaultVoiceLanguage) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     // 섹션 접힘 상태 — 기본은 모두 펼침(접힌 채 시작하면 쓸 수 있는 목소리가 가려진다).
-    var ownSectionExpanded by remember { mutableStateOf(true) }
-    var systemSectionExpanded by remember { mutableStateOf(true) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
     var renameNameTooLong by remember { mutableStateOf(false) }
@@ -1787,10 +1785,7 @@ internal fun VoiceProfileManagementPanel(
     // 다운로드 진행(받은 수 to 전체). 클립을 하나 받을 때마다 갱신해 "n/전체" 로 보여준다 —
     // 21개를 1분 넘게 받는 동안 '다운로드 중' 만 떠 있으면 멈춘 것과 구분되지 않는다.
     var cloneDownloadProgress by remember { mutableStateOf<Map<String, Pair<Int, Int>>>(emptyMap()) }
-    var prerenderRetryBusyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var speechStyleRetryBusyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     // 실패 후 [다시 시도] 수락 시 증가 — 멈춘 폴링 루프를 재시작한다.
-    var prerenderPollTick by remember { mutableIntStateOf(0) }
 
     // 클론 클립 판정은 편집기 관문([ClipGate])을 그대로 쓴다 — 판정식은 거기 한 벌뿐이다.
     // 클립 언어는 앱 언어 클립이 있으면 앱 언어, 없으면 그 보이스가 가진 언어(=등록 때 고른
@@ -1841,7 +1836,7 @@ internal fun VoiceProfileManagementPanel(
         .filter { it.status == null || it.status == "ready" }
         .map { it.id }
         .filter { it != driveVoiceId }
-    LaunchedEffect(cloneReadinessIds, stockClips, prerenderPollTick) {
+    LaunchedEffect(cloneReadinessIds, stockClips) {
         if (cloneReadinessIds.isEmpty()) return@LaunchedEffect
         // 이미 전부 캐시된 목소리는 서버 상태 조회 전에 곧장 ready 처리 — 탭에 들어올 때마다
         // '다운로드 중' 배지가 한 박자 떴다 사라지는 깜빡임을 없앤다.
@@ -1890,7 +1885,18 @@ internal fun VoiceProfileManagementPanel(
                             anyPending = true
                         }
                     }
-                    // "failed" → 실패 표시 + [다시 시도] 대기(폴링 중단). "none"/기타 → 표시 없음.
+                    // ⚠ **실패를 보이지 않고 다시 건다**(2026-11-09 오너, `VoiceAutoRetry`) — 이 목소리에 이번 프로세스 처음이면
+                    //   재시도 라우트를 부르고 계속 묻는다(서버 cron 이 다시 5번 시도한다). 이미 한 번 걸었으면 묻기를 멈추고 '준비
+                    //   중' 으로 둔다 — 다음 실행이 또 건다. "none"/기타 → 표시 없음.
+                    "failed" -> if (VoiceAutoRetry.claimPrerender(voiceId)) {
+                        val accepted = runCatching { onRetryVoicePrerender(voiceId) }
+                            .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+                            .getOrDefault(false)
+                        if (accepted) {
+                            prerenderStatuses = prerenderStatuses + (voiceId to status.copy(status = "pending"))
+                            anyPending = true
+                        }
+                    }
                 }
             }
             if (!anyPending) break
@@ -1898,36 +1904,15 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    fun retryPrerender(profileId: String) {
-        if (profileId in prerenderRetryBusyIds) return
-        prerenderRetryBusyIds = prerenderRetryBusyIds + profileId
-        scope.launch {
-            val accepted = runCatching { onRetryVoicePrerender(profileId) }
-                .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
-                .getOrDefault(false)
-            if (accepted) {
-                val current = prerenderStatuses[profileId]
-                prerenderStatuses = prerenderStatuses + (
-                    profileId to (
-                        current?.copy(status = "pending")
-                            ?: com.alarmtalk.app.network.VoicePrerenderStatusResponse(status = "pending")
-                        )
-                    )
-                prerenderPollTick += 1
+    // 말투 분석이 실패한 목소리는 **말없이 다시 건다**(2026-11-09 오너, `VoiceAutoRetry`) — 한 목소리에 이번 프로세스 한 번.
+    // 실패해도 클립은 기본 말투로 만들어지므로 막는 것이 없고, 실패 안내도 띄우지 않는다(`retryVoiceSpeechStyleAnalysis`).
+    val speechStyleFailedIds = ownVoices.filter { it.speechStyleStatus == "failed" }.map { it.id }
+    LaunchedEffect(speechStyleFailedIds) {
+        speechStyleFailedIds.forEach { voiceId ->
+            if (VoiceAutoRetry.claimSpeechStyle(voiceId)) {
+                runCatching { onRetryVoiceSpeechStyle(voiceId) }
+                    .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
             }
-            prerenderRetryBusyIds = prerenderRetryBusyIds - profileId
-        }
-    }
-
-    fun retrySpeechStyle(profileId: String) {
-        if (profileId in speechStyleRetryBusyIds) return
-        speechStyleRetryBusyIds = speechStyleRetryBusyIds + profileId
-        scope.launch {
-            // 성공 시 ViewModel 이 프로필 speech_style_status 를 갱신해 안내가 사라진다.
-            // 실패 메시지도 ViewModel 이 전역 message 로 띄운다.
-            runCatching { onRetryVoiceSpeechStyle(profileId) }
-                .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
-            speechStyleRetryBusyIds = speechStyleRetryBusyIds - profileId
         }
     }
 
@@ -2078,13 +2063,9 @@ internal fun VoiceProfileManagementPanel(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // 두 묶음(내 목소리 · 기본 목소리)을 접었다 펼 수 있는 섹션으로.
-        // 기본값은 모두 펼침 — 접힌 채로 시작하면 무료 사용자가 쓸 수 있는 기본 목소리가
-        // 다시 가려지는데, 이 화면을 고친 이유가 그거였다.
+        // 두 묶음(내 목소리 · 기본 목소리). 접지 않는다(2026-11-09 오너 — `VoiceCatalogSectionHeader`).
         VoiceCatalogSectionHeader(
             title = stringResource(R.string.voices_my_voices_title),
-            expanded = ownSectionExpanded,
-            onToggle = { ownSectionExpanded = !ownSectionExpanded },
         ) {
             // 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
             // 유료 사용자에게만 의미가 있다(무료는 눌렀을 때 이용권 안내로 간다).
@@ -2123,92 +2104,83 @@ internal fun VoiceProfileManagementPanel(
             MutedText(localMessage.orEmpty())
         }
 
-        if (ownSectionExpanded) {
-            VoiceCatalogGroup(
-                ownVoices.map { profile ->
-                    {
-                        // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬
-                        // 다운로드 중 "다운로드 중" → 둘 다 완료면 표시 없음.
-                        val prerenderStatus = prerenderStatuses[profile.id]
-                        val drive = prerenderDrive?.takeIf { it.voiceId == profile.id }
-                        val readiness = when {
-                            // 드라이브가 도는 동안은 그 진행이 곧 이 행의 값이다 — 등록 마지막
-                            // 단계와 **같은 값**(`PrerenderDriveState.overallFraction`). 전체
-                            // 개수를 아직 모르면 표시하지 않는다(아래 pending·total 0 과 같다).
-                            drive != null -> drive.overallFraction()?.let {
-                                CloneVoiceReadiness.Progress((it * 100).toInt().coerceIn(0, 100))
-                            }
-                            profile.id in cloneLocalReadyIds -> null
-                            prerenderStatus == null -> null
-                            prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
-                            // **진행 중인 상태에서만** 진행률을 만든다. 서버는 `none`(큐 행이
-                            // 아직 없거나 지워짐)도 돌려주는데, 폴링 루프는 그걸 pending 으로
-                            // 치지 않아 곧바로 멈춘다 — catch-all 로 받으면 "준비 중 0%" 가
-                            // 영영 남는다(Codex #673 P2). 모르는 값은 표시하지 않는다.
-                            prerenderStatus.status != "pending" && prerenderStatus.status != "done" -> null
-                            // 아직 전체 개수를 모르는 pending 은 표시할 게 없다.
-                            prerenderStatus.status == "pending" && prerenderStatus.total <= 0 -> null
-                            else -> {
-                                // 생성과 다운로드를 **하나의 진행률**로 잇는다(0~50 생성,
-                                // 50~100 다운로드). 단계마다 n/21 을 따로 세면 생성이 끝나는
-                                // 순간 100% 에서 0% 로 되돌아가 후퇴한 것처럼 보인다.
-                                val serverDone = prerenderStatus.status == "done"
-                                val total = prerenderStatus.total
-                                val generatedPart = when {
-                                    serverDone -> 50
-                                    total > 0 ->
-                                        (prerenderStatus.generated.coerceIn(0, total) * 50) / total
-                                    else -> 0
-                                }
-                                val (downloaded, downloadTotal) =
-                                    cloneDownloadProgress[profile.id] ?: (0 to 0)
-                                val downloadPart = if (serverDone && downloadTotal > 0) {
-                                    (downloaded.coerceIn(0, downloadTotal) * 50) / downloadTotal
-                                } else {
-                                    0
-                                }
-                                CloneVoiceReadiness.Progress(
-                                    (generatedPart + downloadPart).coerceIn(0, 100),
-                                )
-                            }
+        VoiceCatalogGroup(
+            ownVoices.map { profile ->
+                {
+                    // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬
+                    // 다운로드 중 "다운로드 중" → 둘 다 완료면 표시 없음.
+                    val prerenderStatus = prerenderStatuses[profile.id]
+                    val drive = prerenderDrive?.takeIf { it.voiceId == profile.id }
+                    val readiness = when {
+                        // 드라이브가 도는 동안은 그 진행이 곧 이 행의 값이다 — 등록 마지막
+                        // 단계와 **같은 값**(`PrerenderDriveState.overallFraction`). 전체
+                        // 개수를 아직 모르면 표시하지 않는다(아래 pending·total 0 과 같다).
+                        drive != null -> drive.overallFraction()?.let {
+                            CloneVoiceReadiness.Progress((it * 100).toInt().coerceIn(0, 100))
                         }
-                        VoiceProfileRow(
-                            profile = profile,
-                            enabled = !voiceProfileBusy,
-                            isPlaying = playingGreetingVoiceId == profile.id,
-                            onPreview = { playGreeting(profile) },
-                            onRename = {
-                                renameTarget = profile
-                                renameName = profile.name
-                                renameNameTooLong = false
-                                renameSubmitAttempted = false
-                            },
-                            onDelete = { deleteTarget = profile },
-                            onCreateAlarm = onCreateAlarmWithVoice?.let { create -> { create(profile.id) } },
-                            readiness = readiness,
-                            onRetryPrerender = { retryPrerender(profile.id) },
-                            retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
-                            speechStyleFailed = profile.speechStyleStatus == "failed",
-                            onRetrySpeechStyle = { retrySpeechStyle(profile.id) },
-                            retrySpeechStyleBusy = profile.id in speechStyleRetryBusyIds,
-                        )
+                        profile.id in cloneLocalReadyIds -> null
+                        prerenderStatus == null -> null
+                        // **진행 중인 상태에서만** 진행률을 만든다. 서버는 `none`(큐 행이
+                        // 아직 없거나 지워짐)도 돌려주는데, 폴링 루프는 그걸 pending 으로
+                        // 치지 않아 곧바로 멈춘다 — catch-all 로 받으면 "준비 중 0%" 가
+                        // 영영 남는다(Codex #673 P2). 모르는 값은 표시하지 않는다.
+                        // ⚠ `failed` 도 '준비 중' 으로 그린다 — 실패는 보이지 않고 스스로 다시 건다(`VoiceAutoRetry`).
+                        prerenderStatus.status != "pending" && prerenderStatus.status != "done" &&
+                            prerenderStatus.status != "failed" -> null
+                        // 아직 전체 개수를 모르는 pending 은 표시할 게 없다.
+                        prerenderStatus.status != "done" && prerenderStatus.total <= 0 -> null
+                        else -> {
+                            // 생성과 다운로드를 **하나의 진행률**로 잇는다(0~50 생성,
+                            // 50~100 다운로드). 단계마다 n/21 을 따로 세면 생성이 끝나는
+                            // 순간 100% 에서 0% 로 되돌아가 후퇴한 것처럼 보인다.
+                            val serverDone = prerenderStatus.status == "done"
+                            val total = prerenderStatus.total
+                            val generatedPart = when {
+                                serverDone -> 50
+                                total > 0 ->
+                                    (prerenderStatus.generated.coerceIn(0, total) * 50) / total
+                                else -> 0
+                            }
+                            val (downloaded, downloadTotal) =
+                                cloneDownloadProgress[profile.id] ?: (0 to 0)
+                            val downloadPart = if (serverDone && downloadTotal > 0) {
+                                (downloaded.coerceIn(0, downloadTotal) * 50) / downloadTotal
+                            } else {
+                                0
+                            }
+                            CloneVoiceReadiness.Progress(
+                                (generatedPart + downloadPart).coerceIn(0, 100),
+                            )
+                        }
                     }
-                },
-            )
-        }
+                    VoiceProfileRow(
+                        profile = profile,
+                        enabled = !voiceProfileBusy,
+                        isPlaying = playingGreetingVoiceId == profile.id,
+                        onPreview = { playGreeting(profile) },
+                        onRename = {
+                            renameTarget = profile
+                            renameName = profile.name
+                            renameNameTooLong = false
+                            renameSubmitAttempted = false
+                        },
+                        onDelete = { deleteTarget = profile },
+                        onCreateAlarm = onCreateAlarmWithVoice?.let { create -> { create(profile.id) } },
+                        readiness = readiness,
+                    )
+                }
+            },
+        )
 
         // 기본 제공 목소리는 맨 아래 — 내 목소리가 먼저 온다.
         // 내 목소리가 하나도 없어도 이 섹션은 항상 나온다.
         if (systemVoices.isNotEmpty()) {
             // 기본 목소리 받기 진행은 **헤더 옆**에 둔다(2026-09-17 지시, iOS 와 같은 자리).
-            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenAlarmVoiceReady`) 그 이유가
-            // 섹션을 접어 둬도 보여야 한다 — 목록 아래에 두면 접었을 때 사라진다.
+            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenAlarmVoiceReady`) 그 이유가 목록보다 먼저 보여야 한다.
             val downloadProgress = voicePrefetchProgress
                 ?.takeIf { (done, total) -> total > 0 && done < total }
             VoiceCatalogSectionHeader(
                 title = stringResource(R.string.voices_system_voices_title),
-                expanded = systemSectionExpanded,
-                onToggle = { systemSectionExpanded = !systemSectionExpanded },
                 trailing = downloadProgress?.let { (done, total) ->
                     {
                         CircularProgressIndicator(
@@ -2228,19 +2200,17 @@ internal fun VoiceProfileManagementPanel(
                     }
                 },
             )
-            if (systemSectionExpanded) {
-                VoiceCatalogGroup(
-                    systemVoices.map { profile ->
-                        {
-                            VoiceCatalogRow(
-                                name = com.alarmtalk.app.data.systemVoiceDisplayName(context, profile.id, profile.name),
-                                isPlaying = playingGreetingVoiceId == profile.id,
-                                onPreview = { playGreeting(profile) },
-                            )
-                        }
-                    },
-                )
-            }
+            VoiceCatalogGroup(
+                systemVoices.map { profile ->
+                    {
+                        VoiceCatalogRow(
+                            name = com.alarmtalk.app.data.systemVoiceDisplayName(context, profile.id, profile.name),
+                            isPlaying = playingGreetingVoiceId == profile.id,
+                            onPreview = { playGreeting(profile) },
+                        )
+                    }
+                },
+            )
         }
         // 기본 목소리 받기 진행은 위 헤더 옆으로 옮겼다(2026-09-17).
 

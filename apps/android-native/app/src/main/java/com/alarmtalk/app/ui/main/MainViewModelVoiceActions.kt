@@ -1223,25 +1223,26 @@ internal suspend fun MainViewModel.cacheVoiceClips(
 /** 사전렌더 실패 시 재생성 요청. true 면 재시작 수락 — 호출측이 폴링을 재개한다. */
 internal suspend fun MainViewModel.retryVoicePrerender(profileId: String): Boolean {
     val session = authSession ?: return false
-    voiceTabError = null
+    // ⚠ **말없이 다시 건다**(2026-11-09 오너) — 목소리 탭이 실패를 보면 스스로 부른다(`VoiceAutoRetry`). 실패해도 화면에
+    //   아무것도 띄우지 않고(다음 실행이 또 건다) 남의 안내(`voiceTabError`)도 지우지 않는다. 기록만 남긴다.
     return try {
         api.retryVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId).success
     } catch (error: kotlin.coroutines.cancellation.CancellationException) {
         throw error
     } catch (error: Exception) {
         AlarmTalkLog.reportError("Failed to retry voice prerender id=$profileId", error)
-        voiceTabError = userFacingError(
-            error,
-            getApplication<android.app.Application>().getString(R.string.msg_voice_prerender_retry_failed),
-        )
         false
     }
 }
 
-/** 말투 분석 재시도. 성공하면 프로필의 speech_style_status 를 갱신해 실패 안내가 사라지게 한다. */
+/**
+ * 말투 분석 재시도. 성공하면 프로필의 speech_style_status 를 갱신한다.
+ *
+ * ⚠ **말없이 다시 건다**(2026-11-09 오너) — 목소리 탭이 실패를 보면 스스로 부른다(`VoiceAutoRetry`). 실패해도 클립은 기본
+ *   말투로 만들어지므로 화면에 아무것도 띄우지 않고, 남의 안내(`voiceTabError`)도 지우지 않는다.
+ */
 internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: String): Boolean {
     val session = authSession ?: return false
-    voiceTabError = null
     return try {
         val response = api.retryVoiceSpeechStyle(AlarmTalkApiClient.bearer(session.token), profileId)
         if (response.success) {
@@ -1254,10 +1255,6 @@ internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: Stri
         throw error
     } catch (error: Exception) {
         AlarmTalkLog.reportError("Failed to retry voice speech style analysis id=$profileId", error)
-        voiceTabError = userFacingError(
-            error,
-            getApplication<android.app.Application>().getString(R.string.msg_voice_speech_style_retry_failed),
-        )
         false
     }
 }

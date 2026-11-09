@@ -10,24 +10,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -35,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -202,17 +198,14 @@ internal enum class MessageSeverity { Success, Error, Info }
 /**
  * 스낵바 한 장. 색·아이콘은 문구의 종류(`SnackbarSeverity.kt`)로 고른다.
  *
- * [passTouchesThrough] 가 true 면 카드가 **누르는 것을 받지 않는다** — 그 아래 화면의 행·스위치가 그대로 눌린다(액션을
- * 넣었다면 그 버튼만 제 버튼대로 눌린다). 화면 아래에 몇 초 떠 있는 알람 켜기 안내(`docs/spec/alarm-editor.md` §7)가 쓴다.
- * M3 `Snackbar` 는 누를 수 없는 `Surface` 로 그려지는데 그 `Surface` 도 자기 영역의 터치를 받아서(빈 `pointerInput`),
- * 목록 위에 얹히면 그 띠에 걸친 행의 스위치를 눌러도 아무 일이 없다. 그래서 그때는 같은 모양을 [PassThroughSnackbarCard] 로 그린다.
+ * 화면 아래에 몇 초 떠 있는 알람 켜기 안내(`docs/spec/alarm-editor.md` §7)는 이걸 쓰지 않는다 — M3 `Snackbar` 의 `Surface`
+ * 가 자기 영역의 터치를 받아 그 띠에 걸친 행이 눌리지 않고, 모양도 iOS 캡슐로 맞췄다([RingInCapsule]).
  */
 @Composable
 internal fun PrettySnackbar(
     message: String,
     actionLabel: String? = null,
     onAction: () -> Unit = {},
-    passTouchesThrough: Boolean = false,
 ) {
     val context = LocalContext.current
     val severity = remember(message) { snackbarSeverity(context, message) }
@@ -241,10 +234,6 @@ internal fun PrettySnackbar(
             onAction = onAction,
         )
     }
-    if (passTouchesThrough) {
-        PassThroughSnackbarCard(containerColor = containerColor, contentColor = contentColor, content = body)
-        return
-    }
     Snackbar(
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -258,44 +247,38 @@ internal fun PrettySnackbar(
 }
 
 /**
- * [PrettySnackbar] 의 카드를 **터치 판정에 걸리지 않게** 그린다 — M3 `Snackbar` 와 같은 바깥 여백·최대 폭·그림자·한 줄
- * 높이·글자이되 `Surface` 없이 그림만 그린다. 입력 수정자가 하나도 없는 노드는 터치 판정이 건너뛰므로 누른 것이 아래 화면에
- * 닿는다. 스크린 리더 안내(live region)는 감싸는 `SnackbarHost` 가 맡으므로 그대로다.
+ * 알람을 켠 순간의 "N 후에 울려요."(`docs/spec/alarm-editor.md` §7) — **iOS 와 같은 캡슐**이다(2026-11-09 오너: 두 앱을 iOS
+ * 모양으로 맞추고 앞의 ⓘ 아이콘은 뺀다). 하단 탭 위 가운데에 글자 폭만큼의 알약으로 뜬다. iOS 짝 `RingInNoticeHost`.
+ *
+ * **누르는 것을 아래 행에 넘긴다** — 입력 수정자가 하나도 없는 노드는 터치 판정이 건너뛰므로 누른 것이 아래 화면에 닿는다.
+ * 스크린 리더 안내(live region)는 감싸는 `SnackbarHost` 가 맡는다.
  *
  * ⚠ 여기에 `Surface`·`Snackbar`·`clickable`·`pointerInput` 을 넣지 말 것 — 그 순간 다시 아래 행을 가린다
  * (`PassThroughSnackbarTouchTest` 가 실제로 눌러 본다).
  */
 @Composable
-private fun PassThroughSnackbarCard(
-    containerColor: Color,
-    contentColor: Color,
-    content: @Composable () -> Unit,
-) {
+internal fun RingInCapsule(message: String) {
     Box(
         modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            // M3 스낵바의 최대 폭(본문 600 + 좌우 안쪽 여백 24) — 넓은 화면에서도 위쪽 안내와 같은 폭이다.
-            .widthIn(max = 624.dp)
             .fillMaxWidth()
-            .shadow(elevation = 12.dp, shape = WakerPanelShape, clip = false)
-            // M3 스낵바가 스스로 거는 그림자(Level3) — M3 쪽 카드는 위의 12 와 이것을 겹쳐 그린다.
-            .shadow(elevation = 6.dp, shape = WakerPanelShape, clip = false)
-            .background(containerColor, WakerPanelShape)
-            // M3 한 줄 스낵바의 높이(48)와 글자 자리 — 한 줄이면 위쪽 안내와 같은 곳에 글자가 앉는다.
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        contentAlignment = Alignment.CenterStart,
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        CompositionLocalProvider(
-            LocalContentColor provides contentColor,
-            // M3 스낵바의 본문 글자(bodyMedium)와 같다.
-            LocalTextStyle provides MaterialTheme.typography.bodyMedium,
-            content = content,
+        Text(
+            text = message,
+            // iOS 와 같은 글자(`labelLarge`)·같은 색(보조 컨테이너)·같은 안쪽 여백(18/12)이다.
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .shadow(elevation = 6.dp, shape = WakerPillShape, clip = false)
+                .background(MaterialTheme.colorScheme.secondaryContainer, WakerPillShape)
+                .padding(horizontal = 18.dp, vertical = 12.dp),
         )
     }
 }
 
-/** 스낵바 안쪽 — 아이콘·문구·(있으면) 액션. 두 카드가 같이 쓴다. */
+/** 스낵바 안쪽 — 아이콘·문구·(있으면) 액션. */
 @Composable
 private fun SnackbarBody(
     message: String,

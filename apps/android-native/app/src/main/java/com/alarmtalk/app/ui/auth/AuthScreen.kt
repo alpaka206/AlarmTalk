@@ -47,7 +47,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -133,17 +132,16 @@ internal fun authFieldColors() = OutlinedTextFieldDefaults.colors(
     errorTrailingIconColor = TextOnSceneDim,
 )
 
-/** 스크롤 밖에 고정되는 원형 뒤로가기 줄. iOS `WakerBackButton` 과 같은 스펙. */
+/** 스크롤 밖에 고정되는 제목 줄 — 원형 뒤로가기 + 가운데 제목. */
 @Composable
-private fun BackCircleRow(onBack: () -> Unit) {
-    // ⚠ **뒤로가기와 제목을 한 줄에 두지 않는다** — iOS 와 같은 구성이다.
-    // 뒤로가기는 원형 버튼으로 위에 따로 두고, 제목은 그 아래 본문 첫 줄로 크게 세운다
-    // (디자인 언어: 제목 = 결론). 2026-08-10 결정: 이 화면만은 **iOS 를 원본으로 삼는다**.
-    // 모양은 공용 `WakerBackButton` 이 갖는다 — 이 화면에만 있던 것을 빼서 하위 화면들과
-    // 함께 쓴다(2026-08-11). 여기는 고정 팔레트 화면이라 틴트만 `TextOnScene` 으로 준다.
-    WakerBackButton(
+private fun AuthTopBar(title: String, onBack: () -> Unit) {
+    // 제목은 다른 하위 화면처럼 **위쪽 가운데**, 뒤로가기와 한 줄이다(2026-11-09 오너 — "로그인·회원가입도 다른 것들처럼
+    // 상단 가운데에"). 예전에는 뒤로가기만 위에 두고 제목을 본문 첫 줄에 크게 세웠다(2026-08-10). 골격은 공용 `WakerTopBar`
+    // 이고, 여기는 고정 팔레트 화면이라 색만 `TextOnScene` 으로 준다. iOS 짝 `LoginView` 의 `WakerTopBar(tint:)`.
+    WakerTopBar(
+        title = title,
         onBack = onBack,
-        modifier = Modifier.padding(start = 24.dp, top = 18.dp),
+        modifier = Modifier.padding(top = 18.dp),
         tint = TextOnScene,
     )
 }
@@ -360,28 +358,20 @@ internal fun AuthScreen(
         // ⚠ **뒤로가기는 스크롤 밖에 둔다.** 안에 두면 폼을 내리거나 키보드가 올라와
         // 내용이 밀릴 때 같이 사라져, 나갈 길이 화면에서 없어진다. 스크롤되는 건 폼이고
         // 탈출구는 늘 같은 자리에 있어야 한다(iOS `LoginView` 도 같은 구조).
-        BackCircleRow(onBack = onBack)
+        AuthTopBar(
+            title = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
+            onBack = onBack,
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                // ⚠ 뒤로가기와 제목 사이 간격. 스크롤 밖으로 버튼을 빼면서 이 여백이
-                // 통째로 사라져 제목이 버튼에 붙어 있었다. iOS 와 같은 24
-                // (`LoginView` 의 ScrollView `.padding(.vertical, 18)` + 제목 `.padding(.top, 6)`).
-                .padding(top = 24.dp, bottom = 18.dp),
+                // 제목 줄(`AuthTopBar`)이 아래 간격을 이미 갖는다 — 여기는 조금만 띄운다(iOS `LoginView` 와 같은 8).
+                .padding(top = 8.dp, bottom = 18.dp),
             // iOS `LoginView` 의 `VStack(spacing: 14)` 와 같은 값.
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
-                // iOS 와 같은 단계 — `theme.typography.headlineSmall`(24pt).
-                // headlineLarge(32) 로 키우면 iOS 보다 한 단계 커져 두 앱이 어긋난다.
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = TextOnScene,
-            )
-
             // 회원가입에서 이미 가입된 이메일로 인증을 시도해 로그인으로 전환된 경우 —
             // 왜 화면이 바뀌었는지 여기서 설명한다(스낵바는 키보드에 가려 안 보인다).
             if (mode == AuthMode.Login && authNotice != null) {

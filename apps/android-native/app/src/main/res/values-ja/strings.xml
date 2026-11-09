@@ -64,7 +64,7 @@
     <string name="billing_cancel_description_no_date">解約のタイミングを選択してください。終了日での解約は今の利用期間までそのまま使えます。今すぐ解約すると残り期間の料金は日割りで返金されます。</string>
     <string name="billing_cancel_description_with_date">終了日での解約は%1$sまでそのまま使えます。今すぐ解約すると残り期間の料金は日割りで返金され、利用券はすぐに終了します。</string>
     <string name="billing_cancel_dialog_title">利用券を解約しますか？</string>
-    <string name="billing_cancel_immediate_description">残り期間の料金は日割りで返金され、利用券はすぐに終了します。声は3日間保管され、その間に利用券を購読し直せばそのまま使えます。過ぎると完全に削除されます。</string>
+    <string name="billing_cancel_immediate_description">残り期間の料金は日割りで返金され、利用券はすぐに終了します。</string>
     <string name="billing_cancel_immediate_title">今すぐ解約しますか？</string>
     <string name="billing_cancel_now">今すぐ解約</string>
     <string name="billing_cancel_pass">利用券を解約</string>
@@ -80,7 +80,7 @@
     <string name="billing_plan_trial_headline">%1$s無料</string>
     <string name="billing_plan_trial_then">その後%1$s</string>
     <string name="billing_plan_trial_start">%1$s無料で始める</string>
-    <string name="billing_plan_trial_disclosure">本日は請求されません。%1$sから毎月%2$sが請求されます。それまでにGoogle Playでいつでも解約できます。</string>
+    <string name="billing_plan_trial_disclosure">%1$sから毎月%2$sが請求されます。それまでにGoogle Playでいつでも解約できます。</string>
     <string name="billing_plan_price_fallback">%1$,dウォン</string>
     <string name="billing_plan_personal_feature_messages_in_voice">登録した声で聞く天気・運勢メッセージ</string>
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
@@ -204,8 +204,6 @@
     <string name="editor_play_mode_alarm_only">アラーム</string>
     <string name="editor_play_mode_title">再生方式</string>
     <string name="editor_play_mode_voice_only">声</string>
-    <string name="editor_play_mode_voice_caption">選んだ声がメッセージを読み上げます。</string>
-    <string name="editor_play_mode_alarm_caption">アラーム音だけが鳴ります。</string>
     <string name="editor_msg_section">文</string>
     <string name="editor_msg_mode_manual">自分で入力</string>
     <string name="editor_msg_mode_preset">基本のあいさつ</string>
@@ -228,7 +226,6 @@
     <string name="editor_block_voice_settling_title">まだ準備中です</string>
     <string name="msg_voice_replacement_settling">変更した音声を整理しています。しばらくしてからもう一度選んでください。</string>
     <string name="editor_voice_source_local">自分で録音</string>
-    <string name="editor_voice_local_detail">このアラームだけに使う音をその場で録音</string>
     <string name="editor_voice_volume_preview_hint">実際のアラーム文言ではなく、あいさつのサンプルを再生します。</string>
     <string name="editor_voice_volume">声の大きさ</string>
     <string name="editor_volume">音量</string>
@@ -316,7 +313,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">今の利用期間まではそのまま使えます。次のお支払いはありません。</string>
     <string name="msg_gb_subscription_cancel_failed">解約に失敗しました。</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">利用券を解約しました。声は3日間保管され、その間に購読し直せばそのまま使えます。過ぎると完全に削除されます</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">利用券を解約しました</string>
 
 
 
@@ -350,8 +347,6 @@
     <string name="msg_voice_create_login_required">声を作成するには、まずログインしてください。</string>
     <string name="msg_voice_delete_failed">声の削除に失敗しました。</string>
     <string name="msg_voice_delete_login_required">声を削除するには、まずログインしてください。</string>
-    <string name="msg_voice_prerender_retry_failed">再試行できませんでした。しばらくしてからもう一度お試しください。</string>
-    <string name="msg_voice_speech_style_retry_failed">話し方の分析に失敗しました。しばらくしてからもう一度お試しください。</string>
     <string name="msg_voice_edit_login_required">声を編集するには、まずログインしてください。</string>
     <string name="msg_voice_fetch_failed">声を読み込めませんでした。</string>
     <string name="msg_voice_fetch_login_required">音声を読み込むには、まずログインしてください。</string>
@@ -468,8 +463,6 @@
     <string name="voicesr_more">もっと見る</string>
     <string name="voicesr_pause">一時停止</string>
     <string name="voicesr_prerender_progress">アラーム音声を準備中 %1$d%%</string>
-    <string name="voicesr_prerender_failed">生成に失敗しました</string>
-    <string name="voicesr_prerender_retry">再試行</string>
     <string name="voicesr_preview">プレビュー</string>
     <string name="voicesr_relationship_custom_label">関係を直接入力</string>
     <string name="voicesr_relationship_custom_placeholder">例:孫娘、恋人、同僚</string>
@@ -477,8 +470,6 @@
     <string name="voicesr_relationship_placeholder">関係を選んでください</string>
     <string name="voicesr_required_field">必ず入力してください。</string>
     <string name="voicesr_save">保存</string>
-    <string name="voicesr_speech_style_failed">話し方の分析に失敗しました</string>
-    <string name="voicesr_speech_style_retry">もう一度分析</string>
     <string name="voicesr_status_creating">作成中</string>
     <string name="voicesr_status_deleting">削除中</string>
     <string name="voicesr_voice_name_label">声の名前</string>

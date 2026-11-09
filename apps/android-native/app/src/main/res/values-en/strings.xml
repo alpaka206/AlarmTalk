@@ -64,7 +64,7 @@
     <string name="billing_cancel_description_no_date">Choose when to cancel. Canceling on the end date keeps your plan until the current period ends. Canceling now gives you a prorated refund for the remaining time.</string>
     <string name="billing_cancel_description_with_date">Canceling on the end date keeps your plan until %1$s. Canceling now ends your plan immediately with a prorated refund for the remaining time.</string>
     <string name="billing_cancel_dialog_title">Cancel your plan?</string>
-    <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days. Resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
+    <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
     <string name="billing_cancel_now">Cancel now</string>
     <string name="billing_cancel_pass">Cancel plan</string>
@@ -80,7 +80,7 @@
     <string name="billing_plan_trial_headline">%1$s free</string>
     <string name="billing_plan_trial_then">then %1$s</string>
     <string name="billing_plan_trial_start">Start your %1$s free trial</string>
-    <string name="billing_plan_trial_disclosure">You won\'t be charged today. From %1$s, %2$s will be charged every month. You can cancel anytime in Google Play before then.</string>
+    <string name="billing_plan_trial_disclosure">From %1$s, %2$s will be charged every month. You can cancel anytime in Google Play before then.</string>
     <string name="billing_plan_price_fallback">KRW %1$,d</string>
     <string name="billing_plan_personal_feature_messages_in_voice">Weather and fortune messages in your registered voice</string>
     <string name="billing_plan_personal_feature_voice">Register 1 voice of your choice</string>
@@ -204,8 +204,6 @@
     <string name="editor_play_mode_alarm_only">Alarm</string>
     <string name="editor_play_mode_title">Playback mode</string>
     <string name="editor_play_mode_voice_only">Voice</string>
-    <string name="editor_play_mode_voice_caption">Your chosen voice reads the message.</string>
-    <string name="editor_play_mode_alarm_caption">Only the alarm sound plays.</string>
     <string name="editor_msg_section">Message</string>
     <string name="editor_msg_mode_manual">Type it yourself</string>
     <string name="editor_msg_mode_preset">Default greeting</string>
@@ -228,7 +226,6 @@
     <string name="editor_block_voice_settling_title">Almost ready</string>
     <string name="msg_voice_replacement_settling">We’re finishing up your replaced voice. Please pick it again in a moment.</string>
     <string name="editor_voice_source_local">Record it</string>
-    <string name="editor_voice_local_detail">Record a sound just for this alarm</string>
     <string name="editor_voice_volume_preview_hint">Plays the greeting sample, not your alarm message.</string>
     <string name="editor_voice_volume">Voice volume</string>
     <string name="editor_volume">Volume</string>
@@ -316,7 +313,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">You can keep using your plan until the end of this period. There\'s no next payment.</string>
     <string name="msg_gb_subscription_cancel_failed">Couldn\'t cancel your plan.</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">Your plan is canceled. Voices are kept for 3 days. Subscribe again within that time to keep them; after that they are deleted permanently</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">Your plan is canceled</string>
 
 
 
@@ -350,8 +347,6 @@
     <string name="msg_voice_create_login_required">Please log in first to create a voice.</string>
     <string name="msg_voice_delete_failed">Couldn\'t delete the voice.</string>
     <string name="msg_voice_delete_login_required">Please log in first to delete the voice.</string>
-    <string name="msg_voice_prerender_retry_failed">Couldn\'t retry. Please try again later.</string>
-    <string name="msg_voice_speech_style_retry_failed">Speech style analysis failed. Please try again later.</string>
     <string name="msg_voice_edit_login_required">Please log in first to edit the voice.</string>
     <string name="msg_voice_fetch_failed">Couldn\'t load the voice.</string>
     <string name="msg_voice_fetch_login_required">Please log in first to load the voice.</string>
@@ -468,8 +463,6 @@
     <string name="voicesr_more">More</string>
     <string name="voicesr_pause">Pause</string>
     <string name="voicesr_prerender_progress">Preparing alarm voice %1$d%%</string>
-    <string name="voicesr_prerender_failed">Generation failed</string>
-    <string name="voicesr_prerender_retry">Retry</string>
     <string name="voicesr_preview">Preview</string>
     <string name="voicesr_relationship_custom_label">Enter relationship manually</string>
     <string name="voicesr_relationship_custom_placeholder">e.g. granddaughter, partner, coworker</string>
@@ -477,8 +470,6 @@
     <string name="voicesr_relationship_placeholder">Please select a relationship</string>
     <string name="voicesr_required_field">This field is required.</string>
     <string name="voicesr_save">Save</string>
-    <string name="voicesr_speech_style_failed">Speech style analysis failed</string>
-    <string name="voicesr_speech_style_retry">Analyze again</string>
     <string name="voicesr_status_creating">Creating</string>
     <string name="voicesr_status_deleting">Deleting</string>
     <string name="voicesr_voice_name_label">Voice name</string>

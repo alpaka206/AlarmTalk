@@ -78,7 +78,7 @@ class RingInNoticeWiringTest {
     fun `아래 호스트는 누르는 것을 받지 않는 카드로 그린다`() {
         // 카드가 실제로 터치를 넘기는지는 `PassThroughSnackbarTouchTest` 가 눌러 본다. 여기서는 아래 호스트가 그 카드를 쓰는지만.
         val host = blockAfter(app, "SnackbarHost(hostState = ringInSnackbarHostState)")
-        assertTrue("아래 안내가 M3 스낵바로 그려진다 — 그 띠에 걸친 행이 눌리지 않는다", "passTouchesThrough = true" in host)
+        assertTrue("아래 안내가 캡슐(`RingInCapsule`)이 아니다 — M3 스낵바면 그 띠에 걸친 행이 눌리지 않는다", "RingInCapsule(" in host)
     }
 
     private fun mentionsRingIn(source: String) = "RingIn" in source || "ringIn" in source

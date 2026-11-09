@@ -48,7 +48,7 @@ class FreeTrialLabelTest {
     fun disclosureNamesTheFirstChargeDayPriceAndCancellation() {
         // 첫 결제일 = 오늘 + 체험 기간(2026-11-09 오너 — 넷플릭스·유튜브처럼 언제 얼마가 나가는지 구체적으로).
         assertEquals(
-            "오늘은 결제되지 않아요. 12월 9일부터 매월 ₩3,900씩 결제되고, 그 전에 Google Play에서 언제든 해지할 수 있어요.",
+            "12월 9일부터 매월 ₩3,900씩 결제되고, 그 전에 Google Play에서 언제든 해지할 수 있어요.",
             trialDisclosureText(context, "P1M", "₩3,900", today = java.time.LocalDate.of(2026, 11, 9)),
         )
         // 기간을 못 읽으면 날짜를 지어내지 않는다.

@@ -66,7 +66,7 @@
     <string name="billing_cancel_description_no_date">해지 시점을 선택해 주세요. 종료일 해지는 이번 이용 기간까지 그대로 쓸 수 있어요. 지금 해지하면 남은 기간 요금은 비례 환불돼요.</string>
     <string name="billing_cancel_description_with_date">종료일 해지는 %1$s까지 그대로 쓰고 끝나요. 지금 해지하면 남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요.</string>
     <string name="billing_cancel_dialog_title">이용권을 해지할까요?</string>
-    <string name="billing_cancel_immediate_description">남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 구독하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.</string>
+    <string name="billing_cancel_immediate_description">남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요.</string>
     <string name="billing_cancel_immediate_title">지금 바로 해지할까요?</string>
     <string name="billing_cancel_now">지금 해지</string>
     <string name="billing_cancel_pass">이용권 해지</string>
@@ -83,7 +83,7 @@
     <string name="billing_plan_trial_headline">%1$s 무료</string>
     <string name="billing_plan_trial_then">이후 %1$s</string>
     <string name="billing_plan_trial_start">%1$s 무료로 시작하기</string>
-    <string name="billing_plan_trial_disclosure">오늘은 결제되지 않아요. %1$s부터 매월 %2$s씩 결제되고, 그 전에 Google Play에서 언제든 해지할 수 있어요.</string>
+    <string name="billing_plan_trial_disclosure">%1$s부터 매월 %2$s씩 결제되고, 그 전에 Google Play에서 언제든 해지할 수 있어요.</string>
     <string name="billing_plan_price_fallback">%1$,d원</string>
     <!-- ⚠ 날씨·운세·응원·약 문구는 기본 목소리로 **무료**다(docs/spec/voice-and-message.md §2 — 목록은 등급으로 자르지 않는다).
          플러스가 더하는 것은 문구 종류가 아니라 **등록한 목소리로 듣는 것**이다 — 종류를 유료 기능처럼 적지 말 것.
@@ -210,8 +210,6 @@
     <string name="editor_play_mode_alarm_only">알람</string>
     <string name="editor_play_mode_title">재생 방식</string>
     <string name="editor_play_mode_voice_only">목소리</string>
-    <string name="editor_play_mode_voice_caption">고른 목소리가 문구를 읽어 줘요.</string>
-    <string name="editor_play_mode_alarm_caption">알람음만 울려요.</string>
     <string name="editor_msg_section">문구</string>
     <string name="editor_msg_mode_manual">직접 입력</string>
     <string name="editor_msg_mode_preset">기본 인사말</string>
@@ -237,7 +235,6 @@
     <string name="editor_block_voice_settling_title">아직 준비 중이에요</string>
     <string name="msg_voice_replacement_settling">바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.</string>
     <string name="editor_voice_source_local">직접 녹음</string>
-    <string name="editor_voice_local_detail">이 알람에만 쓸 소리를 직접 녹음하기</string>
     <string name="editor_voice_volume_preview_hint">실제 알람 문구가 아니라 인사말로 들려드려요.</string>
     <string name="editor_voice_volume">목소리 크기</string>
     <string name="editor_volume">볼륨</string>
@@ -337,7 +334,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">이번 이용 기간까지 그대로 쓸 수 있어요. 다음 결제는 없어요</string>
     <string name="msg_gb_subscription_cancel_failed">해지에 실패했어요</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">이용권을 해지했어요. 목소리는 3일간 보관돼요. 그 안에 다시 구독하면 그대로 다시 쓸 수 있고, 지나면 영구 삭제돼요</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">이용권을 해지했어요</string>
 
 
 
@@ -371,8 +368,6 @@
     <string name="msg_voice_create_login_required">목소리를 만들려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_delete_failed">목소리 삭제에 실패했어요</string>
     <string name="msg_voice_delete_login_required">목소리를 삭제하려면 먼저 로그인해 주세요</string>
-    <string name="msg_voice_prerender_retry_failed">다시 시도하지 못했어요. 잠시 후 다시 시도해 주세요</string>
-    <string name="msg_voice_speech_style_retry_failed">말투 분석에 실패했어요. 잠시 후 다시 시도해 주세요</string>
     <string name="msg_voice_edit_login_required">목소리를 수정하려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_fetch_failed">목소리를 불러오지 못했어요</string>
     <string name="msg_voice_fetch_login_required">음성을 불러오려면 먼저 로그인해 주세요</string>
@@ -492,8 +487,6 @@
     <string name="voicesr_more">더보기</string>
     <string name="voicesr_pause">일시정지</string>
     <string name="voicesr_prerender_progress">알람 음성 준비 중 %1$d%%</string>
-    <string name="voicesr_prerender_failed">생성에 실패했어요</string>
-    <string name="voicesr_prerender_retry">다시 시도</string>
     <string name="voicesr_preview">미리듣기</string>
     <string name="voicesr_relationship_custom_label">관계 직접 입력</string>
     <string name="voicesr_relationship_custom_placeholder">예: 손녀, 연인, 동료</string>
@@ -501,8 +494,6 @@
     <string name="voicesr_relationship_placeholder">관계를 선택해 주세요</string>
     <string name="voicesr_required_field">꼭 입력해 주세요.</string>
     <string name="voicesr_save">저장</string>
-    <string name="voicesr_speech_style_failed">말투 분석에 실패했어요</string>
-    <string name="voicesr_speech_style_retry">다시 분석</string>
     <string name="voicesr_status_creating">생성 중</string>
     <string name="voicesr_status_deleting">삭제 중</string>
     <string name="voicesr_voice_name_label">목소리 이름</string>

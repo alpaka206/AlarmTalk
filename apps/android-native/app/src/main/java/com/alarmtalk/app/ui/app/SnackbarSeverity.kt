@@ -97,8 +97,6 @@ internal object SnackbarSeverities {
         R.string.msg_voice_monthly_change_limit,
         R.string.msg_voice_delete_failed,
         R.string.msg_voice_info_update_failed,
-        R.string.msg_voice_prerender_retry_failed,
-        R.string.msg_voice_speech_style_retry_failed,
         R.string.rd_audio_duration_unreadable,
         R.string.rd_audio_extract_failed,
         R.string.rd_audio_mp3_trim_failed,

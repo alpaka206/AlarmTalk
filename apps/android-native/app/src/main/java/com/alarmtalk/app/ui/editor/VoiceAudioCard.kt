@@ -195,7 +195,8 @@ internal fun VoiceAudioCard(
         val recordingOption = VoiceProfileOption(
             id = VoiceSources.LOCAL_AUDIO,
             name = stringResource(R.string.editor_voice_source_local),
-            detail = stringResource(R.string.editor_voice_local_detail),
+            // 설명 줄은 없다(2026-11-09 오너 — '이 알람에만 쓸 소리를 직접 녹음하기' 삭제). 이름이 이미 말한다.
+            detail = null,
         )
         val selectorSelectedId = if (visibleVoiceSource == VoiceSources.LOCAL_AUDIO) {
             VoiceSources.LOCAL_AUDIO
@@ -429,7 +430,7 @@ internal fun VoiceOutputSettingsPane(
 private data class VoiceProfileOption(
     val id: String,
     val name: String,
-    val detail: String,
+    val detail: String?,
     /**
      * **지금은 고를 수 없는 이유.** `null` 이면 고를 수 있다.
      *

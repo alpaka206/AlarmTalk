@@ -356,20 +356,6 @@ internal fun PlayModeCard(
             voiceLocked = voiceLocked,
             onLockedVoiceClick = onLockedVoiceClick,
         )
-        // ⚠ **고른 쪽의 뜻을 한 줄로 말한다**(2026-11-09 오너 — 고르기 시안 A). 세그먼트만으로는 '목소리'·'알람' 이 무엇을
-        // 바꾸는지 말해 주지 않았다. iOS 짝은 `VoicePlayModePicker` 아래 같은 문장이다.
-        Text(
-            text = stringResource(
-                if (AlarmPlayModes.normalize(selected) == AlarmPlayModes.ALARM_ONLY) {
-                    R.string.editor_play_mode_alarm_caption
-                } else {
-                    R.string.editor_play_mode_voice_caption
-                },
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 2.dp),
-        )
     }
 }
 

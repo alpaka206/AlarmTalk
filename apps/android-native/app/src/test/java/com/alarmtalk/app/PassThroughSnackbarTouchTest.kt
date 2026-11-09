@@ -14,6 +14,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -44,16 +45,16 @@ class PassThroughSnackbarTouchTest {
 
     @Test
     fun `아래 안내의 한가운데를 눌러도 그 밑의 행이 눌린다`() {
-        assertEquals(1, tapsReachingTheRowBeneath(passTouchesThrough = true))
+        assertEquals(1, tapsReachingTheRowBeneath { RingInCapsule(message = it) })
     }
 
     @Test
     fun `M3 스낵바 카드는 그 자리의 누름을 받는다 — 아래 안내만 따로 그리는 이유`() {
         // 위쪽 안내가 쓰는 기본 모양. 이게 깨지면(M3 가 터치를 넘기게 바뀌면) 두 카드를 하나로 합쳐도 된다.
-        assertEquals(0, tapsReachingTheRowBeneath(passTouchesThrough = false))
+        assertEquals(0, tapsReachingTheRowBeneath { PrettySnackbar(message = it) })
     }
 
-    private fun tapsReachingTheRowBeneath(passTouchesThrough: Boolean): Int {
+    private fun tapsReachingTheRowBeneath(card: @Composable (String) -> Unit): Int {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         var taps = 0
         var cardBounds: Rect? = null
@@ -64,7 +65,7 @@ class PassThroughSnackbarTouchTest {
                 snackbarHost = {
                     SnackbarHost(hostState = hostState) { data ->
                         Box(Modifier.onGloballyPositioned { cardBounds = it.boundsInRoot() }) {
-                            PrettySnackbar(message = data.visuals.message, passTouchesThrough = passTouchesThrough)
+                            card(data.visuals.message)
                         }
                     }
                 },

@@ -39,6 +39,7 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -432,6 +433,8 @@ internal fun WakerTopBar(
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
     backEnabled: Boolean = true,
+    /** 고정 팔레트 화면(로그인·가입)의 글자·뒤로가기 색. 없으면 테마의 `onSurface`. */
+    tint: Color? = null,
 ) {
     Box(
         modifier = modifier
@@ -451,7 +454,7 @@ internal fun WakerTopBar(
             // 인데, 여기는 M3 `titleLarge`(22 Bold)라 같은 화면이 두 앱에서 다르게 보였다.
             style = MaterialTheme.typography.titleLarge.copy(fontSize = 17.sp),
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = tint ?: MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -461,6 +464,7 @@ internal fun WakerTopBar(
                 onBack = onBack,
                 enabled = backEnabled,
                 modifier = Modifier.align(Alignment.CenterStart),
+                tint = tint ?: MaterialTheme.colorScheme.onSurface,
             )
         }
     }

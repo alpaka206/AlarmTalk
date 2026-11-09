@@ -1161,7 +1161,7 @@ internal fun AlarmTalkApp(
         // 약 3초. 접근성 설정에서 안내 시간을 늘렸으면 그만큼 — 기본 스낵바가 제 시간을 정하는 방식과 같다.
         val shownMillis = accessibilityManager?.calculateRecommendedTimeoutMillis(
             RING_IN_NOTICE_MILLIS,
-            containsIcons = true,
+            containsIcons = false,
             containsText = true,
         ) ?: RING_IN_NOTICE_MILLIS
         try {
@@ -1178,14 +1178,14 @@ internal fun AlarmTalkApp(
 
     Scaffold(
         // 알람을 켠 순간의 "N 후에 울려요."(§7) 하나만 여기 싣는다 — 하단바 바로 위, ＋ 버튼이 떠 있으면 그 위다(Material 의
-        // 배치라 버튼을 가리지 않는다). 정보 안내라 액션이 없고 색·아이콘은 다른 안내와 같은 규칙이다(`SnackbarSeverity.kt`).
+        // 배치라 버튼을 가리지 않는다). **iOS 와 같은 캡슐**이고 아이콘이 없다(2026-11-09 오너, `RingInCapsule`).
         // 나머지 안내는 화면 위쪽 호스트(본문 끝의 `SnackbarHost`)로 간다.
-        // ⚠ **누르는 것을 받지 않는다**(`passTouchesThrough`) — 이 띠는 목록의 마지막 행과 스크롤로 지나가는 행 위에 얹힌다.
+        // ⚠ **누르는 것을 받지 않는다**(`RingInCapsule`) — 이 띠는 목록의 마지막 행과 스크롤로 지나가는 행 위에 얹힌다.
         //   M3 스낵바로 그리면 3초 동안 그 행의 스위치를 눌러도 아무 일이 없다(스펙 §7 「누르거나 화면을 옮겨도 막지 않는다」).
         //   스크린 리더 안내는 `SnackbarHost` 가 그대로 맡는다.
         snackbarHost = {
             SnackbarHost(hostState = ringInSnackbarHostState) { data ->
-                PrettySnackbar(message = data.visuals.message, passTouchesThrough = true)
+                RingInCapsule(message = data.visuals.message)
             }
         },
         bottomBar = {
