@@ -11,24 +11,23 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 - 앱 화면 언어 지원 문장(ko·ja 「이용 안내」 마지막 줄)은 번역을 포함한 다음 Android 버전이 게재된 뒤에만 참이다.
   그래서 (B)·(C) 에만 둔다(2026-10-16 부터 Play 게시본). 이력인 INTERIM·(A) 에는 없다.
 
-## 지금 상태 (2026-10-20)
+## 지금 상태 (2026-11-09)
 
-- **게재 중: 35 (1.2.15)** — 프로덕션 `RELEASE_LIFECYCLE_STATE_PUBLISHED`(2026-10-19 Play Developer API 확인). AAB와 세 언어
-  출시 노트만 제출했고, 등록정보는 유지했다.
-- **게시 중인 등록정보는 (B)** 다(2026-10-16 commit — 제목·짧은 설명·전체 설명, 세 언어). (B) 는 커플·가족 이용권과 초대
-  코드를 설명한다. W 는 같은 날 prod 로 확인했다 — 한국 17·일본 47·미국 69 지역 모두 공식 예보가 들어와 있다.
-- **반영 필요(오너): (C) 를 올린다.** 커플·가족 이용권을 없애면서(`docs/qa/dev-test-handoff.md` 「다음 할 일」 2) 아래 (C) 를
-  만들었다. 그 상품의 기본 요금제를 비활성화하는 날(2-①) 짧은 설명·전체 설명을 (C) 로 바꾼다 — 그날부터 그 상품을 살 수
-  없으므로 (B) 는 없는 상품을 광고하게 된다. 올린 뒤 다시 읽어 글자 수가 아래 「길이」 와 같은지 확인하고 이 절을 고친다.
-- **(D) 는 v1.3 용 원문**이다(2026-10-26 작성 — 아직 올리지 않았다). 조건은 「전체 설명 — (D)」.
+- 게재 중인 버전은 [`docs/qa/dev-test-handoff.md`](../qa/dev-test-handoff.md) 「스토어 상태」 가 최신이다(여기 베끼지 않는다).
+- **게시 중인 등록정보는 (C)** 다(2026-10-21 — 커플·가족 상품을 정리한 날 (B) 에서 바꿨다).
+- **반영 필요(오너): 고친 (C) 를 main 릴리스 날 올린다.** 2026-10-29 에 서버의 알람 사본을 지웠고(#147), 운영에서 그 마이그레이션이
+  도는 순간부터 서버는 알람을 저장하지 않는다. 그런데 게시 중인 (C) 는 '서버에 저장된 데이터(알람·목소리 등)'·'동기화에는 인터넷이
+  필요' 라고 말한다. 2026-11-09 에 그 두 문장을 고쳤다(세 언어). 올린 뒤 다시 읽어 글자 수가 아래 「길이」 와 같은지 확인하고 이 절을
+  고친다.
+- **(D) 는 v1.3 용 원문**이다(2026-10-26 작성, 2026-11-09 같은 두 문장 고침 — 아직 올리지 않았다). 조건은 「전체 설명 — (D)」.
 - (B)·INTERIM·(A) 의 원문은 이 파일에서 뺐다 — `git show 9e4fda54:docs/product/play-store-listing.md` 에 있다.
 
 ## 판과 게시 조건
 
 | 판 | 무엇 | 언제 올리나 |
 |---|---|---|
-| **(C)** | (B) 에서 커플·가족 이용권·초대 코드·목소리 공유·상대 알람을 걷어낸 판 | **다음에 올릴 판** — 커플·가족 상품을 비활성화하는 날. 다음에 바꿀 때 여기서 고친다 |
-| (B) | 날씨 문장과 앱 화면 언어 문장 포함, 커플·가족 이용권 설명 포함 | 지금 게시본(2026-10-16 — W 확인 뒤 commit). 원문은 git(「지금 상태」) |
+| **(C)** | (B) 에서 커플·가족 이용권·초대 코드·목소리 공유·상대 알람을 걷어낸 판 | **게시 중**(2026-10-21). 2026-11-09 에 고친 두 문장(서버에 알람이 없다)은 **main 릴리스 날** 다시 올린다. 다음에 바꿀 때 여기서 고친다 |
+| (B) | 날씨 문장과 앱 화면 언어 문장 포함, 커플·가족 이용권 설명 포함 | 이력(2026-10-16~10-21 게시본). 원문은 git(「지금 상태」) |
 | INTERIM | 날씨 주장과 앱 화면 언어 문장이 없는 판 | 이력(10/11~10/16 게시본). 다시 올리지 않는다 |
 | (A) | Android 30(1.2.10) 기준, 날씨 문장 포함, 앱 화면 언어 문장 없음 | 이력(올린 적 없음). Android 30 은 게재본이 아니다 |
 | (D) | (C) 에 무료 직접 입력 3회·플러스 30회·이용권 종료 뒤 미나·스토어 무료 체험을 더한 판 | v1.3 Android 가 프로덕션에 게재된 뒤(「전체 설명 — (D)」). 아직 올리지 않았다 |
@@ -71,12 +70,12 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 | en-US | `AlarmTalk: Voice Alarm Clock` (28/30) | Wake to a loved voice: recorded alarms, weather & fortune, a voice you register. (80/80) |
 | ja-JP | `アラームトーク：声の目覚まし時計` (16/30) | 好きな声で目覚める朝。録音そのままのアラーム、天気・運勢メッセージ、登録した声で読む新しい文まで。 (49/80) |
 
-## 전체 설명 — (C) (다음에 올릴 판)
+## 전체 설명 — (C) (게시 중 · 2026-11-09 에 두 문장 고침)
 
 (B) 에서 커플·가족 이용권 소개 줄과 「커플·가족 이용권」 절을 빼고, 공유를 말하던 줄(개인정보·인터넷·결제)을 고쳤다.
 나머지는 (B) 와 한 글자도 다르지 않다.
 
-### ko-KR (2435/4000)
+### ko-KR (2442/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -110,12 +109,12 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 ■ 목소리와 개인정보
 • 등록한 목소리는 내 알람에만 쓰이고, 원본 음성을 앱 밖으로 내려받는 기능은 없어요.
 • 이용권이 끝나 무료로 돌아가도 알람은 남아요. 등록한 목소리는 3일 보관한 뒤 삭제돼요(3일 안에 이용권을 다시 시작하면 삭제되지 않아요).
-• 탈퇴를 신청하면 30일 뒤 계정과 서버에 저장된 데이터(알람·목소리 등)가 삭제되고, 그 전에 다시 로그인해 탈퇴를 취소할 수 있어요. 단, 법령이나 처리방침에 따라 따로 보관하는 기록(결제·거래 기록은 최대 5년 등)과 백업·로그는 각 보관 기간이 끝나면 삭제돼요. 폰에 저장된 알람과 소리 파일은 알람이나 앱을 지울 때까지 남을 수 있어요.
+• 탈퇴를 신청하면 30일 뒤 계정과 서버에 저장된 데이터(목소리·직접 입력 문구와 그 음성 등)가 삭제되고, 그 전에 다시 로그인해 탈퇴를 취소할 수 있어요. 단, 법령이나 처리방침에 따라 따로 보관하는 기록(결제·거래 기록은 최대 5년 등)과 백업·로그는 각 보관 기간이 끝나면 삭제돼요. 폰에 저장된 알람과 소리 파일은 알람이나 앱을 지울 때까지 남을 수 있어요.
 • 음성 생체정보 처리 동의를 철회하면 등록한 목소리와 녹음 원본이 삭제돼요.
 
 ■ 이용 안내
 • 로그인이 필요해요(이메일 또는 간편 로그인).
-• 목소리 등록, 문구 준비, 동기화에는 인터넷이 필요해요.
+• 목소리 등록과 문구 준비에는 인터넷이 필요해요.
 • 알람 권한을 허용해야 제시간에 울려요.
 • 앱 화면은 한국어·영어·일본어를 지원해요.
 
@@ -138,7 +137,7 @@ Play Console 에 올리는 값의 원본이다. 콘솔을 고칠 때는 이 파�
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3205/4000)
+### en-US (3223/4000)
 
 ```text
 Wake up to a voice you love.
@@ -165,11 +164,11 @@ No math, no shaking.
 • Rings on time offline (sounds are saved in advance, even in airplane mode), on the lock screen, repeating the voice while it rings
 • Your registered voice is used only for your own alarms, and original recordings can't be downloaded from the app
 • If your plan ends, alarms stay; your voice is deleted after 3 days unless you restart a plan
-• Deleting your account removes it and its server data (alarms, voices, etc.) after 30 days unless you sign in and cancel first. Records kept by law or our Privacy Policy (e.g., payment records, up to 5 years), backups and logs are deleted when retention ends; files on your phone may stay until you delete them or the app
+• Deleting your account removes it and its server data (voices, typed messages and their audio, etc.) after 30 days unless you sign in and cancel first. Records kept by law or our Privacy Policy (e.g., payment records, up to 5 years), backups and logs are deleted when retention ends; files on your phone may stay until you delete them or the app
 • Withdrawing voice biometric consent deletes your voice and original recordings
 
 ■ Good to know
-• Sign-in required; registering a voice, preparing messages and sync need internet
+• Sign-in required; registering a voice and preparing messages need internet
 • Allow alarm permission so alarms ring on time
 
 ■ On Android
@@ -191,7 +190,7 @@ Terms of Service: https://alarm-talk.com/en/terms/
 Support: https://alarm-talk.com/en/contact/
 ```
 
-### ja-JP (2307/4000)
+### ja-JP (2314/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -225,12 +224,12 @@ Support: https://alarm-talk.com/en/contact/
 ■ 声とプライバシー
 • 登録した声は自分のアラームにだけ使われます。元の音声をアプリの外にダウンロードする機能はありません。
 • プランが終わって無料に戻ってもアラームは残ります。登録した声は3日間保管したあと削除されます(3日以内にプランを再開すれば削除されません)。
-• 退会を申請すると、30日後にアカウントとサーバーに保存されたデータ(アラーム・声など)が削除されます。それまでに再ログインすれば退会を取り消せます。ただし、法令やプライバシーポリシーに基づき別途保管する記録(決済・取引記録は最長5年など)とバックアップ・ログは、それぞれの保管期間が終わると削除されます。スマホに保存したアラームや音声ファイルは、アラームやアプリを削除するまで残ることがあります。
+• 退会を申請すると、30日後にアカウントとサーバーに保存されたデータ(声・入力したメッセージとその音声など)が削除されます。それまでに再ログインすれば退会を取り消せます。ただし、法令やプライバシーポリシーに基づき別途保管する記録(決済・取引記録は最長5年など)とバックアップ・ログは、それぞれの保管期間が終わると削除されます。スマホに保存したアラームや音声ファイルは、アラームやアプリを削除するまで残ることがあります。
 • 音声の生体情報の処理への同意を撤回すると、登録した声と元の録音が削除されます。
 
 ■ ご利用にあたって
 • ログインが必要です(メールまたは簡単ログイン)。
-• 声の登録、メッセージの準備、同期にはインターネット接続が必要です。
+• 声の登録とメッセージの準備にはインターネット接続が必要です。
 • 時間どおりに鳴らすには、アラームの権限を許可してください。
 • アプリは日本語・韓国語・英語に対応しています。
 
@@ -269,7 +268,7 @@ Support: https://alarm-talk.com/en/contact/
 - Play 정책 메모: 정기 결제 정책은 무료 체험의 기간·체험 뒤 청구 금액·해지 방법을 결제 전에 분명히 알리라고 한다 — 앱의 결제
   카드가 그 말을 하고, 설명은 그와 어긋나지 않게만 쓴다(금액은 나라마다 달라 적지 않는다).
 
-### ko-KR (2649/4000)
+### ko-KR (2656/4000)
 
 ```text
 좋아하는 목소리로 깨는 아침.
@@ -304,12 +303,12 @@ Support: https://alarm-talk.com/en/contact/
 ■ 목소리와 개인정보
 • 등록한 목소리는 내 알람에만 쓰이고, 원본 음성을 앱 밖으로 내려받는 기능은 없어요.
 • 이용권이 끝나 무료로 돌아가도 알람은 남고, 등록한 목소리를 쓰던 알람은 기본 목소리(미나)로 울려요. 등록한 목소리는 3일 보관한 뒤 삭제돼요(3일 안에 이용권을 다시 시작하면 원래 목소리로 돌아와요).
-• 탈퇴를 신청하면 30일 뒤 계정과 서버에 저장된 데이터(알람·목소리 등)가 삭제되고, 그 전에 다시 로그인해 탈퇴를 취소할 수 있어요. 단, 법령이나 처리방침에 따라 따로 보관하는 기록(결제·거래 기록은 최대 5년 등)과 백업·로그는 각 보관 기간이 끝나면 삭제돼요. 폰에 저장된 알람과 소리 파일은 알람이나 앱을 지울 때까지 남을 수 있어요.
+• 탈퇴를 신청하면 30일 뒤 계정과 서버에 저장된 데이터(목소리·직접 입력 문구와 그 음성 등)가 삭제되고, 그 전에 다시 로그인해 탈퇴를 취소할 수 있어요. 단, 법령이나 처리방침에 따라 따로 보관하는 기록(결제·거래 기록은 최대 5년 등)과 백업·로그는 각 보관 기간이 끝나면 삭제돼요. 폰에 저장된 알람과 소리 파일은 알람이나 앱을 지울 때까지 남을 수 있어요.
 • 음성 생체정보 처리 동의를 철회하면 등록한 목소리와 녹음 원본이 삭제돼요.
 
 ■ 이용 안내
 • 로그인이 필요해요(이메일 또는 간편 로그인).
-• 목소리 등록, 문구 준비, 동기화에는 인터넷이 필요해요.
+• 목소리 등록과 문구 준비에는 인터넷이 필요해요.
 • 알람 권한을 허용해야 제시간에 울려요.
 • 직접 입력 횟수는 한국 시간 매월 1일에 다시 채워지고, 이 폰에 남아 있는 음성을 다시 쓰면 줄지 않아요.
 • 앱 화면은 한국어·영어·일본어를 지원해요.
@@ -333,7 +332,7 @@ Support: https://alarm-talk.com/en/contact/
 고객 지원: https://alarm-talk.com/contact/
 ```
 
-### en-US (3645/4000)
+### en-US (3663/4000)
 
 ```text
 Wake up to a voice you love.
@@ -361,11 +360,11 @@ No math, no shaking.
 • Rings on time offline (sounds are saved in advance, even in airplane mode), on the lock screen, repeating the voice while it rings
 • Your registered voice is used only for your own alarms, and original recordings can't be downloaded from the app
 • If your plan ends, alarms stay, and those that used your registered voice ring in a default voice (Mina); your voice is deleted after 3 days unless you restart a plan
-• Deleting your account removes it and its server data (alarms, voices, etc.) after 30 days unless you sign in and cancel first. Records kept by law or our Privacy Policy (e.g., payment records, up to 5 years), backups and logs are deleted when retention ends; files on your phone may stay until you delete them or the app
+• Deleting your account removes it and its server data (voices, typed messages and their audio, etc.) after 30 days unless you sign in and cancel first. Records kept by law or our Privacy Policy (e.g., payment records, up to 5 years), backups and logs are deleted when retention ends; files on your phone may stay until you delete them or the app
 • Withdrawing voice biometric consent deletes your voice and original recordings
 
 ■ Good to know
-• Sign-in required; registering a voice, preparing messages and sync need internet
+• Sign-in required; registering a voice and preparing messages need internet
 • Allow alarm permission so alarms ring on time
 • Typed-message counts refill on the 1st of each month (Korea time); reusing audio that's still on this phone doesn't count
 
@@ -388,7 +387,7 @@ Terms of Service: https://alarm-talk.com/en/terms/
 Support: https://alarm-talk.com/en/contact/
 ```
 
-### ja-JP (2513/4000)
+### ja-JP (2520/4000)
 
 ```text
 好きな声で目覚める朝を。
@@ -423,12 +422,12 @@ Support: https://alarm-talk.com/en/contact/
 ■ 声とプライバシー
 • 登録した声は自分のアラームにだけ使われます。元の音声をアプリの外にダウンロードする機能はありません。
 • プランが終わって無料に戻ってもアラームは残り、登録した声を使っていたアラームは基本の声(ミナ)で鳴ります。登録した声は3日間保管したあと削除されます(3日以内にプランを再開すれば元の声に戻ります)。
-• 退会を申請すると、30日後にアカウントとサーバーに保存されたデータ(アラーム・声など)が削除されます。それまでに再ログインすれば退会を取り消せます。ただし、法令やプライバシーポリシーに基づき別途保管する記録(決済・取引記録は最長5年など)とバックアップ・ログは、それぞれの保管期間が終わると削除されます。スマホに保存したアラームや音声ファイルは、アラームやアプリを削除するまで残ることがあります。
+• 退会を申請すると、30日後にアカウントとサーバーに保存されたデータ(声・入力したメッセージとその音声など)が削除されます。それまでに再ログインすれば退会を取り消せます。ただし、法令やプライバシーポリシーに基づき別途保管する記録(決済・取引記録は最長5年など)とバックアップ・ログは、それぞれの保管期間が終わると削除されます。スマホに保存したアラームや音声ファイルは、アラームやアプリを削除するまで残ることがあります。
 • 音声の生体情報の処理への同意を撤回すると、登録した声と元の録音が削除されます。
 
 ■ ご利用にあたって
 • ログインが必要です(メールまたは簡単ログイン)。
-• 声の登録、メッセージの準備、同期にはインターネット接続が必要です。
+• 声の登録とメッセージの準備にはインターネット接続が必要です。
 • 時間どおりに鳴らすには、アラームの権限を許可してください。
 • 自分で入力の回数は韓国時間の毎月1日にまた使えるようになり、このスマホに残っている音声をもう一度使っても減りません。
 • アプリは日本語・韓国語・英語に対応しています。
@@ -498,12 +497,13 @@ R2 (100자)
 |---|---|---|---|---|
 | 제목 | 30 | 14 | 28 | 16 |
 | 짧은 설명 — (C) | 80 | 61 | 80 | 49 |
-| 전체 설명 — (C) | 4000 | 2435 | 3205 | 2307 |
-| 전체 설명 — (C) + R1 | 4000 | 2488 | 3265 | 2349 |
-| 전체 설명 — (C) + R1 + R2 | 4000 | 2590 | 3383 | 2449 |
-| 전체 설명 — (D) | 4000 | 2649 | 3645 | 2513 |
-| 전체 설명 — (D) + R1 + R2 | 4000 | 2804 | 3823 | 2655 |
+| 전체 설명 — (C) | 4000 | 2442 | 3223 | 2314 |
+| 전체 설명 — (C) + R1 | 4000 | 2495 | 3283 | 2356 |
+| 전체 설명 — (C) + R1 + R2 | 4000 | 2597 | 3401 | 2456 |
+| 전체 설명 — (D) | 4000 | 2656 | 3663 | 2520 |
+| 전체 설명 — (D) + R1 + R2 | 4000 | 2811 | 3841 | 2662 |
 
 글자 수는 유니코드 코드 포인트 수다. 이 표는 위 문구에서 센 값이다 — 문구를 고치면 다시 센다.
 (2026-10-26: (C) 의 전체 설명 글자 수가 이용권 이름을 '플러스' 로 바꾸기 전 값으로 남아 있어 다시 셌다. 줄바꿈은 1자로 센다.
 R1·R2 는 앞의 공백 한 칸을 포함한 값으로 더했다.)
+(2026-11-09: (C)·(D) 의 탈퇴·인터넷 두 문장을 서버 알람 사본 삭제(#147)에 맞춰 고치고 다시 셌다.)
