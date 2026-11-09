@@ -1905,6 +1905,10 @@ class AlarmRepository(
                 alarmScheduler.schedule(alarmToSchedule)
                 scheduled += 1
             }.onFailure { error ->
+                // ⚠ **취소는 예약 실패가 아니다**(Codex #984 P2) — 복구가 취소되면(뷰모델 범위가 닫힘·워커 중단) 그 예외가
+                //   안쪽 Room 쓰기에서 `runCatching` 에 잡혀 여기로 온다. 그걸 실패로 읽으면 멀쩡한 옛 등록을 걷고 행까지 꺼
+                //   버린다. 다시 던져 켠 채로 멈추고, 다음 복구가 다시 건다(iOS 짝 `recoverScheduledAlarms` 의 `Task.isCancelled`).
+                if (error is kotlin.coroutines.cancellation.CancellationException) throw error
                 AlarmTalkLog.reportError("Failed to restore alarm id=${alarm.id}", error)
                 // ⚠ **켜 둔 채 두지 않는다 — 끄고 알린다**(2026-11-09 오너 "off 되도록 하고 알림을 띄우는 게 맞지 않아?").
                 // 예전에는 켜진 채 빨간 문장만 붙어, 스위치는 켜져 있는데 울리지 않았다. 남아 있을지 모르는 옛 등록도
