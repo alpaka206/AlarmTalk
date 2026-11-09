@@ -73,6 +73,12 @@ describe('appVersionPolicy', () => {
     expect(appVersionPolicy('android').minSupported).toBeGreaterThanOrEqual(36);
   });
 
+  // 1.3.0 전원 강제 업데이트(2026-10-29 오너) — Play 37 게재 확인 뒤에만 머지한다(app-version.ts 주석).
+  it('android minSupported 는 1.3.0(37) 이상이다 — 전원 강제 업데이트', () => {
+    expect(appVersionPolicy('android').minSupported).toBeGreaterThanOrEqual(37);
+    expect(appVersionPolicy('android').latest).toBeGreaterThanOrEqual(37);
+  });
+
   // --- iOS ---
 
   it('ios 정책은 android 와 분리돼 있다', () => {
@@ -82,9 +88,9 @@ describe('appVersionPolicy', () => {
     expect(ios.latest).toBeGreaterThanOrEqual(ios.minSupported);
   });
 
-  // 1.2.16 게재 확인 뒤 하한을 올린다 — 빌드 13 이하는 커플·가족 카드와 초대 코드 칸을 그린다(2026-10-26).
-  it('ios minSupported 는 커플·가족 이용권을 지운 1.2.16 빌드 14다', () => {
-    expect(appVersionPolicy('ios').minSupported).toBe(14);
+  // 1.3.0 전원 강제 업데이트(2026-10-29 오너) — ASC 에서 1.3.0 게재 확인 뒤에만 머지한다. 그 앞 하한은 1.2.16 빌드 14 였다.
+  it('ios minSupported 는 1.3.0 빌드 15다 — 전원 강제 업데이트', () => {
+    expect(appVersionPolicy('ios').minSupported).toBe(15);
   });
 
   // iOS 클라는 `latest` 를 읽지 않는다 — `AppVersionGate.checkAppVersion()` 이
