@@ -9,8 +9,9 @@ import SwiftUI
 /// 된다. 의존성을 추가하면 여기도 함께 갱신한다.
 ///
 /// **항목이 적은 건 정상이다**(2026-08-11 전수 확인). 이 타깃이 싣는 건 이게 전부다:
-/// - `project.yml` 의 `packages:` 중 오픈소스는 Sentry 하나다. Google Mobile Ads·UMP(보상형 광고, 2026-10-26)는 Google 의
-///   비공개 SDK 라 넣지 않는다 — 안드로이드 `OssLicensesScreen` 이 play-services 를 빼는 것과 같다.
+/// - `project.yml` 의 `packages:` 중 오픈소스는 Sentry 와 카카오 SDK(2026-11-14 카카오 로그인 — Apache 2.0), 그리고 카카오
+///   SDK 가 끌어오는 Alamofire(MIT)다. Google Mobile Ads·UMP(보상형 광고, 2026-10-26)는 Google 의 비공개 SDK 라 넣지
+///   않는다 — 안드로이드 `OssLicensesScreen` 이 play-services 를 빼는 것과 같다.
 /// - 나머지 `import` 는 전부 Apple 프레임워크다(AlarmKit·StoreKit·WidgetKit …).
 /// - 베껴 온 서드파티 소스도 없다(라이선스 헤더 0건).
 /// - 번들 자산은 Pretendard 서체 4개 + **우리가 만든** 인사말 음원뿐이다.
@@ -30,11 +31,13 @@ struct OssLicensesView: View {
     /// 남아 전문 `.txt` 가 번들에 그냥 실려 나갔다. 의존성을 넣고 뺄 때 여기도 함께 고친다
     /// (안드로이드 `res/raw/` 에 세 전문이 다 있으니 가져오면 된다).
     private enum License: Hashable {
+        case apache20
         case ofl11
         case mit
 
         var displayName: String {
             switch self {
+            case .apache20: return "Apache License 2.0"
             case .ofl11: return "SIL Open Font License 1.1"
             case .mit: return "MIT License"
             }
@@ -42,6 +45,7 @@ struct OssLicensesView: View {
 
         var resourceName: String {
             switch self {
+            case .apache20: return "license_apache_2_0"
             case .ofl11: return "license_ofl_1_1"
             case .mit: return "license_mit"
             }
@@ -49,6 +53,8 @@ struct OssLicensesView: View {
     }
 
     private static let libraries: [Library] = [
+        Library(name: "Alamofire", license: .mit),
+        Library(name: "Kakao SDK", license: .apache20),
         Library(name: "Pretendard", license: .ofl11),
         Library(name: "Sentry Cocoa", license: .mit),
     ]

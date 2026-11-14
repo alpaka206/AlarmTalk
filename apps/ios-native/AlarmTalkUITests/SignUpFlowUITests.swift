@@ -34,8 +34,10 @@ final class SignUpFlowUITests: XCTestCase {
             app.staticTexts["회원가입"].waitForExistence(timeout: 20),
             "회원가입 화면에 도달하지 못했다"
         )
-        // 제목 아래 부제는 2026-11-09 에 지웠다 — 가입 화면의 고정 요소는 '이메일 인증' 버튼이다.
-        XCTAssertTrue(app.buttons["이메일 인증"].exists, "'이메일 인증' 버튼이 없다")
+        // 제목 아래 부제는 2026-11-09 에 지웠다 — 가입 화면의 고정 요소는 이메일 칸 옆 '인증 받기' 버튼이다
+        // (2026-11-14 — 그전에는 칸 아래 넓은 '이메일 인증' 버튼이었다). 간편 로그인이 맨 위에 있다.
+        XCTAssertTrue(app.buttons["인증 받기"].exists, "'인증 받기' 버튼이 없다")
+        XCTAssertTrue(app.buttons["카카오 로그인"].exists, "가입 화면에 카카오 로그인이 없다")
         XCTAssertFalse(app.staticTexts["목소리 알람을 만들 계정을 준비해요."].exists, "지운 부제가 다시 나온다")
     }
 

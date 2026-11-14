@@ -23,11 +23,16 @@
     <string name="auth_consent_voice_biometric_desc">내 목소리를 알람에 쓰고 싶을 때만 필요해요.\n녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 쓰고, 개인을 식별·재현할 수 있는 생체정보로 처리해요.\n지금 동의하지 않아도 기본 목소리 알람은 그대로 쓸 수 있고, 나중에 목소리를 등록할 때 다시 여쭤봐요.</string>
     <string name="auth_already_have_account">이미 계정이 있나요?</string>
     <string name="auth_create_account">회원가입</string>
-    <string name="auth_email_verify">이메일 인증</string>
-    <string name="auth_email_verify_done">이메일 인증 완료</string>
+    <string name="auth_email_verify">인증 받기</string>
+    <string name="auth_email_verify_done">인증됨</string>
+    <string name="auth_email_verify_resend_short">다시 받기</string>
+    <string name="auth_kakao_login">카카오 로그인</string>
+    <string name="auth_divider_email_login">또는 이메일로</string>
+    <string name="auth_divider_email_register">또는 이메일로 가입</string>
+    <string name="msg_kakao_login_failed">카카오 로그인을 완료하지 못했어요. 다시 시도해 주세요.</string>
+    <string name="msg_register_email_social_kakao">카카오로 가입된 이메일이에요. \'카카오 로그인\'으로 로그인해 주세요.</string>
     <string name="auth_email_verify_resend">인증 코드 다시 받기</string>    <string name="auth_find_password">비밀번호 찾기</string>
     <string name="auth_forgot_password">비밀번호를 잊으셨나요?</string>
-    <string name="auth_social_divider">간편 로그인</string>
     <string name="auth_label_confirm_password">비밀번호 확인</string>
     <string name="auth_label_email">이메일</string>
     <string name="auth_reset_title">비밀번호 재설정</string>

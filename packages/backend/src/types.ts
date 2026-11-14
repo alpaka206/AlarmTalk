@@ -15,6 +15,16 @@ export interface Env {
    */
   APPLE_BUNDLE_ID?: string;
   /**
+   * 카카오 디벨로퍼스 앱 ID(숫자, 비밀 아님 — `wrangler.toml` 의 vars). 앱이 보낸 카카오 액세스 토큰이 이 앱에게 발급됐는지
+   * 대조한다(`lib/kakao-oauth.ts`). 없으면 `POST /auth/kakao` 가 500 fail-closed — 대조 없이 받으면 다른 앱용 토큰도 통과한다.
+   */
+  KAKAO_APP_ID?: string;
+  /**
+   * 카카오 **어드민 키**(비밀) — 탈퇴 파기 뒤 카카오 연결 끊기에만 쓴다(`lib/kakao-oauth.ts` `unlinkKakaoUser`).
+   * 없으면 로그인은 되지만 파기 때 연결을 못 끊고 경보가 올라간다(`scheduled.account_purge.kakao_unlink`).
+   */
+  KAKAO_ADMIN_KEY?: string;
+  /**
    * Apple Developer **Team ID**(10자). 로그인 client_secret 의 `iss`.
    * 결제(App Store Server API)가 쓰는 `APPLE_ISSUER_ID` 와 **다른 값**이다.
    */

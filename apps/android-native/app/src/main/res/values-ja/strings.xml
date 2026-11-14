@@ -21,11 +21,16 @@
     <string name="auth_consent_voice_biometric_desc">自分の声をアラームに使いたい場合にのみ必要です。\n録音またはアップロードした声を音声プロフィール作成・音声クローン・TTS生成に使用し、個人を識別または再現し得る生体情報として処理します。\n同意しなくても標準の声のアラームはそのまま使え、声を登録するときに改めてお伺いします。</string>
     <string name="auth_already_have_account">すでにアカウントをお持ちですか？</string>
     <string name="auth_create_account">新規登録</string>
-    <string name="auth_email_verify">メール認証</string>
-    <string name="auth_email_verify_done">メール認証完了</string>
+    <string name="auth_email_verify">コード送信</string>
+    <string name="auth_email_verify_done">認証済み</string>
+    <string name="auth_email_verify_resend_short">再送信</string>
+    <string name="auth_kakao_login">カカオログイン</string>
+    <string name="auth_divider_email_login">またはメールで</string>
+    <string name="auth_divider_email_register">またはメールで登録</string>
+    <string name="msg_kakao_login_failed">カカオログインを完了できませんでした。もう一度お試しください。</string>
+    <string name="msg_register_email_social_kakao">カカオで登録済みのメールです。「カカオログイン」でログインしてください。</string>
     <string name="auth_email_verify_resend">認証コードを再送信</string>    <string name="auth_find_password">再設定</string>
     <string name="auth_forgot_password">パスワードをお忘れですか？</string>
-    <string name="auth_social_divider">簡単ログイン</string>
     <string name="auth_label_confirm_password">パスワードの確認</string>
     <string name="auth_label_email">メールアドレス</string>
     <string name="auth_reset_title">パスワード再設定</string>

@@ -14,8 +14,8 @@ import UIKit
 ///     `이메일 인증` 버튼을 눌러 코드를 발송하고, 6자리 입력 후 `확인` 으로 검증한다.
 ///     검증이 끝나기 전에는 제출 불가.
 ///
-/// Apple 로그인은 mode 와 무관하게 패널 하단에 노출된다. 사용자가 이미 가입돼
-/// 있으면 그대로 로그인되고, 처음이면 백엔드에서 계정이 생성된다.
+/// 간편 로그인(카카오·Apple)은 mode 와 무관하게 **맨 위**에 있다(2026-11-14 A안 — 캔버스 proposal-07·08). 사용자가
+/// 이미 가입돼 있으면 그대로 로그인되고, 처음이면 백엔드에서 계정이 생성된다 — 그래서 가입 화면에도 같은 버튼이다.
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.voiceAlarmTheme) private var theme
@@ -117,21 +117,22 @@ struct LoginView: View {
                             .foregroundStyle(AuthSceneColors.accent)
                     }
 
+                    // ⚠ **간편 로그인이 먼저다**(2026-11-14 오너). 카카오 로그인은 처음 쓰는 사람에게는 곧 가입이라 맨 위에
+                    //   둔다. 이메일 로그인·가입은 그 아래 한 화면에 그대로 둔다. 안드로이드 짝 `AuthScreen`(Apple 자리에 구글).
+                    socialButtons
+                    emailDivider
+
                     emailField
 
                     if mode == .register {
-                        verifyEmailRow
                         if verificationSent && !verificationCompleted {
                             // 실패 문장은 이 줄이 직접 그린다(안내 문구의 자리).
                             verificationCodeRow
                         } else {
-                            if isEmailVerifiedForCurrentInput {
-                                RuleRow(text: "이메일 인증 완료", satisfied: true)
-                            }
-                            // 코드 줄이 없을 때의 실패 문장은 이 묶음의 끝에 둔다(안드로이드 `registerError`
-                            // 와 같은 자리). 인증을 마쳤으면 코드와 무관한 가입 실패(네트워크 등)가 '인증 완료'
-                            // 아래에, 아직 코드를 못 받았으면 첫 요청의 실패가 '이메일 인증' 버튼 바로 아래에
-                            // 뜬다. 코드가 거절된 가입은 '인증 완료' 가 내려가 위 갈래(코드 줄)로 간다.
+                            // 코드 줄이 없을 때의 실패 문장은 이메일 줄 바로 아래다(안드로이드 `registerError` 와 같은
+                            // 자리). 인증을 마쳤으면 코드와 무관한 가입 실패(네트워크 등)가, 아직 코드를 못 받았으면 첫
+                            // 요청의 실패가 뜬다. 코드가 거절된 가입은 '인증됨' 이 내려가 위 갈래(코드 줄)로 간다.
+                            // 인증을 마친 것은 이메일 칸 옆 버튼('✓ 인증됨')이 말한다 — '이메일 인증 완료' 줄을 또 두지 않는다.
                             emailCodeErrorText
                         }
                     }
@@ -145,10 +146,9 @@ struct LoginView: View {
 
                     submitButton
 
-                    // SSO·비밀번호 찾기는 로그인 모드에서만 노출(Android AuthScreen.kt:311-352).
+                    // 비밀번호 찾기는 로그인 모드에서만 노출(안드로이드 `AuthScreen` 도 같다).
                     if mode == .login {
                         findPasswordRow
-                        appleSignInRow
                     }
 
                     if let message = auth.statusMessage {
@@ -222,8 +222,8 @@ struct LoginView: View {
             guard mode == .register else { return }
             verificationCode = ""
             // ⚠ **'인증 완료' 도 내린다.** 가입(`POST /auth/register`)이 코드를 거절했을 때 이게
-            // 남으면 코드 줄이 숨은 채 '이메일 인증 완료' 버튼만 꺼져 있어, "다시 받아 주세요" 를
-            // 읽고도 다시 받을 길이 없다. 내리면 코드 줄과 `인증 코드 다시 받기` 가 되돌아온다.
+            // 남으면 코드 줄이 숨은 채 이메일 옆 '인증됨' 버튼만 꺼져 있어, "다시 받아 주세요" 를
+            // 읽고도 다시 받을 길이 없다. 내리면 코드 줄과 `다시 받기` 가 되돌아온다.
             // 인증 확인 단계에서 온 신호라면 이미 false 다.
             verificationCompleted = false
             verifiedEmail = ""
@@ -238,16 +238,23 @@ struct LoginView: View {
     /// 안드로이드도 같은 자리다(`ui/auth/AuthScreen.kt` 의 이메일 `supportingText`).
     private var emailField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            VocaTextField(
-                title: "이메일",
-                text: $email,
-                keyboardType: .emailAddress,
-                submitLabel: .next,
-                enabled: !auth.isBusy,
-                isError: showsEmailFormatError
-            )
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
+            // 가입에서는 '인증 받기' 가 칸 **옆**에 붙는다(칸 안이 아니다 — 긴 주소를 가리고, 아래 코드 줄의 [칸][확인] 과
+            // 모양이 갈린다. 캔버스 proposal-09). 아래 정렬인 이유는 `verificationCodeRow` 와 같다 — 칸 위에 라벨이 붙어 있다.
+            HStack(alignment: .bottom, spacing: 8) {
+                VocaTextField(
+                    title: "이메일",
+                    text: $email,
+                    keyboardType: .emailAddress,
+                    submitLabel: .next,
+                    enabled: !auth.isBusy,
+                    isError: showsEmailFormatError
+                )
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                if mode == .register {
+                    emailVerifyButton
+                }
+            }
             .onChange(of: email) { _, _ in
                 // 고쳐 치기 시작하면 형식 경고를 지운다(안드로이드의 `onValueChange` 와 같은 시점).
                 emailFormatError = false
@@ -288,16 +295,16 @@ struct LoginView: View {
         mode == .login && AuthEmailFormat.isEmailFormatErrorCode(auth.loginErrorCode)
     }
 
+    /// 가입의 이메일 칸 옆 버튼 — `인증 받기` → (보낸 뒤) `다시 받기` → (확인되면) `✓ 인증됨`. 안드로이드 짝은
+    /// `AuthScreen.kt` 의 `EmailVerifyButton`.
+    ///
     /// ⚠ **형식으로 죽이지 않는다** — 가입에서 실질적인 제출 버튼이 이것이다.
     /// 예전에는 `emailLooksValid` 로 잠가 놔서, 주소를 잘못 친 사람은 눌리지 않는
-    /// '이메일 인증' 앞에서 **무엇이 잘못됐는지 들을 길이 없었다.**
-    private var verifyEmailRow: some View {
-        AuthOutlinedButton(
-            title: verificationLabel,
-            enabled: !auth.isBusy
-                && AuthEmailFormat.canRequestEmailCode(email)
-                && !isEmailVerifiedForCurrentInput
-        ) {
+    /// '이메일 인증' 앞에서 **무엇이 잘못됐는지 들을 길이 없었다.** 빈 칸일 때만 흐리다.
+    private var emailVerifyButton: some View {
+        let verified = isEmailVerifiedForCurrentInput
+        let enabled = !auth.isBusy && AuthEmailFormat.canRequestEmailCode(email) && !verified
+        return Button {
             guard AuthEmailFormat.submitOutcome(email: email) == .submit else {
                 emailFormatError = true
                 return
@@ -316,15 +323,44 @@ struct LoginView: View {
                     verificationSent = true
                 }
             }
+        } label: {
+            HStack(spacing: 4) {
+                if verified {
+                    Image(systemName: "checkmark.circle")
+                }
+                Text(verificationLabel)
+                    .lineLimit(1)
+            }
+            .font(theme.typography.labelLarge)
+            // 인증됨은 눌리지 않지만 '꺼진 버튼' 이 아니라 '마친 상태' 로 읽혀야 한다 — 강조색.
+            .foregroundStyle(verified ? AuthSceneColors.accent : (enabled ? AuthSceneColors.text : Color.white.opacity(0x8C / 255.0)))
+            .frame(minWidth: 56)
+            .frame(height: AuthFieldHeight)
+            .padding(.horizontal, 16)
+            // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .stroke(
+                    verified ? AuthSceneColors.accent.opacity(0.3) : (enabled ? AuthSceneColors.line : AuthSceneColors.lineSoft),
+                    lineWidth: 1
+                )
+        )
+        .disabled(!enabled)
+        // 칸이 줄어들지 버튼 글자가 잘리지 않는다.
+        .fixedSize(horizontal: true, vertical: false)
     }
 
-    // 반환형이 `LocalizedStringKey` 여야 세 리터럴이 카탈로그 키로 잡힌다.
-    // `String` 이면 버튼이 `Text(변수)` 로 그려져 en/ja 기기에서 한국어가 그대로 뜬다.
-    private var verificationLabel: LocalizedStringKey {
-        if isEmailVerifiedForCurrentInput { return "이메일 인증 완료" }
-        if verificationSent { return "인증 코드 다시 받기" }
-        return "이메일 인증"
+    // 셋 다 `String(localized:)` 로 번역한 뒤 넘긴다 — 날 리터럴을 `String` 으로 돌려주면 `Text(변수)` 가 번역하지 않아
+    // en/ja 기기에서 한국어가 그대로 뜬다.
+    // ⚠ '다시 받기' 는 **키를 따로 둔다**(`auth.email.resendShort`). 카탈로그의 같은 글자 "다시 받기" 는 음성팩을 **다시
+    //   내려받는** 버튼의 것이라(en "Download again"), 같은 키를 쓰면 영어·일본어 기기에서 코드 재발송이 '다시 다운로드' 가 된다.
+    private var verificationLabel: String {
+        if isEmailVerifiedForCurrentInput { return String(localized: "인증됨") }
+        if verificationSent { return String(localized: "auth.email.resendShort", defaultValue: "다시 받기") }
+        return String(localized: "인증 받기")
     }
 
     private var verificationCodeRow: some View {
@@ -396,9 +432,8 @@ struct LoginView: View {
     }
 
     /// 코드 요청·인증 확인·가입의 실패 문장(`AuthViewModel.emailCodeError`). 자리는 이메일 인증 묶음
-    /// 안이다 — 코드 줄이 있으면 그 아래, 인증을 마친 뒤면 '이메일 인증 완료' 아래, 아직 코드를 못
-    /// 받았으면 '이메일 인증' 버튼 바로 아래. 안드로이드의 같은 자리는 `ui/auth/AuthScreen.kt` 의
-    /// `registerError` 다.
+    /// 안이다 — 코드 줄이 있으면 그 아래, 없으면 이메일 줄(칸 + '인증 받기') 바로 아래. 안드로이드의 같은
+    /// 자리는 `ui/auth/AuthScreen.kt` 의 `registerError` 다.
     @ViewBuilder
     private var emailCodeErrorText: some View {
         if let message = auth.emailCodeError {
@@ -535,18 +570,33 @@ struct LoginView: View {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private var appleSignInRow: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Rectangle().fill(theme.palette.outlineVariant).frame(height: 1)
-                Text("간편 로그인")
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                Rectangle().fill(theme.palette.outlineVariant).frame(height: 1)
+    /// 카카오 → Apple. 둘은 같은 높이(52)·같은 모서리(12 — 카카오 가이드의 값)다 — 카카오 가이드는 다른 로그인 버튼을
+    /// 카카오보다 눈에 띄게 두지 말라고 한다. Apple 은 로그인에서 'Apple로 로그인', 가입에서 'Apple로 계속하기'.
+    private var socialButtons: some View {
+        VStack(spacing: 12) {
+            KakaoLoginButton(enabled: !auth.isBusy) {
+                Task { await auth.loginWithKakao() }
             }
-            .padding(.top, 6)
+            appleSignInButton
+        }
+    }
 
-            SignInWithAppleButton(.signIn) { request in
+    /// 위는 간편 로그인, 아래는 이메일 — 무엇 사이의 선택인지 말한다(예전의 '간편 로그인' 은 아래쪽 버튼의 이름이었다).
+    private var emailDivider: some View {
+        HStack {
+            Rectangle().fill(theme.palette.outlineVariant).frame(height: 1)
+            Text(mode == .login ? String(localized: "또는 이메일로") : String(localized: "또는 이메일로 가입"))
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .fixedSize()
+            Rectangle().fill(theme.palette.outlineVariant).frame(height: 1)
+        }
+        .padding(.top, 4)
+    }
+
+    private var appleSignInButton: some View {
+        VStack(spacing: 0) {
+            SignInWithAppleButton(mode == .login ? .signIn : .continue) { request in
                 let raw = NonceGenerator.makeNonce()
                 pendingRawNonce = raw
                 // 이름은 묻지 않는다(2026-10-29 닉네임 삭제 — 받아도 쓰지 않는다).
@@ -564,8 +614,10 @@ struct LoginView: View {
             }
             .signInWithAppleButtonStyle(.black)
             .frame(height: 52)
-            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
             .disabled(auth.isBusy)
+            // 모드가 바뀌면 글자('로그인' ↔ '계속하기')도 바뀌어야 한다 — 시스템 버튼은 처음 만든 글자를 쥐고 있다.
+            .id(mode)
         }
     }
 

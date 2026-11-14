@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 카카오 로그인 버튼의 말풍선 심볼(브랜드 글리프 — ic_google_g 와 같은 예외). 색은 버튼이 정한다(검정 85%).
+     ⚠ 카카오 공식 리소스를 받기 전의 근사 도형이다 — 받으면 그 벡터로 바꾼다(iOS `KakaoSymbolShape` 와 같은 모양). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12,3.6C6.7,3.6 2.4,6.96 2.4,11.1C2.4,13.77 4.18,16.12 6.86,17.44L5.95,20.78C5.87,21.07 6.2,21.3 6.45,21.13L10.43,18.5C10.94,18.57 11.46,18.6 12,18.6C17.3,18.6 21.6,15.24 21.6,11.1C21.6,6.96 17.3,3.6 12,3.6Z" />
+</vector>

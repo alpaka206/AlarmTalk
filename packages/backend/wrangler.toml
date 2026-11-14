@@ -32,7 +32,7 @@ name = "voice-alarm-api-dev"
 routes = [
   { pattern = "api-dev.alarm-talk.com", custom_domain = true }
 ]
-vars = { ENVIRONMENT = "development" }
+vars = { ENVIRONMENT = "development", KAKAO_APP_ID = "1500680" }
 
 [env.dev.observability]
 enabled = true
@@ -54,7 +54,7 @@ name = "voice-alarm-api"
 routes = [
   { pattern = "api.alarm-talk.com", custom_domain = true }
 ]
-vars = { ENVIRONMENT = "production" }
+vars = { ENVIRONMENT = "production", KAKAO_APP_ID = "1500680" }
 
 [env.production.observability]
 enabled = true

@@ -14,6 +14,7 @@ import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.EmailVerificationConfirmRequest
 import com.alarmtalk.app.network.EmailVerificationRequest
 import com.alarmtalk.app.network.GoogleLoginRequest
+import com.alarmtalk.app.network.KakaoLoginRequest
 import com.alarmtalk.app.network.LoginRequest
 import com.alarmtalk.app.network.PasswordResetConfirmRequest
 import com.alarmtalk.app.network.PasswordResetRequest
@@ -120,10 +121,11 @@ private fun MainViewModel.duplicateEmailMessage(error: Throwable): String? {
             app.getString(R.string.msg_register_email_taken)
         }
         // 서버가 가입한 소셜을 알려 준다(`provider`). 애플로 가입한 사람(아이폰)에게 구글로 안내하지 않는다.
-        "AUTH_EMAIL_SOCIAL" -> if (parsed.provider == "apple") {
-            app.getString(R.string.msg_register_email_social_apple)
-        } else {
-            app.getString(R.string.msg_register_email_social_google)
+        // 'kakao' 는 2026-11-14 부터 온다 — 모르는 값은 예전처럼 구글로 읽는다.
+        "AUTH_EMAIL_SOCIAL" -> when (parsed.provider) {
+            "apple" -> app.getString(R.string.msg_register_email_social_apple)
+            "kakao" -> app.getString(R.string.msg_register_email_social_kakao)
+            else -> app.getString(R.string.msg_register_email_social_google)
         }
         else -> null
     }
@@ -352,6 +354,40 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
 }
 
 /**
+ * 카카오 SDK 가 준 액세스 토큰을 우리 세션으로 바꾼다(`POST /auth/kakao`). 계정을 찾고 붙이는 판정은 서버가 한다
+ * (`docs/spec/session-and-auth.md` 「카카오 로그인」). 구글 경로([finishGoogleLogin])와 같은 모양이다.
+ */
+internal fun MainViewModel.finishKakaoLogin(accessToken: String) {
+    if (authBusy) return
+    if (accessToken.isBlank()) {
+        showKakaoSignInFailed()
+        return
+    }
+    viewModelScope.launch {
+        authBusy = true
+        val accountRequest = beginAccountRequest()
+        runCatching {
+            api.loginKakao(KakaoLoginRequest(accessToken = accessToken))
+        }.onSuccess { response ->
+            authSession = authSessionStore.saveKakaoSession(response)
+            recordSignInAnswer(response.user, accountRequest)
+            recordAuthSuccess(method = "kakao")
+            onSignedIn()
+            message = null
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Kakao token exchange failed", error)
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_kakao_login_failed))
+        }
+        authBusy = false
+    }
+}
+
+/** 카카오 SDK 로그인 자체가 실패했다(취소는 여기 오지 않는다 — `KakaoLoginResult.Cancelled`). */
+internal fun MainViewModel.showKakaoSignInFailed() {
+    message = getApplication<android.app.Application>().getString(R.string.msg_kakao_login_failed)
+}
+
+/**
  * 로그인 성공 직후 공통 처리. 세 경로(이메일 로그인·이메일 가입·구글)가 같은 일을 하므로
  * 한 곳으로 모은다 — 경로마다 손으로 나열하면 새 로그인 방식이 생길 때 하나씩 빠진다.
  *
@@ -465,6 +501,7 @@ internal fun MainViewModel.endSignOutMarker() {
 internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
     val session = authSession
     val shouldSignOutGoogle = session?.provider == AuthSessionStore.PROVIDER_GOOGLE
+    val shouldSignOutKakao = session?.provider == AuthSessionStore.PROVIDER_KAKAO
     viewModelScope.launch {
         authBusy = true
         // ⚠ **위험 구간은 `clearSignedInSession` 보다 앞에서 열린다.** 아래 `api.logout` 이
@@ -496,6 +533,9 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
                 Log.w(TAG, "Failed to sign out Google account", error)
             }
         }
+        if (shouldSignOutKakao) {
+            runCatching { signOutKakao() }.onFailure { error -> Log.w(TAG, "Failed to sign out Kakao account", error) }
+        }
         // 알람 분리·기본 목소리 초기화·세션 클리어는 모든 종료 경로 공용(clearSignedInSession).
         clearSignedInSession(departingUserId = session?.user?.id)
         authBusy = false
@@ -508,6 +548,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
     val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val shouldSignOutGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
+    val shouldSignOutKakao = session.provider == AuthSessionStore.PROVIDER_KAKAO
     clearActionError(SignedInAction.ACCOUNT_DELETION)
     viewModelScope.launch {
         authBusy = true
@@ -523,6 +564,11 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             if (shouldSignOutGoogle) {
                 runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
             }
+            // 카카오 연결 끊기는 여기서 하지 않는다 — 30일 안에 다시 로그인하면 철회되므로, 끊기는 파기가 끝난 뒤
+            // 서버가 한다(`index.ts` 의 유예 파기). 여기서는 이 기기의 카카오 토큰만 버린다.
+            if (shouldSignOutKakao) {
+                runCatching { signOutKakao() }.onFailure { Log.w(TAG, "Kakao sign-out failed", it) }
+            }
             clearSignedInSession(departingUserId = session?.user?.id)
             dismissDeleteAccount()
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
@@ -533,6 +579,9 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             if (AlarmTalkLog.isAccountPendingDeletion(error)) {
                 if (shouldSignOutGoogle) {
                     runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
+                }
+                if (shouldSignOutKakao) {
+                    runCatching { signOutKakao() }.onFailure { Log.w(TAG, "Kakao sign-out failed", it) }
                 }
                 clearSignedInSession(departingUserId = session.user.id)
                 dismissDeleteAccount()

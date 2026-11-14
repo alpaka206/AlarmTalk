@@ -57,6 +57,8 @@ private val OSS_LIBRARIES: List<OssLibrary> = listOf(
     OssLibrary("Jetpack Compose Material Icons", OssLicenseKind.APACHE_2_0),
     OssLibrary("Jetpack Compose Material3", OssLicenseKind.APACHE_2_0),
     OssLibrary("Jetpack Compose UI", OssLicenseKind.APACHE_2_0),
+    // 카카오 로그인(2026-11-14) — `com.kakao.sdk:v2-user`(v2-auth·v2-network·v2-common 을 함께 싣는다).
+    OssLibrary("Kakao SDK", OssLicenseKind.APACHE_2_0),
     OssLibrary("Kotlin Coroutines", OssLicenseKind.APACHE_2_0),
     OssLibrary("Kotlin Standard Library", OssLicenseKind.APACHE_2_0),
     OssLibrary("OkHttp", OssLicenseKind.APACHE_2_0),

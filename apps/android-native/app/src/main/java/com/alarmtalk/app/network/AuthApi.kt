@@ -189,6 +189,11 @@ data class GoogleLoginRequest(
     @SerializedName("id_token") val idToken: String,
 )
 
+/** 카카오 로그인 — 카카오 SDK 가 준 **액세스 토큰**(ID 토큰이 아니다). 서버가 카카오에 직접 묻는다. */
+data class KakaoLoginRequest(
+    @SerializedName("access_token") val accessToken: String,
+)
+
 data class UpdateProfileRequest(
     val name: String? = null,
     @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings? = null,
@@ -321,6 +326,9 @@ interface AuthApi {
 
     @POST("auth/google")
     suspend fun loginGoogle(@Body request: GoogleLoginRequest): AuthTokenResponse
+
+    @POST("auth/kakao")
+    suspend fun loginKakao(@Body request: KakaoLoginRequest): AuthTokenResponse
 
     @POST("auth/logout")
     suspend fun logout(@Header("Authorization") authorization: String): LogoutResponse

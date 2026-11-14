@@ -21,11 +21,16 @@
     <string name="auth_consent_voice_biometric_desc">Only needed if you want to use your own voice for alarms.\nRecorded or uploaded voices are used to create voice profiles, clone voices, and generate TTS, and are processed as biometric information that can identify or reproduce a person.\nDeclining keeps the built-in voices working, and we will ask again when you register a voice.</string>
     <string name="auth_already_have_account">Already have an account?</string>
     <string name="auth_create_account">Sign up</string>
-    <string name="auth_email_verify">Verify email</string>
-    <string name="auth_email_verify_done">Email verified</string>
+    <string name="auth_email_verify">Send code</string>
+    <string name="auth_email_verify_done">Verified</string>
+    <string name="auth_email_verify_resend_short">Resend</string>
+    <string name="auth_kakao_login">Login with Kakao</string>
+    <string name="auth_divider_email_login">or with email</string>
+    <string name="auth_divider_email_register">or sign up with email</string>
+    <string name="msg_kakao_login_failed">Couldn\'t complete your Kakao login. Please try again.</string>
+    <string name="msg_register_email_social_kakao">This email is registered with Kakao. Please use Login with Kakao.</string>
     <string name="auth_email_verify_resend">Resend code</string>    <string name="auth_find_password">Reset password</string>
     <string name="auth_forgot_password">Forgot your password?</string>
-    <string name="auth_social_divider">Quick sign-in</string>
     <string name="auth_label_confirm_password">Confirm password</string>
     <string name="auth_label_email">Email</string>
     <string name="auth_reset_title">Reset password</string>

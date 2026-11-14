@@ -71,6 +71,8 @@ struct AlarmTalkApp: App {
                     // 'Larger Text' 지원 표시 기준은 200%(≈`accessibility2`)라, 그걸
                     // 선언하려면 그 훑기가 선행돼야 한다.
                     .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                    // 카카오톡이 로그인을 마치고 돌려보낸 주소(`kakao<앱 키>://oauth`) — SDK 가 받아야 로그인이 끝난다.
+                    .onOpenURL { url in KakaoSignIn.handleOpenURL(url) }
                     .environmentObject(alarmStore)
                     .environmentObject(alarmKit)
                     .environmentObject(auth)

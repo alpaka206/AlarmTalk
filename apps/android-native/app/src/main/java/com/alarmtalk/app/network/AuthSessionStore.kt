@@ -268,6 +268,15 @@ class AuthSessionStore internal constructor(
             userFetchedAtMillis = System.currentTimeMillis(),
         )
 
+    /** 카카오 로그인 세션 — 로그아웃·탈퇴 신청 때 기기의 카카오 토큰도 버리려고 공급자를 따로 적는다(`signOutKakao`). */
+    fun saveKakaoSession(response: AuthTokenResponse): AuthSession =
+        save(
+            token = response.token,
+            provider = PROVIDER_KAKAO,
+            user = response.user,
+            userFetchedAtMillis = System.currentTimeMillis(),
+        )
+
     fun clear() = synchronized(sessionWriteLock) {
         // '소유자 미정 알람의 임자'만 남기고 토큰·프로필은 전부 지운다. 세션이 끝날 때
         // 소유자 새기기가 실패하면 그 행들이 누구 것인지 알 길이 이 값뿐이다 — 없으면
@@ -781,6 +790,7 @@ class AuthSessionStore internal constructor(
     companion object {
         const val PROVIDER_APP = "app"
         const val PROVIDER_GOOGLE = "google"
+        const val PROVIDER_KAKAO = "kakao"
         private const val APP_JWT_ISSUER = "voice-alarm"
 
         @Volatile

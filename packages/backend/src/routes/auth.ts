@@ -16,6 +16,7 @@ import {
   LoginRequestSchema,
   GoogleLoginRequestSchema,
   AppleLoginRequestSchema,
+  KakaoLoginRequestSchema,
   EmailVerificationRequestSchema,
   EmailVerificationConfirmRequestSchema,
   PasswordResetRequestSchema,
@@ -23,6 +24,7 @@ import {
 } from '@alarmtalk/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
 import { verifyAppleIdToken } from '../lib/apple-oauth';
+import { verifyKakaoAccessToken } from '../lib/kakao-oauth';
 import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { cancelPendingDeletionOnSignIn } from '../lib/account-deletion';
 import {
@@ -260,7 +262,7 @@ async function shouldSkipEmailCodeSend(
   return withinCooldown && stillValid && belowCap;
 }
 
-type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' | 'apple' };
+type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' | 'apple' | 'kakao' };
 
 // 가입 시도 이메일이 이미 존재하면 그 가입 방식을 분류한다(중복 가입 차단·로그인 유도용).
 //   - password_hash 가 있으면 이메일/비밀번호 계정 → AUTH_EMAIL_TAKEN(로그인 유도)
@@ -273,7 +275,7 @@ type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'googl
 // 제한한다. (로그인 라우트는 기존대로 generic 응답을 유지해 비밀번호 추측 표면은 넓히지 않는다.)
 async function classifyExistingAccount(db: Client, email: string): Promise<ExistingAccount | null> {
   const result = await db.execute({
-    sql: 'SELECT password_hash, google_id, apple_id FROM users WHERE email = ? LIMIT 1',
+    sql: 'SELECT password_hash, google_id, apple_id, kakao_id FROM users WHERE email = ? LIMIT 1',
     args: [email],
   });
   if (result.rows.length === 0) return null;
@@ -284,7 +286,11 @@ async function classifyExistingAccount(db: Client, email: string): Promise<Exist
   }
   const hasGoogle = row.google_id != null && String(row.google_id).length > 0;
   const hasApple = row.apple_id != null && String(row.apple_id).length > 0;
-  return { kind: 'social', provider: hasApple && !hasGoogle ? 'apple' : 'google' };
+  const hasKakao = row.kakao_id != null && String(row.kakao_id).length > 0;
+  // 여럿이 붙어 있으면 예전 순서(구글 → 애플)를 그대로 두고 카카오는 그 뒤다. ⚠ 'kakao' 를 모르는 옛 앱(카카오 로그인을
+  // 싣기 전)은 애플이 아닌 값을 전부 구글로 읽는다 — 그 앱으로 카카오 계정의 이메일을 가입할 때만 문구가 틀린다.
+  const provider = hasGoogle ? 'google' : hasApple ? 'apple' : hasKakao ? 'kakao' : 'google';
+  return { kind: 'social', provider };
 }
 
 function existingAccountConflict(account: ExistingAccount) {
@@ -1103,6 +1109,176 @@ auth.post('/apple', async (c) => {
       logStructured('warn', { at: 'auth.apple.rejected', reason: detail });
     }
     return c.json(errorBody('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
+  }
+});
+
+// 카카오 로그인(2026-11-14). 구조는 POST /apple 과 같고 식별자 칸만 kakao_id 다.
+//
+// 카카오 고유의 두 가지:
+//  1) **토큰을 카카오에 묻는다.** 앱은 카카오 SDK 의 액세스 토큰을 보내고, 서버가 카카오 API 로 우리 앱의 토큰인지와
+//     회원번호·이메일을 확인한다(`lib/kakao-oauth.ts`). 비밀값이 필요 없다.
+//  2) **카카오가 인증한 이메일일 때만 기존 계정에 붙인다.** 이메일은 필수 동의라 거의 언제나 오지만, 인증되지 않은
+//     주소로 `email = ?` 에 붙이면 남의 이메일을 적어 둔 카카오계정이 그 계정을 차지한다. 인증되지 않았으면 회원번호로만
+//     찾고, 새로 만들 때는 애플처럼 합성 주소(`<회원번호>@kakao.local`)를 쓴다.
+auth.post('/kakao', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = KakaoLoginRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const db = getDB(c.env);
+
+  try {
+    // 구성 가드 — 애플의 번들 ID 와 같은 이유로 fail-closed. 앱 ID 를 모르면 **다른 카카오 앱용으로 발급된 유효한
+    // 토큰**도 통과해 그 앱 사용자가 우리 계정을 차지할 수 있다.
+    const kakaoAppId = c.env.KAKAO_APP_ID?.trim();
+    if (!kakaoAppId) {
+      return c.json(errorBody('AUTH_KAKAO_CONFIG_MISSING', 'Kakao app ID is not configured'), 500);
+    }
+
+    const kakao = await verifyKakaoAccessToken(parsed.data.access_token, kakaoAppId);
+    const kakaoId = kakao.kakaoId;
+    const email = kakao.verifiedEmail ?? `${kakaoId}@kakao.local`;
+
+    // 인증된 이메일이면 그 주소의 기존 계정(이메일 가입·구글·애플)에도 붙는다 — 구글·애플과 같다. 회원번호로 이미 붙은
+    // 행이 있으면 그 행이 이긴다(두 행이 걸리면 회원번호 쪽).
+    const existing = kakao.verifiedEmail
+      ? await db.execute({
+          sql: `SELECT id, kakao_id, email, ${planWithGrantSql('users')} AS plan, token_epoch,
+                       deletion_status, deletion_requested_at, dynamic_prompt_settings_json
+                FROM users
+                WHERE kakao_id = ? OR email = ?
+                ORDER BY CASE WHEN kakao_id = ? THEN 0 ELSE 1 END
+                LIMIT 1`,
+          args: [kakaoId, email, kakaoId],
+        })
+      : await db.execute({
+          sql: `SELECT id, kakao_id, email, ${planWithGrantSql('users')} AS plan, token_epoch,
+                       deletion_status, deletion_requested_at, dynamic_prompt_settings_json
+                FROM users
+                WHERE kakao_id = ?
+                LIMIT 1`,
+          args: [kakaoId],
+        });
+
+    let userId: string;
+    // 원시 `users.plan` — 응답에는 계산값을 싣는다(아래). `null` 은 계산에서도 `null` 이라
+    // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
+    let rawPlan: 'free' | 'plus' | null;
+    let tokenEpoch = 0;
+    // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
+    let observedDeletionRequestedAt: string | null = null;
+    // 저장된 진짜 이메일이 이긴다 — 애플 경로와 같은 이유(합성 주소가 세션·응답에 새지 않게).
+    let effectiveEmail = email;
+
+    if (existing.rows.length > 0) {
+      const row = typedRow<
+        {
+          id: string;
+          kakao_id: string | null;
+          email: string;
+          plan: 'free' | 'plus' | null;
+          token_epoch: number | string | null;
+        } & Record<string, unknown>
+      >(existing.rows[0]!);
+      userId = row.id;
+      rawPlan = row.plan;
+      tokenEpoch = Number(row.token_epoch ?? 0);
+      observedDeletionRequestedAt =
+        row.deletion_status === 'pending_deletion' ? ((row.deletion_requested_at as string | null) ?? null) : null;
+      const storedEmail = (row.email ?? '').trim();
+      if (storedEmail) effectiveEmail = storedEmail;
+
+      await db.execute({
+        // 애플 경로와 같이 **email 은 덮어쓰지 않는다** — 이미 저장된 주소(이메일 가입·구글)가 계정의 주소다.
+        sql: `UPDATE users
+              SET kakao_id = ?, updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [kakaoId, userId],
+      });
+    } else {
+      userId = crypto.randomUUID();
+      rawPlan = 'free';
+      await db.execute({
+        sql: `INSERT INTO users (id, kakao_id, email)
+              VALUES (?, ?, ?)`,
+        args: [userId, kakaoId, email],
+      });
+    }
+
+    // JWT sub 은 항상 users.id (구글 경로 주석 참고).
+    const token = await signAppJwt(
+      // 유예 계정이면 아래 철회가 세대를 올린다 — 올린 세대로 서명한다(`cancelPendingDeletionOnSignIn`).
+      { sub: userId, email: effectiveEmail, epoch: tokenEpoch + (observedDeletionRequestedAt ? 1 : 0) },
+      c.env.JWT_SECRET,
+    );
+
+    const fresh = await db.execute({
+      sql: `SELECT dynamic_prompt_settings_json
+            FROM users WHERE id = ? LIMIT 1`,
+      args: [userId],
+    });
+    const dynamicPromptSettings =
+      fresh.rows.length > 0
+        ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : EMPTY_DYNAMIC_PROMPT_SETTINGS;
+
+    const promo = resolvePersonalPromo(c.env);
+    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
+    const grantAnswer = await loadPlanGrantAnswer(db, userId, rawPlan, promo.now);
+    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
+    const { personalPromo, planGrant } = composeLimitedPlanFields(
+      await loadPersonalPromoField(db, userId, grantAnswer.rawPlan, promo),
+      grantAnswer.planGrant,
+    );
+    // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
+    const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, {
+      requestedAt: observedDeletionRequestedAt,
+      tokenEpoch,
+    });
+    if (deletionOutcome === 'missing') {
+      // 그 사이 파기됐다 — 없는 계정의 토큰을 내주지 않는다. 다시 시도하면 새 계정으로 들어온다.
+      throw new Error('account purged during sign-in');
+    }
+    if (deletionOutcome === 'superseded') {
+      // 그 사이 다른 기기가 탈퇴를 신청했거나 세대가 올랐다 — 이 토큰은 쓸 수 없다. 다시 로그인하면 새 상태로 처리한다.
+      throw new Error('account changed during sign-in');
+    }
+    if (deletionOutcome === 'cancelled') {
+      logStructured('info', { at: 'auth.sign_in', op: 'deletion_cancelled', provider: 'kakao' });
+    }
+    return c.json({
+      token,
+      user: {
+        id: userId,
+        email: effectiveEmail,
+        name: LEGACY_EMPTY_NAME,
+        // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
+        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
+        personal_promo: personalPromo,
+        plan_grant: planGrant,
+        dynamic_prompt_settings: dynamicPromptSettings,
+      },
+    });
+  } catch (err) {
+    // 구글·애플과 같다 — 거절 상세는 서버 로그에만, 클라에는 generic. 토큰이 틀린 것(카카오가 400·401 로 거절했거나 다른
+    // 앱의 토큰)은 `Kakao token` 으로 시작하는 메시지라 401, 그 밖(카카오 장애·DB)은 500 이다(`lib/kakao-oauth.ts`).
+    const detail = err instanceof Error ? err.message : String(err);
+    const status = detail.startsWith('Kakao token') ? 401 : 500;
+    // 401 은 경보가 아니다 — 위 `/google` 의 주석 참조.
+    if (status === 500) {
+      logRouteError(c, err);
+    } else {
+      logStructured('warn', { at: 'auth.kakao.rejected', reason: detail });
+    }
+    return c.json(errorBody('AUTH_KAKAO_FAILED', 'Kakao sign-in failed'), status);
   }
 });
 

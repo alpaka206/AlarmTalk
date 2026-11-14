@@ -29,6 +29,11 @@ packages:
   GoogleUserMessagingPlatform:
     url: https://github.com/googleads/swift-package-manager-google-user-messaging-platform
     exactVersion: "3.1.0"
+  # 카카오 로그인(2026-11-14 — `docs/spec/session-and-auth.md` 「카카오 로그인」). 안드로이드 `com.kakao.sdk:v2-user` 의 짝.
+  # Alamofire 를 함께 끌어온다(오픈소스 고지 — `OssLicensesView`). 버전을 못 박는다 — 올릴 때 로그인 흐름을 실기기로 다시 본다.
+  KakaoSDK:
+    url: https://github.com/kakao/kakao-ios-sdk
+    exactVersion: "2.30.0"
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -46,6 +51,10 @@ settings:
     #   광고 단위와 위 Release 규칙이 정한다.
     ADMOB_APP_ID: "ca-app-pub-3940256099942544~1458002511"
     ADMOB_REWARDED_AD_UNIT_ID: "$(ADMOB_REWARDED_AD_UNIT_ID)"
+    # 카카오 네이티브 앱 키(카카오 앱 1500680의 기본 키 — iOS 번들 `com.alarmtalk.app` 이 등록돼 있다). 비밀이 아니다:
+    # 앱에 실려 나가는 공개 식별자이고 URL 스킴(`kakao<키>`)에도 그대로 보인다. iOS 는 번들이 하나라 Debug·Release 가
+    # 같은 키다(안드로이드는 dev 앱에 따로 키가 있다). Info.plist 의 `KAKAO_NATIVE_APP_KEY`·`CFBundleURLSchemes` 가 읽는다.
+    KAKAO_NATIVE_APP_KEY: "5ff9bb2b1270702347556630be69905a"
     # ⚠ **안드로이드 `versionName` 과 같은 값으로 유지한다**(2026-08-17 지시).
     # 사용자에게 보이는 버전이 두 앱에서 다르면 "무슨 버전 쓰세요?" 가 통하지 않는다.
     # ⚠ 반대로 **빌드 번호(CURRENT_PROJECT_VERSION)는 맞추지 말 것** — 스토어마다 단조
@@ -141,6 +150,12 @@ targets:
         product: GoogleMobileAds
       - package: GoogleUserMessagingPlatform
         product: GoogleUserMessagingPlatform
+      - package: KakaoSDK
+        product: KakaoSDKCommon
+      - package: KakaoSDK
+        product: KakaoSDKAuth
+      - package: KakaoSDK
+        product: KakaoSDKUser
     # 법무 문서(docs/legal)의 '정책 버전' 을 Swift 상수로 뽑는다. 안드로이드가
     # app/build.gradle.kts:101 에서 하는 것과 같다 — 손으로 관리하면 서버와 어긋나는
     # 순간 동의 기록이 전부 409 로 거부된다. 두 문서 버전이 다르면 빌드를 세운다.

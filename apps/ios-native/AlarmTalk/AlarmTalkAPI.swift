@@ -86,6 +86,16 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
+    /// 카카오 로그인(`POST /auth/kakao`) — 카카오 SDK 가 준 **액세스 토큰**을 넘긴다(ID 토큰이 아니다). 서버가 카카오에
+    /// 직접 물어 우리 앱의 토큰인지 보고 계정을 찾는다(`docs/spec/session-and-auth.md` 「카카오 로그인」).
+    /// 필드명은 서버 `KakaoLoginRequestSchema`(@alarmtalk/shared) 의 `access_token` 이다(`convertToSnakeCase`).
+    func loginWithKakao(accessToken: String) async throws -> AuthSession {
+        struct Body: Encodable {
+            var accessToken: String
+        }
+        return try await request("auth/kakao", method: "POST", body: Body(accessToken: accessToken))
+    }
+
     /// `GET /auth/me` — 사용자 부트스트랩 + **rolling refresh**.
     ///
     /// 서버는 이 응답에 **새 토큰**을 함께 내려준다(`auth.ts` 의 `rolledToken`). 호출할 때마다
