@@ -68,6 +68,8 @@ internal fun AlarmListScreen(
     voiceProfiles: List<VoiceProfile>,
     pendingVoiceDraft: VoiceProfile?,
     voiceProfileBusy: Boolean,
+    // 목소리 탭에서 한 일이 안 됐다는 이유(`MainViewModel.voiceTabError`) — 탭 맨 위에 빨간 글자로.
+    voiceTabError: String? = null,
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
@@ -118,12 +120,18 @@ internal fun AlarmListScreen(
     voiceRegistrationFailure: VoiceRegistrationFailure? = null,
     onVoiceRegistrationFailureShown: () -> Unit = {},
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
+    // 목소리 탭 '추가 팩' 섹션 — 목소리 패널에 그대로 넘긴다(`docs/spec/voice-packs.md` §7).
+    voicePacks: VoicePackPanelState = VoicePackPanelState(),
     planPrices: Map<String, String>,
+    /** 플랜 key → 지금 받을 수 있는 무료 체험 기간(ISO 8601). 없으면 빈 표. */
+    planTrials: Map<String, String> = emptyMap(),
     onPurchasePlay: (android.app.Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onRestorePurchases: () -> Unit,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
+    /** 목소리 탭의 '이 목소리로 새 알람 만들기' — 그 목소리를 처음 고른 새 알람 편집기를 연다. */
+    onCreateAlarmWithVoice: (String) -> Unit = {},
     onOpenSettings: () -> Unit,
     onDeleteAccount: () -> Unit,
     themeMode: ThemeMode,
@@ -150,6 +158,16 @@ internal fun AlarmListScreen(
 
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    // 결제 화면을 열었다(`paywall_viewed`, `docs/spec/usage-events.md` §7.1) — 이 탭에 들어온 순간 한 번.
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == NativeTab.Billing) {
+            com.alarmtalk.app.data.UsageSignals.record(
+                context,
+                com.alarmtalk.app.data.UsageEvents.PAYWALL_VIEWED,
+                props = com.alarmtalk.app.data.UsageEventProps(surface = "billing"),
+            )
+        }
+    }
 
     val homeGradient = homeGradientBrush()
     // 다중 선택 삭제 — 롱프레스로 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
@@ -249,8 +267,19 @@ internal fun AlarmListScreen(
             NativeTab.Voices -> {
                 // 페이지 대제목('목소리')은 두지 않는다 — 하단 탭 라벨이 이미 위치를 말해주고,
                 // 첫 섹션 제목('내 목소리')이 곧바로 내용을 연다(알람 탭의 무제목과 일관).
+                voiceTabError?.let { reason ->
+                    item {
+                        Text(
+                            text = reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                    }
+                }
                 item {
                     VoiceProfileManagementPanel(
+                        onCreateAlarmWithVoice = onCreateAlarmWithVoice,
                         voiceProfiles = voiceProfiles,
                         pendingVoiceDraft = pendingVoiceDraft,
                         voiceProfileBusy = voiceProfileBusy,
@@ -273,6 +302,7 @@ internal fun AlarmListScreen(
                         voiceRegistrationFailure = voiceRegistrationFailure,
                         onVoiceRegistrationFailureShown = onVoiceRegistrationFailureShown,
                         onRegistrationWindowOpenChange = onRegistrationWindowOpenChange,
+                        voicePacks = voicePacks,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         voiceDraftQuota = voiceDraftQuota,
                         voicePrefetchProgress = voicePrefetchProgress,
@@ -300,6 +330,7 @@ internal fun AlarmListScreen(
                 // 미리 조르지 않는다 — 알람 만들기 시점에 요청한다.
                 // 헤드라인이 이미 '안 울린다'를 말했으므로, 배너는 같은 말을 반복하지 않고
                 // 각각 **왜 그런지 / 무엇을 하면 되는지**를 말한다.
+                // ⚠ 이 자리에 있던 '다음 알람 상태 카드'(v1.3 W06)는 2026-11-09 오너가 지웠다 — 권한 부족은 다시 이 배너 하나가 말한다.
                 permissions.firstMissingAlarmTarget()?.takeIf { hasAnyAlarm }?.let { missing ->
                     item {
                         AlarmPermissionWarningBanner(
@@ -308,7 +339,6 @@ internal fun AlarmListScreen(
                             modifier = Modifier.padding(top = 8.dp),
                             // **어떤 권한인지** 말한다. '권한' 이라고만 하면 어디를 켜야 하는지
                             // 모른 채 설정 화면에서 헤맨다. 결과도 권한마다 다르다.
-                            //
                             textResId = when (missing) {
                                 PermissionTarget.Notifications -> R.string.hs_perm_banner_notifications
                                 PermissionTarget.ExactAlarms -> R.string.hs_perm_banner_exact_alarm
@@ -371,10 +401,14 @@ internal fun AlarmListScreen(
                         billingBusy = billingBusy,
                         subscriptionResponse = subscriptionResponse,
                         planPrices = planPrices,
+                        planTrials = planTrials,
                         onPurchasePlay = onPurchasePlay,
                         onCancelSubscription = onCancelSubscription,
                         onRestorePurchases = onRestorePurchases,
                         personalPromo = planScreenPersonalPromo,
+                        // 관리자 기간 지급의 끝 — 구독 응답이 있으면 그 값, 없으면 계정 응답의 값.
+                        planGrantEndsAt = subscriptionResponse?.planGrant?.endsAt
+                            ?: authSession?.user?.planGrant?.endsAt,
                     )
                 }
             }

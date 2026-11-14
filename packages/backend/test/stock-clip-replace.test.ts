@@ -29,7 +29,7 @@ async function setupDb() {
       id TEXT PRIMARY KEY, user_id TEXT, voice_profile_id TEXT, message_id TEXT,
       provider TEXT, provider_voice_id TEXT, model_id TEXT, language TEXT,
       request_hash TEXT UNIQUE, text TEXT, audio_url TEXT, audio_object_key TEXT,
-      audio_format TEXT, created_at TEXT
+      render_fingerprint TEXT, render_revision TEXT, logical_key TEXT, audio_format TEXT, created_at TEXT
     );
     CREATE TABLE pending_external_deletions (
       id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')),
@@ -71,6 +71,8 @@ function replacement(overrides: Partial<StockClipReplacement> = {}): StockClipRe
     displayText: '약 먹을 시간이에요.',
     synthesisText: '약 먹을 시간이에요.',
     deliveryTagsJson: '[]',
+    renderFingerprint: 'rf1-test',
+    renderRevision: 'rv1-test',
     ...overrides,
   };
 }
@@ -91,10 +93,21 @@ describe('replaceStockClipInPlace — 같은 message_id 에 소리만 바꾼다'
         delivery_tags_json: '[]',
       });
 
-      const ledger = (await db.execute('SELECT message_id, model_id, audio_object_key FROM generated_audio_assets ORDER BY model_id')).rows;
+      const ledger = (
+        await db.execute(
+          'SELECT message_id, model_id, audio_object_key, render_fingerprint, render_revision FROM generated_audio_assets ORDER BY model_id',
+        )
+      ).rows;
       // 옛 원장 행은 남는다(드레인이 `messages.audio_url` 만 보고 옛 오브젝트를 지운다).
       expect(ledger.map((r) => r.model_id)).toEqual(['eleven_v3', 'eleven_v4_turbo']);
-      expect(ledger[1]).toMatchObject({ message_id: 'm1', audio_object_key: NEW_KEY });
+      // 새 렌더에는 지문이 적힌다(#139). 옛 행은 지문 이전이라 비어 있다.
+      expect(ledger[1]).toMatchObject({
+        message_id: 'm1',
+        audio_object_key: NEW_KEY,
+        render_fingerprint: 'rf1-test',
+        render_revision: 'rv1-test',
+      });
+      expect(ledger[0]!.render_fingerprint).toBeNull();
 
       const queue = (await db.execute('SELECT ref FROM pending_external_deletions')).rows.map((r) => r.ref);
       expect(queue).toEqual([OLD_KEY]);

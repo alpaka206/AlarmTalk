@@ -20,9 +20,9 @@
 2026-10-16 오너 결정: 편집기의 비로그인·무료 상태는 두 앱 모두 [닫기][이용권 보기], 유료 상태는
 [닫기][등록하기]다. 이용권 화면은 비로그인도 볼 수 있고 구매를 시작할 때 로그인한다.
 
-2026-10-19: 잠긴 '직접 입력' 이 연 **'로그인 + 무료'** 게이트에는 광고를 쓸 수 있을 때 **'광고 보고 한 번 쓰기'** 가 더해져
-버튼이 셋(세로)이 된다 — Android 만, 규칙은 [`ad-rewards.md`](ad-rewards.md) §4. 광고는 결제도 코드도 아니라 아래 「선물 코드 —
-폐지」 규칙과 부딪치지 않는다. 광고를 쓸 수 없으면 예전 두 버튼 그대로다.
+2026-10-19: 새로 만들 자리가 없는 무료 저장(429)이 연 **'로그인 + 무료'** 게이트에는 광고를 쓸 수 있을 때 **'광고 보고 한 번
+쓰기'** 가 더해져 버튼이 셋(세로)이 된다 — 2026-10-26 부터 두 앱 모두, 규칙은 [`ad-rewards.md`](ad-rewards.md) §1-1·§4. 광고는
+결제도 코드도 아니라 아래 「선물 코드 — 폐지」 규칙과 부딪치지 않는다. 광고를 쓸 수 없으면 예전 두 버튼 그대로다.
 
 목소리 탭의 '내 목소리 만들기' 게이트는 두 앱 모두 상태로 가르지 않는 [닫기][이용권 보기] 한 모양이다(안드로이드
 `VoiceProfileManagementPanel` 의 `PlanGateDialog`, iOS 같은 이름 파일의 `planGateOpen` 알럿).
@@ -59,6 +59,11 @@ freeVoiceTier = 로그인함 && !유료
 | 입력 | 조건 | 갈래 |
 | --- | --- | --- |
 | 목소리를 켜거나 잠긴 목소리를 누름 | `authSession == null` | `LOGIN_REQUIRED` |
+
+⚠ **잠긴 목소리는 목록에 보이지 않는다**(2026-11-09 오너: "잠금 표시도 할 필요 없이 노출할 필요 자체가 없어"). 무료는 편집기의 목소리
+목록에 **기본 목소리만** 보인다 — 등록해 둔 내 목소리(이용권이 끝난 뒤 남은 것)를 자물쇠와 함께 늘어놓고 누르면 이용권 알럿을 띄우던
+iOS 를 안드로이드(`editorVisibleVoiceProfiles`)에 맞췄다(`AlarmEditorSheet.voiceProfileOptions`). 그래서 위 표의 '잠긴 목소리를 누름' 은
+더는 생기지 않는다(세션이 없으면 편집기에 들어올 수 없다).
 | 잠긴 '직접 입력' | `freeVoiceTier` | `PLAN_REQUIRED` |
 
 그래서 `SYSTEM_VOICE_LIMIT` 은 **지금 도달 불가능**하다.
@@ -105,8 +110,8 @@ freeVoiceTier = 로그인함 && !유료
 
 **코드 등록은 없다**(2026-10-20 — 마지막으로 남았던 초대 코드를 커플·가족 이용권과 함께 지웠다. 그 전
 2026-10-14 에 선물 코드, 2026-10-12 에 프로모 코드). 유료 판정의 근거는 스토어 구독과 기간 한정 개인 플랜
-(서버가 읽을 때 계산한다)뿐이다. 옛 앱의 코드 칸이 보내는 `POST /code/register` 는 어떤 본문이든 404
-`CODE_NOT_FOUND` 다(아래 「커플·가족 이용권 — 폐지」).
+(서버가 읽을 때 계산한다)·관리자 기간 지급뿐이다. 옛 앱의 코드 칸이 보내던 `POST /code/register` 는 2026-10-26 강제
+업데이트 뒤 라우트째 지웠다(없는 경로 — 404 `NOT_FOUND`, 아래 「커플·가족 이용권 — 폐지」).
 
 ## 4. 이용권·목소리 정보는 **언제 다시 받는가** (2026-09-29)
 
@@ -114,8 +119,9 @@ freeVoiceTier = 로그인함 && !유료
 다시 받으면 같은 응답을 몇 번씩 기다린다. 다시 받는 때는 넷이다.
 
 - **진입 갱신** — 탭·화면에 들어갈 때. 같은 계정의 **완결된** 갱신이 같은 앱 진입 안에서
-  **60초** 안에 있었으면 다시 받지 않는다. 목소리·더보기 탭과 화면(편집기·이용권)이
-  모두 같은 창을 본다.
+  **60초** 안에 있었으면 다시 받지 않는다. 알람·목소리·더보기 탭과 화면(편집기·이용권)이
+  모두 같은 창을 본다. 알람 탭은 **이용권만** 다시 받는다(홈의 머리 카드가 쓴다 — 안드로이드 `refreshBilling`,
+  iOS `socialFeatures.refreshOnEntry`). (2026-10-29 전 iOS 알람 탭은 이 창이 아니라 알람 올리기를 돌았다 — 아래.)
   - ⚠ **목소리 탭의 진입 갱신은 빼지 말 것**(2026-08-24 실기기). 예전에는 목소리 탭이 앱
     시작의 캐시 스냅샷에만 기대, 다른 기기에서 플랜이 바뀌면 유료 사용자가 '추가' 를
     눌렀는데 이용권 안내 모달이 떴다. 창은 그 낡음을 60초 이하로 묶을 뿐 없애지 않는다.
@@ -125,9 +131,9 @@ freeVoiceTier = 로그인함 && !유료
     쪽은 세션 세대를 함께 넣는다).
   - **실패했거나 반쪽인 갱신은 창을 열지 않는다** — 다음 진입이 곧바로 다시 받는다. 그래서
     '건너뛰기 표' 를 갱신 **전에** 적지 않는다. 먼저 적으면 실패한 뒤 60초 동안 재시도가 막힌다.
-    도는 동안의 중복을 막으려고 먼저 적는 표(알람 탭 동기화)는, 회차가 **완결되지 않으면
-    자기가 적은 칸을 지운다**(오프라인·저장소 로드 전·탭을 떠나 취소 — 올리지 못한 알람을
-    다시 올리는 자리다).
+    (2026-10-29 전에는 iOS 알람 탭 동기화가 도는 동안의 중복을 막으려고 먼저 적는 표(`AlarmTabSyncThrottle`)를 썼고,
+    회차가 완결되지 않으면 자기가 적은 칸을 지웠다 — 올리지 못한 알람을 다시 올리는 자리였다. 서버 알람 사본을 지워
+    알람을 올리지 않으므로 그 표도 지웠다 — [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」.)
   - 창에 적는 진입·시각은 **요청을 보낼 때의 것**이다. 응답이 백그라운드를 건너 다음 진입에
     도착했을 때의 값을 적으면, 떠나 있는 동안 받은 옛 답이 돌아온 진입의 창을 연다.
   - 앱에 다시 들어오면(백그라운드를 거쳐) 창은 닫힌다.
@@ -157,6 +163,37 @@ freeVoiceTier = 로그인함 && !유료
   안내를 판정한다(D11, 코덱스 #827). 권한 스냅샷에는 쓰지 않고(구독 없는 반쪽 스냅샷 금지) 토큰도
   굴리지 않는다 — 무상태 JWT 라 지금 토큰이 그대로 유효하다([`session-and-auth.md`](session-and-auth.md)).
 
+## 신규 1개월 무료 — **스토어 무료 체험** (2026-10-26)
+
+새로 구독하는 사람은 **1개월 무료로 쓰고, 해지하지 않으면 그다음부터 자동으로 결제된다**(오너 결정). 서버가 결제 없이 주는
+무료 기간이 아니라 **스토어의 무료 체험**이다 — 결제 수단 등록·자동 결제·해지는 스토어가 맡고, 우리 서버는 그 구독을 다른
+구독처럼 받는다(체험 중에도 Play 는 `SUBSCRIPTION_STATE_ACTIVE`, 애플은 첫 구독 오퍼 거래).
+
+| 스토어 | 설정(2026-10-26 적용) | 누가 받나 |
+| --- | --- | --- |
+| Google Play | `personal_monthly` 기본 요금제 `monthly` 의 오퍼 `free-trial-1m` — 1개월 0원 1회, 그 뒤 기본 요금제 가격 | 이 구독을 산 적 없는 사용자(`thisSubscription`) |
+| App Store | `personal_monthly` 첫 구독 오퍼 — 무료 체험 `ONE_MONTH` × 1, 판매 중인 148개 지역 | 그 구독 그룹을 처음 사는 Apple ID(애플이 판정) |
+
+- **자격은 스토어가 판정한다.** 앱은 묻기만 한다 — 안드로이드는 Play 가 자격 있는 오퍼만 돌려주고(`freeTrialPeriodForPlan` —
+  첫 페이즈가 0원인 오퍼), iOS 는 `isEligibleForIntroOffer`(`SubscriptionManager.freeTrialPeriods`). 결제는 안드로이드가 첫
+  페이즈가 가장 싼 오퍼(= 체험)를 고르고, iOS 는 결제 시트가 자격이 있으면 스스로 체험을 적용한다.
+- **체험 조건은 결제 전에 말한다**(스토어 정책 — 체험 기간, 체험 뒤 가격과 주기, 결제 시점, 해지 방법). 넷플릭스·유튜브처럼
+  짧고 구체적으로 둔다(2026-11-09 오너 — 고르기 시안 '무료 기간 크게 + 첫 결제일'):
+  - 가격 자리: 큰 글씨 **"1개월 무료"** 와 그 옆 **"이후 월 ₩3,900"**. ⚠ 주기('월')를 빼지 말 것 — 안드로이드는 Play 의
+    `formattedPrice` 에 주기가 없어 "이후 ₩3,900" 으로 나가던 것을 같은 날 고쳤다(`billing_plan_monthly_price`).
+  - 버튼: **"1개월 무료로 시작하기"**(체험이 없으면 "결제하기").
+  - 버튼 바로 아래 한 문장: Google Play 는 **"12월 9일부터 매월 ₩3,900씩 결제되고, 그 전에 Google Play에서 언제든 해지할 수
+    있어요."**, App Store 는 **"12월 9일부터 매월 ₩3,900씩 결제돼요. 체험이 끝나기 24시간 전까지 App Store에서 해지하면 결제되지
+    않아요."** 앞에 붙였던 "오늘은 결제되지 않아요." 는 같은 날 오너가 뺐다(가격 자리의 "1개월 무료" 가 이미 말한다). ⚠ App Store 는 종료 24시간 전부터 갱신을 청구하므로 "그 전에 언제든" 이라고 쓰지 않는다(같은 화면 각주와 같은 규칙,
+    2026-11-09 iOS 출시 검토). 첫 결제일은 **오늘 + 체험 기간**이다(안드로이드 `trialDisclosureText`, iOS
+    `SubscriptionManager.trialDisclosure`). 결제 확인 알럿도 같은 문장을 쓴다. 기간을 못 읽으면 문장을 그리지 않는다(날짜를
+    지어내지 않는다 — 결제 시트가 보여 준다).
+  - 체험 자격이 없거나 산 이용권의 현재 카드(결제 버튼 없음)에는 그리지 않는다. 기간은 스토어가 준 값으로 쓰고 앱에 박지 않는다.
+- 체험 중 결제를 시작한 날·갱신일은 스토어가 정한다. 우리가 남은 기간을 더하거나 청구일을 미루지 않는다.
+- 관리자 기간 지급·기간 한정 개인 플랜과 겹쳐도 스토어 체험은 그대로다 — 등급 판정은 합집합이다.
+- 스토어 설정을 바꾸는 스크립트는 `.claude/release-tools/play-trial-create.mjs`·`asc-trial-create.mjs`(gitignore), 확인은
+  `probe-trials.mjs`. ⚠ Play 오퍼는 `regionsVersion.version=2026/01` 이어야 기본 요금제의 모든 지역을 받는다.
+
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
@@ -169,12 +206,12 @@ freeVoiceTier = 로그인함 && !유료
 | 기간 한정 개인 플랜 — 낡은 캐시만 무료로(D1·D7: 받은 시각 = `computed_at`, 없으면 끝 전의 답) | `personalPromoLapsed`·`planAnswerStampMillis`(`ui/billing/PersonalPromo.kt`) | `PersonalPromo.isStale`·`PersonalPromo.fetchedAt` | `personalPromoField` 의 `computed_at` |
 | 게이트에 코드 입력 없음(§2 — 결제 쪽 액션은 '이용권 보기' 하나) | `PlanGateDialog` 의 액션 두 개(입력 슬롯 없음) — 회귀 `GiftCodeRemovalTest`. CI 검사 (e) 가 `PlanGateDialog.kt` 전체에서 입력 칸·코드 등록 이름을 막는다 | `VoicePlanGateAlert`(편집기) · `VoiceProfileManagementPanel` 의 `planGateOpen` 알럿(목소리 탭) · 문구 `PaidGateCopy`. CI 검사 (e) 가 앞의 파일 전체와 뒤의 알럿 블록을 막는다 | — |
 | 게이트 버튼 순서 [닫기][이용권 보기] — §2 | `PlanGateDialog` 의 `actions` 순서 — 회귀 `GiftCodeRemovalTest` | '닫기' 의 `.cancel` 역할(시스템이 앞에 둔다) — 회귀 테스트 없음, 실기기로 본다 | — |
-| 코드 칸 없음 — 앱 어디에도(더보기의 '초대 코드 등록' 도 지웠다, 2026-10-20) · 옛 앱의 등록은 어떤 코드든 404 `CODE_NOT_FOUND` | 더보기에 코드 등록 행이 없다(`ui/home/HomeComponents.kt`) | 더보기에 코드 등록 행이 없다(`MenuView`) | `routes/code.ts`(옛 앱 호환 — 본문을 읽지 않고 조회 없이 404) — 회귀 `test/code.test.ts` |
+| 코드 칸 없음 — 앱 어디에도(더보기의 '초대 코드 등록' 도 지웠다, 2026-10-20) · 옛 앱의 등록 라우트도 지웠다(2026-10-26) | 더보기에 코드 등록 행이 없다(`ui/home/HomeComponents.kt`) | 더보기에 코드 등록 행이 없다(`MenuView`) | 라우트 없음 — 없는 경로는 404 `NOT_FOUND`(`index.ts` 의 `app.notFound`) — 회귀 `test/old-app-compat.test.ts` |
 | 파는 상품은 개인 월간 구독 하나(코드를 발급하는 1회성·소모성 상품 없음 · 커플·가족 상품 없음) | `PlayBillingProducts.all`(`billing/PlayBillingManager.kt`) | `SubscriptionProduct`(`Services/IAP/SubscriptionProduct.swift`) · `Configuration/StoreKitConfiguration.storekit` | `APPLE_PRODUCT_TO_PLAN_KEY`(`lib/apple-storekit.ts`) · `googlePlanKeyFromProductId`(`lib/play-subscriptions.ts`) — `personal_monthly` 하나, 목록 밖 상품은 400 `UNKNOWN_PRODUCT` |
 | 강제 — 무엇이 막는가(CI lint 는 필수 체크, 두 앱의 단위 테스트는 각 빌드 워크플로 — 필수 체크가 아니다) | CI lint `scripts/check-paid-unlock-codes.py` 의 (a) 화면 문구·(b) 코드·(e) 게이트 모양 + 단위 테스트 `GiftCodeRemovalTest`(`android-build.yml`) | 같은 검사의 (a)·(b)·(e) + 단위 테스트 `GiftRemovalTests`(`ios-build.yml`) | 같은 검사의 (b) 코드·라우트 경로·(d) 초대 코드 형식이 남지 않았는지 + `gift-codes-retired.test.ts`·`code.test.ts`(필수 `test` 잡). 스토어 문구 원본은 같은 검사의 (c) |
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
-| 진입 갱신 — 목소리·이용권(완결된 갱신만 · 60초 · 같은 계정·같은 앱 진입 · 보낼 때 적는다) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(키는 `tab to sessionEffectKey` — 계정 + 세션 세대라 규칙과 같다. ⚠ 표를 갱신 **전에** 적는다 — 실패 뒤 재시도 규칙은 아직 다르다) | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` — 부르는 자리 `MainTabsView.refreshForSelectedTab`(목소리·더보기)·`MainTabsView.refreshAll`·`AlarmEditorSheet`·`BillingPanel` | — |
-| 알람 탭 동기화 스로틀(키 = 탭 + 계정 — 토큰 아님 · 완결되지 않은 회차는 칸을 지운다) | 같은 `lastTabRefreshAt`(`tab to sessionEffectKey` — ⚠ 실패해도 칸을 지우지 않는다) | `MainTabsView.tabRefreshThrottleKey` · `AlarmTabSyncThrottle`(완결 판정은 `RemoteAlarmSyncViewModel.runFullSync` 의 반환값. 재로그인은 `MainTabsView` 가 새로 만들어져 표가 비워진다) | — |
+| 진입 갱신 — 목소리·이용권(완결된 갱신만 · 60초 · 같은 계정·같은 앱 진입 · 보낼 때 적는다) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(키는 `tab to sessionEffectKey` — 계정 + 세션 세대라 규칙과 같다. ⚠ 표를 갱신 **전에** 적는다 — 실패 뒤 재시도 규칙은 아직 다르다) | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` — 부르는 자리 `MainTabsView.refreshForSelectedTab`(알람 — 이용권만 · 목소리·더보기)·`MainTabsView.refreshAll`·`AlarmEditorSheet`·`BillingPanel` | — |
+| 알람 탭 진입 = 이용권만(알람 올리기 없음 — 2026-10-29 iOS 의 알람 탭 동기화 스로틀 `AlarmTabSyncThrottle`·`tabRefreshThrottleKey` 를 지웠다) | 같은 `lastTabRefreshAt` 의 `NativeTab.Alarms` → `refreshBilling`(+ 매니페스트 `loadStockClips(ManifestNeed.RECENT)`) | `MainTabsView.refreshForSelectedTab` 의 `.alarms` → `alarmKit.refreshAuthorizationState` · `socialFeatures.refreshOnEntry`(위 행의 창) | — |
 | 쓰기·푸시 뒤 이용권 + plan(`/auth/me` 한 번 — 끝까지 못 가면 사용자 새로고침) | — | `SocialFeatureViewModel.refreshAllThenUserIfIncomplete` — 부르는 자리 `plan_changed`(`AlarmTalkApp` 의 `onPlanChanged`)·`BillingPanel` 의 구매·복원·구독 관리 시트 닫힘 | — |
 | 이용권 새로고침의 조회는 한꺼번에(쓰는 순서·가드는 그대로 · 수위·계정 표는 보내기 전에) | `MainViewModelBillingActions.refreshBillingData`(구독 하나) | `SocialFeatureViewModel.refreshAll`(`async let`); 회귀 `EntryRefreshFreshnessTests`(두 조회가 한꺼번에·표는 보내기 전에·구독 실패에도 계정 답을 이 진입의 결과로) | — |
 
@@ -211,7 +248,8 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
 
 - **서버가 받지 않는 것이 실질 차단이다.** 앱 문구만 지우면 이미 깔린 옛 앱('프로모션 코드' 문구가
   남은 버전)으로 계속 열린다. `POST /code/register` 는 (그때는) INV-/GIFT- 형식이 아니면 조회 없이
-  `CODE_NOT_FOUND` 였고 — 2026-10-14 부터는 INV- 하나, 2026-10-20 부터는 어떤 코드든 `CODE_NOT_FOUND` 다 —
+  `CODE_NOT_FOUND` 였고 — 2026-10-14 부터는 INV- 하나, 2026-10-20 부터는 어떤 코드든 `CODE_NOT_FOUND`, 2026-10-26
+  강제 업데이트 뒤에는 라우트째 없다 —
   옛 경로 `POST /billing/promo/redeem` 은 라우트째 지웠다(404).
 - **문구에 '프로모션'·'쿠폰' 을 되살리지 말 것.** 코드 칸의 이름은 그때 '초대·선물 코드' 였고, 2026-10-14
   부터 '초대 코드' 였다가 2026-10-20 에 칸 자체가 없어졌다(양 앱 ko·en·ja).
@@ -291,7 +329,11 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
   ([`billing-lifecycle.md`](billing-lifecycle.md) 「기간 한정 개인 플랜」 — 끝 시각은 shared 의 `PERSONAL_PROMO.endsAt`
   한 곳에만 둔다)이 원시 무료 계정 모두에게 결제 없이 개인 플랜을 연다. 코드를 치는 길은 아니지만 스토어를 거치지 않고
   유료 기능을 여는 것이라 심사 노트에 밝힌다(1.2.11 노트부터 — 1.2.13 노트에도 남긴다). 이 기간이 끝난 뒤의 행사는 위
-  스토어 장치로 한다 — 같은 모양의 서버 무료 기간을 새로 만들지 말 것.
+  스토어 장치로 한다 — 같은 모양의 서버 무료 기간을 새로 만들지 말 것. 신규 가입 1개월 무료도 스토어 무료 체험이다
+  (2026-10-26 오너 결정 — 해지하지 않으면 자동 결제).
+- **관리자 기간 지급**(2026-10-26 오너 승인)은 두 번째 예외다 — 관리자 콘솔에서만, 한 사람에게, 기간·사유를 적고 준다
+  ([`billing-lifecycle.md`](billing-lifecycle.md) 「관리자 기간 지급」). 앱에는 입력 칸·링크·코드가 없다. 셀프 서비스로
+  넓히면 위 '코드로 여는 길' 과 같은 것이 된다.
 - **앱에 코드 칸을 두지 않는다** — 이용권 화면·유료 게이트(페이월)는 물론 더보기에도. 막힌 기능 바로 옆의 코드
   칸은 '코드를 넣으면 열린다' 로 읽힌다.
 - **스토어 설명·출시 노트·심사 노트에 코드로 유료 기능을 연다고 쓰지 않는다.** 커플·가족 이용권과 초대 코드도
@@ -345,7 +387,8 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
 - **목소리·문구 접근이 두 갈래로 줄었다**(쌍 규칙 — CLAUDE.md). 쓰기(`messageBelongsToCaller`·
   `voiceProfileBelongsToCaller`)와 읽기(`GET /tts/messages/:id/audio`)가 똑같이 **내 문구(내 목소리·시스템
   목소리) 또는 시스템 스톡 프리셋**만 받는다. 남의 목소리 갈래와 그 주인의 원시 플랜 규칙, 받은 알람의 음원
-  갈래를 함께 지웠다.
+  갈래를 함께 지웠다. (2026-10-29 쓰기 쪽은 서버 알람 사본과 함께 없어졌다 — 저장하지 않으니 볼 것이 없다. 지금은 오디오
+  라우트가 유일한 판정이다, [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」.)
   `PATCH /voice/:id/relationship` 은 남의 목소리(공유 보기) 갈래만 지우고 내 초안 갈래는 둔다(1.2.10 호환 —
   [voice-and-message.md](voice-and-message.md) 구현 지도의 '클론 문구의 결' 행).
 - **무료 강등·목소리 삭제가 남의 알람을 건드리지 않는다.** 남의 계정 알람이 내 목소리·문구를 가리킬 길이
@@ -363,37 +406,20 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
   구독 그룹 안에서 '업그레이드' 하면 재조회가 모르는 상품을 만난다. 개인으로 매핑하지 말 것 — 개인 이용권에
   커플·가족 값을 받게 된다.
 
-### 옛 앱에 남기는 응답 — 강제 업데이트가 끝날 때까지
+### 옛 앱에 남겼던 응답 — **2026-10-26 에 지웠다**
 
-옛 앱(그룹 기능이 남은 빌드 — 안드로이드 versionCode 35·iOS 빌드 13 까지)은 그룹·공유·받은 알람 조회를 **이용권
-갱신과 한 묶음으로** 부른다. 하나라도 200 의 모양으로 답하지 않으면 개인 이용권 갱신까지 버려진다(안드로이드는
-구독 응답을 함께 버리고, iOS 는 권한 스냅샷을 '미완' 으로 두어 `plan_changed` 의 예약 재조정을 건너뛴다). 그래서
-아래는 **상태 없는 빈 응답**으로 남긴다 — DB 를 보지 않고, 지금 prod 의 모든 계정이 받던 값과 같아 옛 앱은 다른
-점을 모른다.
+옛 앱(그룹 기능이 남은 빌드 — 안드로이드 versionCode 35·iOS 빌드 13 까지)은 그룹·공유·받은 알람 조회를 이용권 갱신과 한
+묶음으로 불렀다. 그래서 강제 업데이트가 끝날 때까지 **상태 없는 빈 응답**으로 남겨 두었다 — `GET /family/groups/current`,
+`GET /billing/vouchers`, `GET /voice/family`, `GET /alarm`(커서), `GET /alarm/declined`, `POST /alarm/:id/decline`,
+`POST /code/register`(404 `CODE_NOT_FOUND`), 그리고 `GET /billing/subscription` 의 `plan.max_members: 1` 리터럴.
 
-| 요청 | 답 | 왜 남기나 |
-| --- | --- | --- |
-| `GET /family/groups/current` | 200 `{"group":null,"role":null,"members":[]}` | 실패하면 옛 안드로이드는 이용권 정보 오류를 띄우고 목소리 접근권 대조를 건너뛴다. 옛 iOS 는 권한 스냅샷이 미완으로 남는다 |
-| `GET /billing/vouchers` | 200 `{"vouchers":[]}` | 두 앱이 구독 조회와 한 묶음으로 기다린다 — 실패하면 구독 답까지 버린다 |
-| `GET /voice/family` | 200 `{"profiles":[]}` | 옛 안드로이드 접근권 워커가 실패마다 재시도하고, 옛 iOS 는 내 알람 대조를 건너뛴다 |
-| `GET /alarm`(커서) | 200 `{"alarms":[],"has_more":false,"next_cursor":null}` — **인증 라우터 뒤에** 둔다 | 옛 안드로이드 주기 워커가 이 요청의 403 `ACCOUNT_PENDING_DELETION` 으로 탈퇴 신청을 알아듣는다([session-and-auth.md](session-and-auth.md) 「탈퇴 유예」). 실패하면 워커 재시도, 옛 iOS 는 저장마다 '알람 정보를 불러오지 못했어요' |
-| `GET /alarm/declined` | 200 `{"alarm_ids":[],"revoked_alarm_ids":[],"has_more":false}` | 두 앱이 회차마다 부른다(옛 iOS 디코더는 세 키가 다 있어야 한다) |
-| `POST /alarm/:id/decline` | 200 `{"success":true,"declined":true}` | 옛 앱에 남은 받은 알람을 지울 때 부른다 — 코드 없는 404 면 옛 안드로이드가 그 알람을 지우지 못한다 |
-| `POST /code/register` | 404 `CODE_NOT_FOUND` — 어떤 본문이든 | 옛 앱의 '초대 코드 등록'. 두 앱이 예상된 거절로 읽는다(코드 없는 404 면 시도마다 Sentry 이슈) |
-| `GET /billing/subscription` | `plan.max_members: 1` 을 리터럴로 계속 싣는다(컬럼은 지웠다) · `plan.plan_type` 은 그대로 · `subscription.plan_group_id` 는 뺀다 | 옛 iOS 디코더가 `max_members` 를 필수로 읽는다 — 없으면 결제 전 조회를 포함한 응답 전체를 못 읽는다 |
-| `PATCH /user/me` | 가족 알람 설정 키를 무시하고 응답에서 뺀다 | 옛 앱은 그 키를 보내지 않는다(그 키만 오면 예전처럼 400 `NO_FIELDS_TO_UPDATE`) |
-| `POST /voice/clone`·`PATCH /voice/:id` | `isShared`/`is_shared` 를 받고 무시한다 · 응답에 싣지 않는다 | 옛 앱의 목소리 등록이 언제나 보낸다 — 엄격히 거절하면 옛 앱 사용자 전원의 목소리 등록이 깨진다 |
-| `POST /alarm` 의 `target_user_id` | 호출자가 아닌 계정(비어 있지 않은 문자열)이면 403 `NOT_CONNECTED`, 그 밖은 무시 | 그룹이 없을 때의 예전 답과 같다. 말없이 내 알람으로 만들지 않는다([alarm-lifecycle.md](alarm-lifecycle.md)) |
-| `POST /tts/generate` 의 `target_user_id` | 무시 | 이미 은퇴한 동적 갈래만 읽던 값 |
-| 로그인·가입·구글·애플·`/auth/me` 의 `user` | 가족 알람 설정 키를 뺀다 | 두 앱 모두 빠진 키를 견딘다 |
-
-- 각 라우트에 "옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다" 를 적어 둔다. 라우트 등록 순서도 그대로다
-  (Hono 는 등록 순서로 맞춘다 — `GET /voice/family` 를 `/:id` 라우트 뒤로 옮기면 다른 라우트가 받는다).
-- 그룹 전용 경로는 **지웠다**(404): 그룹 나가기·구성원 내보내기·주인 넘기기, 가족 알람 보내기
-  (`POST /family/alarms/voice`·`POST /voice/upload`), 초대 코드 공유(`POST /billing/vouchers/family-share`), 수신 확인
-  (`POST /alarm/:id/received`). 옛 앱이 이 경로에 닿으려면 그룹이 있어야 하는데 위 빈 응답이 그룹을 주지 않는다.
-- 그룹 갈래만 내던 에러 코드는 목록에서 지웠다(이름을 바꾼 것이 아니다 — [error-codes.md](error-codes.md) §2). 남은
-  것은 `CODE_NOT_FOUND`(코드 등록 호환)·`NOT_CONNECTED`(위 `target_user_id`) 둘이다.
+강제 업데이트(`minSupported` 안드로이드 36·iOS 14 — `lib/app-version.ts`)로 그 앱을 막은 뒤 **전부 지웠다.** 지금 두 앱은 이
+경로를 부르지 않는다. 없는 경로는 다른 없는 경로와 같이 코드가 있는 404 `NOT_FOUND` 다(`index.ts` 의 `app.notFound`).
+`CODE_NOT_FOUND` 는 목록과 두 앱의 예상된 거절 목록에서 빠졌다. 옛 앱이 싣는 칸을 **읽지 않고 무시하는** 자리
+(`PATCH /user/me` 의 가족 알람 설정 키, `POST /voice/clone`·`PATCH /voice/:id` 의 `isShared`, `POST /alarm` 의
+`target_user_id` → `NOT_CONNECTED`, `POST /tts/generate` 의 `target_user_id`)는 해가 없어 그대로 둔다.
+- 그룹 전용 경로는 그 전에 지웠다(404): 그룹 나가기·구성원 내보내기·주인 넘기기, 가족 알람 보내기, 초대 코드 공유,
+  수신 확인.
 
 ### 강제 업데이트 — 두 스토어 게재를 확인한 **뒤에**
 
@@ -408,6 +434,8 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
    ([consent.md](consent.md) — 앞 버전은 그 문서를 실은 앱을 막은 뒤 목록에서 지운다).
 
 3·4 는 이 변경과 **따로** 낸다. 그 사이 옛 앱은 위 응답으로 개인 기능을 그대로 쓴다.
+**3 은 2026-10-26 에 냈다**(Play `36 (1.2.16)` PUBLISHED · App Store 1.2.16 READY_FOR_SALE 확인 뒤 Android 36·iOS 14).
+4 는 이 값이 prod 에 나간 뒤의 서버 릴리스다.
 
 ### 앱 — 업데이트할 때 기기에서 일어나는 일
 
@@ -435,10 +463,10 @@ iOS 1.2.11(빌드 8)이 App Store 심사 지침 **3.1.1**("인앱 결제가 아�
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | 상품 매핑 = `personal_monthly` 하나 | `APPLE_PRODUCT_TO_PLAN_KEY`(`lib/apple-storekit.ts`) · `googlePlanKeyFromProductId`(`lib/play-subscriptions.ts`) — 목록 밖은 400 `UNKNOWN_PRODUCT` | `PlayBillingProducts.all`(`billing/PlayBillingManager.kt`) | `SubscriptionProduct`(`Services/IAP/SubscriptionProduct.swift`) · `Configuration/StoreKitConfiguration.storekit` |
-| 옛 앱 호환 응답(상태 없음 · DB 를 보지 않음) | `routes/family.ts`(`GET /groups/current`) · `routes/billing-query.ts`(`GET /vouchers` · `GET /subscription` 의 `max_members: 1`) · `routes/voice-profile.ts`(`GET /family`) · `routes/alarm-query.ts`(`GET /` · `GET /declined`) · `routes/alarm-mutation.ts`(`POST /:id/decline` · `target_user_id` 의 403) · `routes/code.ts`(`POST /register`) — 회귀 `test/code.test.ts` 와 각 라우트 테스트 | 부르지 않는다 | 부르지 않는다 |
+| 옛 앱 호환 응답(상태 없음 · DB 를 보지 않음) — 그룹·공유·받은 알람 조회와 `POST /code/register` 는 2026-10-26 에 지웠다(404 `NOT_FOUND`, 위 「옛 앱에 남겼던 응답」) | 남은 것: `routes/alarm-mutation.ts`(`POST /`·`PATCH /:id`·`DELETE /:id` — 2026-10-29 부터 저장 없이 되돌려 준다 · `target_user_id` 의 403, [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」) — 회귀 `test/alarm-compat.test.ts`·`test/old-app-compat.test.ts` | 부르지 않는다 | 부르지 않는다 |
 | 서버 표·컬럼 삭제(원자적 하나) | `lib/migrations.ts` #131 `drop-couple-family-plans` — 회귀 `test/migrations.test.ts` | — | — |
 | 개인 경로의 그룹 문장 제거(같은 배포) | `lib/store-billing.ts`(같은 플랜 갱신) · `lib/billing-cancel.ts`(해지 행 문장 · 무료 강등) · `routes/voice-profile.ts`(목소리 삭제) · `lib/voice-slots.ts` | — | — |
-| 목소리·문구 접근 = 내 문구(내 목소리·시스템 목소리) 또는 시스템 스톡 프리셋(쌍 규칙) | `routes/alarm-mutation.ts` 의 `messageBelongsToCaller`·`voiceProfileBelongsToCaller` ↔ `routes/tts.ts` 의 `GET /messages/:id/audio`·`findUsableVoiceProfile` | — | — |
+| 목소리·문구 접근 = 내 문구(내 목소리·시스템 목소리) 또는 시스템 스톡 프리셋 | `routes/tts.ts` 의 `GET /messages/:id/audio`·`findUsableVoiceProfile` — 2026-10-29 부터 유일한 판정(알람 쓰기 쪽 짝 `messageBelongsToCaller`·`voiceProfileBelongsToCaller` 는 서버 알람 사본과 함께 지웠다) | — | — |
 | Room 27→28 재생성 + 받은 알람 변환(같은 트랜잭션) | — | `data/AlarmDatabase.kt` 의 `MIGRATION_27_28` — 회귀 `AlarmDatabaseMigrationSafetyTest` 와 27→28 마이그레이션 테스트 | — |
 | 저장소 변환(로드 뒤 · 던지지 않는 디코드) | — | — | `LocalAlarmStore` · `LocalAlarmRecord` — 회귀 `LocalAlarmRecordCodableTests` |
-| 강제 업데이트(두 스토어 게재 확인 뒤 — 이 변경에서는 올리지 않는다) | `lib/app-version.ts` 의 `minSupported` | — | — |
+| 강제 업데이트(두 스토어 게재 확인 뒤 — 2026-10-26 Android 36·iOS 14 로 올렸다) | `lib/app-version.ts` 의 `minSupported` — 회귀 `test/app-version.test.ts` | — | — |

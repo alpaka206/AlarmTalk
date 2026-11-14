@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import UIKit
 
 @MainActor
 final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
@@ -7,6 +8,9 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     @Published private(set) var elapsedSeconds: TimeInterval = 0
     @Published private(set) var latestRecordingURL: URL?
     @Published private(set) var latestDurationMs: Int?
+    /// 마지막 녹음이 어떻게 끝났는가 — 끼어들어 멈춘 녹음도 **남기고**(녹음 복구) 이 값으로 알린다. 등록 창이 품질 판정과
+    /// 함께 읽는다(`RecordingReview.decide`, 스펙 voice-and-message §4-1 「녹음 품질 판정」). 녹음 중·녹음 전에는 nil.
+    @Published private(set) var lastStopReason: RecordingStopReason?
     // ⚠ **`recordingLevels`(18칸 파형)를 되살리지 말 것**(2026-08-07 삭제).
     // 발행만 하고 **읽는 화면이 하나도 없었다** — 0.25초마다 배열을 새로 만들어 발행하니
     // 녹음 중 편집기 전체가 그만큼 다시 그려졌다. 안드로이드도 2026-07-07 개편에서
@@ -16,6 +20,10 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
     private var startedAt: Date?
+    /// 녹음 동안만 거는 관찰자(중단·입력 장치 변경·백그라운드·미디어 서비스 재시작).
+    private var sessionObservers: [NSObjectProtocol] = []
+    /// 녹음기가 실패를 알렸다(인코딩 오류 — 대리자). 멈출 때 `.failed` 로 읽는다.
+    private var recorderReportedFailure = false
 
     func start() async throws {
         guard !isRecording else { return }
@@ -47,17 +55,28 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         self.recorder = recorder
         latestRecordingURL = url
         latestDurationMs = nil
+        lastStopReason = nil
+        recorderReportedFailure = false
         elapsedSeconds = 0
         startedAt = Date()
         isRecording = true
         startTimer()
+        observeSession()
     }
 
+    /// 사용자가 멈추거나 상한에 닿았다.
     func stop() {
+        stop(reason: .finished)
+    }
+
+    /// 녹음을 끝낸다 — 그때까지의 파일은 남긴다. 사정은 `lastStopReason` 으로 알린다.
+    private func stop(reason: RecordingStopReason) {
         guard isRecording else { return }
         recorder?.stop()
+        removeSessionObservers()
         timer?.invalidate()
         timer = nil
+        lastStopReason = recorderReportedFailure ? .failed : reason
         isRecording = false
         if let startedAt {
             latestDurationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
@@ -82,7 +101,76 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         }
         latestRecordingURL = nil
         latestDurationMs = nil
+        lastStopReason = nil
         elapsedSeconds = 0
+    }
+
+    // MARK: - 녹음 중 끼어드는 것들
+
+    /// 전화·Siri·다른 앱의 오디오 세션, 블루투스 이어폰을 끼고 빼는 것, 백그라운드 진입, 미디어 서비스 재시작에서
+    /// 녹음을 **안전하게 끝낸다**(파일을 닫아 그때까지를 남긴다). 그대로 두면 끊긴 채 이어 붙거나(중단 뒤 재개), 녹음
+    /// 도중 마이크가 바뀌어 한 녹음 안에서 음색이 갈린다(블루투스 HFP 는 8~16 kHz 다). 이 앱은 백그라운드 오디오 모드가
+    /// 있어 백그라운드에서도 마이크가 계속 열려 있었다.
+    ///
+    /// ⚠ 관찰 클로저는 `@Sendable` 이고 알림 객체는 넘기지 않는다 — 필요한 값만 꺼내 `Task { @MainActor in }` 로 넘긴다
+    /// (CLAUDE.md 「시스템이 큐를 정하는 콜백에 메인 액터 클로저를 넘기지 않는다」).
+    private func observeSession() {
+        removeSessionObservers()
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+        sessionObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: session, queue: .main
+        ) { @Sendable [weak self] note in
+            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            guard raw == AVAudioSession.InterruptionType.began.rawValue else { return }
+            Task { @MainActor in self?.stop(reason: .interrupted) }
+        })
+        sessionObservers.append(center.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: session, queue: .main
+        ) { @Sendable [weak self] note in
+            let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            guard let raw, Self.routeChangeEndsRecording(rawReason: raw) else { return }
+            Task { @MainActor in self?.stop(reason: .routeChanged) }
+        })
+        sessionObservers.append(center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { @Sendable [weak self] _ in
+            Task { @MainActor in self?.stop(reason: .backgrounded) }
+        })
+        sessionObservers.append(center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification, object: session, queue: .main
+        ) { @Sendable [weak self] _ in
+            Task { @MainActor in self?.stop(reason: .failed) }
+        })
+    }
+
+    private func removeSessionObservers() {
+        for observer in sessionObservers { NotificationCenter.default.removeObserver(observer) }
+        sessionObservers.removeAll()
+    }
+
+    /// 입력 장치가 실제로 바뀐 경우만 녹음을 끝낸다 — 블루투스·유선 이어폰을 꼈거나(`newDeviceAvailable`) 뺐다
+    /// (`oldDeviceUnavailable`). 녹음을 시작하며 범주를 바꿀 때 오는 변경(`categoryChange`·`override`)은 끝내지 않는다.
+    nonisolated static func routeChangeEndsRecording(rawReason: UInt) -> Bool {
+        guard let reason = AVAudioSession.RouteChangeReason(rawValue: rawReason) else { return false }
+        return reason == .newDeviceAvailable || reason == .oldDeviceUnavailable
+    }
+
+    // MARK: - AVAudioRecorderDelegate
+
+    nonisolated func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
+        Task { @MainActor in self.markRecorderFailure() }
+    }
+
+    nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
+        guard !flag else { return }
+        Task { @MainActor in self.markRecorderFailure() }
+    }
+
+    /// 실패 알림은 멈춘 **뒤에** 올 수도 있다(`stop()` 이 파일을 닫으며 알린다) — 그때는 이미 적은 사정을 고친다.
+    private func markRecorderFailure() {
+        recorderReportedFailure = true
+        if !isRecording, lastStopReason != nil { lastStopReason = .failed }
     }
 
     private func startTimer() {
@@ -98,7 +186,7 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
                 if Int(elapsed) != Int(self.elapsedSeconds) {
                     self.elapsedSeconds = elapsed
                 }
-                // Android `VoiceProfileManagementPanel.kt:591-593` 의 하드 캡 미러 —
+                // Android `VoiceProfileManagementPanel` 의 녹음 루프(`LaunchedEffect(isRecording)`) 하드 캡 미러 —
                 // 2분(MAX_DURATION) 도달 시 녹음을 자동 정지한다. 사용자가 멈추지 않아
                 // 2분을 넘기면 업로드 단계에서 거부되던 문제를 사전 차단한다.
                 if elapsed * 1000 >= Double(VoiceProfileLimits.maxDurationMs) {

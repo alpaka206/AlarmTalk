@@ -13,7 +13,7 @@ async function columnsOf(db: Client, table: string): Promise<string[]> {
 
 async function seedTaggedProfile(db: Client): Promise<void> {
   await db.execute(
-    `INSERT INTO users (id, google_id, email, name, plan) VALUES ('user-1', NULL, 'u1@t.test', '사용자', 'plus')`,
+    `INSERT INTO users (id, google_id, email, plan) VALUES ('user-1', NULL, 'u1@t.test', 'plus')`,
   );
   await db.execute({
     sql: `INSERT INTO voice_profiles

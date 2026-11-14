@@ -116,6 +116,36 @@ object AlarmTalkLog {
      * 상태코드 10(`DEVELOPER_ERROR`, SHA 지문·클라이언트 ID 설정)·12500(`SIGN_IN_FAILED`)은
      * 우리가 고칠 것이 있으니 그대로 올라간다.
      */
+    /**
+     * 녹음을 시작하자마자 멈췄는가(`data/AlarmVoiceRecorder.kt` 의 [com.alarmtalk.app.data.RecordingStoppedTooSoonException]).
+     * 사용자의 동작이고 화면이 "너무 짧아요" 로 이미 말한다 — 이슈가 아니라 브레드크럼이다(2026-10-26 ANDROID-1P).
+     * 오래 녹음한 뒤의 멈춤 실패는 이 표시가 없어 그대로 이슈다.
+     */
+    internal fun isRecordingStoppedTooSoon(error: Throwable): Boolean {
+        var current: Throwable? = error
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current)) {
+            if (current is com.alarmtalk.app.data.RecordingStoppedTooSoonException) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    /**
+     * 녹음이 사용자의 동작이나 기기 사정으로 끝났는가([com.alarmtalk.app.data.RecordingEndedByUserOrDeviceException] —
+     * 시작하자마자 멈춤·마이크 권한 없음·다른 앱이나 전화의 끼어듦). 화면이 이유를 말하고 다시 녹음하게 하므로 이슈가
+     * 아니라 브레드크럼이다. 이유를 모르는 멈춤 실패는 이 표시가 없어 그대로 이슈다.
+     */
+    internal fun isRecordingEndedByUserOrDevice(error: Throwable): Boolean {
+        var current: Throwable? = error
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current)) {
+            if (current is com.alarmtalk.app.data.RecordingEndedByUserOrDeviceException) return true
+            current = current.cause
+        }
+        return false
+    }
+
     internal fun isGoogleSignInUserAction(error: Throwable): Boolean {
         var current: Throwable? = error
         val seen = HashSet<Throwable>()
@@ -164,7 +194,7 @@ object AlarmTalkLog {
      * ⚠ **넣지 않는 것**: `AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`(같은 코드를 다섯 번 낸 묶음이 드러난 자리다 —
      *   1.2.10)·`VOICE_MONTHLY_CHANGE_LIMIT_REACHED`(낡은 등록 횟수가 드러난 자리다). 둘은 그대로 이슈다.
      */
-    val EXPECTED_REFUSAL_CODES = setOf("AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL","CODE_NOT_FOUND")
+    val EXPECTED_REFUSAL_CODES = setOf("AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL")
 
     /**
      * 브레드크럼(`refusal`)으로 낮출 **예상된 거절**인가 — HTTP 4xx 이고, `error_code` 가 있고, 그 코드가
@@ -260,6 +290,7 @@ object AlarmTalkLog {
         isForeignGatewayTimeout(error) -> "transient"
         isHandledAuthFailure(error) -> "auth"
         isGoogleSignInUserAction(error) -> "user"
+        isRecordingEndedByUserOrDevice(error) -> "user"
         isExpectedRefusal(error) -> "refusal"
         isAccountPendingDeletion(error) -> "account"
         isConsentRequired(error) -> "consent"
@@ -363,6 +394,23 @@ object AlarmTalkLog {
             fingerprint = failure?.let { fingerprintOf(it, logKey) },
             tags = reportTags(failure, logKey),
         )
+    }
+
+    /**
+     * 수치만 싣는 진단 브레드크럼(녹음 품질 판정 등). ⚠ [data] 에 오디오·받아쓰기 원문·경로를 넣지 말 것 — 숫자와
+     * 판정 코드만이다(스펙 voice-and-message §4-1 「녹음 품질 판정」). Sentry 가 초기화되지 않았으면 아무것도 하지 않는다.
+     */
+    fun breadcrumb(category: String, event: String, data: Map<String, Any>) {
+        Log.i(TAG, "$event $data")
+        runCatching {
+            val crumb = Breadcrumb().apply {
+                this.category = category
+                level = SentryLevel.INFO
+                message = event
+                data.forEach { (key, value) -> setData(key, value) }
+            }
+            Sentry.addBreadcrumb(crumb)
+        }
     }
 
     // 잡아서 처리한(비크래시) 오류의 개발자 채널: Logcat + Sentry.

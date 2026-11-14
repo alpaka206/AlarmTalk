@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 카카오 로그인 버튼의 말풍선 심볼(브랜드 글리프 — ic_google_g 와 같은 예외). 경로는 카카오 공식 리소스
+     (developers.kakao.com 「디자인 리소스 다운로드 · 카카오 로그인」의 Kakao Login.zip, SVG/kakao_login_light.svg — 2026-08 판)의
+     심볼을 그대로 옮겼다(22×21 상자를 24×24 가운데로 옮김). 형태·비율·색을 바꾸지 말 것 — 가이드가 금한다. 색은 #000000
+     (디자인 가이드). iOS 짝 `KakaoSymbolShape` 와 같은 경로다. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:translateX="-12"
+        android:translateY="-12.5">
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M24.0014 14C17.9241 14 13 18.0219 13 22.9825C13 26.1711 15.0368 28.9728 18.1057 30.5656L17.0681 34.5677C17.0295 34.6871 17.0598 34.8151 17.1424 34.9033C17.2029 34.9659 17.2855 35 17.3653 35C17.4341 35 17.5029 34.9772 17.5607 34.9289L22.0196 31.8171C22.661 31.911 23.3215 31.9622 23.9986 31.9622C30.0732 31.9622 35 27.9403 35 22.9797C35 18.0191 30.0759 14 24.0014 14Z" />
+    </group>
+</vector>

@@ -19,8 +19,6 @@ import SwiftUI
 struct WeatherRegionPickerSheet: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Environment(\.dismiss) private var dismiss
-    /// 버전 확인이 받아 온 서버의 날씨 원천 토큰(`AppVersionGate.weatherAttribution`) — 출처 줄을 그릴지 정한다.
-    @EnvironmentObject private var versionGate: AppVersionGate
 
     /// 지금 저장된 값이 가리키는 지역(체크 표시용). 되짚지 못한 옛 값이면 nil.
     let current: WeatherRegion?
@@ -32,10 +30,8 @@ struct WeatherRegionPickerSheet: View {
     @State private var country: WeatherCountry
     /// 나라 세그먼트의 실제 높이 — 목록 높이 상한에서 뺀다(`SheetScrollingContent.reservedHeight`).
     @State private var countryBarHeight: CGFloat = 0
-    /// 옛 값 안내 줄의 실제 높이 — 같은 이유로 뺀다.
-    @State private var legacyNoteHeight: CGFloat = 0
-    /// 목록 아래 날씨 출처 줄의 실제 높이 — 같은 이유로 뺀다. Dynamic Type 으로 줄 수가 바뀌어도 실측이라 맞는다.
-    @State private var attributionHeight: CGFloat = 0
+    /// 제목 아래 안내 줄(옛 값 안내 또는 고르는 법)의 실제 높이 — 같은 이유로 뺀다.
+    @State private var noteHeight: CGFloat = 0
 
     init(
         current: WeatherRegion?,
@@ -50,34 +46,35 @@ struct WeatherRegionPickerSheet: View {
 
     private var language: String { WeatherRegions.currentLanguage() }
 
-    /// 목록 아래 날씨 출처 줄을 그리는가 — 서버가 지금 쓰는 원천을 말할 때만(`WeatherAttribution.showsLine`).
-    private var showsAttribution: Bool { WeatherAttribution.showsLine(versionGate.weatherAttribution) }
+    /// 제목 아래 안내 줄 — 되짚지 못한 옛 값이면 "목록에 없어요", 아니면 고르는 법과 위치 권한을 쓰지 않는다는
+    /// 사실(지시서 v1.3 8.1). 안드로이드 `WeatherLocationDialog` 의 부제(`region_picker_legacy_value_hint` /
+    /// `region_picker_hint`)와 같다. 줄은 언제나 있다 — 그래서 높이도 언제나 뺀다.
+    private var noteText: String {
+        if let legacyLabel {
+            return String(localized: "‘\(legacyLabel)’은(는) 목록에 없어요. 다시 골라 주세요.")
+        }
+        return String(localized: "목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요.")
+    }
 
-    /// 목록 높이 상한에서 뺄 몫 — 나라 세그먼트(+ 그 아래 간격), 옛 값 안내 줄, 출처 줄(+ 그 위 간격).
-    /// ⚠ 출처 줄은 **그릴 때만** 뺀다. 안 그리는데 빼면 목록이 그만큼 짧아지고, 그리는데 안 빼면 시트가 화면을
-    /// 꽉 채워 스크림이 사라진다. 판정은 높이 값이 아니라 `showsAttribution` 이다 — 한 번 그렸다 숨기면
-    /// `attributionHeight` 에는 옛 실측이 남는다.
+    /// 목록 높이 상한에서 뺄 몫 — 나라 세그먼트(+ 그 아래 간격), 안내 줄.
+    /// (목록 아래 날씨 출처 줄은 2026-11-09 에 '약관 및 개인정보 처리 동의' 화면으로 옮겼다 — `ConsentHistoryView`.)
     private var reservedListHeight: CGFloat {
-        var reserved = countryBarHeight + BottomSheetTitle.titleToContentSpacing
-        if legacyLabel != nil { reserved += legacyNoteHeight + 3 }
-        if showsAttribution { reserved += attributionHeight + BottomSheetTitle.titleToContentSpacing }
-        return reserved
+        countryBarHeight + BottomSheetTitle.titleToContentSpacing + noteHeight + 3
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BottomSheetTitle.titleToContentSpacing) {
             VStack(alignment: .leading, spacing: 3) {
                 BottomSheetTitle(text: String(localized: "지역"))
-                // 목록에 없는 것을 고른 채로 둘 수는 없으므로 체크 표시는 없다 — 대신 무엇이 적혀
-                // 있는지 말한다(안드로이드 `WakerSelectionSheet` 의 부제 자리).
-                if let legacyLabel {
-                    Text(String(localized: "‘\(legacyLabel)’은(는) 목록에 없어요. 다시 골라 주세요."))
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, BottomSheetTitle.horizontalPadding)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { legacyNoteHeight = $0 }
-                }
+                // 옛 값이면 목록에 없는 것을 고른 채로 둘 수는 없으므로 체크 표시는 없다 — 대신 무엇이 적혀
+                // 있는지 말한다(안드로이드 `WakerSelectionSheet` 의 부제 자리). 아니면 고르는 법을 말한다(`noteText`).
+                Text(noteText)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, BottomSheetTitle.horizontalPadding)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noteHeight = $0 }
             }
 
             // 나라는 시스템 세그먼트다 — 셋뿐이고, 목록 위에서 한 번에 보여야 한다.
@@ -98,20 +95,33 @@ struct WeatherRegionPickerSheet: View {
                 // 때마다 시트 높이가 튄다. 셋 다 화면을 넘으므로 늘 스크롤 갈래로 둔다.
                 // ⚠ 세그먼트 몫(+ 그 아래 간격)을 **빼지 않으면** 시트가 화면을 꽉 채워 뒤 스크림이
                 // 사라진다 — 바깥을 눌러 닫을 곳이 없다(2026-09-30 시뮬레이터 실측).
-                // ⚠ 아래 출처 줄(+ 그 위 간격)도 **그릴 때는** 같은 이유로 뺀다(`reservedListHeight`) — 빼먹으면
-                // 스크림이 사라진다.
                 SheetScrollingContent(
                     alwaysScrolls: true,
                     reservedHeight: reservedListHeight
                 ) {
-                    // ⚠ `LazyVStack` 으로 바꾸지 말 것 — `SelectionSheet` 주석과 같은 이유다.
-                    VStack(spacing: 0) {
-                        ForEach(Array(WeatherRegions.byCountry(country).enumerated()), id: \.element.id) { index, region in
-                            if index > 0 { Divider() }
-                            row(region)
-                                .id(region.key)
+                    // ⚠ **3열 칩이다**(2026-11-09 오너 — 고르기 시안 A). 목록은 대한민국 17곳도 한 화면에 다 안 들어갔다 —
+                    // 칩이면 17곳이 스크롤 없이 보이고 고른 곳이 바로 눈에 띈다. 일본(47)·미국(69)은 스크롤한다.
+                    // 안드로이드 짝은 `WeatherLocationDialog` 의 `LazyVerticalGrid`(`WeatherRegionChip`) 다.
+                    // ⚠ `LazyVGrid` 로 바꾸지 말 것 — 열 때 고른 지역으로 `scrollTo` 하려면 그 칸이 이미 만들어져 있어야 한다
+                    // (`SelectionSheet` 의 `LazyVStack` 주석과 같은 이유). 69개라 모두 그려도 가볍다.
+                    VStack(spacing: 8) {
+                        ForEach(Array(stride(from: 0, to: WeatherRegions.byCountry(country).count, by: 3)), id: \.self) { start in
+                            let items = Array(WeatherRegions.byCountry(country)[start..<min(start + 3, WeatherRegions.byCountry(country).count)])
+                            HStack(spacing: 8) {
+                                ForEach(items, id: \.id) { region in
+                                    chip(region)
+                                        .id(region.key)
+                                }
+                                // 마지막 줄이 짧으면 빈 칸으로 채워 칩 폭을 같게 둔다.
+                                ForEach(0..<(3 - items.count), id: \.self) { _ in
+                                    Color.clear.frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52)
+                                }
+                            }
                         }
                     }
+                    .padding(.horizontal, BottomSheetTitle.horizontalPadding)
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .contain)
                 }
                 .onAppear { scrollToCurrent(proxy) }
                 // 나라를 바꾸면 곧바로 맨 위로 — 고른 지역이 있는 나라로 돌아와도 같다(2026-09-30
@@ -119,20 +129,6 @@ struct WeatherRegionPickerSheet: View {
                 .onChange(of: country) { _, _ in scrollToTop(proxy) }
             }
 
-            // 날씨 출처 — 목록 **아래 고정**. 원천과 가공해 쓴다는 사실은 기상법(출처 표시)과 気象庁 약관(공공데이터
-            // 이용규약 — 가공 시 그 사실을 적는다)이 요구한다. 지역을 고르는 곳이 이 시트 하나라(설정·편집기 공용)
-            // 여기 한 곳에만 둔다. 안드로이드 `WeatherLocationDialog` 의 `region_picker_weather_attribution` 과 같은 문장이다.
-            // ⚠ **서버가 그 원천을 쓴다고 말할 때만 그린다**(`showsAttribution`). 문장을 늘 그리면 서버의 원천 교체가
-            // 늦거나 되돌려진 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845).
-            if showsAttribution {
-                Text(String(localized: "날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공"))
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, BottomSheetTitle.horizontalPadding)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { attributionHeight = $0 }
-            }
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -156,48 +152,45 @@ struct WeatherRegionPickerSheet: View {
     }
 
     @ViewBuilder
-    private func row(_ region: WeatherRegion) -> some View {
-        Button {
+    private func chip(_ region: WeatherRegion) -> some View {
+        let selected = region.key == current?.key
+        return Button {
             onSelect(region)
             dismiss()
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: region.displayName(language: language))
-                        .foregroundStyle(theme.palette.onSurface)
-                    // 날씨를 재는 대표 도시가 지역 이름과 다를 때만(경기 → 수원, 아이치 → 나고야).
-                    // 안드로이드 `region_picker_seat_description`("수원 날씨")과 같은 문장이다.
-                    if let seat = region.seatDisplayName(language: language) {
-                        Text(String(localized: "\(seat) 날씨"))
-                            .font(theme.typography.bodySmall)
-                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                    }
-                }
-                Spacer(minLength: 0)
-                if region.key == current?.key {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(theme.palette.primary)
-                }
-            }
-            // 행 치수는 `SelectionSheet` 와 같다(패딩을 먼저, 그다음 최소 높이 56).
-            .padding(.horizontal, BottomSheetTitle.horizontalPadding)
-            .padding(.vertical, 10)
-            .frame(minHeight: 56)
-            .contentShape(Rectangle())
+            // 긴 이름("찰스턴(웨스트버지니아)", "North Chungcheong")은 칩 안에서 두 줄까지 감는다. 높이는 칩마다 같다(52).
+            Text(verbatim: region.displayName(language: language))
+                .font(theme.typography.labelLarge)
+                .fontWeight(.semibold)
+                .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52)
+                .background(
+                    RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
+                        .fill(selected ? theme.palette.primaryContainer : theme.palette.surfaceVariant.opacity(0.46))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
+                        .stroke(selected ? theme.palette.primary : theme.palette.outlineVariant, lineWidth: selected ? 1.5 : 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(region.key == current?.key ? .isSelected : [])
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-/// 지역 시트의 날씨 출처 줄을 그릴지 — **서버가 원천을 말할 때만**.
+/// 날씨 출처 줄을 그릴지 — **서버가 원천을 말할 때만**. 그리는 자리는 '약관 및 개인정보 처리 동의' 화면 맨 아래
+/// (`ConsentHistoryView.weatherAttributionLine`, 2026-11-09 지역 시트에서 옮겼다).
 ///
 /// 계약은 `GET /api/app/version` 의 `weather_attribution`(`AppVersionResponse.weatherAttribution` →
 /// `AppVersionGate.weatherAttribution`), 백엔드 단일 출처는 `packages/backend/src/lib/weather-attribution.ts`.
 /// 출처 문장은 서버가 **실제로 쓰는 원천**을 따라가야 한다 — 앱이 단정하면 서버의 원천 교체가 늦거나 되돌려진
 /// 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 규칙 원문은 `docs/spec/voice-and-message.md`
-/// 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」.
+/// 「날씨 출처 줄 — 서버가 원천을 말할 때만」.
 /// 안드로이드는 `showsWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`)이 같은 판정이다.
 enum WeatherAttribution {
     /// 서버의 날씨가 기상청(KR)·気象庁(JP)·NWS(US)의 예보에서 온다는 토큰.

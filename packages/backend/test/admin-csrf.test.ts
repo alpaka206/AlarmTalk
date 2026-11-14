@@ -8,6 +8,11 @@ const mockDB = createMockDB();
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
+vi.mock('../src/lib/admin/password-attempts', () => ({
+  ADMIN_PASSWORD_RETRY_AFTER_SECONDS: 600,
+  chargeAdminPasswordAttempt: async () => true,
+  clearAdminPasswordAttempts: async () => {},
+}));
 
 import adminRoutes from '../src/routes/admin';
 

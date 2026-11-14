@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -47,7 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -133,17 +133,16 @@ internal fun authFieldColors() = OutlinedTextFieldDefaults.colors(
     errorTrailingIconColor = TextOnSceneDim,
 )
 
-/** 스크롤 밖에 고정되는 원형 뒤로가기 줄. iOS `WakerBackButton` 과 같은 스펙. */
+/** 스크롤 밖에 고정되는 제목 줄 — 원형 뒤로가기 + 가운데 제목. */
 @Composable
-private fun BackCircleRow(onBack: () -> Unit) {
-    // ⚠ **뒤로가기와 제목을 한 줄에 두지 않는다** — iOS 와 같은 구성이다.
-    // 뒤로가기는 원형 버튼으로 위에 따로 두고, 제목은 그 아래 본문 첫 줄로 크게 세운다
-    // (디자인 언어: 제목 = 결론). 2026-08-10 결정: 이 화면만은 **iOS 를 원본으로 삼는다**.
-    // 모양은 공용 `WakerBackButton` 이 갖는다 — 이 화면에만 있던 것을 빼서 하위 화면들과
-    // 함께 쓴다(2026-08-11). 여기는 고정 팔레트 화면이라 틴트만 `TextOnScene` 으로 준다.
-    WakerBackButton(
+private fun AuthTopBar(title: String, onBack: () -> Unit) {
+    // 제목은 다른 하위 화면처럼 **위쪽 가운데**, 뒤로가기와 한 줄이다(2026-11-09 오너 — "로그인·회원가입도 다른 것들처럼
+    // 상단 가운데에"). 예전에는 뒤로가기만 위에 두고 제목을 본문 첫 줄에 크게 세웠다(2026-08-10). 골격은 공용 `WakerTopBar`
+    // 이고, 여기는 고정 팔레트 화면이라 색만 `TextOnScene` 으로 준다. iOS 짝 `LoginView` 의 `WakerTopBar(tint:)`.
+    WakerTopBar(
+        title = title,
         onBack = onBack,
-        modifier = Modifier.padding(start = 24.dp, top = 18.dp),
+        modifier = Modifier.padding(top = 18.dp),
         tint = TextOnScene,
     )
 }
@@ -192,37 +191,79 @@ internal fun AuthTextField(
     onTogglePasswordVisible: () -> Unit = {},
     showPasswordLabel: String = "",
     hidePasswordLabel: String = "",
+    // 칸 **옆**에 붙는 버튼(가입의 '인증 받기'). 칸 안에 넣지 않는다 — 긴 주소를 가리고, 아래 코드 줄의
+    // [칸][확인] 과 모양이 갈린다(2026-11-14 오너 확인, 캔버스 proposal-09).
+    trailingAction: (@Composable () -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         AuthFieldLabel(label)
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = true,
-            enabled = enabled,
-            shape = WakerInputShape,
-            colors = authFieldColors(),
-            isError = isError,
-            supportingText = supportingText,
-            visualTransformation = if (passwordVisible == false) {
-                PasswordVisualTransformation()
-            } else {
-                VisualTransformation.None
-            },
-            trailingIcon = passwordVisible?.let { visible ->
-                {
-                    IconButton(onClick = onTogglePasswordVisible) {
-                        Icon(
-                            imageVector = if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                            contentDescription = if (visible) hidePasswordLabel else showPasswordLabel,
-                        )
-                    }
-                }
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
-            modifier = Modifier.textInputTapTarget().fillMaxWidth(),
-        )
+        if (trailingAction == null) {
+            AuthOutlinedField(
+                value, onValueChange, keyboardType, imeAction, enabled, isError, supportingText,
+                passwordVisible, onTogglePasswordVisible, showPasswordLabel, hidePasswordLabel,
+                Modifier.fillMaxWidth(),
+            )
+        } else {
+            // ⚠ **위 정렬이다.** 오류 문장(supportingText)은 칸 아래로 자라므로 가운데 정렬이면 버튼이 칸에서
+            //   내려간다. 위에 맞추면 버튼(56)과 칸 상자(56)가 늘 한 줄이다.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AuthOutlinedField(
+                    value, onValueChange, keyboardType, imeAction, enabled, isError, supportingText,
+                    passwordVisible, onTogglePasswordVisible, showPasswordLabel, hidePasswordLabel,
+                    Modifier.weight(1f),
+                )
+                trailingAction()
+            }
+        }
     }
+}
+
+@Composable
+private fun AuthOutlinedField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    keyboardType: KeyboardType,
+    imeAction: ImeAction,
+    enabled: Boolean,
+    isError: Boolean,
+    supportingText: (@Composable () -> Unit)?,
+    passwordVisible: Boolean?,
+    onTogglePasswordVisible: () -> Unit,
+    showPasswordLabel: String,
+    hidePasswordLabel: String,
+    modifier: Modifier,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        enabled = enabled,
+        shape = WakerInputShape,
+        colors = authFieldColors(),
+        isError = isError,
+        supportingText = supportingText,
+        visualTransformation = if (passwordVisible == false) {
+            PasswordVisualTransformation()
+        } else {
+            VisualTransformation.None
+        },
+        trailingIcon = passwordVisible?.let { visible ->
+            {
+                IconButton(onClick = onTogglePasswordVisible) {
+                    Icon(
+                        imageVector = if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                        contentDescription = if (visible) hidePasswordLabel else showPasswordLabel,
+                    )
+                }
+            }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+        modifier = Modifier.textInputTapTarget().then(modifier),
+    )
 }
 
 @Composable
@@ -264,17 +305,17 @@ internal fun AuthScreen(
     onClearLoginError: () -> Unit = {},
     onBack: () -> Unit,
     onLogin: (String, String) -> Unit,
-    onRegister: (String, String, String, String) -> Unit,
+    onRegister: (String, String, String) -> Unit,
     onRequestEmailVerification: (String) -> Unit,
     onConfirmEmailVerification: (String, String) -> Unit,
     onSwitchMode: () -> Unit,
     onGoogleSignIn: () -> Unit,
+    onKakaoSignIn: () -> Unit,
     onFindPassword: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") }
     var emailCode by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
@@ -326,8 +367,6 @@ internal fun AuthScreen(
     // (첫 구성에서도 한 번 돈다 — 그때 칸은 어차피 비어 있다.)
     LaunchedEffect(codeFieldClearTick) { emailCode = "" }
 
-    // 상한을 넘겨 치려 했는지. 값 자체는 30자에서 잘리므로 값만으로는 알 수 없다.
-    var nameTooLong by remember { mutableStateOf(false) }
     // 이메일을 보내는 버튼을 눌렀는데 형식에 안 맞았는가 — **누른 뒤에만** 뜬다.
     // 치는 도중에 빨갛게 만들면 아직 다 치지도 않은 주소를 틀렸다고 하는 셈이다.
     // 서버도 같은 판정을 `AUTH_EMAIL_INVALID` 로 돌려주므로 문구는 한 벌뿐이다.
@@ -344,12 +383,11 @@ internal fun AuthScreen(
     // ⚠ **형식으로 버튼을 죽이지 않는다 — 두 모드 모두**(2026-09-21 리뷰).
     // 가입 쪽에만 `emailLooksValid` 가 남아 있어서, 로그인은 눌러서 이유를 듣는데
     // 가입은 같은 주소로 버튼이 죽어 있었다. 잠그는 것은 **보낼 것이 없을 때**뿐이고
-    // (빈 이름·미인증·비밀번호 규칙), 형식은 누른 뒤에 이메일 칸 아래로 말한다.
+    // (미인증·비밀번호 규칙), 형식은 누른 뒤에 이메일 칸 아래로 말한다.
     val canSubmit = if (mode == AuthMode.Login) {
         canSubmitLogin(email, password)
     } else {
-        name.isNotBlank() &&
-            canRequestEmailCode(email) &&
+        canRequestEmailCode(email) &&
             isEmailVerified &&
             passwordPolicyValid &&
             passwordMatches
@@ -364,37 +402,20 @@ internal fun AuthScreen(
         // ⚠ **뒤로가기는 스크롤 밖에 둔다.** 안에 두면 폼을 내리거나 키보드가 올라와
         // 내용이 밀릴 때 같이 사라져, 나갈 길이 화면에서 없어진다. 스크롤되는 건 폼이고
         // 탈출구는 늘 같은 자리에 있어야 한다(iOS `LoginView` 도 같은 구조).
-        BackCircleRow(onBack = onBack)
+        AuthTopBar(
+            title = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
+            onBack = onBack,
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                // ⚠ 뒤로가기와 제목 사이 간격. 스크롤 밖으로 버튼을 빼면서 이 여백이
-                // 통째로 사라져 제목이 버튼에 붙어 있었다. iOS 와 같은 24
-                // (`LoginView` 의 ScrollView `.padding(.vertical, 18)` + 제목 `.padding(.top, 6)`).
-                .padding(top = 24.dp, bottom = 18.dp),
+                // 제목 줄(`AuthTopBar`)이 아래 간격을 이미 갖는다 — 여기는 조금만 띄운다(iOS `LoginView` 와 같은 8).
+                .padding(top = 8.dp, bottom = 18.dp),
             // iOS `LoginView` 의 `VStack(spacing: 14)` 와 같은 값.
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
-                // iOS 와 같은 단계 — `theme.typography.headlineSmall`(24pt).
-                // headlineLarge(32) 로 키우면 iOS 보다 한 단계 커져 두 앱이 어긋난다.
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = TextOnScene,
-            )
-            Text(
-                text = if (mode == AuthMode.Login) {
-                    stringResource(R.string.auth_subtitle_login)
-                } else {
-                    stringResource(R.string.auth_subtitle_register)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextOnSceneDim,
-            )
-
             // 회원가입에서 이미 가입된 이메일로 인증을 시도해 로그인으로 전환된 경우 —
             // 왜 화면이 바뀌었는지 여기서 설명한다(스낵바는 키보드에 가려 안 보인다).
             if (mode == AuthMode.Login && authNotice != null) {
@@ -405,38 +426,41 @@ internal fun AuthScreen(
                 )
             }
 
-            if (mode == AuthMode.Register) {
-                AuthTextField(
-                    label = stringResource(R.string.auth_label_name),
-                    value = name,
-                    // 서버(`DisplayNameSchema`)와 같은 규칙을 앱에서 먼저 태운다 — 제로폭·
-                    // 양방향 문자가 남으면 isNotBlank() 는 통과하는데 서버에서 정리하면 빈 값이
-                    // 되어 **이메일 인증까지 마친 뒤에야** 400 이 난다.
-                    //
-                    // 30자에서 막되, **말없이 막지 않는다.** 넘겨 치면 그 순간 아래에
-                    // 이유가 뜨고(글자는 들어가지 않는다), 지워서 여유가 생기면 사라진다.
-                    // 항상 켜진 카운터(7/30)는 넘기 전까진 알려 줄 게 없어 두지 않는다.
-                    onValueChange = { raw ->
-                        val cleaned = sanitizeDisplayName(raw)
-                        // 30자 **정확히** 일 때는 플래그를 건드리지 않는다 — 잘라서 돌려준
-                        // 값을 IME 가 되돌려 보내면 방금 켠 경고가 곧바로 꺼진다.
-                        if (cleaned.length > DisplayNameMaxLength) {
-                            nameTooLong = true
-                        } else if (cleaned.length < DisplayNameMaxLength) {
-                            nameTooLong = false
-                        }
-                        name = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
-                    },
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Next,
-                    enabled = !busy,
-                    isError = nameTooLong,
-                    supportingText = if (nameTooLong) {
-                        { Text(stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength)) }
+            // ⚠ **간편 로그인이 먼저다**(2026-11-14 오너, 캔버스 proposal-07·08 A안). 카카오 로그인은 처음 쓰는 사람에게는
+            //   곧 가입이라 맨 위에 둔다. 가입 화면도 같은 짝이다 — 카카오·구글로 '가입' 하는 길이 따로 없다(같은 버튼이다).
+            //   이메일 로그인·가입은 그 아래 한 화면에 그대로 둔다. iOS 짝은 `LoginView` 의 `socialButtons`(Apple 자리에 구글).
+            KakaoLoginButton(
+                enabled = !busy,
+                onClick = onKakaoSignIn,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            GoogleSignInButton(
+                enabled = !busy,
+                onClick = onGoogleSignIn,
+                modifier = Modifier.fillMaxWidth(),
+                label = if (mode == AuthMode.Login) {
+                    stringResource(R.string.common_google_login)
+                } else {
+                    stringResource(R.string.common_google_continue)
+                },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                HorizontalDivider(modifier = Modifier.weight(1f), color = AuthLineSoft)
+                Text(
+                    // 무엇 사이의 선택인지 말한다 — 위는 간편 로그인, 아래는 이메일이다.
+                    text = if (mode == AuthMode.Login) {
+                        stringResource(R.string.auth_divider_email_login)
                     } else {
-                        null
+                        stringResource(R.string.auth_divider_email_register)
                     },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AuthTextMuted,
                 )
+                HorizontalDivider(modifier = Modifier.weight(1f), color = AuthLineSoft)
             }
 
             // 형식 오류는 **이메일 칸 아래**에 붙인다. 나머지 서버 실패(`loginError`)는
@@ -467,45 +491,41 @@ internal fun AuthScreen(
                 } else {
                     null
                 },
+                trailingAction = if (mode == AuthMode.Register) {
+                    {
+                        EmailVerifyButton(
+                            verified = isEmailVerified,
+                            codeSent = codeSentForEmail,
+                            // ⚠ **형식으로 죽이지 않는다** — 가입에서 실질적인 제출 버튼이 이것이다. 예전에는
+                            // `emailLooksValid` 로 잠가 놔서, 주소를 잘못 친 사람은 눌리지 않는 버튼 앞에서
+                            // **무엇이 잘못됐는지 들을 길이 없었다.** 빈 칸일 때만 흐리다.
+                            enabled = !busy && canRequestEmailCode(email) && !isEmailVerified,
+                            onClick = {
+                                when (authEmailSubmitOutcome(email)) {
+                                    AuthEmailSubmitOutcome.ShowEmailFormatError -> emailFormatError = true
+                                    AuthEmailSubmitOutcome.Submit -> onRequestEmailVerification(email)
+                                }
+                            },
+                        )
+                    }
+                } else {
+                    null
+                },
             )
 
             if (mode == AuthMode.Register) {
-                // ⚠ **형식으로 죽이지 않는다** — 가입에서 실질적인 제출 버튼이 이것이다.
-                // 예전에는 `emailLooksValid` 로 잠가 놔서, 주소를 잘못 친 사람은 눌리지
-                // 않는 '이메일 인증' 앞에서 **무엇이 잘못됐는지 들을 길이 없었다.**
-                val verifyEnabled = !busy && canRequestEmailCode(email) && !isEmailVerified
-                OutlinedButton(
-                    onClick = {
-                        when (authEmailSubmitOutcome(email)) {
-                            AuthEmailSubmitOutcome.ShowEmailFormatError -> emailFormatError = true
-                            AuthEmailSubmitOutcome.Submit -> onRequestEmailVerification(email)
-                        }
-                    },
-                    enabled = verifyEnabled,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 54.dp),
-                    shape = WakerButtonShape,
-                    border = authOutlinedButtonBorder(verifyEnabled),
-                    colors = authOutlinedButtonColors(),
-                ) {
-                    Text(
-                        when {
-                            isEmailVerified -> stringResource(R.string.auth_email_verify_done)
-                            codeSentForEmail -> stringResource(R.string.auth_email_verify_resend)
-                            else -> stringResource(R.string.auth_email_verify)
-                        },
-                    )
-                }
-
                 if (codeSentForEmail && !isEmailVerified) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
+                    // ⚠ **라벨은 줄 위에 따로 둔다**(2026-11-09 오너 "입력창이랑 확인이랑 줄 다름").
+                    // 라벨을 입력칸과 한 묶음에 넣으면 가운데 정렬된 '확인' 버튼이 **라벨까지 합친 높이**의
+                    // 가운데로 올라가 입력칸과 한 줄로 안 맞는다. 줄에는 입력칸과 버튼만 두고, 두 상자의
+                    // 높이(56)를 같게 둔다. iOS 짝은 `LoginView.verificationCodeRow`(아래 정렬)다.
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             OutlinedTextField(
                                 value = emailCode,
                                 onValueChange = {
@@ -524,17 +544,17 @@ internal fun AuthScreen(
                                 ),
                                 modifier = Modifier.textInputTapTarget().then(Modifier.weight(1f)),
                             )
-                        }
-                        val confirmEnabled = !busy && emailCode.length == VerificationCodeLength
-                        OutlinedButton(
-                            onClick = { onConfirmEmailVerification(email, emailCode) },
-                            enabled = confirmEnabled,
-                            modifier = Modifier.heightIn(min = 56.dp),
-                            shape = WakerButtonShape,
-                            border = authOutlinedButtonBorder(confirmEnabled),
-                            colors = authOutlinedButtonColors(),
-                        ) {
-                            Text(stringResource(R.string.auth_confirm))
+                            val confirmEnabled = !busy && emailCode.length == VerificationCodeLength
+                            OutlinedButton(
+                                onClick = { onConfirmEmailVerification(email, emailCode) },
+                                enabled = confirmEnabled,
+                                modifier = Modifier.heightIn(min = 56.dp),
+                                shape = WakerButtonShape,
+                                border = authOutlinedButtonBorder(confirmEnabled),
+                                colors = authOutlinedButtonColors(),
+                            ) {
+                                Text(stringResource(R.string.auth_confirm))
+                            }
                         }
                     }
                     Text(
@@ -542,14 +562,9 @@ internal fun AuthScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = AuthTextMuted,
                     )
-                } else if (isEmailVerified) {
-                    PasswordRuleRow(
-                        text = stringResource(R.string.auth_email_verify_done),
-                        satisfied = true,
-                        satisfiedColor = BrandAccentOnScene,
-                        pendingColor = AuthTextMuted,
-                    )
                 }
+                // 인증을 마친 것은 이메일 칸 옆 버튼('✓ 인증됨')이 말한다 — 아래에 '이메일 인증 완료' 줄을 또 두지
+                // 않는다(예전에는 버튼과 줄이 같은 말을 두 번 했다).
 
                 // 인증 요청/코드 확인/가입 실패 안내 — 스낵바는 키보드에 가려 안 보인다.
                 if (registerError != null) {
@@ -628,7 +643,7 @@ internal fun AuthScreen(
                     when (authEmailSubmitOutcome(email)) {
                         AuthEmailSubmitOutcome.ShowEmailFormatError -> emailFormatError = true
                         AuthEmailSubmitOutcome.Submit -> if (mode == AuthMode.Register) {
-                            onRegister(email, password, name, emailCode)
+                            onRegister(email, password, emailCode)
                         } else {
                             onLogin(email, password)
                         }
@@ -652,33 +667,6 @@ internal fun AuthScreen(
                         Text(stringResource(R.string.auth_find_password))
                     }
                 }
-                // SSO 구분선 — 소셜 로그인은 여기 아래로 묶고, 추후 제공자 추가 시 이 섹션에 덧붙인다.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    HorizontalDivider(
-                        modifier = Modifier.weight(1f),
-                        color = AuthLineSoft,
-                    )
-                    Text(
-                        // iOS 와 같은 문구 — "또는" 은 무엇 사이의 선택인지 말하지 않는다.
-                        text = stringResource(R.string.auth_social_divider),
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = AuthTextMuted,
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.weight(1f),
-                        color = AuthLineSoft,
-                    )
-                }
-                GoogleSignInButton(
-                    enabled = !busy,
-                    onClick = onGoogleSignIn,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = stringResource(R.string.common_google_login),
-                )
             }
 
             Row(
@@ -704,6 +692,51 @@ internal fun AuthScreen(
             }
         }
     }
+    }
+}
+
+/**
+ * 가입의 이메일 칸 옆 버튼 — `인증 받기` → (보낸 뒤) `다시 받기` → (확인되면) `✓ 인증됨`. 인증 상태는 **정규화한 그
+ * 주소**에 묶여 있어 주소를 고치면 `인증 받기` 로 돌아간다(`emailVerified == normalizedEmail`). 높이는 칸과 같은
+ * 56 이라 한 줄로 맞는다. iOS 짝은 `LoginView.emailVerifyButton`.
+ */
+@Composable
+private fun EmailVerifyButton(
+    verified: Boolean,
+    codeSent: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .heightIn(min = 56.dp)
+            .widthIn(min = 88.dp),
+        shape = WakerButtonShape,
+        // 인증됨은 눌리지 않지만 '꺼진 버튼' 이 아니라 '마친 상태' 로 읽혀야 한다 — 강조색 글자·옅은 강조 테두리.
+        border = if (verified) BorderStroke(1.dp, BrandAccentOnScene.copy(alpha = 0.3f)) else authOutlinedButtonBorder(enabled),
+        colors = authOutlinedButtonColors(),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+    ) {
+        if (verified) {
+            Icon(
+                imageVector = Icons.Outlined.CheckCircle,
+                contentDescription = null,
+                tint = BrandAccentOnScene,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            text = when {
+                verified -> stringResource(R.string.auth_email_verify_done)
+                codeSent -> stringResource(R.string.auth_email_verify_resend_short)
+                else -> stringResource(R.string.auth_email_verify)
+            },
+            color = if (verified) BrandAccentOnScene else Color.Unspecified,
+            maxLines = 1,
+        )
     }
 }
 

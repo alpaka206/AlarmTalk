@@ -177,7 +177,7 @@ final class MessageContextMemoryTests: XCTestCase {
 
     /// **쓸 수 없는 목소리는 버튼을 죽이지 않고 누를 때 알럿으로 막는다**(2026-09-29 —
     /// 편집기의 '삭제된 목소리' 배너를 걷어낸 뒤로 이 알럿이 유일한 설명이다).
-    /// `saveFlow` 첫머리와 `editorSaveBlocked` 가 같은 판정을 본다.
+    /// `saveFlow` 첫머리와 `editorSaveBlockReason` 이 같은 판정을 본다.
     /// 안드로이드 `SaveBlockReason.VOICE_UNAVAILABLE` 짝.
     func testUnusableVoiceIsExplainedOnSaveInsteadOfADeadButton() {
         var audioChecked = false
@@ -256,30 +256,65 @@ final class MessageContextMemoryTests: XCTestCase {
         XCTAssertNil(adopted(text: "내가 친 문구", lastContext: "fortune"))
     }
 
-    /// **유료 직접 입력은 기본 목소리의 강제가 건드리지 않는다**(2026-09-29 리뷰). 직전 선택으로
-    /// 직접 입력 문구를 이은 뒤 옛 테마가 붙으면(`applyPendingFreeBucketIfNeeded`) 이은 문구가
-    /// 말없이 사라진다. 4-값 고정(`coerceFreeVoiceTierConstraints`)과 같은 판정 하나.
-    func testPaidTypedManualTextIsLeftAloneByStockClipCoercion() {
+    /// **직접 입력은 기본 목소리의 강제가 건드리지 않는다 — 무료도**(2026-09-29 리뷰, 2026-10-26 등급 조건 제거). 직전 선택으로
+    /// 직접 입력 문구를 이은 뒤 옛 테마가 붙으면(`applyPendingFreeBucketIfNeeded`) 이은 문구가 말없이 사라진다. 4-값
+    /// 고정(`coerceFreeVoiceTierConstraints`)과 같은 판정 하나. 무료도 기본 목소리 직접 입력을 월 3회 만든다.
+    func testTypedManualTextIsLeftAloneByStockClipCoercion() {
         func keeps(
-            free: Bool = false,
             random: Bool = false,
             bucket: FreeBucket? = nil,
             text: String = "회의 자료 챙겨"
         ) -> Bool {
-            AlarmEditDraft.keepsPaidTypedManualText(
-                freeVoiceTier: free,
+            AlarmEditDraft.keepsTypedManualText(
                 randomPrompt: random,
                 selectedBucket: bucket,
                 ttsText: text
             )
         }
         XCTAssertTrue(keeps())
-        // 잠긴 등급(무료)에서는 예전 그대로 테마·기본 인사말로 강제한다.
-        XCTAssertFalse(keeps(free: true))
         // 직접 입력이 아니면(생성형·테마·빈 문구) 강제가 돈다.
         XCTAssertFalse(keeps(random: true))
         XCTAssertFalse(keeps(bucket: .medication))
         XCTAssertFalse(keeps(text: "   "))
+    }
+
+    /// 날씨·운세 **테마** 알람을 시각만 고쳐 다시 저장해도 지역·사주가 남는다(1.2.16 부터 지워졌다 — 그 뒤 매일 '날씨를
+    /// 못 알아봤어요' 클립이 울었다). 테마를 붙이면 `voiceRandomPrompt` 는 꺼진 채 저장된다.
+    func testThemeAlarmKeepsRegionAndBirthInfoOnResave() {
+        func keeps(
+            voice: Bool = true,
+            random: Bool = false,
+            context: RandomPromptContext = .preset,
+            bucket: FreeBucket? = nil
+        ) -> (weather: Bool, fortune: Bool) {
+            AlarmEditDraft.savesPromptContext(voiceMode: voice, randomPrompt: random, context: context, stockBucket: bucket)
+        }
+        // 테마 알람 — 랜덤은 꺼져 있어도 그 테마의 값은 남긴다.
+        XCTAssertTrue(keeps(bucket: .weather).weather)
+        XCTAssertFalse(keeps(bucket: .weather).fortune)
+        XCTAssertTrue(keeps(bucket: .fortune).fortune)
+        XCTAssertFalse(keeps(bucket: .fortune).weather)
+        // 다른 테마·직접 입력은 남기지 않는다.
+        XCTAssertFalse(keeps(bucket: .medication).weather)
+        XCTAssertFalse(keeps(bucket: .medication).fortune)
+        XCTAssertFalse(keeps().weather)
+        // 라이브 생성 문구는 예전 그대로 종류를 따른다.
+        XCTAssertTrue(keeps(random: true, context: .wakeWeather).weather)
+        XCTAssertTrue(keeps(random: true, context: .wakeFortune).fortune)
+        XCTAssertFalse(keeps(random: true, context: .wakeWeather).fortune)
+        // 알람 전용이면 아무것도 남기지 않는다.
+        XCTAssertFalse(keeps(voice: false, bucket: .weather).weather)
+        XCTAssertFalse(keeps(voice: false, random: true, context: .wakeFortune).fortune)
+    }
+
+    /// 직접 입력 '음성 만들기' 의 같은 요청 id(`voice-and-message.md` §8, Codex #942) — 같은 입력의 재시도는 같은 id, 입력이
+    /// 바뀌면 새 id. 안드로이드 `ManualRequestIdsTest` 짝.
+    @MainActor
+    func testManualRequestIDIsStableForTheSameInput() {
+        let studio = VoiceStudioViewModel()
+        let first = studio.manualRequestIDFor(profileID: "v1", language: "ko", text: "회의 자료 챙겨")
+        XCTAssertEqual(first, studio.manualRequestIDFor(profileID: "v1", language: "ko", text: "회의 자료 챙겨"))
+        XCTAssertNotEqual(first, studio.manualRequestIDFor(profileID: "v1", language: "ko", text: "약 먹어"))
     }
 
     /// `AlarmEditorSheet.loadVoicePromptState` 의 복원식과 같은 순서.

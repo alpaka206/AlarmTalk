@@ -16,9 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.outlined.RecordVoiceOver
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -74,8 +74,10 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Voices,
                 selectedTab = selectedTab,
-                icon = Icons.Outlined.Mic,
-                selectedIcon = Icons.Filled.Mic,
+                // ⚠ **마이크가 아니라 사람 + 음파다**(2026-11-09 오너 — 고르기 시안 A). 이 탭은 '등록한 목소리 목록' 이라,
+                // 마이크는 '지금 녹음하기' 로 읽혔다. iOS 짝은 `person.wave.2`(`AuxiliaryScreen.swift`).
+                icon = Icons.Outlined.RecordVoiceOver,
+                selectedIcon = Icons.Filled.RecordVoiceOver,
                 label = stringResource(R.string.r3app_bottom_tab_voices),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
@@ -83,7 +85,9 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Menu,
                 selectedTab = selectedTab,
-                icon = Icons.Filled.Menu,
+                // ⚠ **≡ 가 아니라 ··· 다**(2026-11-09 오너 — 고르기 시안 A). ≡ 는 서랍 메뉴 기호라 '더보기' 와 뜻이 달랐다.
+                // iOS 짝은 `ellipsis`.
+                icon = Icons.Filled.MoreHoriz,
                 label = stringResource(R.string.r3app_bottom_tab_menu),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),

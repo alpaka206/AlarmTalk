@@ -11,9 +11,9 @@ describe('마이그레이션 118 — 기존 스토어 구독 권한은 재확인
     const db = createClient({ url: `file:${join(directory, 'test.db')}` });
     try {
       await runMigrationsRange(db, 1, 117);
-      await db.execute(`INSERT INTO users (id,email,name,plan) VALUES
-        ('owner','owner@example.test','owner','family'),
-        ('member','member@example.test','member','plus')`);
+      await db.execute(`INSERT INTO users (id,email,plan) VALUES
+        ('owner','owner@example.test','family'),
+        ('member','member@example.test','plus')`);
       const plans = await db.execute("SELECT id,key FROM plans WHERE key IN ('family','personal')");
       const family = String(plans.rows.find((row) => row.key === 'family')!.id);
       const personal = String(plans.rows.find((row) => row.key === 'personal')!.id);

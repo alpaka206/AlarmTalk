@@ -5,6 +5,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.Box
+import android.content.Context
 import android.icu.text.MeasureFormat
 import android.icu.util.Measure
 import android.icu.util.MeasureUnit
@@ -38,7 +39,9 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import com.alarmtalk.app.network.AuthSession
@@ -58,6 +61,7 @@ internal fun HomeHeader(
     //   시각이라 앱을 오래 백그라운드에 두었다 돌아와도 재시작하지 않는다 — 그 사이
     //   `delay` 가 밀리면 낡은 값으로 한 프레임을 그린다.
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
 
     // 절대 시각은 바로 아래 카드에 이미 있으니 헤더는 '남은 시간'을 말한다.
     // 분이 바뀌는 경계마다 갱신해 화면을 켜둔 채로도 어긋나지 않게 한다.
@@ -91,7 +95,7 @@ internal fun HomeHeader(
             // ⚠ **'곧 울려요' 분기를 되살리지 말 것**(2026-08-18 지시). 1분 미만일 때만
             // 다른 문장이 되면 같은 자리의 말이 갑자기 바뀐다. 올림이라 1분 미만도
             // "1분 후에 울려요" 로 읽힌다.
-            stringResource(R.string.hs_status_ring_in, remainingDurationLabel(nextAlarm.fireAtMillis - now))
+            ringInSentence(context, nextAlarm.fireAtMillis, now)
         }
         hasAnyAlarm -> stringResource(R.string.hs_status_inactive)
         else -> stringResource(R.string.hs_status_no_alarm)
@@ -111,6 +115,15 @@ internal fun HomeHeader(
         )
     }
 }
+
+/**
+ * "13시간 40분 후에 울려요." — 알람 하나가 [fireAtMillis] 에 울리기까지 남은 시간을 말하는 문장.
+ *
+ * 홈 헤드라인(다음 알람)과 알람을 켠 순간의 하단 안내(방금 켠 그 알람 — `docs/spec/alarm-editor.md` §7)가
+ * **같이 부른다.** 문장이나 계산을 한쪽에서만 고치면 같은 알람이 두 자리에서 다른 시간으로 읽힌다.
+ */
+internal fun ringInSentence(context: Context, fireAtMillis: Long, nowMillis: Long): String =
+    context.getString(R.string.hs_status_ring_in, remainingDurationLabel(fireAtMillis - nowMillis))
 
 /** "13시간 40분"/"2일 5시간" — 다음 울림까지 남은 시간(분 단위 올림, 상위 두 단위만 노출). */
 internal fun remainingDurationLabel(remainingMillis: Long): String {
@@ -168,7 +181,8 @@ internal fun MenuTabPanel(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
-                        text = authSession?.user?.name?.takeIf { it.isNotBlank() }
+                        // 닉네임은 없앴다(2026-10-29) — 로그인한 계정의 이메일을 보인다. iOS 더보기 머리도 같다.
+                        text = authSession?.user?.email?.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.hs_profile_content_desc),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
@@ -364,83 +378,12 @@ internal fun themeModeIcon(mode: ThemeMode): ImageVector = when (mode) {
 }
 
 @Composable
-internal fun NicknameEditDialog(
-    initial: String,
-    busy: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    var value by remember { mutableStateOf(initial) }
-    val trimmedValue = value.trim()
-    // 상한을 넘겨 치려 했는지 — 값은 30자에서 잘리므로 값만 봐서는 알 수 없다.
-    var tooLong by remember { mutableStateOf(false) }
-    val canSave = !busy && trimmedValue.isNotEmpty() && trimmedValue != initial
-
-    // 공용 알럿을 그대로 쓴다 — 입력이 있다고 별도 모달을 두지 않는다([IosAlertDialog]).
-    // 액션이 둘이라 가로로 놓이고(로그아웃 알럿과 같은 모양), 닫기가 액션으로 들어가므로
-    // 제목줄의 X 는 없앤다.
-    IosAlertDialog(
-        title = stringResource(R.string.hs_nickname_dialog_title),
-        message = null,
-        onDismiss = { if (!busy) onDismiss() },
-        actions = listOf(
-            IosAlertAction(
-                label = stringResource(R.string.r3dlg_modal_dialog_close),
-                enabled = !busy,
-                onClick = onDismiss,
-            ),
-            IosAlertAction(
-                label = if (busy) {
-                    stringResource(R.string.hs_nickname_saving)
-                } else {
-                    stringResource(R.string.hs_nickname_save)
-                },
-                emphasized = true,
-                enabled = canSave,
-                onClick = { onConfirm(value) },
-            ),
-        ),
-    ) {
-        // 라벨을 두지 않는다 — 제목이 이미 "닉네임 수정" 이라 같은 말을 두 번 하는 셈이다.
-        // 비었을 때 무엇을 넣는 자리인지는 placeholder 가 알려 준다.
-        IosAlertField(
-            value = value,
-            onValueChange = { raw ->
-                val cleaned = sanitizeDisplayName(raw)
-                // 30자 **정확히** 일 때는 플래그를 건드리지 않는다. 잘라서 돌려준 값을
-                // IME 가 그대로 되돌려 보내면(길이 30) 방금 켠 경고가 곧바로 꺼진다.
-                // 넘겨 치면 켜고, 지워서 여유가 생기면 끈다.
-                if (cleaned.length > DisplayNameMaxLength) {
-                    tooLong = true
-                } else if (cleaned.length < DisplayNameMaxLength) {
-                    tooLong = false
-                }
-                value = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
-            },
-            placeholder = stringResource(R.string.hs_nickname_field_placeholder),
-            enabled = !busy,
-        )
-        // 항상 켜져 있는 카운터(7/30)는 상한을 넘기 전까진 알려 줄 게 없다.
-        // 넘었을 때만, 무엇을 하면 되는지 말한다.
-        if (tooLong) {
-            Text(
-                text = stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength),
-                style = IosAlertType.Message,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp),
-            )
-        }
-    }
-}
-
-// 로그아웃 확인과 같은 iOS 알럿 스타일(IosAlertDialog)로 통일 — 확인형 모달은 전부 이 계열.
-@Composable
 internal fun DeleteAccountConfirmDialog(
     busy: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    // 신청이 안 됐다는 이유 — 창 안에 빨간 글자로 그린다. 스낵바는 이 창의 어두운 막 아래에 깔린다(2026-10-29).
+    errorText: String? = null,
 ) {
     // iOS 표준 구성: 질문 한 문장만 제목(17sp), 나머지 안내는 작은 설명(13sp)으로 —
     // 세 문장을 전부 제목 타이포로 키우면 알럿이 과해 보인다(문장별 줄바꿈은 설명에 유지).
@@ -462,6 +405,8 @@ internal fun DeleteAccountConfirmDialog(
                 onClick = onConfirm,
             ),
         ),
+        // 본문 바로 아래, 본문과 같은 여백·정렬이다(입력 슬롯 `content` 가 아니다 — `IosAlertDialog` 의 주석).
+        errorMessage = errorText,
     )
 }
 
@@ -488,6 +433,8 @@ internal fun WakerTopBar(
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
     backEnabled: Boolean = true,
+    /** 고정 팔레트 화면(로그인·가입)의 글자·뒤로가기 색. 없으면 테마의 `onSurface`. */
+    tint: Color? = null,
 ) {
     Box(
         modifier = modifier
@@ -507,7 +454,7 @@ internal fun WakerTopBar(
             // 인데, 여기는 M3 `titleLarge`(22 Bold)라 같은 화면이 두 앱에서 다르게 보였다.
             style = MaterialTheme.typography.titleLarge.copy(fontSize = 17.sp),
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = tint ?: MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -517,6 +464,7 @@ internal fun WakerTopBar(
                 onBack = onBack,
                 enabled = backEnabled,
                 modifier = Modifier.align(Alignment.CenterStart),
+                tint = tint ?: MaterialTheme.colorScheme.onSurface,
             )
         }
     }

@@ -114,24 +114,20 @@ billingApple.post('/apple/confirm', async (c) => {
 
   // 환불·취소된 트랜잭션으로 권한을 얻을 수 없게 한다.
   //
-  // ⚠ **거절만 하면 이미 준 권한이 그대로 남는다**(코덱스 #730 3차). 애플에는 우리가 받는
-  //   서버 알림 라우트가 없어서(App Store Server Notifications 미구현), 기간 중 환불은
-  //   클라가 `Transaction.updates` 로 물어다 준 이 요청이 **유일한 통보**다. 여기서
-  //   400 만 돌려주면 만료 크론이 재조회할 때까지 — 즉 저장된 `expires_at` 까지 —
-  //   환불받은 계정이 계속 유료로 남는다.
+  // ⚠ **거절만 하면 이미 준 권한이 그대로 남는다**(코덱스 #730 3차). 기간 중 환불의 통보는
+  //   둘이다 — 애플 서버 알림(`REFUND`·`REVOKE`, `routes/billing-apple-notifications.ts`)과 클라가
+  //   `Transaction.updates` 로 물어다 준 이 요청. 알림은 URL 설정·전달 실패로 빠질 수 있으니 이
+  //   갈래도 회수한다. 여기서 400 만 돌려주면, 알림이 빠졌을 때 만료 크론이 재조회할 때까지 —
+  //   즉 저장된 `expires_at` 까지 — 환불받은 계정이 계속 유료로 남는다.
   //
   //   회수 대상은 **그 트랜잭션에 묶인 구독**이지 요청을 보낸 계정이 아니다. 환불은
   //   애플이 확인해 준 사실이고(`fetchAppleTransaction` 이 검증한다), 그 구독은 누가
   //   알려 주든 끊기는 것이 맞다.
   if (info.revocationDate) {
-    // ⚠ **체인이 아직 살아 있으면 손대지 않는다**(코덱스 #733 2차). 자동갱신 구독은
-    //   갱신마다 트랜잭션이 새로 나지만 `originalTransactionId` 는 **체인 전체가 공유**한다.
-    //   그래서 옛 갱신 한 건이 뒤늦게 환불되면, 아래 조회가 그 id 로 **지금 살아 있는
-    //   구독 행**을 집어 취소해 버린다 — 돈을 내고 있는 사람의 권한이 끊긴다.
-    //   판단은 애플에 **체인의 현재 상태**를 물어서 한다.
-    const refundSnapshot = await readRefundedMapping(db0, info);
-    const chain = await appleChainStatus(config, info.originalTransactionId);
-    if (chain === 'unknown') {
+    // 판정·회수는 서버 알림(`routes/billing-apple-notifications.ts`)의 환불 갈래와 같은 함수다 — 아래
+    // `revokeAppleRefund` 주석.
+    const outcome = await revokeAppleRefund(db0, c.env, config, info, 'billing.apple.confirm');
+    if (outcome === 'unknown') {
       // ⚠ **판정을 못 했으면 판정한 척하지 않는다**(코덱스 #733 8차). 400 은 앱이
       //   **최종 판정**으로 읽어 환불 큐에서 지우고 트랜잭션을 끝낸다 — 그러면 다시 올릴
       //   경로가 사라지고, 정작 회수는 하지 않은 채다. 재시도 가능한 502 로 돌려준다
@@ -141,25 +137,14 @@ billingApple.post('/apple/confirm', async (c) => {
         502,
       );
     }
-    if (chain === 'live') {
-      logStructured('info', {
-        at: 'billing.apple.confirm',
-        step: 'revoked_stale_renewal',
-        note: 'chain still live — skipping cleanup',
-      });
-    } else {
-      try {
-        await revokeRefundedAppleSubscription(db0, c.env, info, refundSnapshot);
-      } catch (error) {
-        if (!(error instanceof BillingStateChangedError)) throw error;
-        return c.json(
-          {
-            error: 'Subscription changed during verification',
-            error_code: 'APPLE_VERIFICATION_FAILED',
-          },
-          502,
-        );
-      }
+    if (outcome === 'changed') {
+      return c.json(
+        {
+          error: 'Subscription changed during verification',
+          error_code: 'APPLE_VERIFICATION_FAILED',
+        },
+        502,
+      );
     }
     return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
   }
@@ -445,6 +430,50 @@ billingApple.post('/apple/confirm', async (c) => {
   });
 });
 
+export type AppleRefundOutcome = 'revoked' | 'chain_live' | 'unknown' | 'changed';
+
+/**
+ * **환불·회수 통보 하나를 처리한다** — 확정 라우트(앱이 `Transaction.updates` 로 물어다 준 환불)와 서버 알림
+ * (`REFUND`·`REVOKE`)이 같이 쓰는 유일한 갈래다. 둘이 따로 판정하면 한쪽만 고쳐지는 사고가 난다.
+ *
+ * 1. 매핑된 활성 구독의 스냅샷을 먼저 읽고(`readRefundedMapping`),
+ * 2. 애플에 **체인의 현재 상태**를 묻는다(`appleChainStatus`). ⚠ **체인이 아직 살아 있으면 손대지 않는다**(코덱스
+ *    #733 2차) — 자동갱신 구독은 갱신마다 트랜잭션이 새로 나지만 `originalTransactionId` 는 **체인 전체가 공유**한다.
+ *    옛 갱신 한 건이 뒤늦게 환불되면 그 id 로 **지금 살아 있는 구독 행**을 집어 취소하게 된다 — 돈을 내고 있는
+ *    사람의 권한이 끊긴다(`chain_live`). 못 물어보면 `unknown`(호출부가 재시도 가능한 응답을 낸다).
+ * 3. 끝난 체인이면 `revokeRefundedAppleSubscription` 이 쓰기 트랜잭션 안에서 스냅샷을 다시 대조하고 회수한다 — 그 사이
+ *    새 갱신이 반영됐으면 `changed`(재시도).
+ *
+ * 남은 유료 권한(다른 스토어 구독·관리자 기간 지급·기간 한정 개인 플랜)은 회수 안의 `hasActivePaidEntitlement`·
+ * `cancelSubscriptionImmediate` 가 지킨다 — 여기서 따로 보지 않는다.
+ */
+export async function revokeAppleRefund(
+  db: ReturnType<typeof getDB>,
+  env: AppEnv['Bindings'],
+  config: Parameters<typeof fetchAppleSubscriptionStatus>[1],
+  info: { originalTransactionId: string; transactionId: string },
+  logAt: string,
+): Promise<AppleRefundOutcome> {
+  const refundSnapshot = await readRefundedMapping(db, info);
+  const chain = await appleChainStatus(config, info.originalTransactionId, logAt);
+  if (chain === 'unknown') return 'unknown';
+  if (chain === 'live') {
+    logStructured('info', {
+      at: logAt,
+      step: 'revoked_stale_renewal',
+      note: 'chain still live — skipping cleanup',
+    });
+    return 'chain_live';
+  }
+  try {
+    await revokeRefundedAppleSubscription(db, env, info, refundSnapshot, logAt);
+  } catch (error) {
+    if (!(error instanceof BillingStateChangedError)) throw error;
+    return 'changed';
+  }
+  return 'revoked';
+}
+
 /**
  * **이 구독 체인이 아직 살아 있는가** — 환불 통보 하나로 취소해도 되는지 가르는 자리다.
  *
@@ -473,13 +502,14 @@ const APPLE_TERMINATED_STATUSES: readonly number[] = [
 async function appleChainStatus(
   config: Parameters<typeof fetchAppleSubscriptionStatus>[1],
   originalTransactionId: string,
+  logAt: string,
 ): Promise<'live' | 'terminated' | 'unknown'> {
   try {
     const status = await fetchAppleSubscriptionStatus(originalTransactionId, config);
     return APPLE_TERMINATED_STATUSES.includes(status.status) ? 'terminated' : 'live';
   } catch (err) {
     logStructured('warn', {
-      at: 'billing.apple.confirm',
+      at: logAt,
       step: 'chain_status',
       error: String(err),
     });
@@ -522,6 +552,7 @@ async function revokeRefundedAppleSubscription(
   env: AppEnv['Bindings'],
   info: { originalTransactionId: string; transactionId: string },
   expected: Awaited<ReturnType<typeof readRefundedMapping>>,
+  logAt: string,
 ): Promise<void> {
   const now = new Date();
   // ⚠ **조회를 쓰기 트랜잭션 안에서 한다**(코덱스 #733). 밖에서 읽으면 그 사이에 같은
@@ -556,7 +587,7 @@ async function revokeRefundedAppleSubscription(
   });
   if (!mapped) return;
   logStructured('info', {
-    at: 'billing.apple.confirm',
+    at: logAt,
     step: 'revoked_cleanup',
     userPk: mapped.userPk,
     subscriptionId: mapped.subscriptionId,
@@ -573,7 +604,7 @@ async function revokeRefundedAppleSubscription(
     await notifyBillingStateChanged(db, env, [mapped.userPk]);
   } catch (err) {
     logStructured('error', {
-      at: 'billing.apple.confirm',
+      at: logAt,
       step: 'revoked_notify',
       error: String(err),
     });

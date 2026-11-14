@@ -261,9 +261,16 @@ HOME 을 가로챌 수 없다 — 유일한 수단인 화면 고정(`startLockTa
       서비스가 뜰 때만** 돌았기 때문이다. 그래서 바꾸기 **전에** 그 구멍부터 막았다:
       `AlarmTalkApplication.onCreate` 도 되돌린다. 미리듣기 중 앱이 죽어도 다음 실행이
       복구한다. **이 호출을 지우면 옛 이유가 되살아난다.**
-    - 거는 자리는 둘이다 — 편집기 미리듣기(`AlarmEditorScreen`)와 '목소리 크기' 화면
-      (`VoiceOnboardingPreviewState`). **목소리를 고르는 미리듣기는 해당 없다**(거긴
-      "이 사람 목소리가 어떤가" 를 듣는 자리라 미디어 스트림이 맞다).
+    - 거는 자리는 셋이다 — 편집기 미리듣기(`AlarmEditorScreen`), '목소리 크기' 화면
+      (`VoiceOnboardingPreviewState`), 목소리 등록 미리듣기(`VoiceProfileManagementPanel` 의
+      `startTunedPreview`). **목소리를 고르는 미리듣기는 해당 없다**(거긴
+      "이 사람 목소리가 어떤가" 를 듣는 자리라 볼륨을 올리지 않는다).
+  - **목소리 탭의 인사말 '듣기'(기본 목소리·내 목소리)도 알람 스트림이다**(2026-11-09 오너 — 실기기에서
+    미디어 볼륨으로 나던 결함). 같은 화면의 등록 미리듣기와 같은 플레이어(`createPreviewPlayer` —
+    `USAGE_ALARM`·`CONTENT_TYPE_SPEECH`)로 열고, 기기 알람 볼륨은 올리지 않는다(스트림만 맞춘다).
+    ⚠ `MediaPlayer.create` 로 되돌리지 말 것 — prepare 까지 끝낸 플레이어를 돌려주므로 그 뒤에 속성을 걸어도
+    먹지 않는다. 편집기의 목소리 고르기 시트·온보딩은 미디어 스트림 그대로다(`VoiceOnboardingPreviewState` 는
+    알람 음량을 받을 때만 알람 스트림).
 - ⚠ **스트림에 슬라이더를 넘기지 않는다** — 슬라이더는 플레이어 게인으로 이미 걸리므로
   스트림에도 넘기면 두 번 곱해져, 10% 알람이 낮은 기기 볼륨 위에서 ~1% 가 되어 안 들린다.
   스트림은 중립(가득)으로 올리고 크기는 게인 한 곳에서만 정한다.
@@ -364,6 +371,13 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 회귀 테스트: `RemainingDurationLabelTest`(안드로이드). 같은 분 안에서 라벨이 안 흔들리는
 것과, 경계를 넘기면 한 칸 틀리는 것을 함께 고정한다.
 
+## 9. 울림 화면의 시각 — **숫자만 가운데, 오전·오후는 날짜 줄** (안드로이드, 2026-11-09)
+
+시계 줄에는 큰 숫자("7:30")만 두고 가운데에 놓는다. 오전·오후는 위 날짜 줄에 붙인다("11월 10일 화요일 · 오전 · 알람 이름").
+예전에는 '오전' + 숫자를 한 묶음으로 가운데에 두어, 눈에 띄는 큰 숫자만 오른쪽으로 약 30dp 치우쳐 보였다(오너 "울림 화면
+좌우 간격이 살짝 달라 보여" — 고르기 시안 A). 읽어 주는 시각(TalkBack)에는 그대로 오전·오후가 들어 있다. iOS 울림은 AlarmKit
+시스템 화면이라 해당 없다. 구현: `RingingActivity` 의 날짜 줄(`uiState.ampm`)과 `RingingClock(ampm = "")`.
+
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
@@ -382,6 +396,7 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 | 예약 | `alarm/AlarmScheduler.kt` | `AlarmManager.shared.schedule` (`AlarmKitViewModel.swift`) | — |
 | 소리 끄기(소유권 확인) | `RingingService.ringingTeardownBelongsToCurrentAlarm` → `stopRingingOutputs` | `AlarmAppContext.stopVoiceIfOwned(by:)` (끄기·다시울림·사라짐 셋 다 여기로) | — |
 | 기기 볼륨 원복 | `alarm/AlarmStreamVolume.kt` | 해당 없음 | — |
+| 미리듣기 = 울림과 같은 스트림(`USAGE_ALARM`·`CONTENT_TYPE_SPEECH`) | 편집기 `ui/editor/AlarmEditorScreen.kt` `startPreparedPreview` · 목소리 크기 화면 `ui/onboarding/VoiceOnboardingPreviewState.kt` `createPlayer`(알람 음량을 받을 때만) · 목소리 탭 `ui/voices/VoiceProfileManagementPanel.kt` `createPreviewPlayer`(← 등록 미리듣기 `startPreviewWithFallback`, 인사말 `playGreeting`·`playGreetingClip`) — 테스트 `GreetingPreviewStreamTest` | 해당 없음(알람 스트림 구분이 없다 — 미리듣기는 `.playback`·`.spokenAudio`, `AudioPreviewPlayer`) | — |
 | 목소리 반복 사이 0.9초 쉼 | `alarm/RingingService.kt` `scheduleVoiceRepeat`(`VOICE_REPEAT_GAP_MS`) | 스테이징 때 끝 무음 `AlarmSoundStaging.voiceRepeatGapMillis` ← `AlarmSoundResolver.resolve`(목소리만), 같은 값을 `AlarmSoundPlan.fingerprint`에 포함 — 테스트 `AlarmSoundVolumeTests`·`AlarmSoundPlanTests` | — |
 | 울릴 때는 파일 자리만 찾는다 — 길이를 재지 않는다 · 낡음 판정은 그대로(§4) | `data/AlarmAudioStore.kt` `getCachedAudioUnmeasured`(`getCachedAudio` 와 같은 메타 대조, `durationMillis` 는 null) ← `data/AlarmRepository.kt` `resolveBucketClipSelection`(← `resolveBucketClipLocalUri`) · `data/DefaultVoiceClipSource.kt` 의 보조 생성자(`ringUri` 의 `clipUriFor`·`lockBinding` 의 `defaultVoiceClipSet`) — 테스트 `data/AlarmAudioStoreProbeCountTest`(그 셋은 `durationReads` 0) | — (AlarmKit 소유) | — |
 | 조용한 알람은 사용자가 고른 것뿐 · 유료 목소리를 못 쓰면 기본 목소리(§4) | `alarm/RingSoundDecision.kt` `decideRingSound`·`ringSoundFactsFor`·`ringTimePaidVoiceUnusable`·`forcedTonePercent` → `RingingService.startRingingAudio`(`startAlarmToneLoop(forced)`) · 기본 목소리 소리 `data/DefaultVoiceClipSource.kt` `ringUri` — 테스트 `RingSoundDecisionTest` | 예약 때 `AlarmKitViewModel.effectiveRecordForScheduling` → `defaultVoiceSubstitute` · 오디오 없는 기본 목소리 알람은 `AlarmSoundResolver.plan`(1b) → `DefaultVoiceSubstitute.fallbackClip` — 테스트 `DefaultVoiceSubstituteTests` | — |

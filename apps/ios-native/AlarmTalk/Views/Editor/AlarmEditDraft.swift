@@ -43,6 +43,10 @@ struct AlarmEditDraft: Equatable {
     var voiceFortuneBirthTime: String
     var voiceRepeat: Bool
     var voiceVolumePercent: Int
+    /// 응원 테마의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 응원이 아니면 저장 때 버린다(`AlarmEditorSheet.saveFlow`).
+    /// 새 알람은 다양하게로 연다 — 직전 선택으로 잇지 않는다. 안드로이드 `AlarmEditorState.cheerMode` 미러.
+    var cheerMode: CheerMode = .vary
+    var cheerPinnedContentId: String?
 
     // MARK: - 신규 생성 default
 
@@ -103,6 +107,8 @@ struct AlarmEditDraft: Equatable {
         // 화면에 컨트롤이 없어 사용자가 되돌릴 방법이 없기 때문이다.
         self.voiceRepeat = true
         self.voiceVolumePercent = Self.normalizedVoiceVolume(record.voiceVolumePercent)
+        self.cheerMode = CheerMode.normalize(record.cheerMode)
+        self.cheerPinnedContentId = record.cheerPinnedContentId
     }
 
     init(
@@ -378,25 +384,39 @@ struct AlarmEditDraft: Equatable {
         }
     }
 
-    /// **유료 사용자가 직접 입력 문구를 쳐 둔 상태인가** — 스톡 클립 목소리(기본 목소리)의
-    /// 강제가 이 상태를 건드리지 않는다: 테마 이어받기(`applyPendingFreeBucketIfNeeded`)와
-    /// 4-값 고정(`coerceFreeVoiceTierConstraints`) 둘 다.
+    /// **직접 입력 문구를 쳐 둔 상태인가** — 스톡 클립 목소리(기본 목소리)의 강제가 이 상태를 건드리지 않는다: 테마
+    /// 이어받기(`applyPendingFreeBucketIfNeeded`)와 4-값 고정(`coerceFreeVoiceTierConstraints`) 둘 다.
     ///
-    /// ⚠ 테마 이어받기에 이 가드가 없으면, 직전 선택으로 **직접 입력 문구를 이은** 알람
-    /// (새 알람·알람 전용 → 목소리·직접 녹음 → 목소리)에 기본 목소리가 골라져 있을 때 옛
-    /// 테마가 붙어 이은 문구를 **말없이 대신한다**(2026-09-29 리뷰). 안드로이드
-    /// `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect` 짝 —
-    /// 잠긴 등급(무료)에서는 예전 그대로 강제가 돈다.
-    static func keepsPaidTypedManualText(
-        freeVoiceTier: Bool,
+    /// ⚠ 테마 이어받기에 이 가드가 없으면, 직전 선택으로 **직접 입력 문구를 이은** 알람(새 알람·알람 전용 → 목소리·직접
+    /// 녹음 → 목소리)에 기본 목소리가 골라져 있을 때 옛 테마가 붙어 이은 문구를 **말없이 대신한다**(2026-09-29 리뷰).
+    /// ⚠ **등급과 무관하다**(2026-10-26) — 무료도 기본 목소리 직접 입력을 월 3회 만든다(`voice-and-message.md` §8). 예전에는
+    /// 무료면 강제가 돌아 친 문구를 지웠다. 안드로이드 `AlarmEditorScreen` 의 `if (manualChosen) return@LaunchedEffect` 짝.
+    static func keepsTypedManualText(
         randomPrompt: Bool,
         selectedBucket: FreeBucket?,
         ttsText: String
     ) -> Bool {
-        !freeVoiceTier
-            && !randomPrompt
+        !randomPrompt
             && selectedBucket == nil
             && ttsText.nilIfBlank != nil
+    }
+
+    /// **저장에 지역(날씨)·사주(운세)를 남기는가** — 라이브 생성 문구가 그 종류이거나, 그 테마의 스톡 클립 알람이면.
+    ///
+    /// ⚠ 테마를 붙이면 `voiceRandomPrompt` 가 꺼지지만 울릴 클립을 고르는 데(날씨 조건·운세 개인화) 이 값을 쓴다.
+    /// `randomPrompt` 하나만 보면 테마 알람을 시각만 고쳐 다시 저장해도 지역·사주가 지워진다(1.2.16 부터 있던 결함).
+    /// 안드로이드 `AlarmEditorState.weatherContextForSave`·`fortuneContextForSave` 짝. 알람 전용이면 둘 다 남기지 않는다.
+    static func savesPromptContext(
+        voiceMode: Bool,
+        randomPrompt: Bool,
+        context: RandomPromptContext,
+        stockBucket: FreeBucket?
+    ) -> (weather: Bool, fortune: Bool) {
+        guard voiceMode else { return (false, false) }
+        return (
+            weather: (randomPrompt && context.usesWeather) || stockBucket == .weather,
+            fortune: (randomPrompt && context.usesFortune) || stockBucket == .fortune
+        )
     }
 
     // MARK: - Convert to record
@@ -476,6 +496,9 @@ struct AlarmEditDraft: Equatable {
             alarmKitID: nil
         )
         carryOverNonEditableFields(from: existing, to: &record)
+        // 응원 저장값 — 테마가 응원이 아니게 되면 저장 경로(`AlarmEditorSheet.saveFlow`)가 비운다.
+        record.cheerMode = cheerMode.rawValue
+        record.cheerPinnedContentId = cheerMode == .pinned ? cheerPinnedContentId : nil
         return record
     }
 
@@ -516,6 +539,9 @@ struct AlarmEditDraft: Equatable {
         record.bucketId = existing.bucketId
         record.bucketClipKeys = existing.bucketClipKeys
         record.bucketRotationIndex = existing.bucketRotationIndex
+        // 응원 — 기기 로컬 이력·선택은 행이 들고 간다(스펙 voice-and-message §5-4). 같은 회차면 저장이 그대로 쓴다.
+        record.cheerHistory = existing.cheerHistory
+        record.cheerSelection = existing.cheerSelection
     }
 
     private static func normalizedVoiceVolume(_ value: Int) -> Int {
@@ -523,3 +549,40 @@ struct AlarmEditDraft: Equatable {
     }
 }
 
+/// 편집기가 **누르는 순간** 저장을 막는 사유 — 버튼은 끄지 않고 알럿으로 말한다(`AlarmEditorSheet.editorSaveBlockReason`).
+/// 안드로이드 `ui/editor/AlarmEditorScreen.kt` 의 `SaveBlockReason` 짝이고, 문구는 그 `saveBlockAlertStrings` 와 같다.
+/// 같은 표에 없는 사유(정리 중·사용 불가·빈 직접 입력·날짜)는 `saveFlow` 첫머리가 따로 말한다.
+enum EditorSaveBlockReason: Equatable {
+    case recordingMissing, voiceMissing, weatherLocationMissing, fortuneInfoMissing, messagePreparing
+
+    var alertTitle: String {
+        switch self {
+        case .recordingMissing: return String(localized: "녹음이 필요해요")
+        case .voiceMissing: return String(localized: "목소리를 골라주세요")
+        case .weatherLocationMissing: return String(localized: "지역이 없어요")
+        case .fortuneInfoMissing: return String(localized: "운세 정보가 없어요")
+        case .messagePreparing: return String(localized: "문구를 준비하고 있어요")
+        }
+    }
+
+    var alertMessage: String {
+        switch self {
+        case .recordingMissing: return String(localized: "먼저 목소리를 녹음하거나 파일을 골라 주세요.")
+        case .voiceMissing: return String(localized: "알람을 읽어 줄 목소리를 먼저 골라 주세요.")
+        case .weatherLocationMissing: return String(localized: "날씨 문구를 쓰려면 지역이 필요해요. 문구 화면에서 지역을 골라 주세요.")
+        case .fortuneInfoMissing: return String(localized: "운세 문구를 쓰려면 성별과 생년월일, 태어난 시간이 필요해요. 문구 화면에서 입력해 주세요.")
+        case .messagePreparing: return String(localized: "목소리 파일을 아직 받는 중이에요. 잠시 뒤에 다시 저장해 주세요.")
+        }
+    }
+
+    /// `alarm_save_blocked` 의 `reason` — 안드로이드 `SaveBlockReason` 이름을 소문자로.
+    var usageReason: String {
+        switch self {
+        case .recordingMissing: return "recording_missing"
+        case .voiceMissing: return "voice_missing"
+        case .weatherLocationMissing: return "weather_location_missing"
+        case .fortuneInfoMissing: return "fortune_info_missing"
+        case .messagePreparing: return "message_preparing"
+        }
+    }
+}

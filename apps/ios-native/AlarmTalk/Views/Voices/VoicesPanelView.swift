@@ -28,6 +28,8 @@ struct VoicesPanelView: View {
     /// BillingPanel(auxiliaryScreen = .billing) 을 열도록 부모(MainTabsView) 가
     /// 주입하는 콜백. 콜백이 없으면 PlanGate 는 단순히 닫힌다.
     var onRequestBilling: (() -> Void)? = nil
+    /// '이 목소리로 새 알람 만들기'(`VoiceProfileManagementPanel.onCreateAlarmWithVoice`).
+    var onCreateAlarmWithVoice: ((String) -> Void)? = nil
 
     @EnvironmentObject private var voice: VoiceStudioViewModel
 
@@ -40,7 +42,8 @@ struct VoicesPanelView: View {
         VoiceProfileManagementPanel(
             route: $route,
             monthlyLimitNoticeOpen: $monthlyLimitNoticeOpen,
-            onRequestBilling: onRequestBilling
+            onRequestBilling: onRequestBilling,
+            onCreateAlarmWithVoice: onCreateAlarmWithVoice
         )
         // ⚠ **알럿은 창이 다 내려간 뒤에 연다 — `onDismiss` 가 그 시점이다.** 창을 닫는 것과 같은
         // 순간에 열면 내려가는 창과 겹쳐, 알럿이 뜨지 않은 채 끝날 수 있다(목소리 탭의 액션시트 →

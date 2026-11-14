@@ -83,7 +83,7 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
 
 ## 프로필 저장은 바꾼 칸만 세션에 적는다
 
-`PATCH /user/me`(닉네임·계정 설정)의 결과를 세션에 적을 때는 **그 저장이 바꾼 칸만**,
+`PATCH /user/me`(계정 설정 — 닉네임은 2026-10-29 에 없앴다)의 결과를 세션에 적을 때는 **그 저장이 바꾼 칸만**,
 **쓰는 순간의 세션** 위에 얹는다. 요청 **전에** 잡아 둔 세션의 사본을 다시 저장하지 않는다(2026-10-05).
 
 - 사본을 저장하면 요청이 도는 사이 다른 경로가 적은 값을 되돌린다 — `/auth/me`(진입·복귀 갱신, `plan_changed`,
@@ -141,7 +141,7 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 처리방침의 약속은 "서버 데이터를 영구 삭제하되, 법정 보존 결제 기록만 가명처리해 분리
 보관한다" 이다(`docs/legal/privacy-policy.ko.md` 3장).
 
-**파기 뒤 남는 것은 셋뿐이다.** 그 밖에 사람을 가리키는 값(계정 id·로그인 id·이메일·애플 id·
+**파기 뒤 남는 것은 셋뿐이다.** 그 밖에 사람을 가리키는 값(계정 id·로그인 id·이메일·애플 id·카카오 회원번호·
 푸시 토큰·이름)이 남으면 버그다.
 
 | 남는 것 | 왜 남나 | 언제 사라지나 |
@@ -168,7 +168,9 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 앱의 탈퇴 안내 문구가 처음부터 "그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요" 였는데, 실제로는 로그인 뒤
 '회원 탈퇴가 진행 중이에요' 화면에서 철회 버튼을 눌러야 했다 — 그 화면을 두 앱에서 지웠다(오너 결정).
 
-- **철회는 자격증명 로그인에서만**(이메일 `/auth/login`·`/auth/google`·`/auth/apple` — `cancelPendingDeletionOnSignIn`).
+- **신청 경로는 둘이다**: 앱의 `POST /user/me/deletion`, 그리고 카카오로만 가입한 계정의 카카오 연결 해제 웹훅(아래 「카카오 로그인」).
+  둘 다 `requestAccountDeletion` 한 함수를 지난다.
+- **철회는 자격증명 로그인에서만**(이메일 `/auth/login`·`/auth/google`·`/auth/apple`·`/auth/kakao` — `cancelPendingDeletionOnSignIn`).
   토큰 갱신(`GET /auth/me`)은 철회하지 않는다 — 사람이 자격증명을 다시 넣은 순간만 '계속 쓰겠다' 로 읽는다.
   비밀번호가 틀린 로그인은 아무것도 바꾸지 않는다. ⚠ **철회는 응답이 다 준비된 뒤 마지막 쓰기다**(코덱스 #904) —
   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면 안 된다.
@@ -208,7 +210,9 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
   「백그라운드 갱신」)과 이 떠나기. 받은 plan 은 다른 `/auth/me` 경로처럼 판정 스냅샷에 적고
   ([billing-lifecycle.md](billing-lifecycle.md) 「유료 판정」), 토큰은 90일 판정을 지날 때만 저장한다(위 「토큰이 굴러도…」).
   이 변경 전 빌드의 워커는 여전히 `GET /alarm` 을 부른다 — 서버는 그 라우트를 인증 라우터 뒤의 빈 응답으로 남겨 같은
-  403 이 그대로 닿게 한다([plan-gates.md](plan-gates.md) 「커플·가족 이용권 — 폐지」).
+  403 이 그대로 닿게 했다([plan-gates.md](plan-gates.md) 「커플·가족 이용권 — 폐지」). 그 빈 응답은 2026-10-26 강제 업데이트로
+  그 빌드를 막은 뒤 지웠다(없는 경로 — 404 `NOT_FOUND`). 서버의 알람 표 자체도 2026-10-29 에 지웠다
+  ([alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」).
 - **탈퇴 신청은 그 계정의 다른 기기에 무음 신호 `account_deletion_requested` 를 보낸다**(`sendAccountDeletionRequestedPush`
   — 지우기 전에 읽어 둔 토큰으로, 커밋 뒤 `waitUntil`). 기기는 서버에 다음 요청을 보낼 때까지 세션이 끊긴 줄 모르고
   그 사이 화면은 로그인된 채 알람이 운다 — 이 신호가 그 창을 줄인다. 앱은 **신호만 믿고 떠나지 않는다**(그 사이 철회됐을
@@ -333,6 +337,62 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 조회할 수 있다. 실패로 기존 정상 캐시를 덮지 않으며 아직 유효한 기존 키는 계속 검증한다.
 재조회에도 키가 없거나 조회·서명·issuer/audience/nonce 검증이 실패하면 거절한다.
 
+## 카카오 로그인 (2026-11-14)
+
+앱은 카카오 SDK 로 받은 **액세스 토큰**을 `POST /auth/kakao` 에 보낸다(`access_token`). 구글·애플처럼 서명된 ID 토큰을
+공개키로 검증하지 않고, **서버가 카카오에 직접 묻는다**(`lib/kakao-oauth.ts` 의 `verifyKakaoAccessToken`). 로그인 확인에는
+비밀값이 필요 없다 — 사용자의 토큰으로만 묻는다.
+
+- **우리 앱의 토큰인가**: `GET /v1/user/access_token_info` 의 `app_id` 가 `KAKAO_APP_ID`(wrangler.toml — 비밀이 아니다)와
+  같아야 한다. 다른 앱용으로 발급된 유효한 토큰을 받아 주면 그 앱의 사용자가 우리 계정을 차지한다(애플의 audience 대조와
+  같은 이유). 정식 앱과 dev 앱은 네이티브 키가 달라도 **같은 카카오 앱**이라 `app_id` 는 하나다.
+- **이메일은 카카오가 인증한 주소일 때만 쓴다**(`is_email_valid`·`is_email_verified` 둘 다 참). 그때만 그 주소의 기존
+  계정(이메일·구글·애플로 가입한 계정)에 붙는다. 인증 안 된 주소로 붙이면 남의 이메일을 적어 둔 카카오계정이 그 계정을
+  차지한다. 인증된 주소가 없으면 **회원번호로만** 찾고, 새 계정은 합성 주소 `<회원번호>@kakao.local` 로 만든다(애플의
+  `@apple.local` 과 같은 자리).
+- **찾는 순서**: 회원번호(`users.kakao_id`)가 같은 행이 이메일만 같은 행보다 먼저다. 기존 계정에 붙을 때 **저장된 이메일을
+  덮어쓰지 않는다** — 토큰·응답도 저장된 주소로 낸다.
+- **실패 코드**: 토큰이 틀렸으면(카카오 400·401 · 다른 앱의 토큰) 401 `AUTH_KAKAO_FAILED` — 경보가 아니다(클라가 보낸 잘못된
+  토큰). 카카오 장애(5xx·시간 초과)는 500 같은 코드 — 경보다. `KAKAO_APP_ID` 가 없으면 토큰을 보지 않고 500
+  `AUTH_KAKAO_CONFIG_MISSING`(fail-closed).
+- **가입 방식 안내**: 이메일 가입을 시도한 주소가 카카오로만 가입된 계정이면 `AUTH_EMAIL_SOCIAL` + `provider: 'kakao'`.
+  구글·애플이 함께 붙어 있으면 예전 순서(구글 → 애플)가 먼저다. ⚠ 'kakao' 를 모르는 옛 안드로이드는 애플이 아닌 값을 구글로
+  읽는다. iOS 는 공급자를 가르지 않고 세 간편 로그인을 다 적는다(오류 값이 `provider` 칸을 들고 오지 않는다).
+- **다시 로그인하면 탈퇴 철회**는 카카오도 같다(자격증명 로그인 — 위 「탈퇴 유예」).
+- **탈퇴 파기 뒤 카카오 연결을 끊는다.** 카카오 정책이 탈퇴 과정에 연결 해제를 **반드시** 넣으라고 한다. 파기가 **커밋된 뒤**
+  어드민 키(`KAKAO_ADMIN_KEY`, 워커 비밀)로 `POST /v1/user/unlink`(회원번호 지정)를 부른다 — 애플 연결 해제와 같은 자리, 같은
+  판단이다(30일 안에 다시 로그인하면 철회되므로 신청 때 끊지 않는다 · 실패해도 파기는 끝났다 → 경보). 이미 끊긴 사용자(카카오
+  오류 -101)는 성공으로 본다. ⚠ 어드민 키가 없으면 끊지 못하고 경보만 남는다 — 그 회원번호는 파기로 사라져 다음 틱이 다시
+  끊을 수 없다.
+- **앱의 로그아웃·탈퇴 신청·자동 만료는 기기의 카카오 토큰만 버린다**(연결 끊기가 아니다).
+- 화면: 로그인·가입 모두 **간편 로그인이 맨 위**다(카카오 → 안드로이드는 구글 / iOS 는 Apple). 카카오 버튼은 카카오 디자인
+  가이드대로 노랑 바탕·검정 말풍선·글자 '카카오 로그인' 하나·모서리 12 다. 가입 화면에서도 글자를 바꾸지 않는다.
+- **연결 해제 웹훅**(2026-11-14 — `routes/kakao-webhook.ts` → `lib/kakao-unlink.ts`, `GET`·`POST /api/kakao/unlink`). 카카오는
+  우리 서비스 **밖에서** 연결이 끊기면(카카오계정 설정의 '연결된 서비스 관리', 카카오계정 탈퇴, 관리자 처리) 이 주소를 부른다.
+  우리가 연결 끊기 API 로 끊은 경우(위 파기)에는 오지 않는다.
+  - **카카오가 보낸 것만 받는다**: `Authorization: KakaoAK <대표 어드민 키>` 가 `KAKAO_ADMIN_KEY` 와 같아야 한다(상수 시간 비교).
+    다르면 401 `KAKAO_WEBHOOK_UNAUTHORIZED`. `app_id` 가 우리 앱이 아니거나 회원번호 형식이 틀리면 아무것도 바꾸지 않는다.
+  - **카카오 규칙대로 언제나 200**(3초 안): 사용자가 없거나 처리 중 오류가 나도 200 이다 — 카카오가 다시 보내 주지 않으니 처리
+    실패는 경보(Sentry)로 남긴다. 어드민 키가 없으면 확인할 수 없어 아무것도 바꾸지 않고 200 + 경보다.
+    ⚠ **확인이 끝나면 곧바로 200 으로 답하고, 계정 처리는 응답 뒤에 잇는다**(`waitUntil`, 코덱스 #994). DB 조회와 쓰기
+    트랜잭션을 기다리면 Turso 가 느린 날 3초를 넘기고, 끊긴 요청에 묶인 처리도 함께 잘린다.
+  - **카카오로만 가입한 계정**(비밀번호·구글·애플이 없다)은 **사용자가 직접 신청한 것과 같은 탈퇴 유예**로 둔다
+    (`requestAccountDeletion` — 30일 뒤 파기 · 모든 기기 세션과 푸시 등록을 끊는다 · 그 안에 카카오로 다시 로그인하면 철회).
+    카카오 가이드가 "카카오 로그인만으로 이용 가능했던 회원이라면 회원 탈퇴 처리를 검토" 하라고 하고, 카카오계정을 탈퇴한
+    사람은 다시 들어올 길이 없어 지울 방법도 없는 개인정보(목소리 포함)만 남기 때문이다. 이미 유예면 기한을 미루지 않는다.
+    ⚠ **'카카오로만 · 유예 아님' 은 쓰기 문장 안에서 다시 본다**(`requestAccountDeletion` 의 `onlyIfKakaoOnlyActive`, 코덱스
+    #994). 읽은 뒤 쓰기 전에 구글·애플 로그인이 같은 이메일로 그 계정에 붙을 수 있다.
+  - **다른 로그인 수단이 있는 계정은 바꾸지 않는다** — 그 수단으로 계속 쓴다.
+  - ⚠ **회원번호(`kakao_id`)를 지우지 않는다.** 지우면 다시 로그인할 때 회원번호로 찾지 못하고, 인증된 이메일이 없던 계정은
+    같은 합성 주소로 새 계정을 만들려다 이메일 고유 제약에 막힌다.
+  - 로그인 경로의 엄격한 요청 한도(`/api/auth/*`) 밖에 두고, **공용 IP 버킷(300)에서도 빼서 전용 버킷이 센다**(`kakaoWebhookRateLimitMiddleware`, AdMob 콜백과 같은 방식 — 코덱스 #994). 카카오 서버 몇 대가 모든 사용자의 해제를 보내고,
+    429 로 막힌 해제는 다시 오지 않는다.
+  - 콘솔 등록: [앱] > [웹훅] > [연결 해제 웹훅]. 카카오 앱이 dev·운영 공용(1500680)이라 주소는 하나만 둘 수 있다 — ⚠ 운영
+    앱에 카카오 로그인이 나가기 전까지는 dev(`https://api-dev.alarm-talk.com/api/kakao/unlink`)를 가리키고, **그 릴리스에서
+    운영 주소(`https://api.alarm-talk.com/api/kakao/unlink`)로 바꾼다.**
+- 말풍선 심볼은 카카오 공식 리소스(디자인 리소스 다운로드의 Kakao Login.zip, 2026-08 판)의 경로를 그대로 쓴다. 색은 디자인
+  가이드대로 심볼 #000000 · 글자 #000000 85%(공식 이미지는 둘 다 #191919 지만 직접 만드는 버튼의 기준은 가이드다).
+
 ## 이메일 인증 코드 — 가입과 비밀번호 재설정 (2026-10-11)
 
 가입과 비밀번호 재설정은 메일로 보낸 **6자리 코드**로 주소의 주인을 확인한다. 판정은 서버 한 곳
@@ -443,9 +503,13 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 
 문장이 시키는 일(다시 확인 · 다시 받기)을 화면이 막으면 문장을 고친 것이 소용없다.
 
-- **가입 화면 — 인증 확인 단계**: 코드 줄과 `인증 코드 다시 받기` 가 이미 함께 있다.
-- **가입 화면 — `POST /auth/register` 가 코드를 거절했을 때**(위 셋): **'인증 완료' 상태를 내린다.** 코드 줄과
-  다시 받기가 돌아온다. 예전에는 '이메일 인증 완료' 인 채로 다시 받기가 꺼져 있었다 — 안드로이드는 그
+- **가입 화면의 인증 줄**(2026-11-14): 이메일 칸 **옆**에 버튼 하나 — `인증 받기` → (보낸 뒤) `다시 받기` → (확인되면)
+  `✓ 인증됨`(눌리지 않는다). 칸 안에 넣지 않는다 — 긴 주소를 가리고, 아래 코드 줄의 [코드][확인] 과 모양이 갈린다. 인증
+  상태는 정규화한 **그 주소**에 묶여 있어 주소를 고치면 `인증 받기` 로 돌아간다. 완료를 두 번 말하지 않는다 — 예전의
+  '이메일 인증 완료' 줄은 버튼이 같은 말을 해서 지웠다.
+- **가입 화면 — 인증 확인 단계**: 코드 줄과 `다시 받기`(이메일 칸 옆)가 함께 있다.
+- **가입 화면 — `POST /auth/register` 가 코드를 거절했을 때**(위 셋): **'인증 완료' 상태를 내린다**(`✓ 인증됨` → `다시 받기`).
+  코드 줄과 다시 받기가 돌아온다. 예전에는 '이메일 인증 완료' 인 채로 다시 받기가 꺼져 있었다 — 안드로이드는 그
   주소로는 프로세스가 죽을 때까지 풀리지 않았다(코드를 받은 지 10분이 지난 뒤 가입 버튼을 누르면 그렇게 된다).
 - **재설정 화면**: 코드를 보낸 뒤에도 요청 버튼이 `인증 코드 다시 받기` 로 **눌린다**(가입 화면과 같은 말).
   코드 칸은 비운 채 남긴다. 예전에는 한 번 보내면 '코드를 보냈어요' 로 잠겨, 다시 받으려면 화면을 나갔다
@@ -454,7 +518,8 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
   자리(코드 줄 아래)에 둔다 — 다시 받기를 누르는 사람은 대개 방금 "…다시 받아 주세요" 를 읽은 사람이다. 닫으면
   코드 줄과 그 답을 함께 잃고, 답은 화면 맨 아래 상태 줄(키패드 뒤)로 간다. iOS 가 2026-10-11 까지 그랬다 —
   요청 결과를 코드 줄을 여는 값에 그대로 대입했다. 칸의 숫자도 그대로 둔다(코드가 거절된 것이 아니다).
-- `AUTH_EMAIL_TAKEN` 의 로그인 화면 전환은 그대로다([error-codes.md](error-codes.md) §4).
+- `AUTH_EMAIL_TAKEN` 이면 두 앱 모두 로그인 화면으로 넘기고 이유를 로그인 제목 아래에 말한다(iOS 는 2026-10-29 부터 —
+  [error-codes.md](error-codes.md) §4).
 
 ### 코드는 ASCII 숫자 여섯 자다 — 앱 1차 · 서버 2차
 
@@ -494,18 +559,22 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | --- | --- | --- | --- |
 | TTL 365일 | `lib/jwt.ts` `DEFAULT_TTL_SECONDS` | — | — |
 | Apple 서명 키 교체 | `lib/apple-oauth.ts` `verifyAppleIdToken`·공유 JWKS 재조회 | — | 기존 로그인 응답 소비 |
+| 카카오 로그인(우리 앱의 토큰 · 인증된 이메일만 · 회원번호 먼저 · 이메일 덮어쓰지 않음 · 401/500) | `lib/kakao-oauth.ts` `verifyKakaoAccessToken` ← `routes/auth.ts` `POST /kakao` · 회귀 `test/kakao-oauth.test.ts`·`test/auth-kakao-route.test.ts` | `ui/auth/KakaoLogin.kt` `loginWithKakao` → `ui/main/MainViewModelAuthActions.kt` `finishKakaoLogin` · 회귀 `KakaoLoginWiringTest.kt` | `KakaoSignIn.swift` `signIn` → `AuthViewModel.loginWithKakao` |
+| 카카오 연결 해제 웹훅(대표 어드민 키 · 언제나 200 · 카카오로만 가입한 계정만 탈퇴 유예 · 회원번호 그대로) | `routes/kakao-webhook.ts` → `lib/kakao-unlink.ts` `handleKakaoUnlink` → `lib/account-deletion.ts` `requestAccountDeletion` · 회귀 `test/kakao-unlink-webhook.test.ts` | — | — |
+| 탈퇴 파기 뒤 카카오 연결 끊기(커밋 뒤 · 어드민 키 · -101 은 성공) | `index.ts` 유예 파기 → `lib/kakao-oauth.ts` `unlinkKakaoUser` · 회귀 `test/scheduled-purge-isolation.test.ts` | 기기 토큰만 버림 `signOutKakao` | 기기 토큰만 버림 `KakaoSignIn.discardDeviceToken` |
+| 가입 인증 버튼은 이메일 칸 옆(인증 받기 → 다시 받기 → ✓ 인증됨) | — | `ui/auth/AuthScreen.kt` `EmailVerifyButton` | `LoginView.emailVerifyButton` |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로(첫 진입만 — `refreshAppSessionNow` 의 `rollToken`·`sessionTokenToSave`) | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
-| 화면 효과의 세션 키 = 계정 + 세대(토큰 아님) | — | `network/AuthSessionStore.kt` `SessionEffectKey`·`sessionEffectKey` → `AlarmTalkApp` 의 세션 효과·탭 스로틀 | `MainTabsView.tabRefreshThrottleKey`(탭 + 계정 — 재로그인은 `MainTabsView` 가 새로 만들어져 표가 비워진다) · 목소리·더보기 탭은 `EntryRefreshFreshness`(계정 + 앱 진입) |
+| 화면 효과의 세션 키 = 계정 + 세대(토큰 아님) | — | `network/AuthSessionStore.kt` `SessionEffectKey`·`sessionEffectKey` → `AlarmTalkApp` 의 세션 효과·탭 스로틀 | 알람·목소리·더보기 탭 모두 `EntryRefreshFreshness`(계정 + 앱 진입). 알람 탭 동기화 스로틀의 키 `MainTabsView.tabRefreshThrottleKey`(탭 + 계정)는 2026-10-29 알람 올리기와 함께 지웠다 |
 | 프리페치 워커는 만료가 가까울 때만 토큰 저장 | — | `sync/StockClipPrefetchWorker.kt` `workerRolledTokenToSave` | — |
 | 자동 정합화 뒤 갱신은 토큰을 굴리지 않음 | — | `MainViewModelBillingActions.kt` `purchaseConfirmRollsToken` | — |
 | 백그라운드 갱신 | — | `sync/RemoteAlarmSyncWorker.renewSessionTokenIfNeeded` | `BackgroundSyncTask.renewSessionTokenIfNeeded` |
-| 안드로이드 주기 워커의 계정 확인(받은 알람 pull 자리 — 유예 403 이면 떠난다 · plan 은 판정 스냅샷에 · 토큰은 90일 판정 뒤에만 저장) | `routes/auth.ts` 의 `GET /me`(유예면 끊긴 토큰에도 403) · 옛 앱용 `GET /alarm` 빈 응답은 인증 라우터 뒤(`routes/alarm-query.ts`) | `sync/RemoteAlarmSyncWorker.kt` → `syncWorkerOutcome` → `endWorkerSession` | (해당 없음 — 어느 요청의 403 이든 통신 계층이 알린다: `AlarmTalkAPI.accountPendingDeletionNotification`) |
+| 안드로이드 주기 워커의 계정 확인(받은 알람 pull 자리 — 유예 403 이면 떠난다 · plan 은 판정 스냅샷에 · 토큰은 90일 판정 뒤에만 저장) | `routes/auth.ts` 의 `GET /me`(유예면 끊긴 토큰에도 403) · 옛 앱용 `GET /alarm` 빈 응답(`routes/alarm-query.ts`)은 2026-10-26 강제 업데이트 뒤 지웠다(404 `NOT_FOUND`) | `sync/RemoteAlarmSyncWorker.kt` → `syncWorkerOutcome` → `endWorkerSession` | (해당 없음 — 어느 요청의 403 이든 통신 계층이 알린다: `AlarmTalkAPI.accountPendingDeletionNotification`) |
 | 저장·메모리 세션 수렴 | — | `MainViewModel`의 세션 저장소 관찰 | `AuthViewModel.absorbStoredSession`·`handleUnauthorized` |
-| 전경 push의 첫 인증 실패 중단 | — | `AlarmSyncService.syncWithBackend` | `RemoteAlarmPushSync.runOnce` |
+| 전경 push의 첫 인증 실패 중단 — **없다**(2026-10-29 알람 올리기를 지웠다. 401 은 통신 계층이 한 곳에서 받는다 — 아래 「401 중앙 처리」) | — | — | — |
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration`·`saveSessionIfAlive` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
-| 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·프로모·받은 시각·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`updateNickname`·`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서 — 닉네임) |
-| 다시 로그인하면 탈퇴 철회 · 신청은 모든 기기 세션·푸시 등록을 끊는다 · 유예 세션은 끝난 세션 · 파기 직전 재확인 | `lib/account-deletion.ts` 의 `cancelPendingDeletionOnSignIn` ← `routes/auth.ts` 의 `/login`·`/google`·`/apple` · `routes/user.ts` 의 `POST /me/deletion`(`token_epoch + 1`·`push_tokens` 삭제, 한 트랜잭션) · `lib/fcm.ts` 의 `sendAccountDeletionRequestedPush`(신청 커밋 뒤) · `index.ts` 파기 트랜잭션의 재확인(유예 + 기한)·커밋 뒤 애플 연결 해제 · `middleware/auth.ts`·`/auth/me` 는 유예면 끊긴 토큰에도 403 · 회귀 `test/sign-in-cancels-deletion.test.ts`·`test/scheduled-purge-isolation.test.ts`·`test/auth-pending-deletion.test.ts` | `ui/main/MainViewModelAuthActions.kt` 의 `checkAccountStatus` → `leaveAccountForPendingDeletion`(알람까지 끄는 떠나기) · 워커 `sync/SyncWorkerFailure.kt` 의 `endWorkerSession` → `leaveAccountAfterPendingDeletion`(백그라운드판) · `fcm/AlarmTalkMessagingService.kt` 의 `account_deletion_requested` → `RemoteAlarmSyncScheduler.runOnce`(→ `RemoteAlarmSyncWorker` 의 계정 확인 `GET /auth/me`) · 유예 화면 없음 | `AuthViewModel.refreshUser` → `leaveAccountForPendingDeletion` · 탈퇴 신청 뒤 `onServerRemovedPushRegistration`(기기 쪽 등록 기록만, 등록과 같은 줄 — `invalidateRegistration`) · `PushNotificationCoordinator` 의 `accountDeletionRequested` → `refreshUser` · 회귀 `PushRegistrationRecoveryTests`(`test_invalidationQueuesBehindAnInFlightRegistration`·`test_accountDeletionRequestedSignalAsksTheServerAgain`) · `RootView` 에 유예 게이트 없음 |
+| 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·프로모·받은 시각·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서) |
+| 다시 로그인하면 탈퇴 철회 · 신청은 모든 기기 세션·푸시 등록을 끊는다 · 유예 세션은 끝난 세션 · 파기 직전 재확인 | `lib/account-deletion.ts` 의 `cancelPendingDeletionOnSignIn` ← `routes/auth.ts` 의 `/login`·`/google`·`/apple`·`/kakao` · `routes/user.ts` 의 `POST /me/deletion`(`token_epoch + 1`·`push_tokens` 삭제, 한 트랜잭션) · `lib/fcm.ts` 의 `sendAccountDeletionRequestedPush`(신청 커밋 뒤) · `index.ts` 파기 트랜잭션의 재확인(유예 + 기한)·커밋 뒤 애플 연결 해제 · `middleware/auth.ts`·`/auth/me` 는 유예면 끊긴 토큰에도 403 · 회귀 `test/sign-in-cancels-deletion.test.ts`·`test/scheduled-purge-isolation.test.ts`·`test/auth-pending-deletion.test.ts` | `ui/main/MainViewModelAuthActions.kt` 의 `checkAccountStatus` → `leaveAccountForPendingDeletion`(알람까지 끄는 떠나기) · 워커 `sync/SyncWorkerFailure.kt` 의 `endWorkerSession` → `leaveAccountAfterPendingDeletion`(백그라운드판) · `fcm/AlarmTalkMessagingService.kt` 의 `account_deletion_requested` → `RemoteAlarmSyncScheduler.runOnce`(→ `RemoteAlarmSyncWorker` 의 계정 확인 `GET /auth/me`) · 유예 화면 없음 | `AuthViewModel.refreshUser` → `leaveAccountForPendingDeletion` · 탈퇴 신청 뒤 `onServerRemovedPushRegistration`(기기 쪽 등록 기록만, 등록과 같은 줄 — `invalidateRegistration`) · `PushNotificationCoordinator` 의 `accountDeletionRequested` → `refreshUser` · 회귀 `PushRegistrationRecoveryTests`(`test_invalidationQueuesBehindAnInFlightRegistration`·`test_accountDeletionRequestedSignalAsksTheServerAgain`) · `RootView` 에 유예 게이트 없음 |
 | 탈퇴 복구 저장은 준비 뒤의 세션 위에(1.2.13 이하에서 올라온 유예 세션) | — (철회는 로그인 — `cancelPendingDeletionOnSignIn`. 철회 라우트는 2026-10-16 에 지웠다) | — (유예 화면·철회 버튼을 2026-10-15 에 지웠다) | `AuthViewModel.completeAccountRecovery`(기다린 뒤 `latest` · `/auth/me` 경로는 `reconcileAccountAnswer` 로 다시 다듬기) · 회귀 `AuthViewModelTests` |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |

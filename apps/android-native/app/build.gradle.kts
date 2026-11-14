@@ -113,6 +113,11 @@ val legalPolicyVersion: String = run {
     distinct.single()
 }
 
+// 카카오 네이티브 앱 키(카카오 앱 1500680). 정식 앱 키에는 iOS 번들·정식 패키지가, dev 키에는
+// `com.alarmtalk.app.dev` 가 등록돼 있다 — 패키지와 키가 어긋나면 카카오가 로그인을 거절한다.
+val KAKAO_PROD_NATIVE_APP_KEY = "5ff9bb2b1270702347556630be69905a"
+val KAKAO_DEV_NATIVE_APP_KEY = "0389478fa308f9bfa024700eb5266fcd"
+
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -180,10 +185,13 @@ android {
         //   받아 둔 알람은 업데이트하며 내 알람으로 바뀐다(Room 28). ⚠ 이 빌드는 **강제 업데이트 하한**이 된다 — 옛 빌드는
         //   없앤 이용권과 코드 입력을 계속 보인다. 하한(`app-version.ts` 의 Android `minSupported` 36)은 **Play 게재를
         //   확인한 뒤** 올린다. 서버(정책 7·6 수락)가 이 빌드보다 먼저 나가야 한다. 광고 SDK 가 처음 실리는 빌드다.
-        versionCode = 36
-        versionName = "1.2.16"
+        // 37 = 1.3.0. 법무 문서 8 을 싣는다(번들) — 서버(정책 8·7 수락)가 이 빌드보다 먼저 나가야 한다. Room 28→31(응원 칸·
+        //   사용 기록 2판·날짜 지정 알람). ⚠ 이 빌드는 **강제 업데이트 하한**이 된다(`app-version.ts` 의 Android `minSupported` 37)
+        //   — **Play 게재를 확인한 뒤에만** 올린다. 광고 노출은 꺼진 채다(운영 광고 단위 없음·서버 스위치 꺼짐).
+        versionCode = 37
+        versionName = "1.3.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.alarmtalk.app.AlarmTalkTestRunner"
 
         // 지원 로케일을 한국어(기본)·영어·일본어로 선언한다. 기기 언어가 en/ja 면
         // values-en/values-ja 가, 그 외에는 기본 values(한국어)가 적용된다.
@@ -282,6 +290,10 @@ android {
                 alarmTalkDevAdmobRewardedAdUnitId.asBuildConfigString(),
             )
             manifestPlaceholders["admobAppId"] = alarmTalkDevAdmobAppId
+            // 카카오 로그인 — dev 앱(`com.alarmtalk.app.dev`) 전용 네이티브 앱 키. 같은 카카오 앱(1500680)의 두 번째
+            // 키라 서버의 앱 ID 대조는 그대로 통과한다. 네이티브 앱 키는 앱에 실리는 공개 식별자다(키 해시로 지킨다).
+            buildConfigField("String", "KAKAO_NATIVE_APP_KEY", KAKAO_DEV_NATIVE_APP_KEY.asBuildConfigString())
+            manifestPlaceholders["kakaoScheme"] = "kakao$KAKAO_DEV_NATIVE_APP_KEY"
         }
         create("prod") {
             dimension = "environment"
@@ -307,6 +319,8 @@ android {
                 alarmTalkProdAdmobRewardedAdUnitId.asBuildConfigString(),
             )
             manifestPlaceholders["admobAppId"] = alarmTalkProdAdmobAppId
+            buildConfigField("String", "KAKAO_NATIVE_APP_KEY", KAKAO_PROD_NATIVE_APP_KEY.asBuildConfigString())
+            manifestPlaceholders["kakaoScheme"] = "kakao$KAKAO_PROD_NATIVE_APP_KEY"
         }
     }
 
@@ -440,6 +454,8 @@ dependencies {
     // debug/사이드로드에선 no-op(콜백에서 예외 방어). 구 com.google.android.play:core 미사용.
     implementation("com.google.android.play:app-update:2.1.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+    // 카카오 로그인(카카오톡 앱 → 없으면 카카오계정). 저장소는 settings.gradle.kts 의 카카오 저장소.
+    implementation("com.kakao.sdk:v2-user:2.26.0")
     // ⚠ 앱 코드는 위치 API 를 쓰지 않지만 지우지 말 것 — billing 8.0.0 이 이걸 19.0.0 으로
     // 끌어온다. 이 줄이 그 전이 의존을 21.3.0 으로 올려 두고 있어, 지우면 APK 에서 빠지는 게
     // 아니라 19.0.0 으로 내려간다(2026-09-29 `:app:dependencies` 전후 비교로 확인).

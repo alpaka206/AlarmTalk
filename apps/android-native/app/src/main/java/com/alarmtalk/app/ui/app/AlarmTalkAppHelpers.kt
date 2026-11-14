@@ -5,8 +5,11 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,6 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -74,6 +80,15 @@ internal object AppRoute {
 
     fun legalDoc(type: String): String = "legal/$type"
     const val AlarmCreate = "alarm/create"
+    /**
+     * 새 알람에서 처음 고를 목소리(목소리 탭의 '이 목소리로 새 알람 만들기', 2026-10-26). 새 알람에만 쓰고 전역 기본값(직전
+     * 선택)은 바꾸지 않는다 — 저장에 성공해야 직전 선택이 된다.
+     */
+    const val AlarmCreateVoiceArg = "voice"
+    const val AlarmCreatePattern = "$AlarmCreate?$AlarmCreateVoiceArg={$AlarmCreateVoiceArg}"
+
+    fun alarmCreate(preferredVoiceId: String? = null): String =
+        preferredVoiceId?.takeIf { it.isNotBlank() }?.let { "$AlarmCreate?$AlarmCreateVoiceArg=${Uri.encode(it)}" } ?: AlarmCreate
     const val AlarmIdArg = "alarmId"
     const val AlarmEdit = "alarm/edit/{$AlarmIdArg}"
 
@@ -180,6 +195,12 @@ internal sealed interface AuthRoute {
 /** 스낵바의 색·아이콘. 문구에서 고르는 규칙은 `SnackbarSeverity.kt` 한 곳이다. */
 internal enum class MessageSeverity { Success, Error, Info }
 
+/**
+ * 스낵바 한 장. 색·아이콘은 문구의 종류(`SnackbarSeverity.kt`)로 고른다.
+ *
+ * 화면 아래에 몇 초 떠 있는 알람 켜기 안내(`docs/spec/alarm-editor.md` §7)는 이걸 쓰지 않는다 — M3 `Snackbar` 의 `Surface`
+ * 가 자기 영역의 터치를 받아 그 띠에 걸친 행이 눌리지 않고, 모양도 iOS 캡슐로 맞췄다([RingInCapsule]).
+ */
 @Composable
 internal fun PrettySnackbar(
     message: String,
@@ -204,6 +225,15 @@ internal fun PrettySnackbar(
         MessageSeverity.Success -> Icons.Outlined.CheckCircle
         MessageSeverity.Info -> Icons.Outlined.Info
     }
+    val body: @Composable () -> Unit = {
+        SnackbarBody(
+            message = message,
+            iconVector = iconVector,
+            contentColor = contentColor,
+            actionLabel = actionLabel,
+            onAction = onAction,
+        )
+    }
     Snackbar(
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -212,30 +242,73 @@ internal fun PrettySnackbar(
         shape = WakerPanelShape,
         containerColor = containerColor,
         contentColor = contentColor,
+        content = body,
+    )
+}
+
+/**
+ * 알람을 켠 순간의 "N 후에 울려요."(`docs/spec/alarm-editor.md` §7) — **iOS 와 같은 캡슐**이다(2026-11-09 오너: 두 앱을 iOS
+ * 모양으로 맞추고 앞의 ⓘ 아이콘은 뺀다). 하단 탭 위 가운데에 글자 폭만큼의 알약으로 뜬다. iOS 짝 `RingInNoticeHost`.
+ *
+ * **누르는 것을 아래 행에 넘긴다** — 입력 수정자가 하나도 없는 노드는 터치 판정이 건너뛰므로 누른 것이 아래 화면에 닿는다.
+ * 스크린 리더 안내(live region)는 감싸는 `SnackbarHost` 가 맡는다.
+ *
+ * ⚠ 여기에 `Surface`·`Snackbar`·`clickable`·`pointerInput` 을 넣지 말 것 — 그 순간 다시 아래 행을 가린다
+ * (`PassThroughSnackbarTouchTest` 가 실제로 눌러 본다).
+ */
+@Composable
+internal fun RingInCapsule(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = iconVector,
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(22.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = message,
-                fontWeight = FontWeight.Medium,
-                // 액션이 있으면 남은 폭을 메시지가 차지해 버튼이 끝에 붙는다.
-                modifier = if (actionLabel != null) Modifier.weight(1f) else Modifier,
-            )
-            if (actionLabel != null) {
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onAction) {
-                    Text(
-                        text = actionLabel,
-                        color = contentColor,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
+        Text(
+            text = message,
+            // iOS 와 같은 글자(`labelLarge`)·같은 색(보조 컨테이너)·같은 안쪽 여백(18/12)이다.
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .shadow(elevation = 6.dp, shape = WakerPillShape, clip = false)
+                .background(MaterialTheme.colorScheme.secondaryContainer, WakerPillShape)
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+        )
+    }
+}
+
+/** 스낵바 안쪽 — 아이콘·문구·(있으면) 액션. */
+@Composable
+private fun SnackbarBody(
+    message: String,
+    iconVector: ImageVector,
+    contentColor: Color,
+    actionLabel: String?,
+    onAction: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = iconVector,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = message,
+            fontWeight = FontWeight.Medium,
+            // 액션이 있으면 남은 폭을 메시지가 차지해 버튼이 끝에 붙는다.
+            modifier = if (actionLabel != null) Modifier.weight(1f) else Modifier,
+        )
+        if (actionLabel != null) {
+            Spacer(Modifier.width(8.dp))
+            TextButton(onClick = onAction) {
+                Text(
+                    text = actionLabel,
+                    color = contentColor,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }

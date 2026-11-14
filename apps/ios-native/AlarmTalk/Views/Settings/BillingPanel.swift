@@ -190,6 +190,14 @@ struct BillingPanel: View {
         // 각자 카드라, 그 전체를 또 한 겹 카드로 감싸면 **카드 안의 카드**가 된다 —
         // 실기에서 요금 상자들을 큰 상자가 다시 감싸고 있었다. 안드로이드는 플랜 카드만
         // 세로로 늘어놓는다.
+        .onAppear {
+            // 결제 화면을 봤다(`paywall_viewed` — `docs/spec/usage-events.md` §7.1).
+            UsageEventQueue.shared.record(
+                .paywallViewed,
+                props: UsageEventProps(surface: "billing"),
+                userID: auth.session?.user.id
+            )
+        }
         .task {
             // 시트 진입 시 제품 정보 + 이용권 동기화.
             if subscriptions.products.isEmpty {
@@ -277,7 +285,8 @@ struct BillingPanel: View {
             }
             Button(String(localized: "취소"), role: .cancel) {}
         } message: {
-            Text(String(localized: "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 구독하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요."))
+            // 목소리 3일 보관 안내는 뺐다(2026-11-09 오너). 안드로이드 `billing_cancel_immediate_description` 과 같은 문장이다.
+            Text(String(localized: "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요."))
         }
     }
 
@@ -478,10 +487,15 @@ struct BillingPanel: View {
     private func purchaseMessage(for pending: PlanTier) -> String {
         let name = pending.displayLabel
         // 카드에 쓰는 것과 **같은 가격**이다(`SubscriptionManager.priceLabel(for:)`).
-        let price = subscriptions.priceLabel(for: pending) ?? ""
+        // 체험이 있으면 카드 버튼 아래와 **같은 문장**(첫 결제일·금액·해지)을 쓴다.
+        if let disclosure = subscriptions.trialDisclosure(for: pending) {
+            return disclosure
+        }
+        // 주기를 붙인다 — 카드와 같은 "월 ₩3,900"(안드로이드 `billing_plan_monthly_price`).
+        let price = subscriptions.priceLabel(for: pending).map { String(localized: "월 \(String($0))") } ?? ""
         return price.isEmpty
             ? String(localized: "\(name) 이용권을 App Store로 안전하게 결제해요. 가격은 결제 화면에서 확인할 수 있고, 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.")
-            : String(localized: "\(name) 이용권은 \(price)이에요. App Store로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.")
+            : String(localized: "\(name) 이용권은 \(String(price))이에요. App Store로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.")
     }
 
     private func purchase(_ product: SubscriptionProduct) async {

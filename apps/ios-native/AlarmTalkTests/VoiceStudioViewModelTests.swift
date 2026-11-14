@@ -29,6 +29,45 @@ final class VoiceStudioViewModelTests: XCTestCase {
         )
     }
 
+    // MARK: - 선다운로드한 클립 고르기
+
+    /// 선다운로드가 정본(`stock_<id>`)만 받아 둔 클립을 고르면 **옛 별칭 이름**을 넘긴다. 미리듣기 재생과 저장 뒤 준비 기록은
+    /// `localAudioFileName` 을 옛 디렉터리(`AudioCacheStore.url(for:)`)에서 찾는다 — 정본 이름을 넘기던 때는 그 자리에 파일이
+    /// 없어 내 목소리 미리듣기가 소리 없이 '재생 중' 으로 멈췄고, 테마 알람을 저장해도 `alarm_ready` 가 적히지 않았다.
+    func test_prepareStockClip_캐시에서_고른_클립은_옛_별칭_이름으로_재생된다() async throws {
+        let messageID = "prefetched-\(UUID().uuidString.prefix(8))"
+        let clip = StockClip(
+            messageId: messageID,
+            voiceProfileId: "clone-\(messageID)",
+            voiceName: nil,
+            category: "weather",
+            language: "ko",
+            text: "오늘은 맑아요",
+            audioUrl: "https://r2.example/\(messageID).mp3",
+            variant: nil,
+            renderedForCurrentVoice: nil
+        )
+        let cache = AudioCacheStore.shared
+        _ = try cache.cacheBytes(
+            Data("clip-\(messageID)".utf8), cacheKey: clip.cacheKey, mimeType: "audio/mpeg", source: "tts",
+            messageId: messageID, rawAudioUri: clip.audioUrl, durationOverrideMs: 1_000, enforceMaxDuration: false
+        )
+        // 정본만 있는 상태로 만든다(선다운로드가 남기는 모양).
+        let legacyName = "\(messageID).mp3"
+        try? FileManager.default.removeItem(at: try AudioCacheStore.url(for: legacyName))
+        defer {
+            try? cache.deleteCachedAudio(cacheKey: clip.cacheKey)
+            if let legacy = try? AudioCacheStore.url(for: legacyName) { try? FileManager.default.removeItem(at: legacy) }
+        }
+        let session = AuthSession(token: "token", user: AuthUser(id: "user-1", email: "user@example.test"))
+
+        let prepared = await VoiceStudioViewModel().prepareStockClip(clip, session: session)
+
+        XCTAssertEqual(prepared?.localAudioFileName, legacyName)
+        XCTAssertEqual(prepared?.audioCacheKey, clip.cacheKey)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: try AudioCacheStore.url(for: legacyName).path))
+    }
+
     func test_localizedVoiceMessage_VOICE_CLONE_AUDIO_TOO_LONG() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_CLONE_AUDIO_TOO_LONG"),
@@ -60,10 +99,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "RATE_LIMITED"),
             "요청이 너무 많아요. 잠시 후 다시 시도해 주세요."
-        )
-        XCTAssertEqual(
-            VoiceStudioViewModel.localizedVoiceMessage(forCode: "ALARM_NOT_FOUND"),
-            "이미 사라진 알람이에요."
         )
     }
 

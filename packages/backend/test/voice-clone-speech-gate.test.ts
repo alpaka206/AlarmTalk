@@ -250,8 +250,8 @@ beforeEach(async () => {
     await db.execute(`DELETE FROM ${table}`);
   }
   await db.execute({
-    sql: 'INSERT INTO users (id, email, name, plan) VALUES (?, ?, ?, ?)',
-    args: [USER, 'speech@example.test', 's', 'plus'],
+    sql: 'INSERT INTO users (id, email, plan) VALUES (?, ?, ?)',
+    args: [USER, 'speech@example.test', 'plus'],
   });
   for (const type of ['voice_biometric', 'overseas_transfer']) {
     await db.execute({

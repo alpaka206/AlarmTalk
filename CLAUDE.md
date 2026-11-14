@@ -111,18 +111,23 @@
 ### 입력/SQL 보안 규약 (백엔드)
 2026-07-01 입력·SQL 인젝션 전면 감사 결과 현행 코드는 이미 안전. 아래 패턴을 **회귀 방지 규약**으로 고정한다(신규 라우트 추가 시 코드리뷰 체크):
 - **SQL은 항상 `?`-바인딩.** `db.execute({ sql, args })` 의 `sql` 문자열에 사용자 값을 `${}`/문자열 결합으로 넣지 **말 것**. 값은 예외 없이 `args` 배열로.
-  - 동적 `${}`가 허용되는 경우는 **개발자 고정 조각뿐**: IN 절 플레이스홀더 생성기(`alarm-query.ts`의 `inPlaceholders` 등, 값 개수만큼 `?` 생성), 화이트리스트 컬럼 조각(`alarm-mutation.ts`의 `updates.push('col = ?')`), 고정 리터럴 절/테이블명. 컬럼/테이블명을 사용자 입력에서 파생하지 말 것.
+  - 동적 `${}`가 허용되는 경우는 **개발자 고정 조각뿐**: IN 절 플레이스홀더 생성기(`lib/caller-ids.ts`의 `inPlaceholders` 등, 값 개수만큼 `?` 생성), 화이트리스트 컬럼 조각(`voice-profile.ts`의 `updates.push('name = ?')`), 고정 리터럴 절/테이블명. 컬럼/테이블명을 사용자 입력에서 파생하지 말 것.
   - LIKE 검색: 절은 `LIKE ?`, 패턴 `%${q}%`는 **값으로만** 만들어 `args`에 push하고, 와일드카드(`%`,`_`)는 `ESCAPE`로 이스케이프.
 - **필터/식별자 검증 후 바인딩**: 식별자·날짜는 `lib/validate.ts`의 `UUID_RE`(`alarm-helpers.ts`·`tts.ts`·`voice-profile.ts`), `holiday.ts`의 `DATE_RE`처럼 형식 검증 후 `?`-바인딩.
 - **페이지네이션 상한**: `limit`/`offset`은 `Math.min(...,100)`/`Math.max(...,0)`로 클램프 후 바인딩(신규 리스트 엔드포인트 필수).
 - **요청 입력 검증**: 바디는 `@alarmtalk/shared` zod 스키마로 `safeParse`, 경로/쿼리 파라미터도 검증·바운드.
-- **IDOR 방어**: 클라 제공 id/code는 조회·수정·삭제 전 소유권 확인(`WHERE ... AND user_id = ?` 게이트, cross-tenant 참조는 `*BelongsToCaller` 헬퍼). 예: `alarm-mutation.ts`의 `voiceProfileBelongsToCaller`/`messageBelongsToCaller`.
-- ⚠ **`messageBelongsToCaller`(쓰기 허용)와 `GET /tts/messages/:id/audio`(읽기 허용)는 한 쌍이다 — 항상 같이 고친다.** 어긋나면 양방향으로 사고가 난다: 쓰기가 좁으면 **들리는데 저장이 안 되고**(2026-08-05 실기기 재현 — 알람이 로컬에만 남고 서버 sync 가 계속 404), 쓰기가 넓으면 **저장은 되는데 받을 수 없는** 알람이 생긴다(Codex #685). 허용 갈래는 **둘**이다: **내 문구**(그 목소리가 내 목소리이거나 시스템 목소리) / **시스템 스톡 프리셋**(초안 목소리의 문구는 어느 갈래로도 못 지난다). 오디오 라우트는 거기에 플랜을 더 본다 — 시스템 목소리는 누구나, 내 목소리는 `hasPersonalVoiceAccess`(계산값 — 기간 한정 개인 플랜 반영)일 때. 판정은 SQL 에 목록을 베끼지 말고 헬퍼로. `voiceProfileBelongsToCaller` 도 같은 둘(내 목소리·시스템 목소리)이다. 같은 플랜 그룹이 공유한 목소리의 갈래와 그 주인의 원시 플랜 규칙은 2026-10-20 커플·가족 이용권과 함께 지웠다 — 되살리지 말 것. 단 `PATCH /alarm` 은 `voice_profile_id`·`message_id` 가 **저장된 값에서 바뀔 때만** `voiceProfileBelongsToCaller`·`messageBelongsToCaller` 를 본다(POST 는 언제나) — 안드로이드 동기화는 토글마다 두 값을 그대로 보낸다. 그대로 보낸 값은 새 참조가 아니다(저장할 때 이미 본 값이고, 알람 소유는 조회 조건이 확인한다). 다 보면 그 사이 판정이 바뀐 값(허용 갈래를 좁혔을 때 등)을 든 알람이 켜고 끌 때마다 404 로 동기화에 실패한다. 허용 갈래(쌍 규칙)는 그대로다 — 막힌 클립의 **재생**은 오디오 라우트가 막는다. "IDOR 검사를 빠짐없이" 로 되돌리지 말 것(스펙 D8·D13). 상세: `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
+- **IDOR 방어**: 클라 제공 id/code는 조회·수정·삭제 전 소유권 확인(`WHERE ... AND user_id = ?` 게이트, cross-tenant 참조는 조회 조건 안에서 판정). 예: `voice-profile.ts`의 목소리 조회·수정·삭제(`WHERE id = ? AND user_id = ?`).
+- ⚠ **문구 오디오를 누가 받는가는 `GET /tts/messages/:id/audio` 한 곳이 정한다**(2026-10-29). 예전에는 알람 쓰기의 `messageBelongsToCaller`·`voiceProfileBelongsToCaller` 와 한 쌍이라 항상 같이 고쳤다(어긋나면 **들리는데 저장이 안 되거나**(2026-08-05 실기기) **저장은 되는데 받을 수 없는** 알람이 생겼다, Codex #685). 서버 알람 사본(마이그레이션 #147)과 함께 쓰기 쪽을 지워 이제 이 라우트가 유일한 판정이다. 허용 갈래는 **둘**이다: **내 문구**(그 목소리가 내 목소리이거나 시스템 목소리) / **시스템 스톡 프리셋**(초안 목소리의 문구는 어느 갈래로도 못 지난다). 거기에 플랜을 더 본다 — 시스템 목소리는 누구나, 내 목소리는 `hasPersonalVoiceAccess`(계산값 — 기간 한정 개인 플랜 반영)일 때. 판정은 SQL 에 목록을 베끼지 말고 헬퍼로. 같은 플랜 그룹이 공유한 목소리의 갈래와 그 주인의 원시 플랜 규칙은 2026-10-20 커플·가족 이용권과 함께 지웠다 — 되살리지 말 것. 옛 앱이 부르는 `POST/PATCH /alarm` 은 **저장 없이 받은 그대로 되돌려 준다**(`routes/alarm-mutation.ts`) — 지킬 행이 없으니 거기서 소유권 검사를 되살리지 말 것. 막을 것은 재생이고 재생은 오디오 라우트가 막는다. 상세: `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
 - **R2 object key**: 사용자 파생 세그먼트는 `encodeURIComponent`+새니타이즈 또는 JWT `sub`+`crypto.randomUUID()`로 생성(경로 조작 차단).
 - **길이 상한은 서버에도 둔다.** 클라의 `take(n)` 은 앱을 거칠 때만 유효하다 — 직접 호출하면
   거대한 문자열이 조회·쓰기 트랜잭션까지 그대로 흘러간다(`POST /code/register` 가 실제로 그랬다).
 
 ### 입력 규칙은 한 곳에서만 (앱 1차 · 서버 2차)
+
+⚠ **계정 닉네임은 2026-10-29 에 없앴다**(오너 — 혼자 쓰는 앱이라 부를 이름이 필요 없다). 가입·구글·애플에서 이름을 받지 않고
+두 앱에 닉네임 화면이 없다. `users.name` 칸도 지웠다(마이그레이션 #146). 서버는 옛 앱(1.2.16)이 읽는 응답의 `name` 을 빈
+문자열로 싣고(`LEGACY_EMPTY_NAME` — 빠지면 그 안드로이드가 멈춘다), 옛 앱이 보낸 이름은 받고 버린다. 응답의 그 칸은 1.3 강제
+업데이트 뒤 뺀다. 아래 규칙은 **목소리 프로필 이름·호칭**에 그대로 쓰인다(`DisplayNameSchema` 계열 함수가 그 둘에도 쓰인다).
 같은 값에 규칙이 여러 개면 **가장 느슨한 경로가 실질 규칙**이 된다. 실제로 표시 이름이
 가입 64자·trim 없음 / `PATCH /user/me` 30자 / 구글 로그인 무검증 으로 갈라져 있었다.
 
@@ -264,7 +269,7 @@
 버튼 높이·글자 크기가 조금씩 달라 화면을 옮길 때마다 다른 앱처럼 보였다.
 
 - **입력이 있는 알럿도 이걸 쓴다.** `content` 슬롯(메시지와 버튼 사이)에 `IosAlertField` 를 넣는다.
-  적용된 곳: 닉네임 수정·스누즈 직접 입력·직접 문구·목소리 이름 변경. (유료 게이트의 코드 입력 알럿은
+  적용된 곳: 스누즈 직접 입력·직접 문구·목소리 이름 변경. (유료 게이트의 코드 입력 알럿은
   2026-10-14 에 없앴다 — 아래 「유료 기능은 스토어 결제로만 연다」.)
 - **`IosAlertField` 를 M3 `OutlinedTextField` 로 바꾸지 말 것.** 시도했다가 되돌렸다 — M3 는
   최소 높이 56dp 라 알럿 안에서 비율이 깨진다(`IosAlertField` 는 48dp).
@@ -361,13 +366,16 @@ App Store 가 지침 3.1.1 로 **두 번** 반려했다 — 1.2.11 은 프로모
   합류)도 2026-10-20 커플·가족 이용권과 함께 지웠다. 선물·프로모·쿠폰·체험·라이선스·초대 코드와 **코드를 발급하는
   1회성·소모성 상품**을 새로 만들지 않는다. 할인·무료 이용은 스토어 오퍼 코드(App Store 오퍼 코드·Play 프로모션
   코드)로 준다.
-- **앱에 코드 칸을 두지 않는다** — 이용권 화면·유료 게이트는 물론 더보기에도. 옛 앱의 '초대 코드 등록' 은 서버가
-  어떤 코드든 404 `CODE_NOT_FOUND` 로 답한다.
+- **앱에 코드 칸을 두지 않는다** — 이용권 화면·유료 게이트는 물론 더보기에도. 옛 앱의 '초대 코드 등록' 라우트도
+  2026-10-26 강제 업데이트(안드로이드 36·iOS 14) 뒤 지웠다 — 없는 경로라 404 `NOT_FOUND` 다.
 - **스토어 설명·출시 노트·심사 노트에 코드로 유료 기능을 연다고 쓰지 않는다** — 1.2.12 는 설명과 심사 노트가 선물
   코드를 직접 내보였다.
-- **무료·할인 이용은 스토어 장치로만 준다**(App Store 첫 구독 할인·오퍼 코드, Play 프로모션 코드·무료 체험). 스토어 밖
-  예외는 서버가 켜고 끄는 지금의 기간 한정 개인 플랜 하나뿐이고(날짜는 `docs/spec/billing-lifecycle.md` — 여기 베끼지
-  않는다), 끝나면 같은 것을 다시 만들지 않는다.
+- **무료·할인 이용은 스토어 장치로만 준다**(App Store 첫 구독 할인·오퍼 코드, Play 프로모션 코드·무료 체험). 신규
+  가입자의 **1개월 무료도 스토어 무료 체험**이다(해지하지 않으면 자동 결제 — 2026-10-26 오너 결정). 스토어 밖 예외는
+  둘뿐이다: 서버가 켜고 끄는 지금의 기간 한정 개인 플랜(날짜는 `docs/spec/billing-lifecycle.md` — 여기 베끼지 않는다,
+  끝나면 같은 것을 다시 만들지 않는다)과 **관리자 기간 지급**(2026-10-26 오너 승인 — 관리자 콘솔에서 한 사람에게 기간을
+  정해 주는 고객 지원·보정 도구. 앱에 입력 칸이 없고 코드가 아니다. 규칙은 `billing-lifecycle.md` 「관리자 기간 지급」).
+  지급을 앱의 셀프 서비스·코드·링크로 넓히지 말 것.
 - 막는 것은 서버다(옛 앱이 남는다). 강제: `scripts/check-paid-unlock-codes.py`(CI lint — 화면·스토어 문구의
   선물·프로모·쿠폰·초대 코드 어휘, 앱·서버 코드의 은퇴한 상품 id·`GIFT-` 형식·초대 코드 형식, 유료 게이트의 입력 칸).
 
@@ -485,17 +493,20 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | --- | --- |
 | [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | **잠김=전체화면 / 앱 보임=전체화면 / 다른 앱=배너**(OS 가 가른다), **벗어나면=해제**, 스와이프=해제, 타임아웃 없음, 소리·음량, 권한별 사실 |
 | [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
-| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드, 월 등록 한도 — **다 썼으면 초안부터 만들지 않는다**, 말소리가 거의 없는 녹음은 **등록하지 않는다**(다시 녹음은 횟수 제한 없음) |
+| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 직접 입력 월 한도(무료 3·플러스 30, **새로 만들 때만** 깎임), 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드, 월 등록 한도 — **다 썼으면 초안부터 만들지 않는다**, 말소리가 거의 없는 녹음은 **등록하지 않는다**(다시 녹음은 횟수 제한 없음) |
+| [`docs/spec/voice-packs.md`](docs/spec/voice-packs.md) | 추가 음성팩 — **무료 고정 콘텐츠**(직접 입력 합성·개인 슬롯과 별개), 권리 메타데이터 **비노출**, 고른 팩만 받는다(기본 4종 관문 밖), 중단돼도 **곧바로 무음 금지**(허락된 기한 뒤 미나), 지금은 **외부 권리/음원 대기** |
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션, 코드로 여는 길 **없음**, 커플·가족 이용권 **폐지**(옛 앱 호환 응답·강제 업데이트 계획) |
 | [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우, 탈퇴 유예 — **다시 로그인하면 철회**(유예 화면 없음, 신청은 모든 기기 로그아웃), 푸시 등록 — **스스로 낫는다**, 이메일 인증 코드 — **가장 최근 코드만**, 거절되면 칸을 비운다 |
 | [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다, 목소리를 못 쓰게 되면 **기본 목소리(미나)**, 업데이트 전에 받아 둔 가족 알람은 **내 알람으로** |
-| [`docs/spec/ad-rewards.md`](docs/spec/ad-rewards.md) | 광고 보상 — 무료는 **보상형 광고 한 번 = 기본 목소리 직접 입력 한 번**(월 10번), 적립은 **AdMob 서버 확인(SSV)으로만**, **울림 화면에는 광고를 넣지 않는다** |
+| [`docs/spec/ad-rewards.md`](docs/spec/ad-rewards.md) | 광고 보상 — 무료는 기본 목소리 직접 입력 **월 3회**, 다 쓰면 **보상형 광고 한 번 = 한 번 더**(광고로 월 10번), 적립은 **AdMob 서버 확인(SSV)으로만**, **울림 화면에는 광고를 넣지 않는다** |
 | [`docs/spec/consent.md`](docs/spec/consent.md) | 동의 화면 — **미체크 ≠ 철회**, 재동의 레버 |
 | [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md) | 게이트·1회성 오버레이의 **준비 신호** |
-| [`docs/spec/alarm-lifecycle.md`](docs/spec/alarm-lifecycle.md) | 알람의 **행 vs 예약** 두 겹, 서버 행은 **사본**, 계정을 떠날 때 끄기, `.failed` 낙인 규칙 |
+| [`docs/spec/alarm-lifecycle.md`](docs/spec/alarm-lifecycle.md) | 알람의 **행 vs 예약** 두 겹, 서버에는 **알람이 없다**(2026-10-29 사본 삭제), 계정을 떠날 때 끄기, `.failed` 낙인 규칙 |
 | [`docs/spec/usage-events.md`](docs/spec/usage-events.md) | 사용 기록 — **울릴 때 네트워크 금지**(로컬에 적고 나중에 전송), 재전송 멱등, 보관 1년 |
 | [`docs/spec/error-codes.md`](docs/spec/error-codes.md) | 에러 코드 — **목록은 하나**(shared), 나간 코드는 **바꾸지 않는다**, 기록은 전부·경보는 골라서, 앱 Sentry 묶음 키(코드 + 호출 자리) |
 | [`docs/spec/localization.md`](docs/spec/localization.md) | 앱 화면 번역 — 용어·저장값과 표시·오류·언어 변경 |
+| [`docs/spec/admin-console.md`](docs/spec/admin-console.md) | 관리자 콘솔(`/admin`) — 사용 현황, 앱 빌드 기록은 **동의 검사 앞**·90일, 알림은 **시험 발송 먼저**·걸음으로 나눠 보내고 기록에 받는 사람을 적지 않는다, 광고는 동의자·08~21시 |
+| [`docs/spec/tts-render-and-budget.md`](docs/spec/tts-render-and-budget.md) | 합성 렌더 지문 — 지금 설정이면 **캐시 키 그대로**, 서비스가 설정을 바꿔 다시 구우면 **세지 않는다**, 예산은 **정하지 않으면 없다**(대량 작업 dry-run), 사용량 장부·다시 구울 목록 |
 
 각 스펙 문서 끝에 **「구현 지도」** 표가 있다 — 규칙 한 줄이 세 구현의 어디에 사는지
 적어 둔 것이라, **한 곳만 고치는 사고**를 막는다. 동작을 바꾸면 스펙을 먼저 고친다.
@@ -552,7 +563,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
     - ⚠ 직접 녹음 → 목소리는 **판정을 목소리 교체 전, 잇기를 뒤**에 한다(`AlarmEditorState.selectTtsVoice`). 교체 뒤에 판정하면 기본 목소리 교체가 비운 테마를 '문구 없음' 으로 읽어 테마 알람을 직전 선택으로 덮는다.
   - 빈 직접 입력으로 저장을 누르면 **요청 전에** 전용 사유로 막는다(`SaveBlockReason.MANUAL_TEXT_MISSING` / iOS `manualTextMissing`). '준비 중' 으로 뭉개지 말 것 — 기다려도 안 풀린다. 상세 `docs/spec/voice-and-message.md` §4.
 - **목소리 프리셀렉트는 마지막에 쓴 것이 그룹보다 우선**(`VoiceAudioCard`). 그룹(내 클론 → 기본)을 먼저 보면, 클론을 가진 사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아간다.
-- **한 번도 고른 적 없을 때만** 폴백: 문구는 `preset`(기본 인사말), 기본 목소리 경로는 `FreeBucketOrder` 첫 값(날씨). `FreeBucketOrder` 는 최후 폴백 순서일 뿐 "항상 적용되는 기본값" 이 아니고, 목록 자체는 `EditorMessageContexts` 에서 유도된다(손으로 적지 않는다 — '직접 입력' 과 '기본 인사말' 만 빠진다. 이유는 `docs/spec/voice-and-message.md` §2).
+- **한 번도 고른 적 없을 때만** 폴백: 문구는 `preset`(기본 인사말), 기본 목소리 경로는 **응원**(`FirstRecommendedBucket`, 2026-10-26 — 클립이 없으면 추가 입력이 필요 없는 `FreeBucketOrder` 첫 값). `FreeBucketOrder` 는 최후 폴백 순서일 뿐 "항상 적용되는 기본값" 이 아니고, 목록 자체는 `EditorMessageContexts` 에서 유도된다(손으로 적지 않는다 — '직접 입력' 과 '기본 인사말' 만 빠진다. 이유는 `docs/spec/voice-and-message.md` §2).
 - **직접 입력은 문구까지 기억한다**(2026-08-06 변경. 그전에는 아예 기억하지 않았다).
   - 바뀐 이유: 종류만 이어받으면 새 알람이 **빈 직접입력**으로 열려 저장이 막힌다 — 그게 예전에 '기억하지 않는다' 를 택한 실질적 근거였다. 문구를 함께 이어받으면 글자가 같아 `AlarmAudioStore` 입력 캐시에 걸려 **서버 호출도 월 한도 차감도 없이** 곧바로 저장된다(오프라인 포함). 근거가 사라졌으니 규칙도 바뀐다.
   - ⚠ **기억되는 값은 입력 원문이 아니라 서버 표시 문구다.** 알람에 저장되는 게 그 값이라서다(`setGeneratedTtsAudio` — 잠금화면 문구와 음성을 맞추려고 일부러 그렇게 한다). 번역이 켜진 기기(앱 언어 ≠ ko)에서는 둘이 갈라지므로, 생성 후 **표시 문구 키로도 `linkTtsInput` 을 남긴다**. 안 그러면 다음 새 알람이 표시 문구로 열려 입력 캐시를 빗나가고, 위의 '재생성·한도 차감 없음' 약속이 조용히 깨진다(Codex #685).
@@ -688,8 +699,9 @@ FOREGROUND_SERVICE … (BAL_BLOCK) result code=102`. 그래서 2026-09-09 의 "�
 - **SwiftUI 도 같다 — `TimelineView`·`Canvas` 의 클로저.** iOS 27 의 SwiftUI 는 `.animation` 타임라인을
   **그리기 전용 스레드**(`ViewGraphDisplayLink.asyncThread`)에서 갱신하기도 한다. `body` 안에서 표기 없이 쓴
   클로저는 메인 액터를 물려받아 거기서 트랩한다(2026-10-14 1.2.13 iPad — 같은 이슈 IOS-4, 랜딩 일출 씬).
-  클로저는 `{ @Sendable ... in` 으로 열고, 그리는 코드는 `View` 밖 타입에 둔다(`SunriseSceneRenderer`).
-- 강제: `scripts/check-bgtask-handler-isolation.py`(CI lint — BGTask 콜백 + `TimelineView`·`Canvas`). 회귀 테스트는 **비격리 테스트
+  클로저는 `{ @Sendable ... in` 으로 열고, 그리는 코드는 `View` 밖 타입에 둔다(그 일출 장면은 2026-11-14 에 그림 배경으로 바꿔 지금은 없다).
+- **URLSession 델리게이트도 같다**(2026-10-27, iOS 백그라운드 클립 받기 `BackgroundClipDownloader`). background 세션의 콜백은 시스템 큐에서 온다 — 델리게이트 타입을 `@MainActor` 로 두거나 `@preconcurrency` 로 채택하지 말고, 상태는 잠금으로 지킨다.
+- 강제: `scripts/check-bgtask-handler-isolation.py`(CI lint — BGTask 콜백 + `TimelineView`·`Canvas` + URLSession 델리게이트). 회귀 테스트는 **비격리 테스트
   메서드**여야 한다 — `@MainActor` 클래스에 넣으면 이 버그를 구조적으로 못 잡는다
   (`AlarmTalkTests/BackgroundSyncTaskLaunchHandlerTests`).
 
@@ -700,7 +712,9 @@ FOREGROUND_SERVICE … (BAL_BLOCK) result code=102`. 그래서 2026-09-09 의 "�
 99%(안드로이드 두 이슈만 10,256건)가 이 맥의 유닛 테스트였다. 진짜 사고가 그 사이에 묻힌다.
 
 - 안드로이드: `app/src/test/resources/robolectric.properties` 의 `application=android.app.Application`
-  (1차) + `AlarmTalkApplication.shouldInitializeSentry`(2차).
+  (1차) + `AlarmTalkApplication.shouldInitializeSentry`(2차). **기기 계측 테스트**는 `AlarmTalkTestRunner`
+  (`app/src/androidTest`)가 같은 1차를 맡는다 — 운영 Application 을 띄우지 않는다(2026-10-26 녹음 계측 테스트가
+  dev 앱 안에서 돌아 Sentry ANDROID-1Q 를 열었다).
 - iOS: `AlarmTalkLog.shouldStartCrashReporting(dsn:isRunningTests:)`.
 - ⚠ **예외 이름·메시지로 거르지 말 것.** 실기기에서 올라오는 것은 무엇이든 그대로 올라가야 한다
   (`WorkManager is not initialized` 는 실기기에서 나면 진짜 사고이고, 그 유일한 신호다).

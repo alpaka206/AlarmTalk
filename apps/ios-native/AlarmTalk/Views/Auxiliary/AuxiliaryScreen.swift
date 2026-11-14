@@ -26,10 +26,13 @@ enum AuxiliaryScreen: String, Identifiable, Hashable {
 struct AlarmEditorTarget: Identifiable, Equatable, Hashable {
     let id: String
     let editingAlarmID: String?
+    /// **새 알람에서 처음 고를 목소리** — 목소리 탭의 '이 목소리로 새 알람 만들기' 가 싣는다(2026-10-26). 새 알람에만 쓰고,
+    /// 전역 기본값(직전 선택 — `lastUsedVoiceId`)이나 기존 알람은 바꾸지 않는다. 저장에 성공해야 직전 선택이 된다.
+    var preferredVoiceID: String? = nil
 
     /// 새 알람용 target. id 는 매번 새 값이라 sheet 가 항상 새로 뜬다.
-    static func create() -> AlarmEditorTarget {
-        AlarmEditorTarget(id: "create-\(UUID().uuidString)", editingAlarmID: nil)
+    static func create(preferredVoiceID: String? = nil) -> AlarmEditorTarget {
+        AlarmEditorTarget(id: "create-\(UUID().uuidString)", editingAlarmID: nil, preferredVoiceID: preferredVoiceID)
     }
 
     /// 기존 알람 수정용 target. id 는 알람 id 를 그대로 써서 같은 알람 재오픈 시
@@ -66,8 +69,10 @@ enum NativeTab: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .alarms: return "alarm"
-        case .voices: return "mic"
-        case .menu: return "line.3.horizontal"
+        // 목소리 탭은 '등록한 목소리 목록' 이라 마이크('지금 녹음하기')가 아니라 사람 + 음파다. 더보기는 서랍 메뉴 기호(≡)가
+        // 아니라 ··· 다(2026-11-09 오너 — 고르기 시안 A). 안드로이드 짝은 `RecordVoiceOver`·`MoreHoriz`.
+        case .voices: return "person.wave.2"
+        case .menu: return "ellipsis"
         }
     }
 
@@ -75,8 +80,8 @@ enum NativeTab: String, CaseIterable, Identifiable {
     var selectedSystemImage: String {
         switch self {
         case .alarms: return "alarm.fill"
-        case .voices: return "mic.fill"
-        case .menu: return "line.3.horizontal"
+        case .voices: return "person.wave.2.fill"
+        case .menu: return "ellipsis"
         }
     }
 }

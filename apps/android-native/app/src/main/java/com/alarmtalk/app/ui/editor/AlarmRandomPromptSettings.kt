@@ -1,14 +1,13 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
@@ -39,6 +38,19 @@ import com.alarmtalk.app.data.WeatherCountry
 import com.alarmtalk.app.data.WeatherRegion
 import com.alarmtalk.app.data.WeatherRegions
 import com.alarmtalk.app.data.weatherRegionFor
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.LineBreak
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.layout.height
 
 @Composable
 internal fun RandomPromptSettingsPane(
@@ -73,6 +85,11 @@ internal fun RandomPromptSettingsPane(
      * 있고, 비용은 직접 입력 월 한도가 센다(서버 `tts.ts` 의 manual-tts-quota).
      */
     manualLocked: Boolean = false,
+    /**
+     * '직접 입력' 을 **보일지**. 잠금([manualLocked])과 다르다 — 추가 팩 목소리는 그 화자로 아무 문장이나 합성할 권한이
+     * 없어 아예 감춘다(`docs/spec/voice-packs.md` §1). 이용권으로 풀리는 것이 아니라서 잠긴 행으로 그리지 않는다.
+     */
+    manualAvailable: Boolean = true,
     /** 잠긴 '직접 입력' 을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
     onManualLocked: () -> Unit = {},
     /**
@@ -97,9 +114,18 @@ internal fun RandomPromptSettingsPane(
     fortuneGender: String,
     fortuneBirthDate: String,
     fortuneBirthTime: String,
+    /**
+     * 응원 테마의 **다양하게 / 이 문구로 고정**(스펙 voice-and-message §5-4). [cheerPhrases] 는 이 목소리·언어로
+     * 매니페스트에 있는 새 응원이다 — **비어 있으면 카드를 그리지 않는다**(준비되지 않은 문구를 보이지 않는다).
+     */
+    cheerMode: String = com.alarmtalk.app.data.CheerModes.VARY,
+    cheerPinnedContentId: String? = null,
+    cheerPhrases: List<com.alarmtalk.app.data.CheerCandidate> = emptyList(),
     onSaveSettings: (RandomPromptSettingsResult) -> Unit,
 ) {
     val context = LocalContext.current
+    var draftCheerMode by remember(cheerMode) { mutableStateOf(com.alarmtalk.app.data.CheerModes.normalize(cheerMode)) }
+    var draftCheerPinned by remember(cheerPinnedContentId) { mutableStateOf(cheerPinnedContentId) }
     var draftContext by remember(randomContext) {
         mutableStateOf(
             // 지금 값을 그대로 고른 상태로 연다. 예전에는 목록에 없는 값(preset)이면 '약'을
@@ -180,6 +206,8 @@ internal fun RandomPromptSettingsPane(
                 randomContext = resolvedContext(),
                 weatherCountry = draftWeatherCountry.trim(),
                 weatherCity = draftWeatherCity.trim(),
+                cheerMode = draftCheerMode,
+                cheerPinnedContentId = draftCheerPinned,
                 fortuneGender = draftFortuneGender.trim(),
                 fortuneBirthDate = draftFortuneBirthDate.trim(),
                 fortuneBirthTime = draftFortuneBirthTime.trim(),
@@ -265,15 +293,21 @@ internal fun RandomPromptSettingsPane(
                     // ⚠ **'직접 입력' 은 목록에서 빼지 않는다.** 무료에게도 이런 기능이
                     // 있다는 걸 보여 준다 — 아예 감추면 있는지조차 모르고, 유료 전환 동기
                     // 중 가장 강한 것을 잃는다. 잠긴 행으로 그린다.
+                    //
+                    // ⚠ **접지 않는다 — 전부 편다**(2026-11-09 오너 "꼭 더보기를 넣어야 할까"). v1.3 W04 에서 운세·약을
+                    // '더 보기' 뒤로 접었다가 출시 전에 되돌렸다. 다 펴도 다섯 줄이라 한 화면에 들어가고, 접어 두면
+                    // 운세·약이 있는 줄도 모른다. iOS 짝 `MessageSettingsPane.visibleOptions` 도 같다.
                     val rows = EditorMessageContexts.filter { (context, _) ->
-                        context == ManualMessageContext || context in availableContexts
+                        (context == ManualMessageContext && manualAvailable) || context in availableContexts
                     }
                     rows.forEachIndexed { index, (context, labelRes) ->
                         val baseLabel = stringResource(labelRes)
                         val locked = context == ManualMessageContext && manualLocked
                         val label = if (
                             context == ManualMessageContext && !locked &&
-                            manualLimit != null && manualLimit > 0 && manualRemaining != null
+                            manualLimit != null && manualLimit > 0 && manualRemaining != null &&
+                            // 무료가 기본분(3)을 다 쓰고 광고 보상이 남았으면 '(0/3)' 대신 보상 수를 말한다.
+                            (manualRemaining > 0 || manualRewardCredits <= 0)
                         ) {
                             // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
                             "$baseLabel ($manualRemaining/$manualLimit)"
@@ -356,6 +390,53 @@ internal fun RandomPromptSettingsPane(
                         },
                     )
                 }
+
+                // 응원 — 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 고를 새 응원이 없으면(공개 전·보충 전)
+                // 그리지 않는다. 그때 응원은 묶어 둔 옛 응원을 순서대로 돌린다.
+                if (normalizedContext == "cheer" && cheerPhrases.isNotEmpty()) {
+                    val phraseIds = cheerPhrases.map { it.contentId }
+                    SnoozeOptionSection(title = stringResource(R.string.editorp_cheer_variety_title)) {
+                        SnoozeRadioRow(
+                            label = stringResource(R.string.editorp_cheer_vary),
+                            selected = draftCheerMode == com.alarmtalk.app.data.CheerModes.VARY,
+                            onClick = { draftCheerMode = com.alarmtalk.app.data.CheerModes.VARY },
+                        )
+                        SnoozeOptionDivider()
+                        SnoozeRadioRow(
+                            label = stringResource(R.string.editorp_cheer_pinned),
+                            selected = draftCheerMode == com.alarmtalk.app.data.CheerModes.PINNED,
+                            onClick = {
+                                draftCheerMode = com.alarmtalk.app.data.CheerModes.PINNED
+                                // 고정할 문구가 아직 없으면 첫 문구를 고른 채로 연다 — 빈 고정은 없다.
+                                if (draftCheerPinned !in phraseIds) draftCheerPinned = phraseIds.first()
+                            },
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            if (draftCheerMode == com.alarmtalk.app.data.CheerModes.PINNED) {
+                                R.string.editorp_cheer_pinned_hint
+                            } else {
+                                R.string.editorp_cheer_vary_hint
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                    if (draftCheerMode == com.alarmtalk.app.data.CheerModes.PINNED) {
+                        SnoozeOptionSection {
+                            cheerPhrases.forEachIndexed { index, phrase ->
+                                SnoozeRadioRow(
+                                    label = phrase.text,
+                                    selected = draftCheerPinned == phrase.contentId,
+                                    onClick = { draftCheerPinned = phrase.contentId },
+                                )
+                                if (index != cheerPhrases.lastIndex) SnoozeOptionDivider()
+                            }
+                        }
+                    }
+                }
             }
 
         }
@@ -437,7 +518,9 @@ private fun ManualMessageDialog(
     // 필드 높이만 남긴다.
     IosAlertDialog(
         title = stringResource(R.string.editor_msg_mode_manual),
-        message = null,
+        // 새 음성을 만드는 순간 횟수를 쓴다는 것을 **치기 전에** 말한다(`docs/spec/voice-and-message.md` §8 — 무료 3·플러스 30,
+        // 이 폰에 남아 있는 음성은 세지 않고, 서버에서 다시 받으면 1회다). 남은 횟수는 문구 목록의 '직접 입력 (2/3)' 이 보여 준다.
+        message = stringResource(R.string.editor_manual_charge_notice),
         onDismiss = onDismiss,
         actions = listOf(
             IosAlertAction(
@@ -601,22 +684,54 @@ internal fun initialWeatherPickerCountry(
 internal const val OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION = "kma_jma_nws"
 
 /**
- * 지역 시트에 날씨 출처 줄을 그릴까 — 서버가 **정확히** [OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION] 을 줄 때만.
+ * 날씨 출처 줄을 그릴까 — 서버가 **정확히** [OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION] 을 줄 때만.
+ * 그리는 자리는 더보기 › 내 정보 › 약관 및 개인정보 처리 동의 화면 맨 아래 한 곳이다(`ConsentHistoryScreen`,
+ * 2026-11-09 지역 시트에서 옮겼다).
  * 그 밖(모르는 값·null·필드가 없는 옛 서버·버전 확인 실패·아직 응답 전)은 숨긴다.
  *
  * 출처 문장은 서버가 **실제로 쓰는 원천**을 따라가야 한다 — 앱이 단정하면 서버의 원천 교체가 늦거나 되돌려진
- * 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 규칙: `docs/spec/voice-and-message.md` 「지역 시트의 날씨
- * 출처 줄 — 서버가 원천을 말할 때만」. iOS 는 `WeatherAttribution.showsLine` 이 같은 판정이다.
+ * 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 규칙: `docs/spec/voice-and-message.md` 「날씨 출처 줄 —
+ * 서버가 원천을 말할 때만」. iOS 는 `WeatherAttribution.showsLine` 이 같은 판정이다.
  */
 internal fun showsWeatherAttribution(token: String?): Boolean =
     token == OFFICIAL_FORECASTS_WEATHER_ATTRIBUTION
 
 /**
  * 서버가 알려 준 날씨 원천 토큰(`MainViewModel.weatherAttribution`) — `MainActivity` 가 앱 전체에 내려 준다.
- * 지역 시트는 설정·편집기 두 곳에서 열리므로 인자로 실어 나르지 않고 여기서 읽는다. 기본값 null = 숨김이라,
- * 내려 주지 않은 곳에서 열려도 출처를 지어내지 않는다.
+ * 출처 줄을 그리는 화면이 인자로 실어 나르지 않고 여기서 읽는다. 기본값 null = 숨김이라, 내려 주지 않은 곳에서
+ * 열려도 출처를 지어내지 않는다.
  */
 internal val LocalWeatherAttribution = compositionLocalOf<String?> { null }
+
+/** 지역 칩 하나 — 고른 칩은 강조 배경 + 강조 테두리. 높이는 칸마다 같고 긴 이름은 두 줄까지(균형 줄바꿈). */
+@Composable
+private fun WeatherRegionChip(name: String, selected: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(WakerChipShape)
+            .background(if (selected) scheme.primaryContainer else scheme.surfaceVariant.copy(alpha = 0.46f))
+            .border(
+                BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) scheme.primary else scheme.outlineVariant),
+                WakerChipShape,
+            )
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelLarge.copy(lineBreak = LineBreak.Heading),
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) scheme.onPrimaryContainer else scheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
 
 /**
  * 지역 고르기 — **나라 → 지역**, 직접 입력은 없다(2026-09-30).
@@ -647,11 +762,10 @@ internal fun WeatherLocationDialog(
     var shownCountry by remember(display.region?.key) {
         mutableStateOf(initialWeatherPickerCountry(display.region, fallbackCountry))
     }
-    val showsAttribution = showsWeatherAttribution(LocalWeatherAttribution.current)
 
     val regions = WeatherRegions.byCountry(shownCountry)
     // 나라마다 목록을 새로 연다 — 새 목록은 맨 위에서 시작한다.
-    val listState = remember(shownCountry) { LazyListState() }
+    val listState = remember(shownCountry) { LazyGridState() }
     val selectedIndex = regions.indexOfFirst { it.key == display.region?.key }
     // 시트를 연 직후에만 고른 지역을 찾아간다. 사용자가 나라를 바꾸면 그 뒤로는 늘 맨 위다
     // (2026-09-30 사용자 지시 — 바꾸면 곧바로 맨 위로). 고른 지역이 있는 나라로 되돌아와도 같다.
@@ -669,8 +783,8 @@ internal fun WeatherLocationDialog(
             .first { info -> info.visibleItemsInfo.any { it.index == selectedIndex } }
         val item = layout.visibleItemsInfo.first { it.index == selectedIndex }
         val viewport = layout.viewportEndOffset - layout.viewportStartOffset
-        val centered = layout.viewportStartOffset + (viewport - item.size) / 2
-        listState.scrollBy((item.offset - centered).toFloat())
+        val centered = layout.viewportStartOffset + (viewport - item.size.height) / 2
+        listState.scrollBy((item.offset.y - centered).toFloat())
     }
 
     // ⚠ **나라 세그먼트는 제자리에 둔다**(`scrollsContent = false`). 껍데기가 통째로 스크롤하면
@@ -678,10 +792,12 @@ internal fun WeatherLocationDialog(
     // iOS 도 세그먼트는 고정이고 목록만 스크롤한다.
     WakerSelectionSheet(
         title = stringResource(R.string.editorp_random_weather_region_title),
+        // 옛 값이 목록에 없으면 그것을, 아니면 고르는 법과 위치 권한을 쓰지 않는다는 사실을 말한다(지시서 v1.3 8.1).
+        // iOS `WeatherRegionPickerSheet` 의 안내 줄과 같은 문장이다.
         subtitle = if (display.needsRepick) {
             stringResource(R.string.region_picker_legacy_value_hint, display.label)
         } else {
-            null
+            stringResource(R.string.region_picker_hint)
         },
         onDismiss = onDismissWithoutSave,
         scrollsContent = false,
@@ -697,40 +813,27 @@ internal fun WeatherLocationDialog(
             },
             modifier = Modifier.padding(horizontal = 20.dp),
         )
-        LazyColumn(
+        // ⚠ **3열 칩이다**(2026-11-09 오너 — 고르기 시안 A). 목록은 대한민국 17곳도 한 화면에 다 안 들어가 스크롤해야
+        // 했다 — 칩이면 17곳이 스크롤 없이 보이고 고른 곳이 바로 눈에 띈다. 일본(47)·미국(69)은 칩이 길어져 스크롤한다.
+        // 긴 이름("찰스턴(웨스트버지니아)", "North Chungcheong")은 칩 안에서 두 줄까지 감는다(높이는 칩마다 같게 52).
+        // iOS 짝은 `WeatherRegionPickerSheet` 의 `LazyVGrid` 다.
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f, fill = false),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             itemsIndexed(regions, key = { _, region -> region.key }) { index, region ->
-                WakerSheetOptionRow(
-                    title = stringResource(region.nameRes),
-                    // 날씨를 재는 곳이 이름과 다를 때만(경기 → 수원, 愛知 → 名古屋).
-                    description = region.seatNameRes?.let {
-                        stringResource(R.string.region_picker_seat_description, stringResource(it))
-                    },
+                WeatherRegionChip(
+                    name = stringResource(region.nameRes),
                     selected = index == selectedIndex,
                     onClick = { onConfirm(region) },
-                    divider = index != regions.lastIndex,
                 )
             }
-        }
-        // 날씨 출처 — 목록 **아래 고정**(목록이 `weight(1f, fill = false)` 라 늘 보인다). 원천과 가공해 쓴다는
-        // 사실은 기상법(출처 표시)과 気象庁 약관(공공데이터 이용규약 — 가공 시 그 사실을 적는다)이 요구한다. 지역을
-        // 고르는 곳이 이 시트 하나라(설정·편집기 공용) 여기 한 곳에만 둔다. iOS `WeatherRegionPickerSheet` 와 같은
-        // 문장이다.
-        // ⚠ **서버가 그 원천을 쓴다고 말할 때만 그린다**([showsWeatherAttribution]). 문장을 늘 그리면 서버의 원천
-        // 교체가 늦거나 되돌려진 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845).
-        if (showsAttribution) {
-            Text(
-                text = stringResource(R.string.region_picker_weather_attribution),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-            )
         }
     }
 }

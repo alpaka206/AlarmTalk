@@ -31,7 +31,6 @@ const CONTENT = {
     scopeTitle: "삭제되는 데이터",
     scopeItems: [
       "계정 식별 정보와 로그인 연결 정보",
-      "서버에 동기화된 알람 설정",
       "음성 프로필, 업로드 음성, 생성 음성 및 관련 메타데이터",
       "메시지와 이용 기록",
     ],
@@ -63,7 +62,6 @@ const CONTENT = {
     scopeTitle: "Data deleted",
     scopeItems: [
       "Account identifiers and sign-in connection data",
-      "Alarm settings synchronized to the server",
       "Voice profiles, uploaded voices, generated voices, and related metadata",
       "Messages and usage records",
     ],
@@ -95,7 +93,6 @@ const CONTENT = {
     scopeTitle: "削除されるデータ",
     scopeItems: [
       "アカウント識別情報とログイン連携情報",
-      "サーバーに同期されたアラーム設定",
       "音声プロフィール、アップロード音声、生成音声と関連メタデータ",
       "メッセージ、利用記録",
     ],

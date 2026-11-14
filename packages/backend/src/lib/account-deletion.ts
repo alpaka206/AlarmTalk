@@ -1,11 +1,83 @@
-import type { InStatement } from '@libsql/client';
-import type { DbExecutor } from './transactions';
+import type { Client, InStatement } from '@libsql/client';
+import { withRetryableWriteTransaction, type DbExecutor } from './transactions';
+import type { DeletedPushTarget } from './fcm';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
 import { enqueueUserVoiceArtifacts } from './audio-retention';
 import type { DowngradedAlarm } from './paid-voice-cleanup';
 import { revokeDeletedVoices } from './voice-revocation';
 
 const TEXT_ENCODER = new TextEncoder();
+
+/** 탈퇴 유예 기간(일). 신청하고 이만큼 지나면 크론이 파기한다(`index.ts` 의 유예 파기). */
+export const DELETION_GRACE_DAYS = 30;
+
+export interface AccountDeletionRequest {
+  /** 계정을 찾아 유예로 바꿨는가. */
+  requested: boolean;
+  purgeAt: Date;
+  /** 지우기 전에 읽어 둔 그 계정의 푸시 등록 — 커밋 뒤 '탈퇴 신청됨' 신호를 보낼 곳(`sendAccountDeletionRequestedPush`). */
+  pushTargets: DeletedPushTarget[];
+}
+
+/**
+ * 탈퇴 유예 신청 — 계정을 `pending_deletion` 으로 두고([DELETION_GRACE_DAYS] 뒤 파기), **모든 기기의 세션을 끊고**
+ * (`token_epoch + 1`), 그 계정의 푸시 등록을 지운다. 유예 안에 다시 로그인하면 철회된다(`cancelPendingDeletionOnSignIn`).
+ *
+ * 부르는 곳은 둘이다(2026-11-14): 사용자가 신청하는 `POST /user/me/deletion`, 그리고 카카오로만 가입한 계정의
+ * 카카오 연결이 카카오 쪽에서 끊겼을 때의 웹훅(`routes/kakao-webhook.ts`). 두 길이 같은 규칙을 지나도록 여기 한 곳에 둔다.
+ * [userKey] 는 계정 id(또는 옛 토큰의 구글 id)다.
+ */
+/**
+ * 카카오로만 가입했고 아직 유예가 아닌 계정 — 카카오 연결 해제 웹훅이 신청할 수 있는 조건(개발자 고정 조각).
+ * ⚠ **쓰기 문장 안에서 다시 본다**(코덱스 #994). 웹훅이 계정을 읽은 뒤 쓰기 전에 구글·애플 로그인이 같은 이메일로 그 계정에
+ *   붙을 수 있다 — 읽은 값으로만 판단하면 다른 로그인 수단이 생긴 계정을 유예로 넘긴다.
+ */
+const KAKAO_ONLY_ACTIVE_SQL = ` AND kakao_id IS NOT NULL
+              AND COALESCE(password_hash, '') = ''
+              AND COALESCE(google_id, '') = ''
+              AND COALESCE(apple_id, '') = ''
+              AND deletion_status != 'pending_deletion'`;
+
+export async function requestAccountDeletion(
+  db: Client,
+  userKey: string,
+  now: Date,
+  options: { onlyIfKakaoOnlyActive?: boolean } = {},
+): Promise<AccountDeletionRequest> {
+  const purgeAt = new Date(now.getTime() + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
+  const eligibility = options.onlyIfKakaoOnlyActive ? KAKAO_ONLY_ACTIVE_SQL : '';
+  // 트랜잭션이 다시 돌면 다시 채운다.
+  let pushTargets: DeletedPushTarget[] = [];
+  const res = await withRetryableWriteTransaction(db, async (tx) => {
+    pushTargets = [];
+    const updated = await tx.execute({
+      sql: `UPDATE users
+            SET deletion_status = 'pending_deletion',
+                deletion_requested_at = ?,
+                deletion_purge_at = ?,
+                token_epoch = token_epoch + 1,
+                updated_at = datetime('now')
+            WHERE (google_id = ? OR id = ?)${eligibility}`,
+      args: [now.toISOString(), purgeAt.toISOString(), userKey, userKey],
+    });
+    if (updated.rowsAffected > 0) {
+      const tokens = await tx.execute({
+        sql: `SELECT token, platform FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
+        args: [userKey, userKey],
+      });
+      pushTargets = tokens.rows.map((r) => ({
+        token: String(r.token),
+        platform: String(r.platform),
+      }));
+      await tx.execute({
+        sql: `DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
+        args: [userKey, userKey],
+      });
+    }
+    return updated;
+  });
+  return { requested: res.rowsAffected > 0, purgeAt, pushTargets };
+}
 
 /** 로그인이 끝날 때 계정의 탈퇴 상태가 어떻게 됐는지. */
 export type SignInDeletionOutcome =
@@ -191,7 +263,7 @@ export async function pseudonymizeBillingForRetention(
         // ⚠ **스토어 증빙이 있으면 금액을 지어내지 않는다**(코덱스 #734 4차). `price_krw` 는
         //   **지금의 원화 표시가**일 뿐이다 — 스토어 가격은 지역별이고 요금제 가격은 바뀐다.
         //   증빙(거래 id·원본 페이로드)을 붙여 놓고 그 옆에 이 값을 적으면, **그 애플/Play
-        //   주문이 이 금액이었다**고 단언하는 셈이 된다. 통화(`amount_currency`)도 비어 있어
+        //   주문이 이 금액이었다**고 단언하는 셈이 된다. 통화를 적는 칸도 없어
         //   원화인지조차 말할 수 없다. 실제 금액은 그 거래 id 로 스토어에서 확인한다.
         //   (아래 일회성 갈래가 같은 이유로 처음부터 비워 둔다.)
         //   스토어 결제가 아니면(dev 스텁·프로모·바우처) 되짚을 곳이 없으므로 그대로 남긴다.
@@ -236,9 +308,9 @@ export async function pseudonymizeBillingForRetention(
       //   증빙(거래 id·원본 페이로드)을 남겨 주문에 되짚을 수 있게 한다.
       sql: `INSERT INTO retained_billing_records
               (id, pseudonym, plan_id, status, starts_at, expires_at,
-               amount_krw, amount_currency, provider, provider_transaction_id,
+               amount_krw, provider, provider_transaction_id,
                product_id, raw_payload, retained_reason, retain_until)
-            VALUES (?, ?, ?, 'one_time', ?, NULL, NULL, NULL, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
+            VALUES (?, ?, ?, 'one_time', ?, NULL, NULL, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
       args: [
         crypto.randomUUID(),
         pseudonym,
@@ -260,9 +332,9 @@ export async function pseudonymizeBillingForRetention(
  * 탈퇴하는 계정 자신은 빠진다 — 그 기기는 곧 사라진다(`revokeDeletedVoices` 의 `excludeOwnerUserIds`).
  */
 export type AccountPurgeNotifications = {
-  /** 서버 알람 행에서 찾은 강등 대상. 그 알람의 주인 기기가 목소리 접근권을 다시 확인한다. */
+  /** 서버가 강등한 알람 — 서버 알람 사본을 지운 뒤(#147)로는 언제나 비어 있다(`revokeDeletedVoices`). */
   downgradedAlarms: DowngradedAlarm[];
-  /** 서버 알람 행과 **무관하게** 목소리 접근권을 잃은 계정들(`VoiceRevocationNotifications`). */
+  /** 목소리 접근권을 잃은 계정들 — 그 기기가 제 알람을 내린다(`VoiceRevocationNotifications`). */
   voiceAccessRevokedUserIds: string[];
 };
 
@@ -322,7 +394,7 @@ export async function purgeUserAccount(
     // ⚠ **자리를 옮기지 말 것.** 아래 둘보다 앞이어야 한다:
     //   구독 취소 — 철회는 지금 상태를 읽어 대상을 고른다. 그 상태를 바꿀 수 있는 쓰기보다 먼저 돈다
     //   (2026-09-30 — 순서가 뒤집혀 있던 동안 철회가 대상을 못 찾았다),
-    //   `DELETE FROM alarms`·messages·voice_profiles 삭제 — 조회 대상이 사라진다.
+    //   messages·voice_profiles 삭제 — 조회 대상이 사라진다(서버 알람 행은 #147 에서 지웠다).
     const revocation = await revokeDeletedVoices(tx, {
       voiceProfileIds: cloneIds,
       ownerUserIds: userIds,
@@ -356,6 +428,15 @@ export async function purgeUserAccount(
       sql: `DELETE FROM ad_reward_credits WHERE user_id = ?`,
       args: [userPk],
     });
+    // 광고 시청 승인 세션·SSV 콜백 기록(#141) — 계정 id 를 담는다. 세션은 `users` 를 FK 로 물므로 사람 행보다 먼저 지운다.
+    writes.push({
+      sql: `DELETE FROM ad_reward_sessions WHERE user_id = ?`,
+      args: [userPk],
+    });
+    writes.push({
+      sql: `DELETE FROM ad_reward_callbacks WHERE user_id IN (?, ?)`,
+      args: [userPk, userLoginId],
+    });
     writes.push({
       sql: `DELETE FROM subscriptions WHERE user_id = ?`,
       args: [userPk],
@@ -372,6 +453,26 @@ export async function purgeUserAccount(
       sql: `DELETE FROM push_tokens WHERE user_id = ?`,
       args: [userPk],
     });
+    // 앱 빌드·접속 기록(관리자 콘솔, #133).
+    writes.push({
+      sql: `DELETE FROM user_app_presence WHERE user_id = ?`,
+      args: [userPk],
+    });
+    // 관리자 기간 지급 기록(#134) — 탈퇴하면 함께 지운다.
+    writes.push({
+      sql: `DELETE FROM plan_grants WHERE user_id = ?`,
+      args: [userPk],
+    });
+    // 직접 입력의 같은 요청 표식(#135).
+    writes.push({
+      sql: `DELETE FROM manual_tts_requests WHERE user_id = ?`,
+      args: [userPk],
+    });
+    // 애플 서버 알림 수신 기록(#136) — 주인을 찾은 알림에만 계정 id 가 적힌다.
+    writes.push({
+      sql: `DELETE FROM apple_server_notifications WHERE user_id = ?`,
+      args: [userPk],
+    });
 
     writes.push({
       sql: `DELETE FROM generated_audio_assets
@@ -383,12 +484,6 @@ export async function purgeUserAccount(
                  SELECT id FROM messages WHERE user_id IN (?, ?)
                )`,
       args: [...userIds, ...userIds, ...userIds],
-    });
-    // 내 알람 행. 남겨 두면 audio-retention 이 message_id 를 영구 사용 참조로 오인하고, 계정 id 도
-    // 그대로 남는다.
-    writes.push({
-      sql: `DELETE FROM alarms WHERE user_id IN (?, ?)`,
-      args: userIds,
     });
     if (cloneIds.length > 0) {
       const cph = cloneIds.map(() => '?').join(', ');

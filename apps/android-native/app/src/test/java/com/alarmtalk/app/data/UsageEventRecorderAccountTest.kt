@@ -36,6 +36,19 @@ class UsageEventRecorderAccountTest {
     }
 
     @Test
+    fun `비동기 흐름은 시작한 계정으로 적는다`() {
+        // 직접 입력 생성처럼 서버 답을 기다리는 사이 계정이 바뀌면, 답이 온 시점의 계정이 아니라
+        // 요청을 낸 계정의 기록이어야 한다(코덱스 #958).
+        val dao = FakeUsageEventDao()
+        val recorder = UsageEventRecorder(dao) { "u2" }
+
+        recorder.record(type = UsageEvents.ALARM_RANG, alarmId = "a", ownerUserId = "u1")
+
+        dao.awaitInsert()
+        assertEquals("u1", dao.inserted.single().userId)
+    }
+
+    @Test
     fun `계정 조회가 던져도 부르는 쪽으로 새지 않는다`() {
         // 계정은 암호화 프리퍼런스(키스토어)에서 읽는다 — 키가 무효화되면 던진다.
         // `RingingService` 는 해제·다시 울림에서 이 함수를 **먼저** 부르므로, 여기서 새면

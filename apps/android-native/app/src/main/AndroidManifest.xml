@@ -138,6 +138,20 @@
         <meta-data
             android:name="com.google.android.gms.ads.flag.OPTIMIZE_AD_LOADING"
             android:value="true" />
+        <!-- 카카오 로그인 — 카카오계정(웹) 로그인이 끝나면 카카오가 `kakao<네이티브 앱 키>://oauth` 로 돌려보낸다.
+             키는 플레이버마다 다르다(build.gradle.kts 의 kakaoScheme). 카카오톡 앱 로그인은 이 화면을 거치지 않는다. -->
+        <activity
+            android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="oauth"
+                    android:scheme="${kakaoScheme}" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

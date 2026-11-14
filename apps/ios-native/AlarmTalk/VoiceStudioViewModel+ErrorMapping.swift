@@ -78,6 +78,11 @@ extension VoiceStudioViewModel {
         extractServerErrorCode(from: error) == "VOICE_CLONE_NO_SPEECH"
     }
 
+    /// 서버 응답의 `error_code`(없으면 nil) — 문구를 고를 때와 같은 방법으로 읽는다.
+    nonisolated func serverErrorCode(of error: Error) -> String? {
+        extractServerErrorCode(from: error)
+    }
+
     private nonisolated func extractServerErrorCode(from error: Error) -> String? {
         // 1) 정상 경로 — APIError 가 errorCode 를 보존하고 있다.
         if let apiError = error as? APIError, let code = apiError.serverErrorCode {
@@ -145,7 +150,6 @@ extension VoiceStudioViewModel {
         "INVALID_VOICE_PITCH",
         "VOICE_PITCH_LOCKED",
         "CONSENT_REQUIRED",
-        "ALARM_NOT_FOUND",
         "TTS_GENERATION_FAILED",
     ]
 }

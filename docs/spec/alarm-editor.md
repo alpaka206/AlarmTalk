@@ -71,6 +71,11 @@
 
 - **목소리가 왼쪽**이고 새 알람의 기본값이다. 읽는 순서와 기본 선택이 어긋나면 첫 화면에서
   오른쪽 칸이 켜져 있어 무엇이 기본인지 흐려진다.
+- **칸마다 아이콘**(2026-11-09 오너 — 고르기 시안 A). 목소리는 사람 + 음파(안드로이드 `RecordVoiceOver`, iOS
+  `person.wave.2` — 하단 목소리 탭과 같은 아이콘), 알람은 종(`Notifications` / `bell`). ⚠ **아래 설명 줄은 두지 않는다** —
+  같은 날 "고른 목소리가 문구를 읽어 줘요." / "알람음만 울려요." 를 붙였다가 오너가 지웠다. 카드 두 장·목소리 고르기에 합치기
+  안은 고르지 않았다.
+- 목소리 목록 마지막의 **'직접 녹음' 에는 설명 줄이 없다**(2026-11-09 오너 — '이 알람에만 쓸 소리를 직접 녹음하기' 삭제).
 - 선택 표시는 **트랙 안에서 배경 하나가 미끄러져 옮겨간다.** 칸마다 색을 즉시 바꾸면
   전환이 툭 끊긴다.
 - ⚠ **세그먼트 구현은 앱마다 하나다.** 트랙을 따로 그리는 두 번째 구현을 만들면, 선택
@@ -83,6 +88,11 @@
   (iOS 는 테마만 남겨) 저장하므로 그대로 두면 녹음 카드(iOS)나 **빈 직접 입력**(안드로이드)이 떴다. 잇는 규칙과
   예외는 [voice-and-message.md](voice-and-message.md) §4 「적용 대상은 새 알람뿐」.
   빈 직접 입력으로 저장을 누르면 **요청 전에** 알럿으로 막는다(`MANUAL_TEXT_MISSING`).
+
+## 2-1. 반복 자리의 '날짜 지정(한 번)' — 없앴다 (2026-11-09)
+
+v1.3 W10(#955)이 요일 칩 아래에 두었던 '날짜 지정' 스위치·날짜 줄·날짜 고르기 시트를 출시 전에 오너 결정으로 지웠다. 반복
+자리는 요일 칩과 '공휴일에는 끄기'(요일을 고른 알람에만)뿐이다. 기록은 [alarm-lifecycle.md](alarm-lifecycle.md) §4.
 
 ## 3. 음성 출력
 
@@ -165,18 +175,21 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
     안드로이드 `editorSaveBlockReason` 이 `usableTtsProfileIds` 를 테마 갈래 앞에서 보는 것과 같다.
   - 삭제·미준비 목소리는 기존 알람의 음원을 그대로 쓸 수 있으면(시각만 고치는 재저장) 막지 않는다.
   - ⚠ **무료 플랜 잠금은 음원이 있어도, 테마를 골랐어도 막는다.** 판정은 고른 목소리가 기본
-    목소리인가 하나다. 서버 `PATCH /alarm` 이 저장된 값 그대로의 유료 목소리도 403
-    `VOICE_FEATURE_REQUIRES_PAID_PLAN` 으로 거절하고, 안드로이드는 편집기 판정 뒤의
-    `voiceAlarmAllowed`(`usesFreeSystemVoiceAlarm` — 테마와 무관하게 `isSystemVoiceId` 부터 본다)가 막는다.
+    목소리인가 하나다. 막는 곳은 **앱**이다 — 안드로이드는 편집기 판정 뒤의 `voiceAlarmAllowed`
+    (`usesFreeSystemVoiceAlarm` — 테마와 무관하게 `isSystemVoiceId` 부터 본다)가 막는다. (2026-10-29 전에는 서버
+    `PATCH /alarm` 도 저장된 값 그대로의 유료 목소리를 403 `VOICE_FEATURE_REQUIRES_PAID_PLAN` 으로 거절했다 — 서버 알람
+    사본과 함께 없어졌다, [alarm-lifecycle.md](alarm-lifecycle.md) 「서버에는 알람이 없다」. 유료 목소리 음원의 **재생**은
+    지금도 오디오 라우트가 막는다.)
 - **세부 설정 카드의 행 순서는 알람음 → 진동**이다(2026-09-29 지시, 안드로이드). 알람음 행은
   재생 방식이 '알람' 일 때만 있으므로, 행 사이 구분선은 **알람음 행에 붙어** 함께 나타나고
   사라진다. iOS 에는 진동 행이 없다(AlarmKit 이 진동을 소유한다 — 「의도된 차이」).
-- **진동 값은 안드로이드 목록 18종이 그대로 서버 계약이다**(2026-10-12). 안드로이드는 고른 값을 그대로
-  동기화하고, 서버는 같은 목록을 받는다(`VIBRATION_PATTERNS`). 그 전에는 서버가 `default`·`strong`·`none` 셋만
-  받아 그 밖의 패턴을 고른 알람이 동기화마다 400 `INVALID_VIBRATION_PATTERN` 이었다(ALARMTALK-ANDROID-14) —
-  알람은 폰에서 울렸지만 서버 사본이 갱신되지 않았다. iOS 는 진동 화면이 없지만 같은 18종 enum 으로 읽고 편집기
-  저장 때 그 값으로 다시 적는다 — enum 에 없는 값은 '기본' 으로 덮인다. 그래서 패턴을 더하면 **세 곳**(안드로이드·
-  iOS·서버)을 같이 고친다 — `scripts/check-vibration-patterns.py`(CI lint)가 세 목록을 비교한다.
+- **진동 값은 안드로이드 목록 18종이다**(2026-10-12). 1.3 앱은 알람을 서버로 올리지 않는다(2026-10-29 — 서버에는 알람이
+  없다). 서버의 같은 목록(`VIBRATION_PATTERNS`)은 옛 앱(1.2.16)의 올리기를 검사하는 데만 쓴다 — 그 앱이 고른 패턴이
+  400 `INVALID_VIBRATION_PATTERN` 을 맞지 않게. (2026-10-12 전에는 서버가 `default`·`strong`·`none` 셋만 받아 그 밖의 패턴을
+  고른 알람이 동기화마다 400 이었다(ALARMTALK-ANDROID-14) — 알람은 폰에서 울렸지만 서버 사본이 갱신되지 않았다.) iOS 는 진동
+  화면이 없지만 같은 18종 enum 으로 읽고 편집기 저장 때 그 값으로 다시 적는다 — enum 에 없는 값은 '기본' 으로 덮인다. 그래서
+  패턴을 더하면 **세 곳**(안드로이드·iOS·서버)을 같이 고친다 — `scripts/check-vibration-patterns.py`(CI lint)가 세 목록을
+  비교한다(서버 목록은 옛 앱 호환 경로를 지울 때 함께 뺀다).
 
 ## 6. 저장 버튼 — 파일을 읽는 확인은 **메인 밖에서, 저장 잠금 안에서** (안드로이드, 2026-10-11)
 
@@ -190,27 +203,72 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   쌓아 두면 같은 알람이 두 번 저장되고 완료 콜백이 두 번 팝해 검은 화면이 된다. 찾았으면 서버를 부르지
   않고 곧바로 저장하고(뷰모델의 '저장 중' 으로 이어진다 — 잠금이 풀리는 틈이 없다), 못 찾았으면 다음
   단계로 간다. 찾다 실패하면 '없다' 로 보고 다음 단계로 간다.
-- **찾는 동안 편집기가 바뀌었으면 그 저장은 버린다**(Codex #879). 잠기는 것은 저장 버튼뿐이라 그 사이 시각·
-  문구·목소리를 고칠 수 있다 — 결과를 그대로 이으면 누른 순간의 값으로 찾은 오디오가 바뀐 상태와 섞여 저장된다.
-  누른 순간의 초안과 지금 초안이 같을 때만 잇고(찾았으면 저장, 못 찾았으면 다음 단계), 다르면 아무것도 하지
-  않는다 — 잠금이 풀리니 다시 누르면 지금 상태로 저장된다.
+- ⚠ **저장을 누른 뒤 바꾼 것은 그 값으로 저장한다**(2026-10-29 오너 "저장을 누르면 바뀐걸로 되어야"). 잠기는 것은
+  저장·취소 버튼뿐이라 찾거나(로컬 확인) 만드는(생성·테마 클립 받기) 몇 초 동안 시각·문구·목소리를 고칠 수 있다.
+  결과를 그대로 이으면 누른 순간의 값으로 만든 오디오가 바뀐 상태와 섞이거나(예전 생성 갈래는 누른 순간의 목소리·
+  문구로 **덮어** 저장했다) 바꾼 것이 사라진다. 그래서 누른 순간의 초안과 지금 초안이 같을 때만 잇고, 다르면 결과를
+  잇지 않은 채 **잠금이 풀린 뒤 지금 화면 값으로 저장을 다시 돈다**(`resaveAfterChange`). 만든 결과는 폰에 남아(입력
+  키 화살표) 같은 입력이면 다시 써서 더 세지 않는다. 예전 로컬 확인 갈래(Codex #879)는 다르면 버리고 다시 누르기를
+  기다렸다. 시각을 바꿔도 만드는 중인 음성을 **취소하지 않는다** — 끝난 뒤 바뀐 것을 보고 새 시각으로 다시 저장한다
+  (취소하면 서버가 이미 센 생성을 잃고 다시 눌러야 했다).
+- **초안이 뷰모델로 넘어간 뒤(마지막 저장)에는 편집기 입력을 막는다** — 그때 바꾼 것은 저장되지 않은 채 편집기만
+  닫힌다(날씨 알람은 조건을 푸느라 몇 초 걸린다). 입력 중이던 칸도 닫는다.
+- **iOS 도 같다**(2026-10-29 두 앱 비교). `AlarmEditorSheet.saveFlow` 가 누른 순간의 입력(`EditorSaveInputs` — 초안 +
+  목소리·문구·테마·날씨·운세·녹음)을 잡아 두고, 음원을 준비한 뒤 알람 행을 만들기 직전에 지금 값과 견준다. 다르면 지금
+  값으로 한 번 더 돈다 — 목소리·문구 쪽이 바뀌었으면 준비한 음원을 버리고, 시각·요일만 바뀌었으면 음원은 그대로 쓰고 시각만
+  다시 잰다. 다시 도는 것은 두 번까지이고, 행을 만든 뒤(날씨 조회·AlarmKit 예약)에는 편집을 막는다(`committingSave`). 예전
+  iOS 는 누른 순간의 목소리·문구로 만든 음원을 그대로 저장했고, 날짜 알람은 옛 시각으로 예약됐다.
 - **오프라인 판정(`OFFLINE_NEW_MESSAGE`)도 그 확인으로 한다** — §8 의 ②. 저장 사유를 세는 자리는 더 이상
   파일을 읽지 않는다. 예전에는 오프라인 + 직접 입력이면 화면이 다시 그려질 때마다 같은 파일을 읽었다.
   그래서 이 알럿은 이제 저장 흐름 안에서, 권한 확인 **뒤에** 뜬다 — 문구와 판정식(직접 입력 +
   오프라인 + 폰에 없음)은 같다.
 - 나머지 사유(목소리·날씨·운세·빈 직접 입력·클립 과도기)는 메모리 값만 보므로 그대로 누르는 순간 판정한다.
 
+## 7. 알람을 켜면 화면 아래에 "N 후에 울려요" 를 잠깐 띄운다 (2026-11-09)
+
+오너 요청: "알람 설정하면 하단에 잠시 몇 분 후에 알림이 울려요 이런 건 있으면 좋겠어". 휴대폰 기본 시계 앱처럼, 알람을 켠 순간
+**그 알람이** 얼마 뒤에 우는지 아래쪽에 잠깐 보여 준다.
+
+- **언제**: ① 편집기에서 저장에 성공했고 저장된 알람이 켜져 있을 때(새 알람·기존 알람 모두. 같은 시각 교체는 충돌 정리까지 끝났을 때만 —
+  예약이 실패했거나 정리가 실패해 롤백했으면 띄우지 않는다) ② 알람 목록에서 스위치로 알람을 **켰을 때**
+  (실제로 반영된 뒤 — iOS 는 연타를 합친 마지막 값이 켜짐일 때 한 번. 켜져 있던 알람을 껐다 도로 켜 보낸 것이 없어도 한 번).
+  끄기·삭제·여러 개 삭제·다시 울림에는 띄우지 않는다.
+- **거둔다**: 안내가 떠 있는 동안 **그 알람을** 끄거나 지우면(여러 개 삭제 포함) 곧바로 거둔다. 다른 알람의 안내는 둔다. 끄기가 실패해
+  알람이 켜진 채면 그대로 둔다 — 그 알람은 그대로 운다. 남기면 꺼진 알람을 두고 "N 후에 울려요" 라고 말해, 방금 끈 사람이 안 꺼졌나 하고
+  도로 켠다.
+- **하단 탭이 있는 화면에서만**: 편집기·설정·이용권 같은 하위 화면으로 옮기면 걷고 버린다(돌아와도 다시 띄우지 않는다) — 하위 화면 위에
+  남으면 어느 알람의 것인지 표시가 없어 지금 고치는 알람의 시각처럼 읽힌다. 하위 화면에 있는 동안 켠 것(저장 직후 편집기가 닫히는 사이
+  포함)은 탭으로 돌아온 뒤 **그때의 남은 시간**으로 띄운다. 그사이 그 알람을 껐거나 지웠으면 띄우지 않는다.
+- **생긴 지 5초 넘게 못 떴으면 버린다**(2026-11-09 출시 전 검토로 iOS 를 안드로이드에 맞췄다). 정상 경로(목록 스위치, 저장 뒤 편집기가
+  닫히는 전환)는 곧바로 뜨므로, 그만큼 늦었다는 것은 하위 화면에 오래 머물렀거나 앱이 멈춰 있었다는 뜻이다 — 그때 뜨면 맥락 없이 옛 알람의
+  남은 시간을 말한다(예: 켜고 곧바로 편집기에 들어가 3분 머물다 저장하지 않고 나옴). 안드로이드 `ringInAction`
+  (`RING_IN_NOTICE_FRESH_MILLIS`), iOS `RingInNoticePresenter.freshInterval`.
+- **앱이 백그라운드면 띄우지 않고, 백그라운드로 가면 떠 있던 것·기다리던 것을 버린다**(iOS). 목록 스위치의 적용은 잠근 뒤에도 잠시 돈다
+  (`AlarmToggleCoalescer` 의 백그라운드 보호 — 켜고 곧바로 잠가도 예약이 걸리게). 안드로이드는 멈춘 동안 효과가 돌지 않아 위 5초 규칙이
+  같은 일을 한다.
+- **무엇을**: 홈 헤드라인과 **같은 문장·같은 계산**이다 — 안드로이드 `hs_status_ring_in` + `remainingDurationLabel`, iOS
+  `NextAlarmHeadline.remainingLabel` + "%@ 후에 울려요.". 기준은 **방금 켠 그 알람의 예약 시각**이다(전체의 다음 알람이 아니다).
+  올림이라 1분 미만도 "1분 후에 울려요." 다.
+- **어디에·얼마나**: 화면 아래(하단 탭 위, ＋버튼 위) 가운데에 약 3초. **두 앱 모두 글자 폭만큼의 캡슐이고 아이콘이 없다**(2026-11-09
+  오너 — iOS 모양으로 맞추고 앞의 ⓘ 는 뺐다. 안드로이드는 그전까지 아이콘 달린 스낵바였다). 보조 컨테이너 색·`labelLarge`.
+  누르거나 화면을 옮겨도 막지 않는다. 스크린 리더에는 같은 문장을 알린다.
+- **권한이 모자랄 때**: 안드로이드는 그래도 울리므로(CLAUDE.md 「알람 권한 3종」) 같은 문장을 띄운다. iOS 는 AlarmKit 권한이 없으면
+  예약이 안 되므로 띄우지 않는다(헤드라인과 같은 판단).
+- 켜기가 실패해 켜지지 않은 경우에는 띄우지 않는다.
+
 ## iOS 중복 시각 알람 교체의 실패 처리
 
-새 알람의 저장·예약이 성공한 뒤 충돌 알람을 정리하되, **서버 삭제 성공을 확인한
-행만 로컬에서 삭제**한다. 하나라도 실패하면 그 행과 아직 처리하지 않은 충돌을 보존하고
+새 알람의 저장·예약이 성공한 뒤 충돌 알람을 **차례로** 지운다(예약 취소 → 행 삭제 — 기기의 예약과 행뿐이다. 서버에는
+알람이 없다, 2026-10-29). 하나라도 실패하면 거기서 멈추고 그 행과 아직 처리하지 않은 충돌을 보존하고
 새 저장을 롤백한다. 이미 삭제에 성공한 앞선 충돌은 되살리지 않는다. 편집 중이던 기존
 알람의 예약은 교체 정리가 끝나기 전에는 취소하지 않는다. 성공 안내·선택 기억·저장 사건은
-정리 완료 뒤에만 기록한다. 정리 대기 중인 새 내용은 서버 push 대상으로 내보내지 않는다.
-충돌 삭제 중 자동 401로 세션이 없어져도 임시 저장은 롤백한다. 저장 당시 소유자·내용·
+정리 완료 뒤에만 기록한다.
+충돌 삭제 중 계정이 바뀌면(자동 401 포함) 그 삭제는 실패로 보고 임시 저장을 롤백한다. 저장 당시 소유자·내용·
 예약 핸들이 여전히 같은 행인지 확인해 기존 편집본/예약을 복원하거나 신규 행을 지운다.
 현재 인증 여부만으로 복원을 생략하지 않는다. 동시 삭제·끄기·다른 소유자/예약으로 교체된
-행은 덮어쓰지 않으며, 서버 동기화 메타데이터만 바뀐 경우에는 그 최신 값을 보존한다.
+행은 덮어쓰지 않는다(같은 편집본인지 볼 때 동기 칸 — `remoteAlarmId`·`syncState` 등 — 은 보지 않는다).
+(2026-10-29 전에는 **서버 삭제 성공을 확인한 행만** 로컬에서 지웠고, 정리 대기 중인 새 내용을 서버 push 대상에서 뺐다 —
+서버 알람 사본을 지워 그 단계가 없다.)
 
 ## 의도된 차이
 
@@ -228,17 +286,19 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 규칙 | Android | iOS |
 | --- | --- | --- |
 | 타임휠 전체 | `ui/editor/AlarmTimePicker.kt` | `Views/Editor/TimeWheelPicker.swift` |
-| 교체 중 서버 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`·`rollbackAlarmReplacement`; `LocalAlarmStore` 보류 → 두 push 진입점에서 제외 |
+| 켜면 "N 후에 울려요" 하단 안내(§7) | 저장 성공·목록 켜기 → 하단 캡슐(`RingInCapsule` — `ringInSnackbarHostState` 에 실어 띄운다, 문장은 `remainingDurationLabel`·`hs_status_ring_in`) | 저장 성공(`runAlarmSaveSteps` 가 `.completed` 일 때만 — `RingInNoticePresenter.present(after:)`)·목록 켜기(`AlarmToggleCoalescer` 의 `settled` → `listToggleSettled`) → 하단 캡슐(`Views/Alarms/RingInNotice.swift`, 문장은 `NextAlarmHeadline.remainingLabel`) · 끄기·삭제는 그 알람 것만 `withdraw` · 하위 화면은 `MainTabsView` 가 `hostHidden`·`hostShown` 으로 알린다 |
+| 교체 중 충돌 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`(`deleteLocal` 하나 — 서버 삭제 단계는 2026-10-29 에 지웠다)·`rollbackAlarmReplacement` — 회귀 `DuplicateAlarmReplacementTests` |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
 | 한 칸마다 햅틱 | `ui/editor/DraggableTimeWheelColumn.kt` 의 `performWheelTick` | `Views/Editor/TimeWheelPicker.swift` 의 `selectionGenerator` |
 | 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `AmPmWheelColumn` |
 | 재생 방식 세그먼트 | `ui/editor/AlarmEditorControls.kt` 의 `EditorSegmentedSelector` | `Views/Editor/VoicePlayModePicker.swift` |
 | '알람' → '목소리' 전환(TTS 갈래 + 직전 선택 잇기) | `AlarmEditorScreen` 의 `applyAlarmOutput` → `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly` | `Views/Editor/AlarmEditorSheet+AlarmModeSection.swift` 의 재생 방식 `.onChange` → `AlarmEditorSheet.adoptLastMessageChoiceIfUnset` |
-| 쓸 수 없는 목소리 — 배너 없음, 저장 시 알럿 | `ui/editor/AlarmEditorScreen.kt` 의 `editorSaveBlockReason`(`SaveBlockReason.VOICE_UNAVAILABLE`) | `AlarmEditDraft.selectedVoiceUnusable` → `AlarmEditorSheet.saveFlow` 첫머리(`editorSaveBlocked` 는 이 갈래로 버튼을 죽이지 않는다) |
+| 쓸 수 없는 목소리 — 배너 없음, 저장 시 알럿 | `ui/editor/AlarmEditorScreen.kt` 의 `editorSaveBlockReason`(`SaveBlockReason.VOICE_UNAVAILABLE`) | `AlarmEditDraft.selectedVoiceUnusable` → `AlarmEditorSheet.saveFlow` 첫머리 |
+| 저장할 수 없는 사유 — 버튼은 끄지 않고 누르면 알럿(녹음·목소리·지역·운세 정보·문구 준비 중) | `ui/editor/AlarmEditorScreen.kt` 의 `editorSaveBlockReason` → `saveBlockAlertStrings` | `AlarmEditorSheet.editorSaveBlockReason` → `saveFlow` 의 알럿 · 문구 `AlarmEditDraft.swift` 의 `EditorSaveBlockReason`(iOS 는 2026-10-29 까지 이 사유로 버튼을 회색으로 껐다) |
 | 저장 버튼의 로컬 확인 — IO 에서 · 찾는 동안은 '저장 중'(두 번째 탭은 버림) · 오프라인 판정도 그 확인으로(§6) | `ui/editor/ManualAudioReuseGate.kt` 의 `ManualAudioReuseGate`(`request` · `inFlight` — 편집기의 `busy` 가 함께 본다) ← `AlarmEditorScreen` 의 `saveEditor`(찾으면 `submitDraft`, 못 찾으면 오프라인 알럿 또는 `startGeneration`) · 찾기 `data/AlarmAudioStore.kt` 의 `findReusableTtsAudio` · 알럿 문자열 `saveBlockAlertStrings`(저장 버튼과 저장 흐름이 함께 쓴다) | — |
 | 세부 설정 행 순서(알람음 → 진동) | `ui/editor/AlarmSettingsCard.kt` 의 `AlarmSettingsCard` | 알람음 행 하나(`AlarmEditorSheet.detailSettingsSection`) |
-| 진동 값 = 서버 계약(18종 — 서버 `packages/backend/src/routes/alarm-helpers.ts` 의 `VIBRATION_PATTERNS`, 세 목록 비교 `scripts/check-vibration-patterns.py`) | `data/AlarmConstants.kt` 의 `VibrationPatterns.all` → `network/RemoteAlarmMapper.kt` 의 `toWriteRequest`(그대로 보낸다) | `AlarmEnums.swift` 의 `VibrationPattern`(18종 — 화면은 없다) ← `LocalAlarmRecord.vibrationPatternEnum`(모르는 값은 `.default`) → `AlarmEditorSheet` 저장이 `rawValue` 로 적는다 |
+| 진동 값 18종(서버 `packages/backend/src/routes/alarm-helpers.ts` 의 `VIBRATION_PATTERNS` 는 옛 앱 올리기의 검사용, 세 목록 비교 `scripts/check-vibration-patterns.py`) | `data/AlarmConstants.kt` 의 `VibrationPatterns.all`(서버로 보내지 않는다 — 2026-10-29) | `AlarmEnums.swift` 의 `VibrationPattern`(18종 — 화면은 없다) ← `LocalAlarmRecord.vibrationPatternEnum`(모르는 값은 `.default`) → `AlarmEditorSheet` 저장이 `rawValue` 로 적는다 |
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |
 | 폼 시트 | `ui/components/WakerModal.kt` 의 `WakerFormSheet` | `Views/Common/FormSheet.swift` |
@@ -259,6 +319,8 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 알람 전용 → 목소리 = 직전 선택(없으면 기본 인사말), 빈 직접 입력은 요청 전 차단 | `AlarmEditorStateTest`(안드로이드) · `AlarmTalkTests/MessageContextMemoryTests.swift`(iOS) |
 | 저장 버튼의 로컬 확인은 IO 에서 한 번 · 도는 동안의 탭은 버림 · 찾으면 서버 없이 저장 · 그 사이 편집기가 바뀌었으면 버림 · 저장 사유는 파일을 읽지 않는다(§6) | `ManualAudioReuseGateTest`(안드로이드 — `aLookupResultIsDroppedWhenTheEditorChangedMeanwhile`) |
 | 선택 시트에 '닫기' 가 없는가 | `AlarmTalkUITests/VoiceSheetScreenshotUITests.swift` |
+| 켜면 "N 후에 울려요"(§7) — 헤드라인과 같은 문장·그 알람의 예약 시각, 권한·꺼짐·지난 시각은 띄우지 않음, 끄기·삭제는 그 알람 안내만 거둠, 하위 화면에서는 걷고 가려진 동안 켠 것은 돌아오면 그때의 행으로, 편집기는 끝까지 성공했을 때만 | iOS `AlarmTalkTests/RingInNoticeTests.swift` · 저장의 걸음(충돌은 예약 뒤에만) `AlarmTalkTests/DuplicateAlarmReplacementTests.swift` 의 `test_saveStepsClearConflictsOnlyAfterSchedulingSucceeds` |
+| 목록 연타 — 다 합쳐 반영한 뒤 한 번만 알림, 켬으로 끝나면 보낸 것이 없어도 알림, 끔으로 끝나고 보낸 것이 없으면 알리지 않음(§7) | iOS `AlarmTalkTests/AlarmToggleCoalescerTests.swift` 의 「다 합쳐 반영한 뒤 한 번 알린다」 묶음 |
 
 ⚠ **계산부 테스트만으로는 부족하다.** 식이 맞는지만 보고 **연결돼 있는지**는 보지 못한다 —
 N칸을 즉시 대입하던 옛 코드도 계산부 테스트는 통과한다. 그래서 UI 테스트가 손을 뗀

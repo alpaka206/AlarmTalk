@@ -15,10 +15,6 @@ extension AlarmKitViewModel {
     static var preview: AlarmKitViewModel { AlarmKitViewModel() }
 }
 
-extension RemoteAlarmSyncViewModel {
-    static var preview: RemoteAlarmSyncViewModel { RemoteAlarmSyncViewModel() }
-}
-
 extension VoiceStudioViewModel {
     static var preview: VoiceStudioViewModel { VoiceStudioViewModel() }
 }
@@ -51,7 +47,6 @@ struct PreviewEnvironment: ViewModifier {
         content
             .environmentObject(AuthViewModel.preview)
             .environmentObject(AlarmKitViewModel.preview)
-            .environmentObject(RemoteAlarmSyncViewModel.preview)
             .environmentObject(VoiceStudioViewModel.preview)
             .environmentObject(SocialFeatureViewModel.preview)
             .environmentObject(LocalAlarmStore.preview)

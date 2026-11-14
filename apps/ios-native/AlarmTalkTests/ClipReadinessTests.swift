@@ -127,4 +127,22 @@ final class ClipReadinessTests: XCTestCase {
         // 대상이 없다는 것은 매니페스트를 아직 못 받았다는 뜻이다 — 준비됐다고 하면 안 된다.
         XCTAssertFalse(ClipReadiness.isReady([]))
     }
+
+    /// 편집기 준비 화면은 **막은 목소리 하나만** 센다(안드로이드 `shownPreparationReadiness`, 코덱스 #952). 전부를 세면 고른
+    /// 목소리를 다 받아도 다른 목소리 때문에 100% 에 닿지 못하고, 남의 생성 실패로 '다시 시도' 가 떴다.
+    func test_preparationScreenCountsOnlyTheBlockedVoice() {
+        func voice(_ id: String, cached: Int, failed: Bool = false) -> ClipReadiness.VoiceProgress {
+            ClipReadiness.VoiceProgress(voiceProfileID: id, isRendering: false, renderFailed: failed, expected: 19, cached: cached)
+        }
+        let voices = [voice("dohyun", cached: 19), voice("siwoo", cached: 4), voice("clone", cached: 0, failed: true)]
+
+        let shown = ClipPreparationView.shownVoices(voices, targetVoiceID: "dohyun")
+        XCTAssertEqual(shown.map(\.voiceProfileID), ["dohyun"])
+        XCTAssertTrue(ClipReadiness.isReady(shown), "다른 목소리가 덜 받아졌어도 고른 목소리를 다 받았으면 준비됐다")
+        XCTAssertTrue(shown.allSatisfy { !$0.renderFailed }, "다른 목소리의 생성 실패로 '다시 시도' 를 띄우지 않는다")
+        XCTAssertFalse(ClipReadiness.isReady(voices))
+        // 막은 목소리가 없거나 아직 목록에 없으면(첫 회차 전) 전부를 그린다.
+        XCTAssertEqual(ClipPreparationView.shownVoices(voices, targetVoiceID: nil).count, 3)
+        XCTAssertEqual(ClipPreparationView.shownVoices(voices, targetVoiceID: "mina").count, 3)
+    }
 }

@@ -32,6 +32,8 @@ struct VoiceProfileManagementPanel: View {
     /// 시트 충돌을 피하기 위해 본 화면의 시트를 먼저 닫고, 다음 runloop 에서
     /// 부모가 BillingPanel 시트를 띄우는 패턴을 사용한다.
     var onRequestBilling: (() -> Void)? = nil
+    /// '이 목소리로 새 알람 만들기' — 알람 탭으로 가 그 목소리를 고른 새 알람 편집기를 연다(전역 기본값은 바꾸지 않는다).
+    var onCreateAlarmWithVoice: ((String) -> Void)? = nil
 
     /// 프로필 편집 다이얼로그 입력값.
     @State private var editTarget: VoiceProfile?
@@ -49,9 +51,7 @@ struct VoiceProfileManagementPanel: View {
 
     /// 사전렌더(알람 음성 준비) 상태 — 목소리 id → 상태. 5초 폴링으로 채운다.
     @State private var prerenderStatuses: [String: VoicePrerenderStatus] = [:]
-    @State private var retryingPrerenderIDs: Set<String> = []
     @State private var downloadProgress: [String: (done: Int, total: Int)] = [:]
-    @State private var retryingSpeechStyleIDs: Set<String> = []
 
     /// 시스템(스톡) 목소리 = 무료에서도 쓰는 기본 목소리. 내 목소리와 분리해 노출.
     private var systemVoices: [VoiceProfile] {
@@ -105,10 +105,12 @@ struct VoiceProfileManagementPanel: View {
         // 남은 개수는 '내 목소리' 섹션 헤더의 '생성 가능 n/m회'가 말하고, 슬롯이 가득 차면
         // 추가 버튼을 누를 때 안내 모달이 뜬다. 진행바는 상시로 자리만 차지했다.
         VStack(alignment: .leading, spacing: 16) {
+            // 이 탭에서 한 일(이름 변경·삭제·다시 시도·미리듣기)이 안 됐다는 이유 — 빨간 글자다(2026-10-29 오너: 실패는
+            // 알림이 아니라 그 자리 빨간 글자). 안내가 아니라 실패만 오도록, 탭에 들어올 때 다른 화면이 남긴 문장은 지운다(아래 `onAppear`).
             if let message = voice.statusMessage {
                 Text(message)
                     .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                    .foregroundStyle(AlarmTalkTheme.error)
                     .padding(.horizontal, 4)
             }
 
@@ -120,7 +122,16 @@ struct VoiceProfileManagementPanel: View {
                 // 기본 제공 목소리는 맨 아래 — 내 목소리가 먼저다.
                 systemVoicesSection
             }
+            // 추가 음성팩 — 기본 목소리 **아래**(`docs/spec/voice-packs.md` §7). 받기는 고른 팩만이다.
+            // 지금은 숨긴다(`VoicePacks.isVisible`).
+            if VoicePacks.isVisible {
+                VoicePackSection()
+            }
         }
+        // ⚠ **다른 화면이 남긴 문장을 이 탭에 띄우지 않는다**(2026-10-29 두 앱 비교). `statusMessage` 는 편집기도 쓴다 —
+        //   직접 입력 알람을 저장하고 이 탭에 오면 "새 음성을 생성하고 로컬에 저장했어요." 가 맨 위에 남아 있었다. 안드로이드는
+        //   동작마다 한 번 띄우고 사라진다.
+        .onAppear { voice.statusMessage = nil }
         // ⚠ **자격을 잃으면 열려 있던 액션도 닫는다**(2026-09-01 리뷰). 목록에서 걷어내는
         // 것만으로는 부족하다 — 이미 떠 있는 액션시트·이름변경·**삭제 확인**은 그대로
         // 살아 있어, 유예 동안 숨겨야 할 목소리를 그 창에서 영구 삭제할 수 있다.
@@ -148,9 +159,13 @@ struct VoiceProfileManagementPanel: View {
             isPresented: Binding(get: { actionSheetTarget != nil }, set: { if !$0 { actionSheetTarget = nil } }),
             titleVisibility: .visible
         ) {
-            Button(String(localized: "이 목소리 사용")) {
-                if let profile = actionSheetTarget { voice.selectedProfileID = profile.id }
-                actionSheetTarget = nil
+            // ⚠ 예전의 '이 목소리 사용' 은 무엇을 바꾸는지 알 수 없었다(선택만 바꾸고 화면은 그대로 — 2026-10-26 v1.3 지시로
+            //   지웠다). 이제 그 목소리를 고른 **새 알람**을 만든다. 기존 알람·전역 기본값은 건드리지 않는다.
+            if onCreateAlarmWithVoice != nil {
+                Button(String(localized: "이 목소리로 새 알람 만들기")) {
+                    if let profile = actionSheetTarget { onCreateAlarmWithVoice?(profile.id) }
+                    actionSheetTarget = nil
+                }
             }
             Button(String(localized: "이름 수정")) {
                 if let profile = actionSheetTarget {
@@ -173,6 +188,11 @@ struct VoiceProfileManagementPanel: View {
         .task(id: ownVoices.map(\.id).joined(separator: ",")) {
             await pollPrerenderStatuses()
         }
+        // 말투 분석이 실패한 목소리는 **말없이 다시 건다**(2026-11-09 오너, `VoiceAutoRetry`) — 한 목소리에 이번 실행 한 번.
+        // 실패해도 클립은 기본 말투로 만들어지므로 막는 것이 없고, 실패 안내도 띄우지 않는다.
+        .task(id: ownVoices.filter { $0.speechStyleStatus == "failed" }.map(\.id).joined(separator: ",")) {
+            await retryFailedSpeechStylesQuietly()
+        }
         .task(id: "\(auth.session?.user.id ?? "-")|\(ownVoices.map(\.id).joined(separator: ","))") {
             downloadProgress = [:]
             while !Task.isCancelled, !ownVoices.isEmpty {
@@ -190,7 +210,12 @@ struct VoiceProfileManagementPanel: View {
         // 실패했다.** 등록이 끝난 뒤엔 알람 클립이 이미 그 페르소나로 전부 렌더돼 있어
         // 바꿀 수 있는 값이 아니다. 관계·호칭 입력은 등록 플로우에만 둔다.
         .alert(String(localized: "이름 수정"), isPresented: renameAlertBinding) {
-            TextField(String(localized: "목소리 이름"), text: $editName)
+            // 상한(`InputSanitizer.voiceNameMaxLength`)에서 입력을 막는다 — 알럿 본문이 그 상한을 말한다(시스템 알럿이라 칸 아래에
+            // 경고를 띄울 수 없다). 예전에는 저장할 때 말없이 잘랐다(2026-10-29 두 앱 비교).
+            TextField(String(localized: "목소리 이름"), text: Binding(
+                get: { editName },
+                set: { editName = InputSanitizer.boundedVoiceName($0, wasTooLong: false).value }
+            ))
                 .textInputAutocapitalization(.never)
             Button(String(localized: "닫기"), role: .cancel) { editTarget = nil }
             // ⚠ **빈 이름을 조용히 삼키지 말 것.** 예전에는 `editTarget = nil` 로
@@ -212,7 +237,7 @@ struct VoiceProfileManagementPanel: View {
                     .isEmpty
             )
         } message: {
-            Text(String(localized: "알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없어요."))
+            Text(String(localized: "알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없고 \(InputSanitizer.voiceNameMaxLength)자까지 쓸 수 있어요."))
         }
         // ⚠ **확인형 모달은 시스템 `.alert` 다**(CLAUDE.md 「iOS 는 안드로이드를 원본으로
         // 삼는다」의 플랫폼 표준 갈래). 예전에는 커스텀 시트였고, 거기에 안드로이드에
@@ -353,17 +378,8 @@ struct VoiceProfileManagementPanel: View {
                         if let status = prerenderStatuses[profile.id] {
                             VoicePrerenderStatusRow(
                                 status: status,
-                                retrying: retryingPrerenderIDs.contains(profile.id),
-                                onRetry: { Task { await retryPrerender(profile) } },
                                 // 생성이 끝난 뒤의 몫 — 받는 중에도 진행률이 이어진다.
                                 downloadProgress: downloadProgress[profile.id]
-                            )
-                        }
-                        // 말투 분석 실패 — 서버에 재시도 라우트가 있는데 부를 길이 없었다.
-                        if profile.speechStyleStatus == "failed" {
-                            VoiceSpeechStyleFailedRow(
-                                retrying: retryingSpeechStyleIDs.contains(profile.id),
-                                onRetry: { Task { await retrySpeechStyle(profile) } }
                             )
                         }
                     }
@@ -462,7 +478,7 @@ struct VoiceProfileManagementPanel: View {
     /// 기본 목소리를 **받는 중일 때만** 헤더 옆에 붙는 진행 표시(2026-09-17 지시).
     ///
     /// 받기 화면을 '백그라운드에서 계속' 으로 닫으면 진행을 볼 곳이 없는데, 그동안 알람 설정은
-    /// 막혀 있다(`MainTabsView.openEditorIfVoicesReady`). 막힌 이유가 여기서 보여야 한다.
+    /// 막혀 있다(`MainTabsView.openEditorIfVoiceReady`). 막힌 이유가 여기서 보여야 한다.
     /// 안드로이드 `VoiceProfileManagementPanel` 의 기본 목소리 헤더와 같은 자리다.
     private var defaultVoiceDownloadBadge: AnyView? {
         guard case let .running(done, total) = stockClipPrefetcher.state, total > 0, done < total else {
@@ -542,6 +558,17 @@ struct VoiceProfileManagementPanel: View {
                 if previous == "pending", status.status == "done" {
                     _ = await voice.loadStockClips(session: auth.session, force: true)
                 }
+                // ⚠ **실패를 보이지 않고 다시 건다**(2026-11-09 오너, `VoiceAutoRetry`) — 이 목소리에 이번 실행 처음이면 재시도
+                //   라우트를 부르고 계속 묻는다(서버 cron 이 다시 5번 시도한다). 이미 한 번 걸었으면 '준비 중' 으로 둔 채 멈춘다 —
+                //   다음 실행이 또 건다. 안드로이드 짝 `VoiceProfileManagementPanel` 의 같은 루프.
+                if status.status == "failed", VoiceAutoRetry.claimPrerender(profile.id),
+                   (try? await AlarmTalkAPI.shared.retryVoicePrerender(id: profile.id, token: token)) == true {
+                    var resumed = status
+                    resumed.status = "pending"
+                    prerenderStatuses[profile.id] = resumed
+                    anyPending = true
+                    continue
+                }
                 if status.status == "pending" {
                     anyPending = true
                     // 앱이 열려 있는 동안은 cron 을 기다리지 않고 우리가 앞당긴다
@@ -554,29 +581,15 @@ struct VoiceProfileManagementPanel: View {
         }
     }
 
-    private func retryPrerender(_ profile: VoiceProfile) async {
+    /// 말투 분석이 실패한 목소리를 **말없이** 다시 건다(`VoiceAutoRetry` — 한 목소리에 이번 실행 한 번). 실패해도 아무것도 띄우지
+    /// 않는다 — 클립은 기본 말투로 만들어지고, 다음 실행이 또 건다. 성공하면 목록을 새로 읽어 상태를 맞춘다.
+    private func retryFailedSpeechStylesQuietly() async {
         guard let token = auth.session?.token else { return }
-        retryingPrerenderIDs.insert(profile.id)
-        defer { retryingPrerenderIDs.remove(profile.id) }
-        guard (try? await AlarmTalkAPI.shared.retryVoicePrerender(id: profile.id, token: token)) != nil else {
-            voice.statusMessage = String(localized: "다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요.")
-            return
+        var retried = false
+        for profile in ownVoices where profile.speechStyleStatus == "failed" && VoiceAutoRetry.claimSpeechStyle(profile.id) {
+            if (try? await AlarmTalkAPI.shared.retryVoiceSpeechStyle(id: profile.id, token: token)) == true { retried = true }
         }
-        await pollPrerenderStatuses()
-    }
-
-    /// 말투 분석 재시도. 서버에 라우트가 있는데 부를 길이 없어 실패가 영구였다.
-    private func retrySpeechStyle(_ profile: VoiceProfile) async {
-        guard let token = auth.session?.token else { return }
-        retryingSpeechStyleIDs.insert(profile.id)
-        defer { retryingSpeechStyleIDs.remove(profile.id) }
-        do {
-            _ = try await AlarmTalkAPI.shared.retryVoiceSpeechStyle(id: profile.id, token: token)
-            // 상태는 서버가 다시 계산하므로 목록을 새로 읽어 실패 행이 사라지게 한다.
-            await voice.refresh(session: auth.session)
-        } catch {
-            voice.statusMessage = String(localized: "말투 분석을 다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요.")
-        }
+        if retried { await voice.refresh(session: auth.session, force: true) }
     }
 
     /// `.alert` 는 `item:` 형태가 없어 Bool 바인딩으로 감싼다.

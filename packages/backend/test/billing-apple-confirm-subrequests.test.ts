@@ -152,7 +152,7 @@ beforeEach(async () => {
   const everyone = [A, B];
   await raw.execute({ sql: `DELETE FROM users WHERE id IN (${everyone.map(() => '?').join(',')})`, args: everyone });
   for (const id of everyone) {
-    await raw.execute({ sql: `INSERT INTO users (id,email,name) VALUES (?,?,?)`, args: [id, `${id}@example.test`, 'u'] });
+    await raw.execute({ sql: `INSERT INTO users (id,email) VALUES (?,?)`, args: [id, `${id}@example.test`] });
   }
   await giveDevices(everyone);
   // 사는 사람도 클론이 있다(예전 결제로 만든 목소리).

@@ -8,8 +8,9 @@
 //  1. **직접 식별자**(계정 id·로그인 id·이메일·애플 id·푸시 토큰·이름)가 남은 행 어디에도 없다.
 //     예외는 외부 삭제 큐(`pending_external_deletions`) 하나다 — R2 키가 `voices/<id>/…` 처럼
 //     사람 id 로 시작하는데, 그 행은 **지울 파일의 주소**이고 크론이 지우는 순간 사라진다.
-//  2. 남은 행이 가리키는 옛 id(내 목소리·알람·결제)는 **더는 풀리지 않는다** — 그 id 의
+//  2. 남은 행이 가리키는 옛 id(내 목소리·결제)는 **더는 풀리지 않는다** — 그 id 의
 //     주인 행이 전부 없어졌다. 가명 보존 기록은 pepper 없이는 계정 id 로 되짚을 수 없다.
+//     알람은 기기에만 있다 — 서버 사본(`alarms`)은 #147 에서 지웠다.
 //
 // ⚠ 원래 잡은 잔존물(2026-09-30) — `manual_tts_usage`(직접 입력 월 한도 장부). 개인 풀의 키가
 // **계정 id 그대로**라, 파기 뒤에도 사람 id 가 남았다. 가명 보존 기록의 pseudonym 은
@@ -31,7 +32,6 @@ import {
 /** 표마다 파기에서 어떤 대접을 받는가. 새 표는 여기서 분류해야 테스트가 통과한다. */
 const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudonymized' | 'deletion-queue'> = {
   users: 'per-user',
-  alarms: 'per-user',
   messages: 'per-user',
   message_library: 'per-user',
   generated_audio_assets: 'per-user',
@@ -42,11 +42,24 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   voice_profile_change_ledger: 'per-user',
   manual_tts_usage: 'per-user',
   ad_reward_credits: 'per-user',
+  ad_reward_sessions: 'per-user', // 광고 시청 승인 세션(#141)
+  ad_reward_callbacks: 'per-user', // 광고 SSV 콜백 기록(#141)
   paid_voice_retention: 'per-user',
   usage_events: 'per-user',
   user_consents: 'per-user',
   email_verification_codes: 'per-user',
   push_tokens: 'per-user',
+  user_app_presence: 'per-user', // 앱 빌드·접속 기록(#133)
+  plan_grants: 'per-user', // 관리자 기간 지급(#134)
+  manual_tts_requests: 'per-user', // 직접 입력 같은 요청 표식(#135)
+  apple_server_notifications: 'per-user', // 애플 서버 알림 수신 기록 — 주인을 찾은 행만 계정 id 를 담는다(#136)
+  admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
+  tts_synthesis_usage: 'no-personal-data', // 합성 사용량 장부 — 종류·날짜·숫자뿐, 사람을 가리키지 않는다(#139)
+  tts_dev_budget_holds: 'no-personal-data', // dev 예산에서 합성 직전에 잡는 몫 — 월·글자 수뿐(#139)
+  stock_content_releases: 'no-personal-data', // 환경마다 공개한 문구 묶음(#143) — 사람과 묶이지 않는 운영 표
+  voice_packs: 'no-personal-data', // 추가 음성팩 카탈로그 — 누구에게나 같은 콘텐츠다(#144)
+  voice_pack_clips: 'no-personal-data', // 팩 클립 — 사람과 묶이지 않는다(#144)
+  voice_pack_events: 'no-personal-data', // 팩 감사 기록 — 행위자는 'admin-console' 같은 고정 값이다(#144)
   subscriptions: 'per-user',
   store_transactions: 'per-user',
   promo_code_redemptions: 'per-user',
@@ -57,8 +70,12 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   event_likes: 'no-personal-data', // 랜딩 공개 카운터 — 사용자와 묶지 않는다
   event_slot_cursor: 'no-personal-data',
   weather_region_daily_official: 'no-personal-data', // 공식 원천 캐시(#127)
-  weather_region_daily: 'no-personal-data', // 지역 × 날짜의 날씨 캐시 — 사용자와 묶지 않는다(#123)
+  store_download_daily: 'no-personal-data', // 스토어가 모아 준 하루 다운로드 수(#138)
+  store_download_sync: 'no-personal-data', // 스토어 받아 오기 상태(#138)
+  store_report_instances: 'no-personal-data', // 받은 App Store 보고서 인스턴스 id(#138)
   _migrations: 'no-personal-data',
+  // 관리자 비밀번호를 맞춰 본 횟수 — 앱 사용자와 무관하고 IP 는 해시로만 적으며 10분 뒤 지운다(#148).
+  admin_password_attempts: 'no-personal-data',
   sqlite_sequence: 'no-personal-data',
 };
 
@@ -92,7 +109,6 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['messages', 'id', 'msg-a'],
   ['generated_audio_assets', 'id', 'ga-a'],
   ['message_library', 'id', 'ml-a'],
-  ['alarms', 'id', 'al-a-own'],
   ['subscriptions', 'id', 'sub-a'],
   ['store_transactions', 'id', 'st-a'],
   ['store_transactions', 'id', 'st-a-gift'],
@@ -101,6 +117,8 @@ const A_OWNED_ROWS: Array<[table: string, column: string, id: string]> = [
   ['voice_profile_change_ledger', 'id', 'vcl-a'],
   ['usage_events', 'id', 'ue-a'],
   ['ad_reward_credits', 'transaction_id', 'adr-a'],
+  ['ad_reward_sessions', 'id', 'ads-a'],
+  ['ad_reward_callbacks', 'transaction_id', 'adcb-a'],
   ['user_consents', 'id', 'uc-a'],
   ['email_verification_codes', 'id', 'evc-a'],
 ];
@@ -150,13 +168,13 @@ async function sha256Hex(value: string): Promise<string> {
 async function seed(): Promise<void> {
   // ── 사람 ──────────────────────────────────────────────────────────────────
   await run(
-    `INSERT INTO users (id, google_id, email, name, plan, apple_id, apple_refresh_token,
+    `INSERT INTO users (id, google_id, email, plan, apple_id, apple_refresh_token,
                         dynamic_prompt_settings_json, deletion_status, deletion_requested_at, deletion_purge_at)
-     VALUES (?, ?, ?, ?, 'plus', ?, ?, ?, 'pending_deletion', '2026-08-30T00:00:00.000Z', '2026-09-29T00:00:00.000Z')`,
-    [A_PK, A_LOGIN, A_EMAIL, A_NAME, A_APPLE, A_APPLE_REFRESH, '{"weather":{"city":"Seoul"},"fortune":{"birth":"1990-01-01"}}'],
+     VALUES (?, ?, ?, 'plus', ?, ?, ?, 'pending_deletion', '2026-08-30T00:00:00.000Z', '2026-09-29T00:00:00.000Z')`,
+    [A_PK, A_LOGIN, A_EMAIL, A_APPLE, A_APPLE_REFRESH, '{"weather":{"city":"Seoul"},"fortune":{"birth":"1990-01-01"}}'],
   );
-  await run(`INSERT INTO users (id, google_id, email, name, plan) VALUES (?, 'google-sub-b', 'b@example.com', '남는사람', 'plus')`, [B_PK]);
-  await run(`INSERT INTO users (id, email, name, plan) VALUES (?, 'c@example.com', '다른사람', 'free')`, [C_PK]);
+  await run(`INSERT INTO users (id, google_id, email, plan) VALUES (?, 'google-sub-b', 'b@example.com', 'plus')`, [B_PK]);
+  await run(`INSERT INTO users (id, email, plan) VALUES (?, 'c@example.com', 'free')`, [C_PK]);
 
   // ── 구독·결제 ─────────────────────────────────────────────────────────────
   await run(
@@ -286,12 +304,18 @@ async function seed(): Promise<void> {
   await run(`INSERT INTO manual_tts_usage (pool_key, usage_month, used_count) VALUES (?, '2026-09', 3)`, [B_PK]);
 
   await run(`INSERT INTO ad_reward_credits (transaction_id, user_id, ad_unit, grant_month) VALUES ('adr-a', ?, 'unit', '2026-09')`, [A_PK]);
-
-  // ── 알람 ─────────────────────────────────────────────────────────────────
-  await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-a-own', ?, 'msg-a', 'vp-a', '07:00')`, [A_PK]);
-  // B 가 A 의 클론 문구로 맞춰 둔 자기 알람, 그리고 A 와 무관한 B 의 알람.
-  await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-b-own', ?, 'msg-b-on-a', 'vp-a', '06:30')`, [B_PK]);
-  await run(`INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time) VALUES ('al-b-own2', ?, 'msg-b', 'vp-b', '06:00')`, [B_PK]);
+  await run(
+    `INSERT INTO ad_reward_sessions (id, user_id, platform, ad_unit, status, reserved_month, created_at, expires_at)
+     VALUES ('ads-a', ?, 'android', 'unit', 'pending', '2026-09', '2026-09-01T00:00:00.000Z', '2026-09-01T00:10:00.000Z'),
+            ('ads-b', ?, 'ios', 'unit', 'granted', '2026-09', '2026-09-01T00:00:00.000Z', '2026-09-01T00:10:00.000Z')`,
+    [A_PK, B_PK],
+  );
+  await run(
+    `INSERT INTO ad_reward_callbacks (transaction_id, user_id, ad_unit, session_id, reward_month, received_at)
+     VALUES ('adcb-a', ?, 'unit', 'ads-a', '2026-09', '2026-09-01T00:01:00.000Z'),
+            ('adcb-b', ?, 'unit', 'ads-b', '2026-09', '2026-09-01T00:01:00.000Z')`,
+    [A_PK, B_PK],
+  );
 
   // ── 기록·동의·인증·푸시 ───────────────────────────────────────────────────
   await run(
@@ -319,6 +343,33 @@ async function seed(): Promise<void> {
   );
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-a', ?, ?, 'android')`, [A_PK, A_PUSH]);
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-b', ?, 'push-token-b', 'ios')`, [B_PK]);
+  await run(`INSERT INTO user_app_presence (user_id, platform, app_version) VALUES (?, 'android', 35)`, [A_PK]);
+  await run(`INSERT INTO user_app_presence (user_id, platform, app_version) VALUES (?, 'ios', 13)`, [B_PK]);
+  await run(
+    `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
+     VALUES ('pg-a', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-a-000001')`,
+    [A_PK],
+  );
+  await run(
+    `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
+     VALUES ('pg-b', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-b-000001')`,
+    [B_PK],
+  );
+  await run(
+    `INSERT INTO manual_tts_requests (user_id, request_id, input_hash, status, claimed_at)
+     VALUES (?, 'req-a', 'h', 'done', '2026-10-01T00:00:00.000Z'), (?, 'req-b', 'h', 'done', '2026-10-01T00:00:00.000Z')`,
+    [A_PK, B_PK],
+  );
+  await run(
+    `INSERT INTO apple_server_notifications (notification_uuid, notification_type, environment, original_transaction_id, user_id, status)
+     VALUES ('aaaaaaaa-0000-4000-8000-000000000001', 'DID_RENEW', 'Production', 'apple-tx-a-sub', ?, 'processed')`,
+    [A_PK],
+  );
+  await run(
+    `INSERT INTO apple_server_notifications (notification_uuid, notification_type, environment, original_transaction_id, user_id, status)
+     VALUES ('bbbbbbbb-0000-4000-8000-000000000002', 'DID_RENEW', 'Production', 'apple-tx-b-sub', ?, 'processed')`,
+    [B_PK],
+  );
 }
 
 beforeAll(async () => {
@@ -377,12 +428,13 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(bVoice.rows.map((row) => [row.elevenlabs_voice_id, row.evicted_at])).toEqual([['el-voice-b', null]]);
     });
 
-    it('A 의 클론을 쓰던 B 의 알람만 알린다 — 떠나는 사람에게는 보내지 않는다', () => {
-      // 알람은 남기고 목소리만 내린다(아래 알람 검사). 철회 신호는 그 알람의 주인이 받고,
+    it('철회 신호는 A 의 목소리로 문구를 만든 B 가 받고, 떠나는 사람은 받지 않는다', () => {
+      // 알람은 기기에만 있어(#147) 서버가 내릴 알람 행이 없다. 그래서 그 목소리를 썼던 B 를 계정 단위로 깨우고(예전에는
+      // B 의 알람 행 `al-b-own` 을 내리고 그 주인에게 보냈다), B 의 기기가 제 알람을 기본 목소리로 내린다.
       // 떠나는 사람의 기기는 곧 사라지므로 아무 신호도 받지 않는다.
       expect(purged).toEqual({
-        downgradedAlarms: [{ alarmId: 'al-b-own', ownerUserId: B_PK }],
-        voiceAccessRevokedUserIds: [],
+        downgradedAlarms: [],
+        voiceAccessRevokedUserIds: [B_PK],
       });
     });
 
@@ -407,6 +459,12 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
     it('남는 사람의 데이터는 남는다 — 과잉 삭제가 없다', async () => {
       expect(await ids(`SELECT id FROM users WHERE id IN (?, ?, ?)`, [A_PK, B_PK, C_PK])).toEqual([B_PK, C_PK].sort());
       expect(await ids(`SELECT id FROM push_tokens`)).toEqual(['pt-b']);
+      expect(await ids(`SELECT user_id FROM user_app_presence`)).toEqual([B_PK]);
+      expect(await ids(`SELECT id FROM plan_grants`)).toEqual(['pg-b']);
+      expect(await ids(`SELECT request_id AS id FROM manual_tts_requests`)).toEqual(['req-b']);
+      expect(await ids(`SELECT user_id FROM apple_server_notifications`)).toEqual([B_PK]);
+      expect(await ids(`SELECT id FROM ad_reward_sessions`)).toEqual(['ads-b']);
+      expect(await ids(`SELECT transaction_id AS id FROM ad_reward_callbacks`)).toEqual(['adcb-b']);
       expect(await ids(`SELECT id FROM user_consents`)).toEqual(['uc-b']);
       expect(await ids(`SELECT id FROM email_verification_codes`)).toEqual(['evc-b']);
       expect(await ids(`SELECT id FROM promo_code_redemptions`)).toEqual(['pr-b']);
@@ -435,18 +493,6 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       ).toEqual([
         ['st-b-play', B_PK, 'google', 'apple-tx-a-gift'],
         ['st-c-gift', C_PK, 'apple', 'apple-tx-c-gift'],
-      ]);
-    });
-
-    it('B 의 알람은 남고, A 의 목소리를 쓰던 것만 목소리를 잃는다', async () => {
-      const alarms = await db.execute(
-        `SELECT id, message_id, voice_profile_id, mode, is_active FROM alarms ORDER BY id`,
-      );
-      expect(
-        alarms.rows.map((row) => [row.id, row.message_id, row.voice_profile_id, row.mode, Number(row.is_active)]),
-      ).toEqual([
-        ['al-b-own', null, null, 'sound-only', 1],
-        ['al-b-own2', 'msg-b', 'vp-b', 'tts', 1],
       ]);
     });
 

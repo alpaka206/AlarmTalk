@@ -626,12 +626,12 @@ describe('마이그레이션 #131 — 커플·가족 요금제 삭제', () => {
   async function seedGroupEra(db: Client): Promise<void> {
     const run = (sql: string, args: InValue[] = []) => db.execute({ sql, args });
     // 사람 — 그룹 주인(가족·개인 구독 없음), 멤버(가족·권한 있는 개인 구독), 보류 개인 구독만 남은 가족, 개인, 무료.
-    await run(`INSERT INTO users (id, email, name, plan) VALUES
-      ('u-owner','o@t.test','주인','family'),
-      ('u-member','m@t.test','멤버','family'),
-      ('u-held','h@t.test','보류','family'),
-      ('u-plus','p@t.test','개인','plus'),
-      ('u-free','f@t.test','무료','free')`);
+    await run(`INSERT INTO users (id, email, plan) VALUES
+      ('u-owner','o@t.test','family'),
+      ('u-member','m@t.test','family'),
+      ('u-held','h@t.test','family'),
+      ('u-plus','p@t.test','plus'),
+      ('u-free','f@t.test','free')`);
     await run(`UPDATE users SET allow_family_alarms = 1, family_alarm_quiet_windows = '[]' WHERE id = 'u-member'`);
     // 구독 — 끝난 커플·가족 구독, 개인 구독(권한 있음·보류), 가족으로 바꾸기를 예약해 둔 개인 구독.
     await run(

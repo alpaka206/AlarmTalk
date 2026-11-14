@@ -208,7 +208,9 @@ export const RegisterRequestSchema = z.object({
   email: EmailSchema,
   password: PasswordSchema,
   email_verification_code: EmailVerificationCodeSchema,
-  name: DisplayNameSchema,
+  // ⚠ **닉네임은 받지 않는다**(2026-10-29 오너 — 혼자 쓰는 앱이라 부를 이름이 필요 없다). 1.3 앱은 보내지 않고, 옛 앱(1.2.16)이
+  //   보내는 값만 형식을 거쳐 받아 둔다 — 강제 업데이트 뒤 `users.name` 칸과 함께 지운다.
+  name: DisplayNameSchema.optional(),
 });
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 
@@ -256,3 +258,10 @@ export const AppleLoginRequestSchema = z.object({
   authorization_code: z.string().min(1).max(2048).optional(),
 });
 export type AppleLoginRequest = z.infer<typeof AppleLoginRequestSchema>;
+
+// 카카오 로그인(2026-11-14). 앱이 카카오 SDK(카카오톡 또는 카카오계정 로그인)로 받은 **액세스 토큰**을 보낸다.
+// 서버가 카카오 API 로 우리 앱의 토큰인지·회원번호·인증된 이메일을 확인한다(`lib/kakao-oauth.ts`).
+export const KakaoLoginRequestSchema = z.object({
+  access_token: z.string().min(1).max(4096),
+});
+export type KakaoLoginRequest = z.infer<typeof KakaoLoginRequestSchema>;

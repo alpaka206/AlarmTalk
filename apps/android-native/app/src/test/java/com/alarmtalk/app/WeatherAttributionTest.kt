@@ -10,8 +10,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 지역 시트의 **날씨 출처 줄은 서버가 원천을 말할 때만** 보인다(코덱스 #845) — 규칙은
- * docs/spec/voice-and-message.md 「지역 시트의 날씨 출처 줄 — 서버가 원천을 말할 때만」.
+ * **날씨 출처 줄은 서버가 원천을 말할 때만** 보인다(코덱스 #845) — 규칙은
+ * docs/spec/voice-and-message.md 「날씨 출처 줄 — 서버가 원천을 말할 때만」. 자리는 2026-11-09 부터 지역 시트가 아니라
+ * '약관 및 개인정보 처리 동의' 화면 맨 아래다.
  *
  * 앱이 "기상청 · 気象庁 · 미국 기상청(NWS)" 을 스스로 단정하면, 서버가 아직 Open-Meteo 를 쓰는 동안(원천 교체가
  * 늦거나 되돌려진 경우 포함) 쓰지 않는 기관을 출처로 적는다. 그래서 `GET /api/app/version` 의
@@ -21,7 +22,7 @@ import org.junit.Test
  * UI 테스트 의존성이 없어, 셋으로 나눠 고정한다:
  *  1. **판정**: [showsWeatherAttribution] — 그 토큰 하나만 참.
  *  2. **계약**: [AppVersionResponse] 가 필드를 읽고, 필드가 없는 옛 서버·`null` 은 null 이다(앱과 같은 기본 Gson).
- *  3. **배선**(소스): 버전 확인이 값을 받고 실패면 지우며, 시트가 그 판정 뒤에서만 줄을 그리고, 화면에 값이 내려간다.
+ *  3. **배선**(소스): 버전 확인이 값을 받고 실패면 지우며, 법적 정보 화면이 그 판정 뒤에서만 줄을 그리고, 화면에 값이 내려간다.
  */
 class WeatherAttributionTest {
 
@@ -69,22 +70,28 @@ class WeatherAttributionTest {
     }
 
     @Test
-    fun theRegionSheetDrawsTheLineOnlyBehindTheServerToken() {
-        val dialog = bodyOf(promptSettings, "internal fun WeatherLocationDialog(")
+    fun theLegalScreenDrawsTheLineOnlyBehindTheServerToken() {
+        // 2026-11-09 지역 시트에서 '약관 및 개인정보 처리 동의' 화면 맨 아래로 옮겼다(오너).
+        val screen = readSource("src/main/java/com/alarmtalk/app/ui/settings/ConsentHistoryScreen.kt")
         assertTrue(
-            "지역 시트가 서버 토큰으로 판정하지 않는다(`showsWeatherAttribution(LocalWeatherAttribution.current)`).",
-            dialog.contains("val showsAttribution = showsWeatherAttribution(LocalWeatherAttribution.current)"),
+            "법적 정보 화면이 서버 토큰으로 판정하지 않는다(`showsWeatherAttribution(LocalWeatherAttribution.current)`).",
+            screen.contains("val showsAttribution = showsWeatherAttribution(LocalWeatherAttribution.current)"),
         )
-        val line = dialog.indexOf("R.string.region_picker_weather_attribution")
-        val guard = dialog.indexOf("if (showsAttribution) {")
-        assertTrue("출처 줄(`region_picker_weather_attribution`)을 못 찾았다.", line >= 0)
-        assertTrue("출처 줄이 `if (showsAttribution)` 안에 있지 않다 — 늘 그려진다.", guard in 0 until line)
+        val guard = screen.indexOf("if (showsAttribution) {")
+        val line = screen.indexOf("R.string.legal_weather_attribution")
+        assertTrue("출처 줄(`legal_weather_attribution`)을 못 찾았다.", line >= 0)
+        assertTrue("출처 줄이 서버 토큰 판정 안에 있지 않다 — 늘 그려진다.", guard in 0 until line)
         // 다른 화면이 판정 없이 같은 문장을 그리면 이 가드가 소용없다 — 그리는 자리는 앱 전체에 이 하나다.
         val drawers = File("src/main/java").walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
-            .flatMap { file -> Regex("""R\.string\.region_picker_weather_attribution""").findAll(file.readText()).map { file.name } }
+            .flatMap { file -> Regex("""R\.string\.legal_weather_attribution""").findAll(file.readText()).map { file.name } }
             .toList()
-        assertEquals("출처 줄을 그리는 자리는 지역 시트 하나여야 한다: $drawers", listOf("AlarmRandomPromptSettings.kt"), drawers)
+        assertEquals("출처 줄을 그리는 자리는 법적 정보 화면 하나여야 한다: $drawers", listOf("ConsentHistoryScreen.kt"), drawers)
+        // 지역 시트에는 더 이상 없다 — 목록 아래 고정 줄이 시트를 무겁게 했다.
+        assertFalse(
+            "지역 시트가 다시 출처 줄을 그린다.",
+            bodyOf(promptSettings, "internal fun WeatherLocationDialog(").contains("weather_attribution"),
+        )
         assertTrue(
             "MainActivity 가 서버 토큰을 화면에 내려 주지 않는다 — 기본값(null)이라 줄이 영영 안 뜬다.",
             readSource("src/main/java/com/alarmtalk/app/MainActivity.kt")

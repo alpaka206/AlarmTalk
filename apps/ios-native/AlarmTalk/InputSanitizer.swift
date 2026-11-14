@@ -106,6 +106,18 @@ enum InputSanitizer {
         clamp(sanitizeDisplayName(raw), max: voiceNameMaxLength)
     }
 
+    /// 목소리 이름 칸의 입력 한 번 — 정리한 값과 **상한을 넘겨 친 경고**를 함께 정한다(CLAUDE.md 「말없이 자르지 말 것」, 2026-10-29 두 앱
+    /// 비교 — 예전 iOS 는 아무 말 없이 잘랐다). 상한에서 입력은 막고, 넘겨 치는 순간 경고를 켠다. ⚠ **정확히 상한일 때는 경고를
+    /// 건드리지 않는다** — 잘라서 돌려준 값을 입력기가 그대로 되돌려 보내므로, 거기서 끄면 켜자마자 꺼진다. 상한보다 짧아지면 끈다.
+    /// 안드로이드 `ui/components/CodeRedeemField.kt` 의 `boundedNameInput` 짝(UTF-16 단위 — `clamp` 와 같다).
+    static func boundedVoiceName(_ raw: String, wasTooLong: Bool) -> (value: String, tooLong: Bool) {
+        let cleaned = sanitizeDisplayName(raw)
+        let clamped = clamp(cleaned, max: voiceNameMaxLength)
+        if clamped.utf16.count < cleaned.utf16.count { return (clamped, true) }
+        if clamped.utf16.count < voiceNameMaxLength { return (clamped, false) }
+        return (clamped, wasTooLong)
+    }
+
     private static func isStripped(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 0x00...0x1F, 0x7F...0x9F:   // C0 / C1 제어문자

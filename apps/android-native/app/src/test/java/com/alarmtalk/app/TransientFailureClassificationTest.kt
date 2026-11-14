@@ -232,6 +232,21 @@ class TransientFailureClassificationTest {
     }
 
     @Test
+    fun recordingStoppedRightAfterStartIsAUserBreadcrumbButALaterFailureStaysAnIssue() {
+        // 녹음을 시작하자마자 멈춘 것은 사용자의 동작이다(2026-10-26 ANDROID-1P) — 화면이 '너무 짧아요' 로 이미 말한다.
+        val platform = RuntimeException("stop failed.")
+        val tooSoon = com.alarmtalk.app.UserFacingException(
+            "too short",
+            com.alarmtalk.app.data.RecordingStoppedTooSoonException(150, platform),
+        )
+        assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(tooSoon))
+        // 호출부가 한 번 더 감싸 보고해도 같다.
+        assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(IllegalStateException("wrap", tooSoon)))
+        // 오래 녹음한 뒤의 같은 플랫폼 실패는 표시가 없어 그대로 이슈다.
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(IllegalStateException("Recording failed.", platform)))
+    }
+
+    @Test
     fun breadcrumbClassificationDoesNotConsumeTheErrorBody() {
         // 같은 계약이 여기에도 걸린다 — 이 함수는 `reportError` 가 **모든** 실패에 대해
         // 부르므로, 본문을 소진하면 그 뒤 코드를 보려던 호출부가 전부 빈 본문을 받는다.
@@ -301,18 +316,17 @@ class TransientFailureClassificationTest {
     // ── 사용자가 친 값의 예상된 거절 — `docs/spec/error-codes.md` §3 「앱도 같다」 ──────────
 
     /**
-     * 목록은 정해진 다섯 개다(프로모 코드 갈래 셋은 2026-10-12 에, 초대 코드 갈래 셋은 2026-10-20 에 그 코드와 함께
-     * 빠졌다 — `CODE_NOT_FOUND` 는 옛 앱의 코드 등록이 언제나 받는 답이라 남는다). 원본은 shared 의
+     * 목록은 정해진 네 개다(프로모 코드 갈래 셋은 2026-10-12 에, 초대 코드 갈래 셋은 2026-10-20 에 그 코드와 함께, 옛 앱의
+     * 코드 등록 답 `CODE_NOT_FOUND` 는 2026-10-26 강제 업데이트 뒤 그 라우트와 함께 빠졌다). 원본은 shared 의
      * `CLIENT_EXPECTED_REFUSAL_CODES` 이고 셋(shared·안드로이드·iOS)이
      * 같은지는 CI lint(`scripts/check-expected-refusal-codes.py`)가 본다 — 여기서는 이 앱의 값이 넓어지거나
      * (진짜 사고가 묻힌다) 좁아지지(이슈 목록이 다시 시끄러워진다) 않게 그 자체를 고정한다.
      */
     @Test
-    fun expectedRefusalListIsExactlyTheFiveCodes() {
+    fun expectedRefusalListIsExactlyTheFourCodes() {
         assertEquals(
             setOf(
                 "AUTH_EMAIL_CODE_INVALID", "AUTH_EMAIL_CODE_EXPIRED", "AUTH_EMAIL_TAKEN", "AUTH_EMAIL_SOCIAL",
-                "CODE_NOT_FOUND",
             ),
             AlarmTalkLog.EXPECTED_REFUSAL_CODES,
         )
@@ -356,7 +370,7 @@ class TransientFailureClassificationTest {
     @Test
     fun aRefusalNeedsA4xxAndAListedCode() {
         // 같은 코드라도 5xx 면 서버 사고다.
-        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(500, """{"error_code":"CODE_NOT_FOUND"}""")))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(500, """{"error_code":"AUTH_EMAIL_TAKEN"}""")))
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(503, """{"error_code":"AUTH_EMAIL_CODE_INVALID"}""")))
         // 코드 없는 4xx 는 무엇이 거절됐는지 모른다.
         assertNull(AlarmTalkLog.breadcrumbCategoryFor(httpException(400, "")))

@@ -60,9 +60,13 @@ enum AudioCacheError: LocalizedError {
      * 말고 그 키를 낡은 채로 두면 된다 — 다음 회차가 새 매니페스트로 다시 받는다.
      */
     case superseded
+    /// 받은 바이트의 해시·크기가 서버가 말한 값과 다르다(추가 음성팩) — 쓰지 않았다. 다음 회차가 다시 받는다.
+    case integrityMismatch
 
     var errorDescription: String? {
         switch self {
+        case .integrityMismatch:
+            return String(localized: "받은 오디오가 맞지 않아요. 다시 받아 주세요.")
         case .superseded:
             return String(localized: "더 새 목소리가 게시돼 이 음원은 쓰지 않았어요.")
         case .invalidBase64:
@@ -219,6 +223,43 @@ final class AudioCacheStore {
             rawAudioUri: response.audioUrl,
             cacheKey: cacheKey
         )
+    }
+
+    /// 추가 음성팩 클립(`GET /voice-packs/:packId/clips/:clipId/audio`)을 캐싱한다(`docs/spec/voice-packs.md` §7).
+    ///
+    /// ⚠ **해시·크기를 먼저 대조한다** — 상세가 말한 `sha256`·`size_bytes` 와 다르면 아무것도 쓰지 않고 던진다. 맞으면 스톡
+    /// 클립과 같은 순서(정본 `pack_<clipId>` → 옛 별칭 `<clipId>.<ext>`)로 쓴다 — 편집기 저장 경로가 그 별칭을 쓴다.
+    /// 원격 식별자는 `VoicePacks.remoteIdentity` 다(해시가 바뀌면 낡은 것으로 읽힌다).
+    @discardableResult
+    nonisolated static func cacheVoicePackClip(
+        audio response: VoicePackAudioResponse,
+        expected clip: VoicePackClip,
+        packID: String
+    ) throws -> CachedVoiceAudio {
+        guard let data = Data(base64Encoded: response.audioBase64),
+              !data.isEmpty else {
+            throw AudioCacheError.invalidBase64
+        }
+        guard VoicePacks.bytesMatch(data, sha256: clip.sha256, sizeBytes: clip.sizeBytes) else {
+            throw AudioCacheError.integrityMismatch
+        }
+        return try cacheServerAudio(
+            base64: response.audioBase64,
+            format: response.audioFormat,
+            messageId: clip.clipId,
+            rawAudioUri: VoicePacks.remoteIdentity(packID: packID, clipID: clip.clipId, sha256: clip.sha256),
+            cacheKey: VoicePacks.cacheKey(clipID: clip.clipId)
+        )
+    }
+
+    static func cacheVoicePackClipOffMain(
+        audio response: VoicePackAudioResponse,
+        expected clip: VoicePackClip,
+        packID: String
+    ) async throws -> CachedVoiceAudio {
+        try await Task.detached(priority: .utility) {
+            try AudioCacheStore.cacheVoicePackClip(audio: response, expected: clip, packID: packID)
+        }.value
     }
 
     /// 서버가 준 음원(base64)을 `cacheKey` 자리(정본)와 옛 별칭 `<messageId>.<ext>` 에 쓴다.
@@ -948,11 +989,26 @@ final class AudioCacheStore {
             // **다시 받을 방법이 없었다**(2026-08-11 확인). 안드로이드
             // `AlarmAudioStore.sweepStaleCache` 도 같은 예외를 갖고 있다 — iOS 만 빠져 있었다.
             if base.hasPrefix(Self.stockCacheKeyPrefix) { continue }
+            // 추가 음성팩 클립도 같다 — 받은 팩의 파일은 알람이 아직 안 물었어도 편집기에서 고를 자산이다.
+            // 팩을 지우거나 대체할 때 `VoicePackStore` 가 직접 지운다(`docs/spec/voice-packs.md` §7).
+            if base.hasPrefix(VoicePacks.cacheKeyPrefix) { continue }
 
             let audioNames = grouped.filter { Self.splitName($0).ext != "meta.json" }
 
             // 고아 사이드카: 본체 음원이 사라졌으면 즉시 제거.
             if audioNames.isEmpty {
+                // ⚠ **직접 입력 '같은 입력' 별칭은 본체 없는 사이드카다 — 가리키는 음원이 남아 있으면 지우지 않는다**
+                // (2026-11-09 iOS 출시 검토). 예전에는 앱을 켤 때마다 별칭이 지워져, 폰에 있는 음성을 새 알람이 다시 쓰지
+                // 못하고 서버에서 다시 받으며 월 횟수가 한 번 더 깎였다(오프라인이면 저장이 막혔다). 안드로이드
+                // `sweepStaleCache` 는 나이로만 지운다. 가리키는 음원이 나중에 지워지면 조회(`resolveTtsInput`)가 nil 이 된다.
+                if let metaName = grouped.first(where: { Self.splitName($0).ext == "meta.json" }),
+                   let data = try? Data(contentsOf: directory.appendingPathComponent(metaName)),
+                   let meta = try? JSONDecoder().decode(AudioCacheMetadata.self, from: data),
+                   meta.source == "tts_input_alias",
+                   let target = meta.aliasOf.map({ Self.safeCacheKey($0) }),
+                   namesByBase[target]?.contains(where: { Self.splitName($0).ext != "meta.json" }) == true {
+                    continue
+                }
                 for name in grouped {
                     try? fileManager.removeItem(at: directory.appendingPathComponent(name))
                 }

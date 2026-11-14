@@ -102,7 +102,7 @@ async function sha256Hex(value: string): Promise<string> {
 
 beforeAll(async () => {
   await runMigrations(db);
-  await db.execute(`INSERT INTO users (id, email, name) VALUES ('${BUYER}', 'buyer@example.test', 'buyer')`);
+  await db.execute(`INSERT INTO users (id, email) VALUES ('${BUYER}', 'buyer@example.test')`);
 });
 
 beforeEach(async () => {

@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CardDefaults
@@ -35,9 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -46,7 +42,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -186,25 +181,36 @@ internal sealed interface CloneVoiceReadiness {
      * 진행이 후퇴한 것처럼 보인다. 그래서 생성 0~50%, 다운로드 50~100% 로 이어 붙인다.
      */
     data class Progress(val percent: Int) : CloneVoiceReadiness
-
-    /** 사전렌더 생성 실패 — [다시 시도] 버튼 노출. */
-    object Failed : CloneVoiceReadiness
 }
 
 /**
- * 목소리 목록의 섹션 머리 — [내 목소리][기본 목소리]. 누르면 접었다 편다.
+ * **실패를 보이지 않고 다시 건다**(2026-11-09 오너: "생성에 실패했어요·말투 분석에 실패했어요를 하지 말고 실패했으면 그냥
+ * 생성되고 재시도해야지"). 사전렌더가 `failed`(서버 cron 이 5번 시도하고 멈춤)거나 말투 분석이 `failed` 면 목소리 탭이 재시도
+ * 라우트를 **스스로** 부른다 — 한 목소리에 **앱 프로세스당 한 번**. 사전렌더 재시도는 cron 이 다시 5번을 시도하게 하고, 말투
+ * 분석은 실패해도 클립은 기본 말투로 만들어지므로 막는 것이 없다. 다음 실행이 또 한 번 다시 건다. iOS 짝 `VoiceAutoRetry`.
+ */
+internal object VoiceAutoRetry {
+    private val prerender = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val speechStyle = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    /** 이번 프로세스에서 이 목소리의 사전렌더를 처음 다시 거는가(그렇다면 표시를 남긴다). */
+    fun claimPrerender(voiceId: String): Boolean = prerender.add(voiceId)
+
+    /** 이번 프로세스에서 이 목소리의 말투 분석을 처음 다시 거는가. */
+    fun claimSpeechStyle(voiceId: String): Boolean = speechStyle.add(voiceId)
+}
+
+/**
+ * 목소리 목록의 섹션 머리 — [내 목소리][기본 목소리].
  *
- * 기본값은 '펼침'이다. 접힌 채로 시작하면 무료 사용자가 쓸 수 있는 기본 목소리 4개가
- * 다시 한 번 가려지는데, 이 화면을 고친 이유가 바로 그거였다. 접기는 목소리가 많아졌을 때
- * 스스로 접는 선택지로만 둔다.
+ * ⚠ **접지 않는다**(2026-11-09 오너 — 접기 표시와 기능 삭제). 목소리는 계정당 하나 + 기본 넷이라 접어서 아낄 자리가 없고,
+ * 접힌 채로 두면 쓸 수 있는 목소리가 가려진다. iOS 짝 `VoiceSectionCard`.
  *
  * [trailing] 은 '내 목소리' 머리의 [생성 가능 n/1회][추가] 자리.
  */
 @Composable
 internal fun VoiceCatalogSectionHeader(
     title: String,
-    expanded: Boolean,
-    onToggle: () -> Unit,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     Row(
@@ -214,30 +220,12 @@ internal fun VoiceCatalogSectionHeader(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onToggle,
-                )
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            // 펼침 ⌄ / 접힘 › — 회전으로 상태가 이어져 보이게 한다.
-            Icon(
-                imageVector = Icons.Outlined.KeyboardArrowDown,
-                contentDescription = null,
-                modifier = Modifier.rotate(if (expanded) 0f else -90f),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            text = title,
+            modifier = Modifier.padding(vertical = 4.dp),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
         Spacer(modifier = Modifier.weight(1f))
         trailing?.invoke(this)
     }
@@ -370,12 +358,9 @@ internal fun VoiceProfileRow(
     onPreview: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    /** 메뉴의 '이 목소리로 새 알람 만들기' — null 이면 그 행을 그리지 않는다. */
+    onCreateAlarm: (() -> Unit)? = null,
     readiness: CloneVoiceReadiness? = null,
-    onRetryPrerender: () -> Unit = {},
-    retryPrerenderBusy: Boolean = false,
-    speechStyleFailed: Boolean = false,
-    onRetrySpeechStyle: () -> Unit = {},
-    retrySpeechStyleBusy: Boolean = false,
 ) {
     val isProcessing = profile.status == "processing"
     val isDeleting = profile.status == "deleting"
@@ -415,27 +400,13 @@ internal fun VoiceProfileRow(
         onOpenActions = { menuExpanded = true },
         belowContent = {
             // 알람 음성(사전렌더 클립) 준비 상태 — 서버·로컬 둘 다 끝났으면 아무것도 표시하지 않는다.
+            // 실패는 그리지 않는다 — 목소리 탭이 스스로 다시 걸고(`VoiceAutoRetry`) 그동안 '준비 중' 으로 보인다.
             when (readiness) {
                 is CloneVoiceReadiness.Progress -> VoiceProgressMessage(
                     stringResource(R.string.voicesr_prerender_progress, readiness.percent),
                 )
 
-                CloneVoiceReadiness.Failed -> VoiceRetryRow(
-                    message = stringResource(R.string.voicesr_prerender_failed),
-                    actionLabel = stringResource(R.string.voicesr_prerender_retry),
-                    enabled = rowEnabled && !retryPrerenderBusy,
-                    onRetry = onRetryPrerender,
-                )
-
                 null -> Unit
-            }
-            if (speechStyleFailed) {
-                VoiceRetryRow(
-                    message = stringResource(R.string.voicesr_speech_style_failed),
-                    actionLabel = stringResource(R.string.voicesr_speech_style_retry),
-                    enabled = rowEnabled && !retrySpeechStyleBusy,
-                    onRetry = onRetrySpeechStyle,
-                )
             }
         },
     )
@@ -444,26 +415,9 @@ internal fun VoiceProfileRow(
             profileName = profile.name,
             onRename = onRename,
             onDelete = onDelete,
+            onCreateAlarm = onCreateAlarm,
             onDismiss = { menuExpanded = false },
         )
-    }
-}
-
-/** 실패 안내 + [다시 시도] 한 줄. 사전렌더·말투 분석 두 곳이 같은 모양을 쓴다. */
-@Composable
-private fun VoiceRetryRow(
-    message: String,
-    actionLabel: String,
-    enabled: Boolean,
-    onRetry: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(modifier = Modifier.weight(1f)) { MutedText(message) }
-        TextButton(onClick = onRetry, enabled = enabled) { Text(actionLabel) }
     }
 }
 
@@ -483,9 +437,22 @@ private fun VoiceProfileMenuSheet(
     profileName: String,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    /** 메뉴의 '이 목소리로 새 알람 만들기' — null 이면 그 행을 그리지 않는다. */
+    onCreateAlarm: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     WakerSelectionSheet(title = profileName, onDismiss = onDismiss) { dismiss ->
+        if (onCreateAlarm != null) {
+            WakerSheetOptionRow(
+                title = stringResource(R.string.voicesr_create_alarm_with_voice),
+                selected = false,
+                onClick = {
+                    dismiss()
+                    onCreateAlarm()
+                },
+                divider = true,
+            )
+        }
         WakerSheetOptionRow(
             title = stringResource(R.string.voicesr_edit_name),
             selected = false,

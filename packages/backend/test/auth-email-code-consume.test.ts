@@ -90,8 +90,8 @@ async function tokenEpoch(email: string): Promise<number> {
 /** 재설정은 비밀번호 계정에만 닿는다 — 해시 값은 판정에 쓰이지 않는다(비어 있지만 않으면 된다). */
 async function addPasswordAccount(email: string) {
   await db.execute({
-    sql: 'INSERT INTO users (id, email, name, plan, password_hash) VALUES (?, ?, ?, ?, ?)',
-    args: [crypto.randomUUID(), email, '김규원', 'free', 'bcrypt-hash'],
+    sql: 'INSERT INTO users (id, email, plan, password_hash) VALUES (?, ?, ?, ?)',
+    args: [crypto.randomUUID(), email, 'free', 'bcrypt-hash'],
   });
 }
 

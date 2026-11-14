@@ -11,8 +11,8 @@
 | --- | --- | --- |
 | 클론 사전렌더(목소리당 21개) | 큐 재적재 마이그레이션(이번 회차는 **#124**) → 서버 cron 이 같은 message_id 에 덮어쓴다 | 배포 = 마이그레이션 직후부터 자동 |
 | 시스템 스톡(4목소리 × 3언어 × 20 = 240개) | `npm run publish:stock` 의 **교체 갈래**가 같은 message_id 에 소리만 바꾼다 | 사람이 들어 본 뒤 손으로 |
-| 직접 입력 | 다시 굽지 않는다 — 다시 만들면 한도를 태운다. 사용자가 그 문구를 다시 만들 때 새 모델이 된다 | — |
-| 앱 번들 인사말(안드로이드 `res/raw` 12개·랜딩 `public/audio` 12개·안드로이드 랜딩 미리듣기) | 코드와 같이 바꿔 앱 릴리스에 싣는다(`npm run preview:stock -- --category greeting` 로 굽고 res/raw 에 넣은 뒤 `npm run boost:greetings` — 아래 「음량」 절) | 앱 릴리스 |
+| 직접 입력 | 미리 다시 굽지 않는다 — 사용자가 그 문구를 다시 받을 때 새 설정으로 굽고 **세지 않는다**(2026-10-26 — [`docs/spec/tts-render-and-budget.md`](../spec/tts-render-and-budget.md) §2) | 그 사람이 다시 받을 때 |
+| 앱 번들 인사말(안드로이드 `res/raw` 12개·랜딩 `public/audio` 12개)·앱 랜딩 미리듣기(`res/raw/landing_preview_<목소리>.mp3` 4개) | 코드와 같이 바꿔 앱 릴리스에 싣는다(`npm run preview:stock -- --category greeting` 로 굽고 res/raw 에 넣은 뒤 `npm run boost:greetings` — 아래 「음량」 절) | 앱 릴리스 |
 
 ⚠ **은퇴시키지 않는다**(#110 방식은 화면 글자가 바뀔 때만). 은퇴하면 모든 앱이 새 id 로 다시 묶을 때까지 차단
 화면을 띄운다. 제자리 교체는 앱이 바뀐 `audio_url` 을 보고 다시 받고, **받기 전까지는 옛 파일로 울린다** —
@@ -26,12 +26,22 @@ sound-only 로 떼어 낸다.
 그래서 이 회차에 다시 굽는 클론 클립은 **원래 높이**로 나온다 — 새 모델에서 다시 맞추려면 사용자가 교체 등록을 해야 한다.
 모델을 바꾸기 전에 이 동작을 그대로 둘지(값을 새 모델 기준으로 옮길 방법이 있는지) 먼저 판단한다.
 
+## 굽기 전에 — 무엇을 얼마나, 예산은 정했나 (2026-10-26)
+
+- **목록·예상 글자**: 관리자 콘솔 `GET /admin/tts/render-backlog`(종류별 개수·글자, `?kind=` 로 대상 목록). 원장의 렌더
+  세대(`render_revision`)가 지금과 다른 **게시 중인** 렌더만 센다 — [`docs/spec/tts-render-and-budget.md`](../spec/tts-render-and-budget.md) §5.
+  지문 이전(#139 전) 행은 `legacy` 로 따로 센다.
+- **예산을 정하지 않으면 굽지 않는다.** `npm run preview:stock` 은 `TTS_RERENDER_BATCH_MAX_CHARS`·`TTS_RERENDER_CONCURRENCY`
+  (또는 `--max-chars`·`--concurrency`)가 없으면 dry-run 으로 예상 글자만 찍는다. 상한을 넘는 나머지는 다시 돌리면 잇는다.
+  ElevenLabs 키는 dev·prod 공용이라 이 글자는 운영 음성 생성과 같은 한도에서 나간다.
+- **사용량**: `GET /admin/tts/usage` 가 요청 종류별 합성 횟수·실패·재시도·글자·지연과 클론 슬롯을 보여 준다.
+
 ## 순서 (v4 Turbo 전환 기준)
 
 1. **develop 머지** → dev 배포 + 마이그레이션 #124. dev 에서 새 직접 입력·새 클론이 v4 Turbo 가 되고, dev 클론
    재렌더가 cron 으로 시작된다(새 등록이 대기열 앞에 선다 — `claimPendingPrerenderVoices`).
-2. **시청본 굽기**(로컬, `packages/backend` 에서): `npm run preview:stock -- --dry-run` 으로 개수를 본 뒤
-   `npm run preview:stock`. 파이프라인 세대가 `plain@2` 로 바뀌어 옛 시청본 240개가 전부 '낡음' 으로 다시 굽힌다
+2. **시청본 굽기**(로컬, `packages/backend` 에서): `npm run preview:stock -- --dry-run` 으로 개수·예상 글자를 본 뒤
+   예산을 정해 `TTS_RERENDER_BATCH_MAX_CHARS=<글자> TTS_RERENDER_CONCURRENCY=<수> npm run preview:stock`(위 「굽기 전에」). 파이프라인 세대가 `plain@2` 로 바뀌어 옛 시청본 240개가 전부 '낡음' 으로 다시 굽힌다
    (약 31,300자 — 할인가 0.28 크레딧/글자로 약 8.8천 크레딧). `ELEVENLABS_API_KEY` 는 `.dev.vars.dev` 에서 읽는다.
 3. **사람이 듣는다.** 특히 남자 목소리(도현·시우)의 음높이와 네 목소리의 음량 — v3 보다 도현 +8.7반음·시우 +6.4반음,
    음량 중앙 −4dB 로 쟀다(스펙 §10 「위험」). 받아들이기 어려우면 여기서 멈춘다(아직 아무것도 게시하지 않았다).
@@ -63,7 +73,7 @@ sound-only 로 떼어 낸다.
 | --- | --- | --- |
 | 서버 합성(클론 사전렌더·직접 입력·등록 미리듣기) | 합성 갈래가 PCM 을 받아 올려 굽는다. **이미 만든 것은 그대로다** — 클론 프리셋을 다시 구울지는 스펙 §10 「위험」에서 정한다 | 배포 직후부터 새로 만드는 것 |
 | 시스템 스톡 240개 | `publish:stock` 이 시청본을 **다시 합성하지 않고** 풀어서 같은 셈으로 올린 사본을 만들어 올린다(다시 묶어도 커지지 않는 클립은 소리를 그대로 두고 표지만 단 사본 — 아래). 키가 달라져 교체 갈래로 간다 — dev 의 올리기 전 v4 클립도, prod 의 v3 클립도 | 사람이 손으로(dev → prod) |
-| 앱 번들 인사말 12개·랜딩 미리듣기·랜딩 웹 사본 12개 | `npm run boost:greetings` 가 같은 셈으로 올린 사본으로 바꾸고 랜딩 사본을 같은 바이트로 맞춘다(2026-10-08 이 PR 에서 돌렸다 — 시우 인사말 3개는 다시 묶으면 작아져서 소리를 그대로 두고 표지만 달았다) | 앱 릴리스 |
+| 앱 번들 인사말 12개·앱 랜딩 미리듣기 4개·랜딩 웹 사본 12개 | `npm run boost:greetings` 가 같은 셈으로 올린 사본으로 바꾸고 랜딩 사본을 같은 바이트로 맞춘다(2026-10-08 이 PR 에서 돌렸다 — 시우 인사말 3개는 다시 묶으면 작아져서 소리를 그대로 두고 표지만 달았다) | 앱 릴리스 |
 
 - **시청본(`voice-preview/`)은 손대지 않는다.** 게시본 사본은 `packages/backend/node_modules/.cache/publish-stock-clips/boosted/<언어>/<목소리>/`
   에 실행마다 다시 만든다(결정론적 — 같은 시청본이면 같은 바이트). 올리기 전에 들어 보려면 `--dry-run` 뒤 거기서 듣는다.

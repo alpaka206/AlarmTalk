@@ -3,6 +3,7 @@ import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv, Env } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
+import { planWithGrantSql } from '../lib/plan-grant-sql';
 import { getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError, logStructured } from '../lib/logger';
@@ -22,12 +23,20 @@ import {
   markPrerenderDone,
   notifyVoicePrerenderComplete,
   prerenderRefreshColumnReady,
+  PrerenderBudgetDeferredError,
+  prerenderSupplementColumnReady,
+  excludeSupplementCategoriesSql,
   PrerenderSupersededError,
   releasePrerenderClaim,
+  requestCloneContentSupplement,
   retiredIsNullClause,
   SPEECH_STYLE_ANALYSIS_WAIT_SQL,
 } from '../lib/stock-clips';
-import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
+import {
+  enqueueExternalDeletion,
+  enqueueExternalDeletionsBatch,
+  externalDeletionsFromSelectStatement,
+} from '../lib/audio-retention';
 import { revokeDeletedVoices } from '../lib/voice-revocation';
 import { notifyDowngradedAlarms } from '../lib/fcm';
 import {
@@ -239,7 +248,7 @@ async function markMonthlyOfficialVoiceChange(
   if (!ledgerId) return;
   await db.execute({
     sql: `UPDATE voice_profile_change_ledger
-          SET status = ?, updated_at = datetime('now')
+          SET status = ?
           WHERE id = ? AND status = 'reserved'`,
     args: [status, ledgerId],
   });
@@ -548,9 +557,13 @@ async function runSpeechStyleAnalysis(
         // 대상은 **방금 이 말투를 받은 행**이다(같은 대상 조건 + 방금 쓴 값) — 위 UPDATE 가 묶음 조건에
         // 걸려 0행이면 여기서도 아무것도 다시 굽지 않는다. `requested_at` 은 밀리초까지 남긴다 — 같은 초에
         // 게시된 옛 클립을 새 것으로 세지 않도록(`findMissingStockTargets` 가 엄격한 `>` 로 비교한다).
+        // ⚠ **보충 표시(`supplement`)는 내린다**(스펙 voice-and-message §5-4). 보충 회차가 대기 중일 때 이 재렌더가
+        // 들어오면 회차의 성격이 바뀐다 — 남겨 두면 진행 조회가 전체 재렌더를 done 으로 답하고, 5번 실패해도 failed 가
+        // 아니라 done 으로 접힌다. 요청된 묶음(`content_sets`)은 그대로 두어 보충분도 같이 다시 굽는다.
+        // `supplement` 는 #143 의 새 컬럼이다 — 배포 창에는 말투 저장과 함께 실패한다(fail-closed, 재시도 가능).
         {
           sql: `UPDATE voice_prerender_queue
-                SET status = 'pending', attempts = 0, refresh_existing = 1,
+                SET status = 'pending', attempts = 0, refresh_existing = 1, supplement = 0,
                     requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now'),
                     claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
                 WHERE voice_profile_id IN (
@@ -674,12 +687,6 @@ voiceProfile.get('/draft-quota', async (c) => {
   });
 });
 
-// 옛 앱 호환 — minSupported 가 현재 빌드를 넘으면 지운다. 같은 그룹이 공유한 목소리 목록이었다(목소리 공유는
-// 2026-10-20 에 없앴다). 옛 앱 둘은 목소리 목록을 새로 받을 때마다 이것도 받아야 내 목소리의 접근권 재조정을
-// 끝낸다(안드로이드 `VoiceAccessSyncWorker` 는 실패하면 계속 재시도한다). 공유가 없던 계정이 받던 답 그대로이고,
-// DB 를 읽지 않는다. ⚠ 자리는 그대로 둔다 — Hono 는 등록 순서로 맞추므로, `/:id` 꼴 GET 뒤로 가면 가려진다.
-voiceProfile.get('/family', (c) => c.json({ profiles: [] }));
-
 voiceProfile.post('/:id/preview-played', async (c) => {
   const ids = ownerIds(c);
   const db = getDB(c.env);
@@ -796,9 +803,7 @@ type ReplaceResult =
   | {
       ok: true;
       profile: Record<string, unknown>;
-      /** 강등된 직접 입력(custom) 알람 — 소유자 본인 알람이다. */
-      revokedCustomAlarms: Array<{ alarmId: string; ownerUserId: string }>;
-      /** 알람 행과 무관하게 깨워야 할 계정. 아직 서버에 없는 로컬 알람 때문에 소유자는 항상 넣는다. */
+      /** 깨워야 할 계정 — 소유자다. 그 기기가 이 목소리의 직접 입력 알람을 내린다(서버에는 알람 행이 없다). */
       voiceAccessRevokedUserIds: string[];
       /** 이번 교체의 세대(`custom_audio_invalidated_at`). 푸시가 이 값을 함께 실어 보낸다. */
       customAudioInvalidatedAt: string | null;
@@ -904,7 +909,7 @@ export async function replaceVoiceInPlace(
     // **월 1회 등록 한도는 교체로 풀리지 않는다** — 앱이 보여 주는 `등록 n/1` 이 그 숫자다.
     // 예전에는 이 갈래가 승격 트랜잭션(아래)에 닿기 전에 return 해서 셋 다 건너뛰었다.
     const plan = await tx.execute({
-      sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+      sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [ownerPk, loginId ?? ownerPk],
     });
     if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan, promo)) {
@@ -1013,36 +1018,23 @@ export async function replaceVoiceInPlace(
     // 대상을 `category = 'custom'` 으로 좁힌다는 것뿐이다 — 교체에서는 프리셋 알람이
     // 살아남아야 한다.
     //
-    // ⚠ **서버 행만 내리고 끝내지 말 것**(Codex #703 P1). 알람은 기기가 원본이라 서버 행만 내려 봐야
-    // 그 기기의 로컬 행·캐시된 음원·OS 예약은 그대로다 — 등록 기기와 다른 기기 양쪽에서 **지운 목소리가
-    // 계속 울린다.** 그래서 대상 알람을 모아 커밋 뒤 주인 기기에 알린다(아래 `revokedCustomAlarms`).
-    const liveCustom = await tx.execute({
-      // `users` 조인은 레거시 google_id 를 users.id 로 정규화하기 위한 것이다(신호가 같은
-      // 계정에 두 번 나가지 않게).
-      sql: `SELECT a.id AS alarm_id,
-                   COALESCE(owner_u.id, a.user_id) AS row_owner_user_id
-            FROM alarms a
-            JOIN messages m ON m.id = a.message_id
-            LEFT JOIN users owner_u ON owner_u.id = a.user_id OR owner_u.google_id = a.user_id
-            WHERE m.voice_profile_id = ? AND m.category = 'custom'`,
-      args: [targetId],
-    });
-    const revokedCustomAlarms = new Map<string, { alarmId: string; ownerUserId: string }>();
-    for (const row of liveCustom.rows) {
-      const alarmId = String(row.alarm_id);
-      const ownerUserId = String(row.row_owner_user_id);
-      revokedCustomAlarms.set(`${alarmId}:${ownerUserId}`, { alarmId, ownerUserId });
-    }
-
+    // ⚠ **서버에는 알람 행이 없다**(2026-10-29, #147). 그 목소리의 직접 입력 알람은 기기가 내린다 — 등록 기기는 응답의
+    //   `replaced: true` 로 곧바로, 다른 기기는 커밋 뒤 주인 계정에 보내는 `voice_access_revoked`(scope `custom_messages`)로.
+    //
+    // ⚠ **그 음원은 지금 지운다**(2026-10-29 오너: 직접 입력 음성은 목소리가 지워질 때만 지운다 — 교체는 옛 목소리를 지우는
+    //   일이다). 직접 입력 음성은 이제 보존 기한이 없어(`audio-retention.ts`) 참조만 끊으면 R2 에 영영 남는다. 지울 키를 행보다
+    //   먼저 큐에 적는다(드레인이 커밋 뒤에 지운다 — `pending_external_deletions` 는 outbox 다).
+    await tx.execute(
+      externalDeletionsFromSelectStatement('r2_object', {
+        sql: `SELECT trim(g.audio_object_key) AS ref FROM generated_audio_assets g
+              WHERE g.audio_object_key IS NOT NULL
+                AND g.message_id IN (SELECT id FROM messages WHERE voice_profile_id = ? AND category = 'custom')`,
+        args: [targetId],
+      }),
+    );
     await tx.execute({
-      sql: `UPDATE alarms
-            SET mode = 'sound-only',
-                wake_mode = 'sound_then_voice',
-                message_id = NULL,
-                voice_profile_id = NULL
-            WHERE message_id IN (
-              SELECT id FROM messages WHERE voice_profile_id = ? AND category = 'custom'
-            )`,
+      sql: `DELETE FROM generated_audio_assets
+            WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id = ? AND category = 'custom')`,
       args: [targetId],
     });
     // 못 쓰게 된 음원은 참조를 끊는다. 행 자체는 남겨 사용량 집계를 보존한다
@@ -1066,6 +1058,9 @@ export async function replaceVoiceInPlace(
             VALUES (?, ?, ?, 'pending', 0, 1)
             ON CONFLICT(voice_profile_id) DO UPDATE SET
               status = 'pending', attempts = 0, refresh_existing = 1,
+              -- 보충 회차가 대기 중이었어도 이제는 전체 재렌더다(스펙 voice-and-message §5-4). content_sets 는 남겨
+              -- 보충분도 새 목소리로 같이 굽는다. #143 의 새 컬럼이라 배포 창에는 교체 전체가 롤백된다(fail-closed).
+              supplement = 0,
               claimed_at = NULL, claim_token = NULL,
               owner_user_id = excluded.owner_user_id,
               language = excluded.language, updated_at = datetime('now')`,
@@ -1079,7 +1074,6 @@ export async function replaceVoiceInPlace(
     return {
       status: 'ok' as const,
       targetId,
-      revokedCustomAlarms: Array.from(revokedCustomAlarms.values()),
     };
   });
 
@@ -1154,7 +1148,6 @@ export async function replaceVoiceInPlace(
           custom_audio_invalidated_at: refreshedRow.custom_audio_invalidated_at ?? null,
         }
       : {},
-    revokedCustomAlarms: replacementState.revokedCustomAlarms,
     // 행이 하나도 안 잡혀도 소유자는 깨운다 — 아직 서버에 올라오지 않은 로컬 custom 알람이 다른
     // 기기에 있을 수 있고, 그 기기의 캐시된 음원은 이미 못 쓰는 것이다(`revokeDeletedVoices` 가
     // 소유자를 항상 넣는 것과 같은 이유).
@@ -1406,7 +1399,7 @@ voiceProfile.patch('/:id', async (c) => {
         notifyDowngradedAlarms(
           db,
           c.env,
-          replaced.revokedCustomAlarms,
+          [],
           replaced.voiceAccessRevokedUserIds,
           {
             replacedVoiceProfileId: String(replaced.profile.id ?? '') || undefined,
@@ -1476,7 +1469,7 @@ voiceProfile.patch('/:id', async (c) => {
   const updateRes = promotesDraftToOfficial
     ? await withWriteTransaction(db, async (tx) => {
         const plan = await tx.execute({
-          sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+          sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
           args: [userPk, userId],
         });
         // 기간 한정 개인 플랜 반영(계산값) — 승격은 내 개인 기능이다.
@@ -1727,7 +1720,7 @@ voiceProfile.post('/clone', async (c) => {
     // 있어서, 식별자를 해석하지 못하면 플랜 확인 없이 클론이 진행됐다(fail-open).
     // 같은 파일의 promote 경로는 무조건 확인하고 있어 두 경로의 강도도 어긋나 있었다.
     const userPlan = await db.execute({
-      sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+      sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [userPk, userId],
     });
     // 기간 한정 개인 플랜 반영(계산값) — 클론 등록은 내 개인 기능이다.
@@ -2137,15 +2130,14 @@ voiceProfile.post('/clone', async (c) => {
         storedUploadKey = uploadMeta.objectKey;
         await db.execute({
           sql: `INSERT INTO voice_uploads
-                (id, user_id, object_key, mime_type, size_bytes, duration_ms, original_name, voice_profile_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                (id, user_id, object_key, mime_type, size_bytes, original_name, voice_profile_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
           args: [
             crypto.randomUUID(),
             userId,
             uploadMeta.objectKey,
             uploadMeta.mimeType,
             uploadMeta.sizeBytes,
-            uploadMeta.durationMs ?? null,
             uploadMeta.originalName ?? null,
             profileId,
           ],
@@ -2610,6 +2602,7 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
   //   보고 "견딘다" 고 적었던 게 이 주석의 앞 판본이다.
   const retiredClause = await retiredIsNullClause(db);
   const refreshReady = await prerenderRefreshColumnReady(db);
+  const supplementReady = await prerenderSupplementColumnReady(db);
   // 컬럼이 없으면 '교체 회차 좁히기' 자체가 성립하지 않는다 — 조건을 통째로 뺀다.
   const refreshNarrowing = refreshReady
     ? `AND (
@@ -2642,24 +2635,35 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
              WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
                ${retiredClause}
                AND m.audio_url IS NOT NULL
+               -- 기본 세트만 센다 — 보충(스펙 §5-4)은 total 에 없다.
+               ${excludeSupplementCategoriesSql('m')}
                ${refreshNarrowing}`,
       args: [id],
     }),
     db.execute({
-      sql: 'SELECT status, attempts FROM voice_prerender_queue WHERE voice_profile_id = ?',
+      // 보충 표시(#143)는 배포 창에 없을 수 있다 — 그때는 보충 회차도 있을 수 없어 0 으로 읽는다.
+      sql: `SELECT status, attempts, ${supplementReady ? 'supplement' : '0 AS supplement'}
+              FROM voice_prerender_queue WHERE voice_profile_id = ?`,
       args: [id],
     }),
   ]);
   const generated = Number(generatedRes.rows[0]?.count ?? 0);
   const queue = queueRes.rows[0];
   const queueStatus = queue ? String(queue.status ?? '') : '';
+  // ⚠ **보충 회차는 done 으로 답한다**(스펙 §5-4). 기본 세트는 이미 다 있다 — pending 이라고 답하면 두 앱이 그 목소리를
+  //   '준비 중' 으로 보고 고를 수 없게 한다(응원 알람 하나 저장했다고 목소리가 잠긴다).
+  const supplementRound = queueStatus === 'pending' && Number(queue?.supplement ?? 0) === 1;
   // 큐 행이 없으면(적재 전/삭제됨) 'none' — 클라는 prerender-retry 로 재적재할 수 있다.
-  const status = ['pending', 'done', 'failed'].includes(queueStatus) ? queueStatus : 'none';
+  const status = supplementRound
+    ? 'done'
+    : ['pending', 'done', 'failed'].includes(queueStatus)
+      ? queueStatus
+      : 'none';
   return c.json({
     status,
     total: CLONE_PRERENDER_TOTAL,
     generated,
-    attempts: queue ? Number(queue.attempts ?? 0) : 0,
+    attempts: queue && !supplementRound ? Number(queue.attempts ?? 0) : 0,
   });
 });
 
@@ -2706,6 +2710,64 @@ voiceProfile.post('/:id/prerender-retry', async (c) => {
     await enqueuePrerender(db, id, userPk, String(profileRes.rows[0]!.preview_language ?? 'ko'));
   }
   return c.json({ success: true });
+});
+
+/**
+ * **클론 보충 요청**(스펙 voice-and-message §5-4 「클론은 고른 것만 보충한다」). 앱이 그 클론으로 그 테마 알람을
+ * **저장한 뒤** 부른다 — 테마나 목소리를 새로 골랐을 때만(켜고 끄기·시각만 고친 저장은 부르지 않는다).
+ *
+ * ⚠ 예전에는 서버 알람 사본의 쓰기(`POST/PATCH /alarm`)가 이 일을 함께 했다. 사본을 없앤 뒤(2026-10-29, 마이그레이션 #147)
+ *   알람은 기기에만 있으므로 앱이 직접 알린다. 실패해도 잃는 것은 보충이 한 번 늦는 것뿐이라 앱은 답을 기다리지 않는다.
+ *
+ * 대상은 내 확정·ready 클론뿐(다른 것은 404)이고, 개인 목소리 권한(계산값)이 있어야 한다. 큐의 주인 확인은
+ * `requestCloneContentSupplement` 가 한 번 더 한다.
+ */
+voiceProfile.post('/:id/content-supplement', async (c) => {
+  const ids = ownerIds(c);
+  const userId = c.get('userId') as string;
+  const userPk = (c.get('userIdPK') as string | undefined) || userId;
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+  const body = await c.req.json<{ theme?: unknown }>().catch(() => ({}) as { theme?: unknown });
+  const theme = typeof body?.theme === 'string' ? body.theme.trim() : '';
+  if (theme !== 'cheer') {
+    return c.json({ error: 'Unsupported theme', error_code: 'INVALID_BUCKET_ID' }, 400);
+  }
+
+  const plan = await db.execute({
+    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? LIMIT 1`,
+    args: [userPk],
+  });
+  if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan, resolvePersonalPromo(c.env))) {
+    return c.json(
+      { error: 'Voice alarms require a paid plan.', error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN' },
+      403,
+    );
+  }
+  const ph = ids.map(() => '?').join(',');
+  const profileRes = await db.execute({
+    sql: `SELECT id FROM voice_profiles
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_system, 0) = 0 AND COALESCE(is_draft, 0) = 0
+            AND status = 'ready'`,
+    args: [id, ...ids],
+  });
+  if (profileRes.rows.length === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
+  const result = await requestCloneContentSupplement(db, { voiceProfileId: id, ownerUserId: userPk, theme });
+  if (result === 'queued' || result === 'requested') {
+    logStructured('info', { at: 'voice.prerender.supplement_requested', voice_profile_id: id, result });
+  }
+  return c.json({ result });
 });
 
 // 사전렌더 전진(owner-driven). promote 직후 앱이 done 까지 반복 호출해 cron(5분 틱,
@@ -2783,6 +2845,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
                    AND m.retired_at IS NULL
                    AND m.audio_url IS NOT NULL
                    AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                   ${excludeSupplementCategoriesSql('m')}
                    AND (COALESCE(q.refresh_existing, 0) = 0
                      OR julianday(ga.created_at) > julianday(q.requested_at))`,
           args: [id],
@@ -2832,7 +2895,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
               OR claim_token NOT LIKE 'adv-%'
               OR claimed_at <= datetime('now', ?)
             )
-          RETURNING language, refresh_existing`,
+          RETURNING language, refresh_existing, supplement`,
     args: [claimToken, id, PRERENDER_CLAIM_LEASE_SQL],
   });
   if (claimed.rows.length === 0) {
@@ -2853,6 +2916,8 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   }
   const language = String(claimed.rows[0]!.language ?? 'ko');
   const refreshExisting = Number(claimed.rows[0]!.refresh_existing ?? 0) === 1;
+  // 보충 회차(스펙 §5-4)도 끝나면 기기를 깨워 새 클립을 받게 한다.
+  const notifyOnDone = refreshExisting || Number(claimed.rows[0]!.supplement ?? 0) === 1;
 
   let voices: Awaited<ReturnType<typeof listReadyCloneVoices>>;
   try {
@@ -2877,7 +2942,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   const targets = await findMissingStockTargets(db, [voice], refreshExisting);
   if (targets.length === 0) {
     await markPrerenderDone(db, id, claimToken);
-    if (refreshExisting) {
+    if (notifyOnDone) {
       // 큐는 이미 done 이라 재시도해도 이 신호를 다시 만들 수 없다 — waitUntil 로 태운다.
       await schedulePostCommitFanout(
         c,
@@ -2911,6 +2976,9 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
         superseded = true;
         break;
       }
+      // dev 월 예산이 이 클립을 못 받는다 — 실패가 아니라 미룬 것이다. 남은 대상은 큐에 그대로 두고 이 호출을 끝낸다
+      // (`generateStockClip` 이 실제 보낼 글자로 본다 — 요청 경로도 예산을 거친다, 코덱스 #954).
+      if (genErr instanceof PrerenderBudgetDeferredError) break;
       logRouteError(c, genErr);
       // 서브리퀘스트 소진이면 이 호출에서 더 만들 수 없다 — 즉시 반환하고 클라가 재호출.
       if (String(genErr).includes('Too many subrequests')) break;
@@ -2919,7 +2987,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
 
   const done = !superseded && made >= targets.length;
   // 이 호출이 시작할 때 이미 만들어져 있던 개수 — 꼬리에서 DB 를 못 쓸 때의 답이다.
-  const generatedBeforeBatch = CLONE_PRERENDER_TOTAL - targets.length;
+  const generatedBeforeBatch = Math.max(0, CLONE_PRERENDER_TOTAL - targets.length);
   // ⚠ **클레임을 실제로 놓았는지 따로 센다**(2026-08-28 리뷰). 아래 catch 는 꼬리 전체를
   // 받는데, 그 안에는 '해제까지는 됐고 개수 세기만 실패한' 경우도 섞인다. 그때까지
   // `claim_stuck` 으로 답하면 앱이 **이미 비어 있는 클레임을 2분 동안 기다린다** — 눈에는
@@ -2929,7 +2997,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     if (done) {
       await markPrerenderDone(db, id, claimToken);
       claimReleased = true;
-      if (refreshExisting) {
+      if (notifyOnDone) {
         await schedulePostCommitFanout(
           c,
           notifyVoicePrerenderComplete(db, c.env, userPk),

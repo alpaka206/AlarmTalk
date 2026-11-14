@@ -68,6 +68,15 @@ struct MenuView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // 탈퇴 신청 실패 — 알럿은 이미 닫혔으니 그 행 아래에 빨간 글자로 남긴다(다시 신청하면 지운다).
+                if let message = auth.actionErrorMessage(for: .accountDeletion) {
+                    Text(message)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.error)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                }
             }
             .settingsCard(title: nil)
 
@@ -122,7 +131,8 @@ struct MenuView: View {
     }
 
     private var displayName: String {
-        auth.session?.user.name.nilIfBlank ?? auth.session?.user.email ?? String(localized: "내 계정")
+        // 닉네임은 없앴다(2026-10-29) — 로그인한 계정의 이메일을 보인다(안드로이드 더보기 머리도 같다).
+        auth.session?.user.email.nilIfBlank ?? String(localized: "내 계정")
     }
 
     private var currentThemeMode: AlarmTalkThemeMode {

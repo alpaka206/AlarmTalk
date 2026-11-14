@@ -760,6 +760,22 @@ final class AlarmKitViewModel: ObservableObject {
 
     /// 달력만 바뀐 다시 걸기의 대상인가 — '공휴일에는 끄기' 반복이고 다음 발생이 아직 미래다. 스누즈·울리는 중은
     /// `recomputeHolidayOffFireTime` 이 다시 거른다.
+    /// 복구에서 예약하지 못한 행을 **끄고 알릴** 것인가(스펙 `docs/spec/alarm-lifecycle.md` §1-6). 이 경우에만
+    /// `markFailedTurningOff` + 알림이다(2026-11-09 오너 — 켜 둔 채 두지 않는다):
+    /// - 행이 아직 있고 **켜져 있다.** 기다리는 사이 사용자가 껐으면 `schedule` 이 바뀐 행을 보고 예약을 되돌린 뒤 false 를
+    ///   돌려준다 — 실패가 아니다. 낙인을 찍으면 방금 끈 사람에게 "다시 켜 주세요" 라고 말한다(Codex #984 P2).
+    /// - 이 계정이 걸 수 있는 행이다(`mayScheduleRecord` — 기다리는 사이 다른 계정 것으로 새겨진 행의 거절은 실패가 아니다,
+    ///   리뷰 40차).
+    /// - AlarmKit 권한이 있다 — 없으면 홈 헤드라인이 말하고, 권한이 돌아오면 다음 복구가 그대로 다시 건다(끄면 그게 막힌다).
+    nonisolated static func recoveryFailureTurnsOff(
+        live: LocalAlarmRecord?,
+        mayScheduleLive: Bool,
+        alarmKitAuthorized: Bool
+    ) -> Bool {
+        guard let live, live.enabled else { return false }
+        return mayScheduleLive && alarmKitAuthorized
+    }
+
     nonisolated static func isCalendarOnlyCandidate(_ record: LocalAlarmRecord, nowMillis: Int64) -> Bool {
         record.enabled && record.isHolidayOffRecurring && record.fireAtMillis > nowMillis
     }
@@ -812,6 +828,8 @@ final class AlarmKitViewModel: ObservableObject {
         }
         var recovered = 0
         var completed = true
+        // 이번 회차에 **꺼 둔** 알람 — 다 돈 뒤 알림 하나로 알린다(`AlarmStatusNotifier`, 스펙 alarm-lifecycle §1-6).
+        var turnedOff: [LocalAlarmRecord] = []
 
         for record in candidates {
             // PR3 FIX: double-arm race guard. rearmIfHolidayOffOneShot(dismiss 경로)나
@@ -823,6 +841,11 @@ final class AlarmKitViewModel: ObservableObject {
             // 알람이 로그인 화면 뒤에서 되살아난다.** 종료 게이트는 `schedule` 진입점에만
             // 있어 이 경로를 못 막는다.
             guard !isLeavingAccount else {
+                completed = false
+                break
+            }
+            // 백그라운드 실행 시간이 다 돼 취소됐다 — 더 걸지 않고 멈춘다. 남은 행은 켜 둔 채 다음 회차가 잇는다(아래 `Task.isCancelled`).
+            guard !Task.isCancelled else {
                 completed = false
                 break
             }
@@ -864,6 +887,10 @@ final class AlarmKitViewModel: ObservableObject {
                     nowMillis: nowMillis,
                     isHoliday: holidayPredicate
                 ) else {
+                    // 1회성 알람의 시각이 지나 다시 걸 수 없었다 — 저장소가 끄고 실패로 적었다. 알림으로 알린다.
+                    if let after = store.record(id: record.id), !after.enabled, after.runtimeStateEnum == .failed {
+                        turnedOff.append(after)
+                    }
                     continue
                 }
                 prepared = recovered
@@ -874,18 +901,40 @@ final class AlarmKitViewModel: ObservableObject {
             // 띄우게 되는데(§1-6), 그건 그 사람이 할 수 있는 일이 아니다.
             guard mayScheduleRecord(prepared) else { continue }
             let scheduled = await schedule(record: prepared, store: store)
+            // ⚠ **취소는 예약 실패가 아니다**(Codex #984 P1). 백그라운드 실행 시간이 다 되면 `BackgroundSyncTask.runAndSchedule` 이
+            // 이 작업을 취소하고, `schedule` 은 방금 만든 예약을 되돌린 뒤 false 를 돌려준다. 그걸 아래 실패 갈래로 보내면
+            // 시간 제한 하나로 알람이 **꺼진 채** 남는다 — 켠 채로 멈추고, 다음 복구(전경 복귀·다음 백그라운드)가 다시 건다.
+            if !scheduled, Task.isCancelled {
+                completed = false
+                break
+            }
             if scheduled {
                 recovered += 1
                 if record.alarmKitUUID != nil {
                     _ = await cancelScheduledAlarm(record: record)
                 }
-            } else if mayScheduleRecord(store.record(id: prepared.id) ?? prepared) {
-                // ⚠ **거절은 실패가 아니다 — 라이브 행으로 다시 본다**(리뷰 40차).
-                // 위 진입 확인 뒤 대기하는 사이에 이 행이 다른 계정 것으로 새겨졌을 수
-                // 있고, 그때 `markFailed` 는 **남의 행**에 "다시 예약하지 못했어요" 를
-                // 새긴다(§1-6). 복구 후보는 언제나 켜진 행이라 no-op 으로 넘어가지도 않는다.
-                store.markFailed(id: prepared.id)
+            } else {
+                // ⚠ **라이브 행으로 다시 본다** — 끄고 알릴지는 `recoveryFailureTurnsOff` 하나가 정한다(거절·사용자가 그사이 끔·
+                //   권한 없음은 실패가 아니다).
+                let live = store.record(id: prepared.id)
+                if Self.recoveryFailureTurnsOff(
+                    live: live,
+                    mayScheduleLive: live.map { mayScheduleRecord($0) } ?? false,
+                    alarmKitAuthorized: AlarmManager.shared.authorizationState == .authorized
+                ) {
+                    if record.alarmKitUUID != nil {
+                        _ = await cancelScheduledAlarm(record: record)
+                    }
+                    // 옛 등록을 걷는 사이에도 사용자가 껐을 수 있다 — 그때도 낙인을 찍지 않는다.
+                    if store.record(id: prepared.id)?.enabled == true {
+                        store.markFailedTurningOff(id: prepared.id)
+                        if let after = store.record(id: prepared.id) { turnedOff.append(after) }
+                    }
+                }
             }
+        }
+        if !turnedOff.isEmpty {
+            await AlarmStatusNotifier.notifyTurnedOff(turnedOff)
         }
 
         if recovered > 0 {
@@ -1366,7 +1415,9 @@ final class AlarmKitViewModel: ObservableObject {
 
     private func deleteLocalAlarm(_ record: LocalAlarmRecord, store: LocalAlarmStore) {
         let releasedAudioCacheKey = store.delete(record)
-        if let releasedAudioCacheKey {
+        // 받은 추가 팩의 클립은 알람이 없어도 팩이 쥔다 — 팩 지우기·개정 정리·기한 대체가 놓는다(코덱스 #960).
+        if let releasedAudioCacheKey,
+           !VoicePackStore.heldClipCacheKeysOnDevice().contains(releasedAudioCacheKey) {
             try? audioCache.deleteCachedAudio(cacheKey: releasedAudioCacheKey)
         }
         UsageEventQueue.shared.record(
