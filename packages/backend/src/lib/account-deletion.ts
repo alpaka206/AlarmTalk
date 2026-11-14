@@ -1,11 +1,66 @@
-import type { InStatement } from '@libsql/client';
-import type { DbExecutor } from './transactions';
+import type { Client, InStatement } from '@libsql/client';
+import { withRetryableWriteTransaction, type DbExecutor } from './transactions';
+import type { DeletedPushTarget } from './fcm';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
 import { enqueueUserVoiceArtifacts } from './audio-retention';
 import type { DowngradedAlarm } from './paid-voice-cleanup';
 import { revokeDeletedVoices } from './voice-revocation';
 
 const TEXT_ENCODER = new TextEncoder();
+
+/** 탈퇴 유예 기간(일). 신청하고 이만큼 지나면 크론이 파기한다(`index.ts` 의 유예 파기). */
+export const DELETION_GRACE_DAYS = 30;
+
+export interface AccountDeletionRequest {
+  /** 계정을 찾아 유예로 바꿨는가. */
+  requested: boolean;
+  purgeAt: Date;
+  /** 지우기 전에 읽어 둔 그 계정의 푸시 등록 — 커밋 뒤 '탈퇴 신청됨' 신호를 보낼 곳(`sendAccountDeletionRequestedPush`). */
+  pushTargets: DeletedPushTarget[];
+}
+
+/**
+ * 탈퇴 유예 신청 — 계정을 `pending_deletion` 으로 두고([DELETION_GRACE_DAYS] 뒤 파기), **모든 기기의 세션을 끊고**
+ * (`token_epoch + 1`), 그 계정의 푸시 등록을 지운다. 유예 안에 다시 로그인하면 철회된다(`cancelPendingDeletionOnSignIn`).
+ *
+ * 부르는 곳은 둘이다(2026-11-14): 사용자가 신청하는 `POST /user/me/deletion`, 그리고 카카오로만 가입한 계정의
+ * 카카오 연결이 카카오 쪽에서 끊겼을 때의 웹훅(`routes/kakao-webhook.ts`). 두 길이 같은 규칙을 지나도록 여기 한 곳에 둔다.
+ * [userKey] 는 계정 id(또는 옛 토큰의 구글 id)다.
+ */
+export async function requestAccountDeletion(db: Client, userKey: string, now: Date): Promise<AccountDeletionRequest> {
+  const purgeAt = new Date(now.getTime() + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
+  // 트랜잭션이 다시 돌면 다시 채운다.
+  let pushTargets: DeletedPushTarget[] = [];
+  const res = await withRetryableWriteTransaction(db, async (tx) => {
+    pushTargets = [];
+    const updated = await tx.execute({
+      sql: `UPDATE users
+            SET deletion_status = 'pending_deletion',
+                deletion_requested_at = ?,
+                deletion_purge_at = ?,
+                token_epoch = token_epoch + 1,
+                updated_at = datetime('now')
+            WHERE google_id = ? OR id = ?`,
+      args: [now.toISOString(), purgeAt.toISOString(), userKey, userKey],
+    });
+    if (updated.rowsAffected > 0) {
+      const tokens = await tx.execute({
+        sql: `SELECT token, platform FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
+        args: [userKey, userKey],
+      });
+      pushTargets = tokens.rows.map((r) => ({
+        token: String(r.token),
+        platform: String(r.platform),
+      }));
+      await tx.execute({
+        sql: `DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
+        args: [userKey, userKey],
+      });
+    }
+    return updated;
+  });
+  return { requested: res.rowsAffected > 0, purgeAt, pushTargets };
+}
 
 /** 로그인이 끝날 때 계정의 탈퇴 상태가 어떻게 됐는지. */
 export type SignInDeletionOutcome =
