@@ -629,7 +629,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     //   subrequest 는 ~50 개라 50 건을 한 번에 돌리면 틱 전체가 죽는다 — 실제로
     //   DELETE /api/user/me 가 같은 이유로 500 이었다. 남은 건은 5분 뒤 틱이 잇는다.
     const due = await db.execute({
-      sql: `SELECT id, google_id, apple_refresh_token FROM users
+      sql: `SELECT id, google_id, apple_refresh_token, kakao_id FROM users
             WHERE deletion_status = 'pending_deletion'
               AND deletion_purge_at IS NOT NULL
               AND deletion_purge_at <= ?
@@ -685,6 +685,20 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
               if (signInConfig) await revokeAppleToken(signInConfig, appleRefreshToken);
             } catch (err) {
               captureCron('scheduled.account_purge.apple_revoke', err);
+            }
+          }
+          // 카카오 연결도 같은 자리에서 끊는다(2026-11-14) — 카카오 정책이 탈퇴 과정에 연결 해제를 **반드시** 넣으라고
+          //   한다. 애플과 같은 이유로 커밋 뒤이고, 실패해도 파기는 끝났다. 어드민 키가 없으면 끊지 못한 것이니 경보로 올린다
+          //   (그 회원번호는 파기로 사라져 다음 틱이 다시 끊을 수 없다).
+          const kakaoId = row.kakao_id as string | null;
+          if (kakaoId) {
+            try {
+              const adminKey = env.KAKAO_ADMIN_KEY?.trim();
+              if (!adminKey) throw new Error('KAKAO_ADMIN_KEY unset: Kakao unlink skipped');
+              const { unlinkKakaoUser } = await import('./lib/kakao-oauth');
+              await unlinkKakaoUser(adminKey, String(kakaoId));
+            } catch (err) {
+              captureCron('scheduled.account_purge.kakao_unlink', err);
             }
           }
         } catch (err) {

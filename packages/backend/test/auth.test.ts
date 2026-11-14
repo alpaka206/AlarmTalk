@@ -271,6 +271,22 @@ describe('POST /auth/email-code', () => {
     expect(body.provider).toBe('apple');
   });
 
+  it('카카오로만 가입된 이메일은 provider kakao 로 답한다', async () => {
+    mockDB.pushResult([{ password_hash: null, google_id: null, apple_id: null, kakao_id: '4242' }]);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'kakao@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_EMAIL_SOCIAL');
+    expect(body.provider).toBe('kakao');
+  });
+
   it('쿨다운 내 재요청은 새 코드를 보내지 않고 동일 응답을 반환한다', async () => {
     mockDB.pushResult([]); // existing user lookup (none)
     // 최근(쿨다운 내) 미만료 코드가 존재

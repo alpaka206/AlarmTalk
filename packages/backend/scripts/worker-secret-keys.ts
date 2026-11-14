@@ -68,6 +68,9 @@ export const WORKER_SECRET_KEYS = [
   // 광고 **신규 시청** 스위치(`true` 면 켜짐). 비거나 다른 값이면 새 승인 세션을 만들지 않는다 — 이미 승인한 시청의 정산은
   // 그대로다(`lib/ad-reward-sessions.ts` `adRewardViewingEnabled`). 운영 연결 전까지 비워 둔다.
   'ADMOB_REWARDED_ADS_ENABLED',
+  // 카카오 어드민 키 — 탈퇴 파기 뒤 카카오 연결 끊기(`lib/kakao-oauth.ts` `unlinkKakaoUser`). 로그인 확인에는 필요 없다
+  // (앱 ID 는 wrangler.toml 의 `KAKAO_APP_ID`). 비어 있으면 skip — 파기 때 연결을 못 끊고 경보가 올라간다.
+  'KAKAO_ADMIN_KEY',
   // Perso(랜딩 이벤트 메시지 클립). 비어 있으면 그 라우트만 503.
   'PERSO_API_KEY',
   // 기간 한정 개인 플랜의 **시작 스위치**(ISO 8601, 시간대 포함). 없으면 프로모는 꺼져 있다.

@@ -578,5 +578,9 @@
   "150": {
     "name": "drop-redundant-generated-audio-user-index",
     "sha": "f946e579f00b21bf"
+  },
+  "151": {
+    "name": "users-kakao-id",
+    "sha": "6424a22369ef944c"
   }
 }

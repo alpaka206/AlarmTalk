@@ -3763,6 +3763,20 @@ export const migrations: Migration[] = [
     name: 'drop-redundant-generated-audio-user-index',
     statements: [`DROP INDEX IF EXISTS idx_generated_audio_assets_user`],
   },
+  {
+    // **카카오 로그인**(2026-11-14). 회원번호를 `kakao_id` 에 둔다 — 구글 `google_id`·애플 `apple_id` 와 같은 자리다.
+    // 회원번호는 앱마다 고정이라 한 카카오계정은 한 행에만 붙는다(부분 유니크 색인).
+    // 배포 → 마이그레이션 창(CLAUDE.md 「배포가 마이그레이션보다 먼저 돈다」)에는 `POST /auth/kakao` 가 이 칸을 찾다가
+    // 500 으로 끝난다(fail-closed) — 아직 카카오 로그인을 싣는 앱이 없고, 있어도 다시 누르면 된다.
+    id: 151,
+    name: 'users-kakao-id',
+    statements: [
+      `ALTER TABLE users ADD COLUMN kakao_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_kakao_id
+        ON users(kakao_id)
+        WHERE kakao_id IS NOT NULL`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

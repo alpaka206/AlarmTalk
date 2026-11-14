@@ -92,6 +92,11 @@ KMA_SERVICE_KEY=
 # (routes/ads.ts)이 여기 있는 단위만 적립한다. 비워 두면 광고 보상이 꺼진다 — docs/spec/ad-rewards.md §6.
 ADMOB_REWARDED_AD_UNITS=
 
+# 카카오 어드민 키(카카오 디벨로퍼스 → 앱 → 앱 키 → 어드민 키). 탈퇴 파기 뒤 카카오 연결 끊기에만 쓴다
+# (src/lib/kakao-oauth.ts unlinkKakaoUser). 로그인 확인에는 필요 없다(앱 ID 는 wrangler.toml 의 KAKAO_APP_ID).
+# 비워 두면 카카오 로그인은 되지만 파기 때 연결을 못 끊고 경보가 올라간다. 모든 권한을 가진 키라 공유하지 말 것.
+KAKAO_ADMIN_KEY=
+
 # Perso API 키 (랜딩 이벤트 메시지 클립, routes/event.ts). 없으면 그 라우트만 503.
 # 프로젝트·문장 슬롯은 src/lib/event-voices.ts 에 있다.
 PERSO_API_KEY=

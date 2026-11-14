@@ -258,3 +258,10 @@ export const AppleLoginRequestSchema = z.object({
   authorization_code: z.string().min(1).max(2048).optional(),
 });
 export type AppleLoginRequest = z.infer<typeof AppleLoginRequestSchema>;
+
+// 카카오 로그인(2026-11-14). 앱이 카카오 SDK(카카오톡 또는 카카오계정 로그인)로 받은 **액세스 토큰**을 보낸다.
+// 서버가 카카오 API 로 우리 앱의 토큰인지·회원번호·인증된 이메일을 확인한다(`lib/kakao-oauth.ts`).
+export const KakaoLoginRequestSchema = z.object({
+  access_token: z.string().min(1).max(4096),
+});
+export type KakaoLoginRequest = z.infer<typeof KakaoLoginRequestSchema>;

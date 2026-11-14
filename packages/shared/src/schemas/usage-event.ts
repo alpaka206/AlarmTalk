@@ -149,7 +149,7 @@ export const UsageEventPropsSchema = z
     outcome: z.enum(['success', 'failure', 'cancelled']).optional(),
     /** 막힘·실패의 사유 코드(`alarm_save_blocked` 의 사유 등). */
     reason: CodeSchema.optional(),
-    /** 로그인 수단(`google`·`apple`·`email`). */
+    /** 로그인 수단(`google`·`apple`·`kakao`·`email`·`email_register`). */
     method: CodeSchema.optional(),
     /** 첫 경험 단계 이름. */
     step: CodeSchema.optional(),
