@@ -44,9 +44,11 @@
     <string name="auth_landing_headline_keyword">voice</string>
     <string name="auth_landing_headline_post">" you love"</string>
     <string name="auth_landing_subcopy">Every morning, that voice wakes you with a new message.</string>
-    <string name="auth_landing_preview_pause">Pause preview</string>
-    <string name="auth_landing_preview_play">Preview voice</string>
-    <string name="auth_landing_sample_message">Good morning, Grandpa\nIt\'s going to rain today\nDon\'t forget your umbrella</string>
+    <string name="auth_landing_voice_play">Preview</string>
+    <string name="auth_landing_voice_pause">Pause</string>
+    <string name="auth_landing_voice_position">%1$s\'s voice, %2$d of %3$d</string>
+    <string name="auth_landing_voice_next">Next voice</string>
+    <string name="auth_landing_voice_previous">Previous voice</string>
     <string name="auth_password_hide">Hide password</string>
     <string name="auth_password_mismatch">Passwords don\'t match.</string>
     <string name="auth_error_email_invalid">That email address doesn\'t look right. Please check and try again.</string>
