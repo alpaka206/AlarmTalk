@@ -248,6 +248,8 @@ export const ERROR_CODES = [
   'GOOGLE_VERIFICATION_FAILED',
   'RTDN_BAD_TOKEN',
   'RTDN_UNCONFIGURED',
+  // 카카오 연결 해제 웹훅 (kakao-webhook.ts) — 카카오가 실어 보낸 어드민 키가 우리 것과 다르다(카카오가 보낸 것이 아니다).
+  'KAKAO_WEBHOOK_UNAUTHORIZED',
   // 동의 (consent.ts)
   'CONSENT_REQUIRED',
   'CONSENT_STATE_UNAVAILABLE',

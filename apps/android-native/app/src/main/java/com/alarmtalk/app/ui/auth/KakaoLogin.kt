@@ -29,12 +29,15 @@ import kotlin.coroutines.resume
 // 카카오 로그인(2026-11-14). 서버 규칙은 `docs/spec/session-and-auth.md` 「카카오 로그인」 — 앱은 카카오 SDK 가 준
 // 액세스 토큰을 `POST /auth/kakao` 에 넘길 뿐이고, 계정을 찾고 붙이는 판정은 전부 서버가 한다.
 
-// 카카오 디자인 가이드의 버튼 색(브랜드 비주얼 예외 — 구글 버튼과 같은 자리). 바탕은 카카오 노랑, 심볼·글자는 검정 85%.
+// 카카오 디자인 가이드의 버튼 색(브랜드 비주얼 예외 — 구글 버튼과 같은 자리). 바탕은 카카오 노랑(#FEE500), 심볼은 검정
+// (#000000), 글자는 검정 85%. ⚠ 공식 리소스 이미지(Kakao Login.zip)는 둘 다 #191919 로 칠해 두었지만, 직접 만드는 버튼의
+// 기준은 가이드 문서다(2026-11-14 확인).
 private val KakaoContainer = Color(0xFFFEE500)
+private val KakaoSymbol = Color(0xFF000000)
 private val KakaoLabel = Color(0xD9000000)
 
 /**
- * 카카오 로그인 버튼. 가이드대로 노랑 바탕 + 말풍선 심볼 + 글자 '카카오 로그인' 하나, 모서리 12(`WakerTileShape`).
+ * 카카오 로그인 버튼. 가이드대로 노랑 바탕 + 공식 말풍선 심볼(`ic_kakao_symbol`) + 글자 '카카오 로그인' 하나, 모서리 12(`WakerTileShape`).
  * ⚠ 글자를 바꾸지 말 것 — 가이드가 허용하는 글자는 '카카오 로그인'(축약 '로그인')뿐이다. 가입 화면에서도 같다.
  * ⚠ 다른 로그인 버튼을 이보다 눈에 띄게 두지 않는다(가이드) — 그래서 구글 버튼과 같은 높이·같은 자리다.
  */
@@ -61,7 +64,7 @@ internal fun KakaoLoginButton(
             Icon(
                 painter = painterResource(R.drawable.ic_kakao_symbol),
                 contentDescription = null,
-                tint = KakaoLabel.copy(alpha = KakaoLabel.alpha * contentAlpha),
+                tint = KakaoSymbol.copy(alpha = contentAlpha),
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .size(21.dp),

@@ -168,6 +168,8 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 앱의 탈퇴 안내 문구가 처음부터 "그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요" 였는데, 실제로는 로그인 뒤
 '회원 탈퇴가 진행 중이에요' 화면에서 철회 버튼을 눌러야 했다 — 그 화면을 두 앱에서 지웠다(오너 결정).
 
+- **신청 경로는 둘이다**: 앱의 `POST /user/me/deletion`, 그리고 카카오로만 가입한 계정의 카카오 연결 해제 웹훅(아래 「카카오 로그인」).
+  둘 다 `requestAccountDeletion` 한 함수를 지난다.
 - **철회는 자격증명 로그인에서만**(이메일 `/auth/login`·`/auth/google`·`/auth/apple`·`/auth/kakao` — `cancelPendingDeletionOnSignIn`).
   토큰 갱신(`GET /auth/me`)은 철회하지 않는다 — 사람이 자격증명을 다시 넣은 순간만 '계속 쓰겠다' 로 읽는다.
   비밀번호가 틀린 로그인은 아무것도 바꾸지 않는다. ⚠ **철회는 응답이 다 준비된 뒤 마지막 쓰기다**(코덱스 #904) —
@@ -365,8 +367,31 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 - **앱의 로그아웃·탈퇴 신청·자동 만료는 기기의 카카오 토큰만 버린다**(연결 끊기가 아니다).
 - 화면: 로그인·가입 모두 **간편 로그인이 맨 위**다(카카오 → 안드로이드는 구글 / iOS 는 Apple). 카카오 버튼은 카카오 디자인
   가이드대로 노랑 바탕·검정 말풍선·글자 '카카오 로그인' 하나·모서리 12 다. 가입 화면에서도 글자를 바꾸지 않는다.
-- 남은 일: 사용자가 카카오계정 설정에서 직접 연결을 끊었을 때 받는 **연결 해제 웹훅**(카카오 권장). 아직 받지 않는다.
-  말풍선 심볼은 카카오 공식 리소스를 받기 전의 근사 도형이다.
+- **연결 해제 웹훅**(2026-11-14 — `routes/kakao-webhook.ts` → `lib/kakao-unlink.ts`, `GET`·`POST /api/kakao/unlink`). 카카오는
+  우리 서비스 **밖에서** 연결이 끊기면(카카오계정 설정의 '연결된 서비스 관리', 카카오계정 탈퇴, 관리자 처리) 이 주소를 부른다.
+  우리가 연결 끊기 API 로 끊은 경우(위 파기)에는 오지 않는다.
+  - **카카오가 보낸 것만 받는다**: `Authorization: KakaoAK <대표 어드민 키>` 가 `KAKAO_ADMIN_KEY` 와 같아야 한다(상수 시간 비교).
+    다르면 401 `KAKAO_WEBHOOK_UNAUTHORIZED`. `app_id` 가 우리 앱이 아니거나 회원번호 형식이 틀리면 아무것도 바꾸지 않는다.
+  - **카카오 규칙대로 언제나 200**(3초 안): 사용자가 없거나 처리 중 오류가 나도 200 이다 — 카카오가 다시 보내 주지 않으니 처리
+    실패는 경보(Sentry)로 남긴다. 어드민 키가 없으면 확인할 수 없어 아무것도 바꾸지 않고 200 + 경보다.
+    ⚠ **확인이 끝나면 곧바로 200 으로 답하고, 계정 처리는 응답 뒤에 잇는다**(`waitUntil`, 코덱스 #994). DB 조회와 쓰기
+    트랜잭션을 기다리면 Turso 가 느린 날 3초를 넘기고, 끊긴 요청에 묶인 처리도 함께 잘린다.
+  - **카카오로만 가입한 계정**(비밀번호·구글·애플이 없다)은 **사용자가 직접 신청한 것과 같은 탈퇴 유예**로 둔다
+    (`requestAccountDeletion` — 30일 뒤 파기 · 모든 기기 세션과 푸시 등록을 끊는다 · 그 안에 카카오로 다시 로그인하면 철회).
+    카카오 가이드가 "카카오 로그인만으로 이용 가능했던 회원이라면 회원 탈퇴 처리를 검토" 하라고 하고, 카카오계정을 탈퇴한
+    사람은 다시 들어올 길이 없어 지울 방법도 없는 개인정보(목소리 포함)만 남기 때문이다. 이미 유예면 기한을 미루지 않는다.
+    ⚠ **'카카오로만 · 유예 아님' 은 쓰기 문장 안에서 다시 본다**(`requestAccountDeletion` 의 `onlyIfKakaoOnlyActive`, 코덱스
+    #994). 읽은 뒤 쓰기 전에 구글·애플 로그인이 같은 이메일로 그 계정에 붙을 수 있다.
+  - **다른 로그인 수단이 있는 계정은 바꾸지 않는다** — 그 수단으로 계속 쓴다.
+  - ⚠ **회원번호(`kakao_id`)를 지우지 않는다.** 지우면 다시 로그인할 때 회원번호로 찾지 못하고, 인증된 이메일이 없던 계정은
+    같은 합성 주소로 새 계정을 만들려다 이메일 고유 제약에 막힌다.
+  - 로그인 경로의 엄격한 요청 한도(`/api/auth/*`) 밖에 두고, **공용 IP 버킷(300)에서도 빼서 전용 버킷이 센다**(`kakaoWebhookRateLimitMiddleware`, AdMob 콜백과 같은 방식 — 코덱스 #994). 카카오 서버 몇 대가 모든 사용자의 해제를 보내고,
+    429 로 막힌 해제는 다시 오지 않는다.
+  - 콘솔 등록: [앱] > [웹훅] > [연결 해제 웹훅]. 카카오 앱이 dev·운영 공용(1500680)이라 주소는 하나만 둘 수 있다 — ⚠ 운영
+    앱에 카카오 로그인이 나가기 전까지는 dev(`https://api-dev.alarm-talk.com/api/kakao/unlink`)를 가리키고, **그 릴리스에서
+    운영 주소(`https://api.alarm-talk.com/api/kakao/unlink`)로 바꾼다.**
+- 말풍선 심볼은 카카오 공식 리소스(디자인 리소스 다운로드의 Kakao Login.zip, 2026-08 판)의 경로를 그대로 쓴다. 색은 디자인
+  가이드대로 심볼 #000000 · 글자 #000000 85%(공식 이미지는 둘 다 #191919 지만 직접 만드는 버튼의 기준은 가이드다).
 
 ## 이메일 인증 코드 — 가입과 비밀번호 재설정 (2026-10-11)
 
@@ -535,6 +560,7 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | TTL 365일 | `lib/jwt.ts` `DEFAULT_TTL_SECONDS` | — | — |
 | Apple 서명 키 교체 | `lib/apple-oauth.ts` `verifyAppleIdToken`·공유 JWKS 재조회 | — | 기존 로그인 응답 소비 |
 | 카카오 로그인(우리 앱의 토큰 · 인증된 이메일만 · 회원번호 먼저 · 이메일 덮어쓰지 않음 · 401/500) | `lib/kakao-oauth.ts` `verifyKakaoAccessToken` ← `routes/auth.ts` `POST /kakao` · 회귀 `test/kakao-oauth.test.ts`·`test/auth-kakao-route.test.ts` | `ui/auth/KakaoLogin.kt` `loginWithKakao` → `ui/main/MainViewModelAuthActions.kt` `finishKakaoLogin` · 회귀 `KakaoLoginWiringTest.kt` | `KakaoSignIn.swift` `signIn` → `AuthViewModel.loginWithKakao` |
+| 카카오 연결 해제 웹훅(대표 어드민 키 · 언제나 200 · 카카오로만 가입한 계정만 탈퇴 유예 · 회원번호 그대로) | `routes/kakao-webhook.ts` → `lib/kakao-unlink.ts` `handleKakaoUnlink` → `lib/account-deletion.ts` `requestAccountDeletion` · 회귀 `test/kakao-unlink-webhook.test.ts` | — | — |
 | 탈퇴 파기 뒤 카카오 연결 끊기(커밋 뒤 · 어드민 키 · -101 은 성공) | `index.ts` 유예 파기 → `lib/kakao-oauth.ts` `unlinkKakaoUser` · 회귀 `test/scheduled-purge-isolation.test.ts` | 기기 토큰만 버림 `signOutKakao` | 기기 토큰만 버림 `KakaoSignIn.discardDeviceToken` |
 | 가입 인증 버튼은 이메일 칸 옆(인증 받기 → 다시 받기 → ✓ 인증됨) | — | `ui/auth/AuthScreen.kt` `EmailVerifyButton` | `LoginView.emailVerifyButton` |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로(첫 진입만 — `refreshAppSessionNow` 의 `rollToken`·`sessionTokenToSave`) | `AuthViewModel.refreshUser` |

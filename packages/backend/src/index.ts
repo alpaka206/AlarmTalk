@@ -16,6 +16,7 @@ import {
   eventLikeRateLimitMiddleware,
   eventClipRateLimitMiddleware,
   adRewardCallbackRateLimitMiddleware,
+  kakaoWebhookRateLimitMiddleware,
 } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
@@ -41,6 +42,7 @@ import authRoutes from './routes/auth';
 import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
 import billingAppleNotifications from './routes/billing-apple-notifications';
+import kakaoWebhook from './routes/kakao-webhook';
 import adsRoutes from './routes/ads';
 import adRewardSessionRoutes from './routes/ad-reward-sessions';
 import billingApple from './routes/billing-apple';
@@ -268,6 +270,13 @@ app.route('/api/billing/google', billingGoogleRtdn);
 // CA - G3)으로만 보호한다). ⚠ 아래 `app.route('/api', api)` 보다 **먼저** 둔다 — 뒤에 두면 인증 미들웨어가 먼저 받는다.
 app.use('/api/billing/apple/notifications', noStore);
 app.route('/api/billing/apple', billingAppleNotifications);
+
+// 카카오 연결 해제 웹훅 (인증 미들웨어 미적용 — 카카오 서버가 부르고, `Authorization: KakaoAK <대표 어드민 키>` 로만 보호한다).
+// 로그인 경로의 엄격한 한도(`/api/auth/*`) 밖에 둔다. ⚠ 아래 `app.route('/api', api)` 보다 먼저 둔다.
+app.use('/api/kakao/*', noStore);
+// 공용 IP 버킷(300)에서는 빠지고(`ipRateLimitMiddleware` 의 skip) 전용 버킷이 센다 — 카카오는 해제를 다시 보내 주지 않는다.
+app.use('/api/kakao/*', kakaoWebhookRateLimitMiddleware);
+app.route('/api/kakao', kakaoWebhook);
 
 // AdMob 보상형 광고 서버 확인(SSV) 콜백 (인증 미들웨어 미적용 — AdMob 서버가 부르고, 서명으로만 보호한다).
 app.use('/api/ads/*', noStore);
