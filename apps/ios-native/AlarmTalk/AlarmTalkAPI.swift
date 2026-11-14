@@ -536,7 +536,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     /// 유형별 최신 동의 기록 목록 조회. 설정 화면의 마케팅(광고성 정보 수신) 토글이
-    /// 현재 동의 상태를 읽을 때 사용. Android `AuthApi.kt:244-245`, 백엔드 user.ts:401.
+    /// 현재 동의 상태를 읽을 때 사용. Android `network/AuthApi.kt` 의 `listConsents`, 백엔드 `routes/user.ts` 의 `GET /consents`.
     func listConsents(token: String) async throws -> ConsentListResponse {
         try await request("user/consents", token: token)
     }
