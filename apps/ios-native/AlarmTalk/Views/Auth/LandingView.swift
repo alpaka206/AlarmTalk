@@ -125,42 +125,54 @@ private struct VoicePreviewCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @StateObject private var preview = LandingPreviewController()
 
+    /// 실제로 재생되는 대사 3줄 — 화면 글자와 VoiceOver 가 읽는 값이 같은 문자열이다.
+    private var sampleMessage: String {
+        String(localized: "할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요")
+    }
+
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Button {
-                preview.toggle()
-            } label: {
+        // 카드 어디를 눌러도 재생·일시정지한다(2026-11-14 오너). 예전에는 동그란 버튼만 눌려서 문장 쪽을 누르면
+        // 아무 반응이 없었다. 버튼은 이제 그림이고, VoiceOver 는 카드 하나를 '목소리 미리듣기, <문장>' 으로 읽는다
+        // (안드로이드 `VoicePreviewCard` 가 카드 하나로 합쳐 읽는 것과 같은 순서).
+        Button {
+            preview.toggle()
+        } label: {
+            HStack(alignment: .center, spacing: 14) {
                 Image(systemName: preview.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(AuthSceneColors.accent)
                     .frame(width: 48, height: 48)
                     .background(Capsule().fill(AuthSceneColors.accent.opacity(0.18)))
                     .overlay(Capsule().stroke(AuthSceneColors.accent.opacity(0.45), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .disabled(!preview.hasAudio)
-            .accessibilityLabel(preview.isPlaying ? String(localized: "미리듣기 일시정지") : String(localized: "목소리 미리듣기"))
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(String(localized: "할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요"))
-                    .font(theme.typography.bodyMedium)
-                    .fontWeight(.medium)
-                    .foregroundStyle(AuthSceneColors.text)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(sampleMessage)
+                        .font(theme.typography.bodyMedium)
+                        .fontWeight(.medium)
+                        .foregroundStyle(AuthSceneColors.text)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                MiniWaveform(progress: preview.progress)
+                    MiniWaveform(progress: preview.progress)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .fill(AuthSceneColors.glassFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .stroke(AuthSceneColors.glassBorder, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .fill(AuthSceneColors.glassFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(AuthSceneColors.glassBorder, lineWidth: 1)
-        )
+        // `.plain` 만 두면 눌렸는지 알 수 없다(`PressScaleButtonStyle` 주석) — 넓은 카드라 행과 같은 0.98.
+        .buttonStyle(PressScaleButtonStyle())
+        .disabled(!preview.hasAudio)
+        .accessibilityLabel(preview.isPlaying ? String(localized: "미리듣기 일시정지") : String(localized: "목소리 미리듣기"))
+        .accessibilityValue(sampleMessage)
     }
 }
 

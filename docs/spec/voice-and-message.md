@@ -216,6 +216,10 @@
   선택으로 옮겼다(안드로이드 `LandingVoicePick`, iOS `DefaultVoicePreferenceStore.adoptLandingVoicePick` — 둘 다 지웠다).
   이제 카드는 미나의 3문장 샘플(`landing_voice_preview.mp3`) 하나만 틀고, 자막은 언제나 그 3문장 전문이다 — 재생 중에도
   바뀌지 않는다(안드로이드 `ui/auth/LandingScreen.kt`·iOS `Views/Auth/LandingView.swift` 의 `VoicePreviewCard`). 되살리지 말 것.
+  - **카드 어디를 눌러도 재생·일시정지한다**(2026-11-14 오너). 동그란 재생 표시는 그림이고 눌리는 자리는 카드 하나다 —
+    예전에는 그 버튼만 눌려서 문장을 눌러도 아무 반응이 없었다. 화면 읽기는 카드 하나를 '목소리 미리듣기'(재생 중이면
+    '미리듣기 일시정지') 다음에 3문장 순서로 읽는다. 카드에 '미리 들어보기' 같은 라벨을 따로 달지 않는다 — 문장이 이 앱이
+    무엇을 하는지 보여 주는 내용이고, 들을 수 있다는 것은 재생 표시와 파형이 말한다.
 
 ### 무엇을 기억하고, 무엇을 건드리지 않는가
 
