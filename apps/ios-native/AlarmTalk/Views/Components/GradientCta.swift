@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 인증 화면군의 **주 버튼** — 브랜드 가로 그라데이션 알약.
 ///
-/// 안드로이드 `ui/auth/LandingScreen.kt:569-596` 의 `GradientCta`. 랜딩('시작하기')·
+/// 안드로이드 `ui/auth/LandingScreen.kt` 의 `GradientCta`. 랜딩('시작하기')·
 /// 로그인/가입·약관 동의·비밀번호 재설정 네 화면이 같은 버튼을 쓴다.
 ///
 /// ⚠ **`.borderedProminent` 로 되돌리지 말 것.** 인증 배경은 고정 다크라 테마 primary

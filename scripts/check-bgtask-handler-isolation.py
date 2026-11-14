@@ -19,7 +19,7 @@
   3. `TimelineView(...) {`·`Canvas {` 의 클로저에 `@Sendable` 이 있는가 — 같은 사고의 SwiftUI 판이다.
      iOS 27 의 SwiftUI 는 애니메이션 타임라인을 **그리기 전용 스레드**(`ViewGraphDisplayLink.asyncThread`)에서
      갱신하기도 해서, `body` 안에서 메인 액터를 물려받은 클로저가 그 자리에서 트랩했다(2026-10-14 1.2.13,
-     같은 이슈 ALARMTALK-IOS-4 — `Views/Auth/AuthBackdrop.swift` 의 `SunriseScene`).
+     같은 이슈 ALARMTALK-IOS-4 — 예전 랜딩 일출 장면. 2026-11-14 에 그림으로 바꿔 그 코드는 없다).
 
   4. `URLSession…Delegate` 를 따르는 타입이 `@MainActor` 가 아니고, 그 채택이 `@preconcurrency` 가 아닌가 — 같은 사고의
      델리게이트 판이다. background `URLSession` 은 델리게이트를 **세션의 delegate 큐**에서 부르고, iOS 가 다운로드를
@@ -262,7 +262,7 @@ def main() -> int:
             "표기가 없는 클로저는 감싸는 `@MainActor` 타입의 격리를 물려받는데, 시스템은\n"
             "그 콜백을 **기본 백그라운드 큐**에서 부른다 — 배달되는 즉시 트랩한다\n"
             "(2026-09-21 Sentry ALARMTALK-IOS-4/-7/-8). TimelineView·Canvas 는 SwiftUI 가 그리기 스레드에서\n"
-            "부른다(2026-10-14 같은 이슈) — 그리는 코드는 `View` 밖의 타입에 둔다(`SunriseSceneRenderer`).\n"
+            "부른다(2026-10-14 같은 이슈, 예전 랜딩 일출 장면) — 그리는 코드는 `View` 밖의 타입에 둔다.\n"
             "클로저를 `{ @Sendable ... in` 으로 열고, 메인 액터로 건너뛰는 일은 그 안에서\n"
             "`Task { @MainActor in ... }` 로 명시적으로 할 것 — `BackgroundSyncTask.handleLaunch` 가 그 꼴이다.\n"
             "URLSession 델리게이트는 메인 액터가 아닌 타입에 두고(`BackgroundClipDownloader`), 메인 일은 안에서 넘긴다."

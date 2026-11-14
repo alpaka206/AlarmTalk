@@ -44,9 +44,11 @@
     <string name="auth_landing_headline_keyword">声</string>
     <string name="auth_landing_headline_post">で\n目覚める朝</string>
     <string name="auth_landing_subcopy">毎朝、その声が新しいひとことで起こしてくれます。</string>
-    <string name="auth_landing_preview_pause">プレビューを一時停止</string>
-    <string name="auth_landing_preview_play">声をプレビュー</string>
-    <string name="auth_landing_sample_message">おじいちゃん、おはようございます\n今日は雨が降るそうです\n出かけるときは傘を忘れずに</string>
+    <string name="auth_landing_voice_play">プレビュー</string>
+    <string name="auth_landing_voice_pause">一時停止</string>
+    <string name="auth_landing_voice_position">%1$sの声、%2$d/%3$d</string>
+    <string name="auth_landing_voice_next">次の声</string>
+    <string name="auth_landing_voice_previous">前の声</string>
     <string name="auth_password_hide">パスワードを隠す</string>
     <string name="auth_password_mismatch">パスワードが一致しません。</string>
     <string name="auth_error_email_invalid">メールアドレスの形式が正しくありません。ご確認ください。</string>

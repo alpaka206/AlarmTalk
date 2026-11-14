@@ -2914,19 +2914,19 @@
         }
       }
     },
-    "목소리 미리듣기" : {
+    "%@ 목소리, %lld/%lld" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Preview voice"
+            "value" : "%@'s voice, %lld of %lld"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声をプレビュー"
+            "value" : "%@の声、%lld/%lld"
           }
         }
       }
@@ -3339,19 +3339,36 @@
         }
       }
     },
-    "미리듣기 일시정지" : {
+    "다음 목소리" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pause preview"
+            "value" : "Next voice"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プレビューを一時停止"
+            "value" : "次の声"
+          }
+        }
+      }
+    },
+    "이전 목소리" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous voice"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前の声"
           }
         }
       }
@@ -7651,23 +7668,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "おじいちゃん"
-          }
-        }
-      }
-    },
-    "할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Good morning, Grandpa\nIt's going to rain today\nDon't forget your umbrella"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "おじいちゃん、おはようございます\n今日は雨が降るそうです\n出かけるときは傘を忘れずに"
           }
         }
       }
