@@ -1270,70 +1270,76 @@ internal fun AlarmTalkApp(
           return@Scaffold
       }
       if (authSession == null) {
-          when (val route = authRoute) {
-              AuthRoute.Landing -> LandingScreen(
-                  contentPadding = padding,
-                  onStart = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
-              )
-              AuthRoute.ResetPassword -> {
-                  // ⚠ **화면을 나갈 때 발송 상태를 지운다.** 안 지우면 뒤로 갔다가 다시
-                  // 들어왔을 때 아무것도 안 했는데 "인증 코드를 보냈어요" 가 떠 있고
-                  // 코드·새 비밀번호 단계가 **이미 열린 채**라, 오지도 않은 코드를
-                  // 기다리게 된다(iOS `PasswordResetView.onDisappear` 와 같은 처리).
-                  //
-                  // ⚠ 화면 이탈에서만 지운다 — 앱을 백그라운드로 보내는 것(메일 확인)은
-                  // 이탈이 아니다. `DisposableEffect` 는 컴포지션이 떠날 때만 돈다.
-                  DisposableEffect(Unit) {
-                      onDispose {
-                          viewModel.passwordResetCodeSentTo = null
-                          viewModel.message = null
+          // 로그인 전 화면(랜딩·로그인·가입·비밀번호 찾기)에도 **위쪽 안내 자리**를 둔다(2026-11-15 오너 — '인증 코드를 보냈어요' 는
+          //   위쪽 토스트로). 예전에는 그 자리가 로그인 뒤 화면에만 있어서, 로그인 전에 올린 안내(코드 발송·카카오·구글 실패 등)가
+          //   화면에 뜨지 않고 쌓였다가 로그인한 뒤에야 나왔다. iOS 짝은 `AuthToast`.
+          Box(modifier = Modifier.fillMaxSize()) {
+              when (val route = authRoute) {
+                  AuthRoute.Landing -> LandingScreen(
+                      contentPadding = padding,
+                      onStart = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
+                  )
+                  AuthRoute.ResetPassword -> {
+                      // ⚠ **화면을 나갈 때 발송 상태를 지운다.** 안 지우면 뒤로 갔다가 다시
+                      // 들어왔을 때 아무것도 안 했는데 "인증 코드를 보냈어요" 가 떠 있고
+                      // 코드·새 비밀번호 단계가 **이미 열린 채**라, 오지도 않은 코드를
+                      // 기다리게 된다(iOS `PasswordResetView.onDisappear` 와 같은 처리).
+                      //
+                      // ⚠ 화면 이탈에서만 지운다 — 앱을 백그라운드로 보내는 것(메일 확인)은
+                      // 이탈이 아니다. `DisposableEffect` 는 컴포지션이 떠날 때만 돈다.
+                      DisposableEffect(Unit) {
+                          onDispose {
+                              viewModel.passwordResetCodeSentTo = null
+                              viewModel.message = null
+                          }
                       }
+                      PasswordResetScreen(
+                      contentPadding = padding,
+                      busy = authBusy,
+                      codeSentTo = viewModel.passwordResetCodeSentTo,
+                      codeFieldClearTick = viewModel.emailCodeFieldClearTick,
+                      onBack = { authBack() },
+                      onRequestCode = viewModel::requestPasswordReset,
+                      onConfirm = { resetEmail, resetCode, newPassword ->
+                          viewModel.confirmPasswordReset(resetEmail, resetCode, newPassword) { authBack() }
+                      },
+                      )
                   }
-                  PasswordResetScreen(
-                  contentPadding = padding,
-                  busy = authBusy,
-                  codeSentTo = viewModel.passwordResetCodeSentTo,
-                  codeFieldClearTick = viewModel.emailCodeFieldClearTick,
-                  onBack = { authBack() },
-                  onRequestCode = viewModel::requestPasswordReset,
-                  onConfirm = { resetEmail, resetCode, newPassword ->
-                      viewModel.confirmPasswordReset(resetEmail, resetCode, newPassword) { authBack() }
-                  },
+                  is AuthRoute.Auth -> AuthScreen(
+                      contentPadding = padding,
+                      mode = route.mode,
+                      busy = authBusy,
+                      emailVerificationSentTo = viewModel.registerEmailVerificationSentTo,
+                      emailVerified = viewModel.registerEmailVerified,
+                      loginError = viewModel.loginError,
+                      // 갈래 판정은 번역된 문구가 아니라 이 코드로 한다(`isEmailFormatErrorCode`).
+                      loginErrorCode = viewModel.loginErrorCode,
+                      registerError = viewModel.registerError,
+                      // 거절된 인증 코드·다시 받기 뒤에 코드 칸을 비우는 신호(문구가 아니라 코드로 판정한다).
+                      codeFieldClearTick = viewModel.emailCodeFieldClearTick,
+                      authNotice = viewModel.authNotice,
+                      onClearLoginError = {
+                          viewModel.loginError = null
+                          viewModel.loginErrorCode = null
+                          viewModel.registerError = null
+                          viewModel.authNotice = null
+                      },
+                      onBack = { authBack() },
+                      onLogin = viewModel::login,
+                      onRegister = viewModel::register,
+                      onRequestEmailVerification = viewModel::requestEmailVerification,
+                      onConfirmEmailVerification = viewModel::confirmEmailVerification,
+                      onSwitchMode = {
+                          val nextMode = if (route.mode == AuthMode.Login) AuthMode.Register else AuthMode.Login
+                          authNavigate(AuthRoute.Auth(nextMode))
+                      },
+                      onGoogleSignIn = ::launchGoogleSignIn,
+                      // 람다로 넘긴다 — 지역 함수 참조는 캡처가 첫 콤포지션 값으로 굳을 수 있다(CLAUDE.md).
+                      onKakaoSignIn = { launchKakaoSignIn() },
+                      onFindPassword = { authNavigate(AuthRoute.ResetPassword) },
                   )
               }
-              is AuthRoute.Auth -> AuthScreen(
-                  contentPadding = padding,
-                  mode = route.mode,
-                  busy = authBusy,
-                  emailVerificationSentTo = viewModel.registerEmailVerificationSentTo,
-                  emailVerified = viewModel.registerEmailVerified,
-                  loginError = viewModel.loginError,
-                  // 갈래 판정은 번역된 문구가 아니라 이 코드로 한다(`isEmailFormatErrorCode`).
-                  loginErrorCode = viewModel.loginErrorCode,
-                  registerError = viewModel.registerError,
-                  // 거절된 인증 코드·다시 받기 뒤에 코드 칸을 비우는 신호(문구가 아니라 코드로 판정한다).
-                  codeFieldClearTick = viewModel.emailCodeFieldClearTick,
-                  authNotice = viewModel.authNotice,
-                  onClearLoginError = {
-                      viewModel.loginError = null
-                      viewModel.loginErrorCode = null
-                      viewModel.registerError = null
-                      viewModel.authNotice = null
-                  },
-                  onBack = { authBack() },
-                  onLogin = viewModel::login,
-                  onRegister = viewModel::register,
-                  onRequestEmailVerification = viewModel::requestEmailVerification,
-                  onConfirmEmailVerification = viewModel::confirmEmailVerification,
-                  onSwitchMode = {
-                      val nextMode = if (route.mode == AuthMode.Login) AuthMode.Register else AuthMode.Login
-                      authNavigate(AuthRoute.Auth(nextMode))
-                  },
-                  onGoogleSignIn = ::launchGoogleSignIn,
-                  // 람다로 넘긴다 — 지역 함수 참조는 캡처가 첫 콤포지션 값으로 굳을 수 있다(CLAUDE.md).
-                  onKakaoSignIn = { launchKakaoSignIn() },
-                  onFindPassword = { authNavigate(AuthRoute.ResetPassword) },
-              )
+              TopMessageHost(hostState = snackbarHostState, topPadding = padding.calculateTopPadding())
           }
           return@Scaffold
       }
@@ -1767,20 +1773,7 @@ internal fun AlarmTalkApp(
                   )
               }
           }
-          SnackbarHost(
-              hostState = snackbarHostState,
-              modifier = Modifier
-                  .align(Alignment.TopCenter)
-                  .padding(top = padding.calculateTopPadding() + 8.dp),
-          ) { data ->
-              // actionLabel 을 함께 렌더링해야 FLEXIBLE 업데이트 '재시작' 등
-              // 액션 대기(showSnackbar → ActionPerformed) 스낵바가 동작한다.
-              PrettySnackbar(
-                  message = data.visuals.message,
-                  actionLabel = data.visuals.actionLabel,
-                  onAction = { data.performAction() },
-              )
-          }
+          TopMessageHost(hostState = snackbarHostState, topPadding = padding.calculateTopPadding())
           // 서버가 Play 구독을 직접 해지하지 못한 경우(PLAY_CANCEL_FAILED 등) —
           // 어느 화면에 있든 Google Play 구독 관리로 보내는 안내 다이얼로그를 띄운다.
           viewModel.billingPlayManageUrl?.let { manageUrl ->

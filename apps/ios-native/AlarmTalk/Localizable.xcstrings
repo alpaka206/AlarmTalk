@@ -5497,19 +5497,19 @@
         }
       }
     },
-    "이 버전은 더 이상 쓸 수 없어요.\n최신 버전으로 업데이트해 주세요." : {
+    "새 버전에서만 쓸 수 있어요.\n업데이트해도 알람과 목소리는 그대로 남아요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This version is no longer supported.\nPlease update to the latest version."
+            "value" : "You need the latest version to keep using AlarmTalk.\nYour alarms and voices stay after updating."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このバージョンはご利用いただけなくなりました。\n最新バージョンにアップデートしてください。"
+            "value" : "最新バージョンでのみご利用いただけます。\nアップデートしてもアラームと声はそのまま残ります。"
           }
         }
       }

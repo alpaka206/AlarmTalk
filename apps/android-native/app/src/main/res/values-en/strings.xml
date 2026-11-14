@@ -587,7 +587,7 @@
     <string name="consent_load_failed">Couldn\'t load your consents. Tap to retry.</string>
     <string name="r3app_bottom_create_alarm_desc">Create alarm</string>
     <string name="r3app_update_required_title">An update is needed</string>
-    <string name="r3app_update_required_body">This version is no longer supported.\nPlease update to the latest version.</string>
+    <string name="r3app_update_required_body">You need the latest version to keep using AlarmTalk.\nYour alarms and voices stay after updating.</string>
     <string name="r3app_update_required_button">Update</string>
     <string name="r3app_update_downloaded">An update has been downloaded. Restart the app to apply it.</string>
     <string name="r3app_update_restart">Restart</string>

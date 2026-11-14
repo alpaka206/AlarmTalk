@@ -7,6 +7,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.unit.Dp
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -244,6 +248,29 @@ internal fun PrettySnackbar(
         contentColor = contentColor,
         content = body,
     )
+}
+
+/**
+ * 화면 **위쪽** 안내 자리 — 뷰모델의 `message`(코드 발송·저장 실패 등)와 FLEXIBLE 업데이트의 '재시작' 이 여기 뜬다. 로그인 뒤
+ * 화면과 로그인 전 화면(랜딩·로그인·가입·비밀번호 찾기)이 **같은 자리·같은 모양**을 쓰도록 한 곳에 둔다(2026-11-15).
+ * 아래쪽이면 열려 있는 키보드에 가린다.
+ */
+@Composable
+internal fun BoxScope.TopMessageHost(hostState: SnackbarHostState, topPadding: Dp) {
+    SnackbarHost(
+        hostState = hostState,
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = topPadding + 8.dp),
+    ) { data ->
+        // actionLabel 을 함께 렌더링해야 FLEXIBLE 업데이트 '재시작' 등
+        // 액션 대기(showSnackbar → ActionPerformed) 스낵바가 동작한다.
+        PrettySnackbar(
+            message = data.visuals.message,
+            actionLabel = data.visuals.actionLabel,
+            onAction = { data.performAction() },
+        )
+    }
 }
 
 /**

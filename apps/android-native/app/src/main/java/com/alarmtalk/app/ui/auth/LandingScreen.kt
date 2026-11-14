@@ -86,8 +86,9 @@ private val LandingSeaBottom = Color(0xFF031236)
 
 private val BrandCtaStart = Color(0xFF3D74FF)
 private val BrandCtaEnd = Color(0xFF45B4F5)
-private val GlassFill = Color(0x21FFFFFF)
-private val GlassBorder = Color(0x2EFFFFFF)
+// 밤하늘 위 유리 면 — 랜딩 미리듣기 상자와 '업데이트가 필요해요' 화면(`UpdateRequiredScreen`)이 같이 쓴다. iOS `AuthSceneColors.glassFill`·`glassBorder`.
+internal val GlassFill = Color(0x21FFFFFF)
+internal val GlassBorder = Color(0x2EFFFFFF)
 internal val TextOnScene = Color(0xFFF8FAFF)
 internal val TextOnSceneDim = Color(0xC8E8EEFA)
 

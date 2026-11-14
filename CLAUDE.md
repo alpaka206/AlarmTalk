@@ -653,7 +653,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
   가 죽어 **토큰 수명(365일)이 다하는 날** 조용히 로그아웃된다. (90일은 수명이 아니라
   갱신을 시작하는 임계값이다 — `docs/spec/session-and-auth.md`.)
 - **화면 확인 모드**: `-UIPreviewSeed`(가짜 세션·알람·목소리) + `-UIPreviewTab
-  alarms|voices|menu` + `-UIPreviewEditor` + `-UIPreviewAuthScreen login|register`.
+  alarms|voices|menu` + `-UIPreviewEditor` + `-UIPreviewAuthScreen login|register` + `-UIPreviewUpdateRequired`.
   DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이
   없어서 만든 진입점이다.
 

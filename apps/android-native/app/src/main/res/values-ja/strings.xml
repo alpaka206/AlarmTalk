@@ -587,7 +587,7 @@
     <string name="consent_load_failed">同意内容を読み込めませんでした。タップして再試行してください。</string>
     <string name="r3app_bottom_create_alarm_desc">アラームを作成</string>
     <string name="r3app_update_required_title">アップデートが必要です</string>
-    <string name="r3app_update_required_body">このバージョンはご利用いただけなくなりました。\n最新バージョンにアップデートしてください。</string>
+    <string name="r3app_update_required_body">最新バージョンでのみご利用いただけます。\nアップデートしてもアラームと声はそのまま残ります。</string>
     <string name="r3app_update_required_button">アップデートする</string>
     <string name="r3app_update_downloaded">アップデートをダウンロードしました。アプリを再起動して適用してください。</string>
     <string name="r3app_update_restart">再起動</string>

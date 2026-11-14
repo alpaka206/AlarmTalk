@@ -611,7 +611,7 @@
     <string name="consent_load_failed">동의 내역을 불러오지 못했어요. 눌러서 다시 시도해 주세요.</string>
     <string name="r3app_bottom_create_alarm_desc">알람 만들기</string>
     <string name="r3app_update_required_title">업데이트가 필요해요</string>
-    <string name="r3app_update_required_body">이 버전은 더 이상 쓸 수 없어요.\n최신 버전으로 업데이트해 주세요.</string>
+    <string name="r3app_update_required_body">새 버전에서만 쓸 수 있어요.\n업데이트해도 알람과 목소리는 그대로 남아요.</string>
     <string name="r3app_update_required_button">업데이트하기</string>
     <string name="r3app_update_downloaded">업데이트를 다 받았어요. 재시작하면 적용돼요.</string>
     <string name="r3app_update_restart">재시작</string>

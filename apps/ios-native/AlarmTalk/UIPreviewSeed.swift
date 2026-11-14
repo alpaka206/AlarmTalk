@@ -48,6 +48,26 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 강제 업데이트 화면(`UpdateRequiredView`)을 바로 띄우는 실행 인자 — `-UIPreviewUpdateRequired`(값 없음).
+    /// 최소지원버전을 실제로 올리지 않고 그 화면을 확인하려고 둔다.
+    static var updateRequired: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-UIPreviewUpdateRequired")
+        #else
+        return false
+        #endif
+    }
+
+    /// 인증 화면의 위쪽 토스트(`AuthToastModifier`)를 바로 띄우는 실행 인자 — `-UIPreviewAuthToast "<문장>"`.
+    /// `-UIPreviewAuthScreen` 과 함께 쓴다. 코드 발송 같은 서버 응답 없이 토스트 모양을 확인하려고 둔다.
+    static var authToast: String? {
+        #if DEBUG
+        return argValue("-UIPreviewAuthToast")
+        #else
+        return nil
+        #endif
+    }
+
     /// 화면 확인용 플랜 — `-UIPreviewPlan free|personal`. 기본은 personal(유료).
     ///
     /// 무료 상태에서만 보이는 화면(무료 테마 문구 목록·이용권 게이트)을 실기기 로그인

@@ -508,6 +508,11 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
   상태는 정규화한 **그 주소**에 묶여 있어 주소를 고치면 `인증 받기` 로 돌아간다. 완료를 두 번 말하지 않는다 — 예전의
   '이메일 인증 완료' 줄은 버튼이 같은 말을 해서 지웠다.
 - **가입 화면 — 인증 확인 단계**: 코드 줄과 `다시 받기`(이메일 칸 옆)가 함께 있다.
+- **보냈다는 안내는 위쪽 토스트다**(2026-11-15 오너). "인증 코드를 보냈어요"·"이메일 인증이 완료됐어요"·소셜 로그인 실패 같은
+  안내는 화면 **위쪽**에 몇 초(안내 3초 · 오류 5초) 떴다가 걷힌다 — 폼 맨 아래 글줄이면 키보드 뒤에 숨는다. 고칠 칸에 붙은
+  오류(로그인 실패·코드 거절)는 그 칸 아래 그대로다. 안드로이드는 로그인 전 화면에도 로그인 뒤 화면과 같은 위쪽 안내 자리
+  (`TopMessageHost` → `PrettySnackbar`)를 두고, iOS 는 `AuthToastModifier`(`.authToast`)가 `statusMessage` 를 띄운다. ⚠ 안드로이드는
+  예전에 그 자리가 로그인 뒤에만 있어서, 로그인 전에 올린 안내가 뜨지 않고 쌓였다가 로그인한 뒤에야 나왔다.
 - **가입 화면 — `POST /auth/register` 가 코드를 거절했을 때**(위 셋): **'인증 완료' 상태를 내린다**(`✓ 인증됨` → `다시 받기`).
   코드 줄과 다시 받기가 돌아온다. 예전에는 '이메일 인증 완료' 인 채로 다시 받기가 꺼져 있었다 — 안드로이드는 그
   주소로는 프로세스가 죽을 때까지 풀리지 않았다(코드를 받은 지 10분이 지난 뒤 가입 버튼을 누르면 그렇게 된다).
@@ -563,6 +568,7 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | 카카오 연결 해제 웹훅(대표 어드민 키 · 언제나 200 · 카카오로만 가입한 계정만 탈퇴 유예 · 회원번호 그대로) | `routes/kakao-webhook.ts` → `lib/kakao-unlink.ts` `handleKakaoUnlink` → `lib/account-deletion.ts` `requestAccountDeletion` · 회귀 `test/kakao-unlink-webhook.test.ts` | — | — |
 | 탈퇴 파기 뒤 카카오 연결 끊기(커밋 뒤 · 어드민 키 · -101 은 성공) | `index.ts` 유예 파기 → `lib/kakao-oauth.ts` `unlinkKakaoUser` · 회귀 `test/scheduled-purge-isolation.test.ts` | 기기 토큰만 버림 `signOutKakao` | 기기 토큰만 버림 `KakaoSignIn.discardDeviceToken` |
 | 가입 인증 버튼은 이메일 칸 옆(인증 받기 → 다시 받기 → ✓ 인증됨) | — | `ui/auth/AuthScreen.kt` `EmailVerifyButton` | `LoginView.emailVerifyButton` |
+| 인증 화면의 안내는 위쪽 토스트(안내 3초·오류 5초 · 칸에 붙은 오류는 그대로) | — | `ui/app/AlarmTalkAppHelpers.kt` `TopMessageHost` ← `AlarmTalkApp` 의 로그인 전 갈래 | `Views/Auth/AuthToast.swift` `AuthToastModifier` ← `LoginView`·`PasswordResetView` |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로(첫 진입만 — `refreshAppSessionNow` 의 `rollToken`·`sessionTokenToSave`) | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
 | 화면 효과의 세션 키 = 계정 + 세대(토큰 아님) | — | `network/AuthSessionStore.kt` `SessionEffectKey`·`sessionEffectKey` → `AlarmTalkApp` 의 세션 효과·탭 스로틀 | 알람·목소리·더보기 탭 모두 `EntryRefreshFreshness`(계정 + 앱 진입). 알람 탭 동기화 스로틀의 키 `MainTabsView.tabRefreshThrottleKey`(탭 + 계정)는 2026-10-29 알람 올리기와 함께 지웠다 |
