@@ -154,8 +154,8 @@ private struct LandingPreviewVoice {
 ///
 /// - 처음엔 가족(할아버지) 샘플 하나와 그 3문장 자막이었다. 실제로는 연인이나 좋아하는 사람 같은 목소리를 찾는
 ///   사람이 많아, 목소리마다 다른 한마디(날씨·응원·안부·기상)를 들려준다. **글자는 쓰지 않는다** — 문장도 목소리
-///   이름도. 보이는 것은 재생 표시·그 소리의 파형·몇 번째인지 알려 주는 점뿐이다. 상자는 둔다 — 없으면 다른 글자와
-///   구분이 안 된다.
+///   이름도. 보이는 것은 재생 표시·그 소리의 파형과 상자 아래 가운데의 점(몇 번째인지)뿐이다. 상자는 둔다 — 없으면
+///   다른 글자와 구분이 안 된다.
 /// - **누르면 지금 목소리부터 차례로 이어서 튼다.** 끝까지 들으면 다음 목소리로 넘어가고, 마지막 뒤에는 멈추고
 ///   처음으로 돌아간다. 다시 누르면 일시정지, 또 누르면 그 자리에서 잇는다.
 /// - **옆으로 밀면 목소리를 바꾼다**(왼쪽 = 다음, 끝에서 처음으로 돈다). 트는 중이면 바꾼 목소리를 곧바로 튼다.
@@ -171,77 +171,84 @@ private struct LandingVoicePreview: View {
     var body: some View {
         let voices = LandingPreviewVoice.all
         let current = voices[preview.index]
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: preview.isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(AuthSceneColors.accent)
-                .frame(width: 44, height: 44)
-                .background(Capsule().fill(AuthSceneColors.accent.opacity(0.18)))
-                .overlay(Capsule().stroke(AuthSceneColors.accent.opacity(0.45), lineWidth: 1))
+        VStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: preview.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(AuthSceneColors.accent)
+                    .frame(width: 44, height: 44)
+                    .background(Capsule().fill(AuthSceneColors.accent.opacity(0.18)))
+                    .overlay(Capsule().stroke(AuthSceneColors.accent.opacity(0.45), lineWidth: 1))
 
-            ZStack {
-                MiniWaveform(levels: current.levels, progress: preview.progress)
-                    .id(preview.index)
-                    .transition(waveformTransition)
+                ZStack {
+                    MiniWaveform(levels: current.levels, progress: preview.progress)
+                        .id(preview.index)
+                        .transition(waveformTransition)
+                }
+                .frame(maxWidth: .infinity)
+                .clipped()
             }
-            .frame(maxWidth: .infinity)
-            .clipped()
+            .padding(.leading, 10)
+            .padding(.trailing, 16)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .fill(AuthSceneColors.glassFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .stroke(AuthSceneColors.glassBorder, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+            // 상자 전체가 누르는 자리다. 미는 손짓이 따로 붙어 있어 `Button` 대신 탭 + 누름 상태로 만든다
+            // (`PressFeedback.swift` 의 `pressScale` 주석 — 스와이프와 싸우지 않게).
+            .pressScale(pressed)
+            .onTapGesture { preview.toggle() }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($pressed) { value, state, _ in
+                        state = abs(value.translation.width) < 10 && abs(value.translation.height) < 10
+                    }
+            )
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 16)
+                    .onEnded { value in
+                        // 세로로 민 것은 화면 스크롤에 맡긴다 — 가로로 충분히 민 것만 목소리를 바꾼다.
+                        guard abs(value.translation.width) > abs(value.translation.height),
+                              abs(value.translation.width) > 36 else { return }
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) {
+                            preview.step(value.translation.width < 0 ? 1 : -1)
+                        }
+                    }
+            )
+            .disabled(!preview.hasAudio)
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(preview.isPlaying ? String(localized: "일시정지") : String(localized: "미리듣기"))
+            .accessibilityValue(String(localized: "\(current.displayName) 목소리, \(preview.index + 1)/\(voices.count)"))
+            .accessibilityAction { preview.toggle() }
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: preview.step(1)
+                case .decrement: preview.step(-1)
+                @unknown default: break
+                }
+            }
+            // 안드로이드의 사용자 지정 동작(다음·이전 목소리)과 같은 이름으로도 고를 수 있게 한다.
+            .accessibilityAction(named: Text(String(localized: "다음 목소리"))) { preview.step(1) }
+            .accessibilityAction(named: Text(String(localized: "이전 목소리"))) { preview.step(-1) }
 
-            HStack(spacing: 5) {
+            // 몇 번째 목소리인지 — 상자 아래 가운데에 둔다(넘겨 보는 목록의 흔한 자리라 밀 수 있다는 게 보인다,
+            // 2026-11-14 오너). 화면 읽기는 상자의 'n/4' 로 이미 읽는다.
+            HStack(spacing: 6) {
                 ForEach(voices.indices, id: \.self) { dot in
                     Circle()
                         .fill(dot == preview.index ? AuthSceneColors.accent : Color.white.opacity(0.30))
                         .frame(width: 6, height: 6)
                 }
             }
+            .accessibilityHidden(true)
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .fill(AuthSceneColors.glassFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(AuthSceneColors.glassBorder, lineWidth: 1)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-        // 상자 전체가 누르는 자리다. 미는 손짓이 따로 붙어 있어 `Button` 대신 탭 + 누름 상태로 만든다
-        // (`PressFeedback.swift` 의 `pressScale` 주석 — 스와이프와 싸우지 않게).
-        .pressScale(pressed)
-        .onTapGesture { preview.toggle() }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .updating($pressed) { value, state, _ in
-                    state = abs(value.translation.width) < 10 && abs(value.translation.height) < 10
-                }
-        )
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 16)
-                .onEnded { value in
-                    // 세로로 민 것은 화면 스크롤에 맡긴다 — 가로로 충분히 민 것만 목소리를 바꾼다.
-                    guard abs(value.translation.width) > abs(value.translation.height),
-                          abs(value.translation.width) > 36 else { return }
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) {
-                        preview.step(value.translation.width < 0 ? 1 : -1)
-                    }
-                }
-        )
-        .disabled(!preview.hasAudio)
-        .accessibilityElement(children: .ignore)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(preview.isPlaying ? String(localized: "일시정지") : String(localized: "미리듣기"))
-        .accessibilityValue(String(localized: "\(current.displayName) 목소리, \(preview.index + 1)/\(voices.count)"))
-        .accessibilityAction { preview.toggle() }
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: preview.step(1)
-            case .decrement: preview.step(-1)
-            @unknown default: break
-            }
-        }
-        // 안드로이드의 사용자 지정 동작(다음·이전 목소리)과 같은 이름으로도 고를 수 있게 한다.
-        .accessibilityAction(named: Text(String(localized: "다음 목소리"))) { preview.step(1) }
-        .accessibilityAction(named: Text(String(localized: "이전 목소리"))) { preview.step(-1) }
         // 화면을 떠나면 멈춘다 — 안드로이드는 상자가 콤포지션에서 빠질 때 플레이어를 놓는다(`DisposableEffect`).
         .onDisappear { preview.stop() }
     }

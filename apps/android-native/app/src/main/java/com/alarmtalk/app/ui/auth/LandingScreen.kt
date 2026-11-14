@@ -257,7 +257,8 @@ private class LandingPreviewPlayer {
  *
  * - 처음엔 가족(할아버지) 샘플 하나와 그 3문장 자막이었다. 실제로는 연인이나 좋아하는 사람 같은 목소리를 찾는 사람이
  *   많아, 목소리마다 다른 한마디(날씨·응원·안부·기상)를 들려준다. **글자는 쓰지 않는다** — 문장도 목소리 이름도.
- *   보이는 것은 재생 표시·그 소리의 파형·몇 번째인지 알려 주는 점뿐이다. 상자는 둔다 — 없으면 다른 글자와 구분이 안 된다.
+ *   보이는 것은 재생 표시·그 소리의 파형과 상자 아래 가운데의 점(몇 번째인지)뿐이다. 상자는 둔다 — 없으면 다른 글자와
+ *   구분이 안 된다.
  * - **누르면 지금 목소리부터 차례로 이어서 튼다.** 끝까지 들으면 다음 목소리로 넘어가고, 마지막 뒤에는 멈추고 처음으로
  *   돌아간다. 다시 누르면 일시정지, 또 누르면 그 자리에서 잇는다.
  * - **옆으로 밀면 목소리를 바꾼다**(왼쪽 = 다음, 끝에서 처음으로 돈다). 트는 중이면 바꾼 목소리를 곧바로 튼다.
@@ -320,91 +321,99 @@ private fun LandingVoicePreview() {
     val previousLabel = stringResource(R.string.auth_landing_voice_previous)
     val interaction = remember { MutableInteractionSource() }
     val swipeThreshold = with(LocalDensity.current) { 36.dp.toPx() }
-    Surface(
-        // 람다로 넘긴다 — 지역 함수 참조는 캡처가 달라도 같은 값으로 보여 Compose 가 건너뛴다(CLAUDE.md 「Compose 콜백에 지역 함수 참조」).
-        onClick = {
-            if (playing) {
-                preview.pause()
-                playing = false
-            } else {
-                playFrom(index)
-            }
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .wakerPressScale(interaction)
-            .pointerInput(Unit) {
-                var dragged = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { dragged = 0f },
-                    onDragEnd = {
-                        if (dragged <= -swipeThreshold) step(1) else if (dragged >= swipeThreshold) step(-1)
-                    },
-                ) { change, amount ->
-                    change.consume()
-                    dragged += amount
-                }
-            }
-            .semantics {
-                contentDescription = actionLabel
-                stateDescription = position
-                customActions = listOf(
-                    CustomAccessibilityAction(nextLabel) { step(1); true },
-                    CustomAccessibilityAction(previousLabel) { step(-1); true },
-                )
-            },
-        shape = WakerPanelShape,
-        color = GlassFill,
-        border = BorderStroke(1.dp, GlassBorder),
-        interactionSource = interaction,
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(BrandAccentOnScene.copy(alpha = 0.18f), WakerPillShape)
-                    .border(1.dp, BrandAccentOnScene.copy(alpha = 0.45f), WakerPillShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = BrandAccentOnScene,
-                )
-            }
-            AnimatedContent(
-                targetState = index,
-                modifier = Modifier
-                    .weight(1f)
-                    .clipToBounds(),
-                transitionSpec = {
-                    // 들어오는 쪽이 더 길다 — 퇴장이 빨라야 한다(CLAUDE.md 「동작 원칙」).
-                    val sign = direction
-                    (slideInHorizontally(tween(220)) { width -> width * sign } + fadeIn(tween(220))) togetherWith
-                        (slideOutHorizontally(tween(160)) { width -> -width * sign } + fadeOut(tween(160)))
+        Surface(
+            // 람다로 넘긴다 — 지역 함수 참조는 캡처가 달라도 같은 값으로 보여 Compose 가 건너뛴다(CLAUDE.md 「Compose 콜백에 지역 함수 참조」).
+            onClick = {
+                if (playing) {
+                    preview.pause()
+                    playing = false
+                } else {
+                    playFrom(index)
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .wakerPressScale(interaction)
+                .pointerInput(Unit) {
+                    var dragged = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragged = 0f },
+                        onDragEnd = {
+                            if (dragged <= -swipeThreshold) step(1) else if (dragged >= swipeThreshold) step(-1)
+                        },
+                    ) { change, amount ->
+                        change.consume()
+                        dragged += amount
+                    }
+                }
+                .semantics {
+                    contentDescription = actionLabel
+                    stateDescription = position
+                    customActions = listOf(
+                        CustomAccessibilityAction(nextLabel) { step(1); true },
+                        CustomAccessibilityAction(previousLabel) { step(-1); true },
+                    )
                 },
-            ) { shown ->
-                MiniWaveform(levels = LandingVoices[shown].levels, progress = if (shown == index) progress else 0f)
-            }
+            shape = WakerPanelShape,
+            color = GlassFill,
+            border = BorderStroke(1.dp, GlassBorder),
+            interactionSource = interaction,
+        ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 16.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                repeat(LandingVoices.size) { dot ->
-                    Box(
-                        Modifier
-                            .size(6.dp)
-                            .background(
-                                color = if (dot == index) BrandAccentOnScene else Color.White.copy(alpha = 0.30f),
-                                shape = CircleShape,
-                            ),
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(BrandAccentOnScene.copy(alpha = 0.18f), WakerPillShape)
+                        .border(1.dp, BrandAccentOnScene.copy(alpha = 0.45f), WakerPillShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = BrandAccentOnScene,
                     )
                 }
+                AnimatedContent(
+                    targetState = index,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clipToBounds(),
+                    transitionSpec = {
+                        // 들어오는 쪽이 더 길다 — 퇴장이 빨라야 한다(CLAUDE.md 「동작 원칙」).
+                        val sign = direction
+                        (slideInHorizontally(tween(220)) { width -> width * sign } + fadeIn(tween(220))) togetherWith
+                            (slideOutHorizontally(tween(160)) { width -> -width * sign } + fadeOut(tween(160)))
+                    },
+                ) { shown ->
+                    MiniWaveform(levels = LandingVoices[shown].levels, progress = if (shown == index) progress else 0f)
+                }
+            }
+        }
+        // 몇 번째 목소리인지 — 상자 아래 가운데에 둔다(넘겨 보는 목록의 흔한 자리라 밀 수 있다는 게 보인다,
+        // 2026-11-14 오너). TalkBack 은 상자의 'n/4' 로 이미 읽으므로 점은 읽지 않는다(의미 없는 Box 다).
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            repeat(LandingVoices.size) { dot ->
+                Box(
+                    Modifier
+                        .size(6.dp)
+                        .background(
+                            color = if (dot == index) BrandAccentOnScene else Color.White.copy(alpha = 0.30f),
+                            shape = CircleShape,
+                        ),
+                )
             }
         }
     }
