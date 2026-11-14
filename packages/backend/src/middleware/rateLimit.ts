@@ -118,12 +118,27 @@ export const ipRateLimitMiddleware = createRateLimitMiddleware({
   prefix: 'pre:',
   // AdMob 보상 콜백은 아래 전용 버킷이 맡는다 — Google 의 몇 안 되는 발신 IP 에서 몰려 오는데, 300 에 걸리면 1초 간격
   // 다섯 번뿐인 재시도가 전부 같은 창에 들어가 보상이 사라진다(코덱스 #924).
-  skip: isAdMobRewardCallback,
+  // 카카오 연결 해제 웹훅도 같다(코덱스 #994) — 카카오 서버 몇 대가 모든 사용자의 해제를 보내고 **다시 보내 주지 않는다.**
+  //   여기서 429 가 나면 인증도 하기 전에 그 해제가 영영 사라진다. 전용 버킷(`kakaoWebhookRateLimitMiddleware`)이 센다.
+  skip: (c) => isAdMobRewardCallback(c) || isKakaoUnlinkCallback(c),
 });
 
 function isAdMobRewardCallback(c: Context): boolean {
   return c.req.method === 'GET' && new URL(c.req.url).pathname === '/api/ads/admob-ssv';
 }
+
+function isKakaoUnlinkCallback(c: Context): boolean {
+  return (c.req.method === 'GET' || c.req.method === 'POST') && new URL(c.req.url).pathname === '/api/kakao/unlink';
+}
+
+/**
+ * 카카오 연결 해제 웹훅(`routes/kakao-webhook.ts`) 전용 IP 버킷. 대표 어드민 키가 있어야 처리되지만 인증 없는 라우트라 한도는
+ * 둔다 — 정상 콜백이 막히지 않을 만큼 넉넉히(AdMob 콜백 버킷과 같은 값).
+ */
+export const kakaoWebhookRateLimitMiddleware = createRateLimitMiddleware({
+  maxRequests: 6000,
+  prefix: 'kakao:',
+});
 
 /**
  * AdMob 보상 콜백(`routes/ads.ts`) 전용 IP 버킷. 서명이 있어야 적립되지만 인증 없는 라우트라 한도는 둔다 — 정상 콜백이

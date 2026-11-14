@@ -199,3 +199,21 @@ describe('카카오 연결 해제 웹훅 — 계정에 하는 일', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('카카오 연결 해제 웹훅 — 전역 IP 한도', () => {
+  it('공용 IP 버킷(300)에서 빠지고 전용 버킷이 센다 — 카카오는 해제를 다시 보내 주지 않는다(코덱스 #994)', async () => {
+    const { ipRateLimitMiddleware, kakaoWebhookRateLimitMiddleware } = await import('../src/middleware/rateLimit');
+    const app = new Hono();
+    app.use('*', ipRateLimitMiddleware);
+    app.use('/api/kakao/*', kakaoWebhookRateLimitMiddleware);
+    app.on(['GET', 'POST'], '/api/kakao/unlink', (c) => c.text('ok'));
+    app.get('/api/other', (c) => c.text('ok'));
+    const headers = { 'cf-connecting-ip': '203.0.113.77' };
+    for (let i = 0; i < 301; i++) {
+      const method = i % 2 === 0 ? 'GET' : 'POST';
+      expect((await app.request('/api/kakao/unlink', { method, headers })).status).toBe(200);
+    }
+    // 같은 IP 의 다른 공개 요청은 여전히 공용 버킷에 묶인다(웹훅이 그 버킷을 쓰지 않았다).
+    expect((await app.request('/api/other', { headers })).status).toBe(200);
+  });
+});
