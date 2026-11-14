@@ -2103,6 +2103,12 @@ internal fun AlarmEditorScreen(
                 },
                 manualRemaining = manualQuota?.remaining,
                 manualLimit = manualQuota?.limit,
+                manualChangeEnabled = AdRewardGate.canChangeManualText(
+                    freeVoiceTier,
+                    manualQuota?.remaining,
+                    manualQuota?.adReward,
+                    RewardedAds.configured && adRewardSessions != null,
+                ),
                 weatherCountry = editor.voiceWeatherCountry,
                 weatherCity = editor.voiceWeatherCity,
                 savedWeatherCountry = activeDynamicPromptPreferences.weatherCountry,

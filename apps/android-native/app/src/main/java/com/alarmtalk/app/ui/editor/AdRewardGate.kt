@@ -49,6 +49,23 @@ internal object AdRewardGate {
     fun canOfferAd(freeVoiceTier: Boolean, adReward: AdRewardStatus?, adsConfigured: Boolean): Boolean =
         freeVoiceTier && adsConfigured && adReward != null && adReward.canWatch && adReward.remainingGrants > 0
 
+    /**
+     * 직접 입력 문구의 '변경하기' 를 눌리게 둘까(2026-11-15 오너 — 0/3 이면 회색). 새 문구를 **만들 길이 하나도 없을 때만**
+     * 끈다: 유료는 이번 달 남은 수가 0 일 때, 무료는 기본분·보상·확인 중인 보상이 없고 광고도 못 볼 때([route] 가
+     * `NEXT_DATE`). 광고가 열려 있으면 무료 0/3 도 눌린다 — 바꾸고 저장하면 광고 안내로 간다.
+     * ⚠ **모르면 끄지 않는다**(`baseRemaining == null` — 응답 전·오프라인). 모르는 것은 '0' 이 아니다.
+     */
+    fun canChangeManualText(
+        freeVoiceTier: Boolean,
+        baseRemaining: Int?,
+        adReward: AdRewardStatus?,
+        adsConfigured: Boolean,
+    ): Boolean = when {
+        baseRemaining == null -> true
+        !freeVoiceTier -> baseRemaining > 0
+        else -> route(freeVoiceTier, baseRemaining, adReward, adsConfigured) != ManualCreationRoute.NEXT_DATE
+    }
+
     /** §1-1 표 그대로. [baseRemaining] 은 이번 달 남은 기본분(모르면 null — 0 으로 본다). */
     fun route(
         freeVoiceTier: Boolean,

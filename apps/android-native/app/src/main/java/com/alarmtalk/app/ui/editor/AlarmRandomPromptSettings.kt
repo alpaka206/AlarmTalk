@@ -66,6 +66,8 @@ internal fun RandomPromptSettingsPane(
     // 직접 입력 옵션에 '(남은/총)' 을 붙여 이번 달 남은 만들기 횟수를 보여준다(유료·limit>0 일 때).
     manualRemaining: Int? = null,
     manualLimit: Int? = null,
+    /** 직접 입력 문구의 '변경하기' 를 눌리게 둘까 — 새로 만들 길이 없으면 false(`AdRewardGate.canChangeManualText`). */
+    manualChangeEnabled: Boolean = true,
     /**
      * 이 목소리로 **실제로 고를 수 있는** 문구 종류(`EditorMessageContexts` 의 부분집합, 순서 유지).
      *
@@ -336,6 +338,8 @@ internal fun RandomPromptSettingsPane(
                     RandomPromptDetailRow(
                         title = stringResource(R.string.editorp_random_manual_title),
                         value = draftManualText,
+                        // 이번 달 더 만들 길이 없으면 회색(옆의 '직접 입력 (0/3)' 이 이유를 말한다).
+                        changeEnabled = manualChangeEnabled,
                         // 값만 고치는 자리다 — 취소해도 종류 선택은 그대로여야 하므로
                         // 되돌릴 자리를 비운다(위 `contextBeforeDialog` 주석).
                         onChange = {
@@ -559,6 +563,8 @@ internal fun RandomPromptDetailRow(
     onChange: (() -> Unit)? = null,
     // 값 아래 작은 안내(예: 목록에 없는 옛 지역 — "목록에서 다시 골라 주세요").
     hint: String? = null,
+    // false 면 '변경하기' 를 흐리게 두고 누르지 못한다(직접 입력을 이번 달 더 만들 수 없을 때).
+    changeEnabled: Boolean = true,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -608,7 +614,7 @@ internal fun RandomPromptDetailRow(
                 }
             }
             if (onChange != null) {
-                TextButton(onClick = onChange) {
+                TextButton(onClick = onChange, enabled = changeEnabled) {
                     Text(
                         text = stringResource(R.string.editorp_random_detail_change),
                         // iOS 는 `bodyMedium.weight(.semibold)` = 14 SemiBold.

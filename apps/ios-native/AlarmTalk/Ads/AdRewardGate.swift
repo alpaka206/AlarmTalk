@@ -29,6 +29,20 @@ enum AdRewardGate {
         return adReward.canWatch && adReward.remainingGrants > 0
     }
 
+    /// 직접 입력 문구의 '변경하기' 를 눌리게 둘까(2026-11-15 오너 — 0/3 이면 회색). 새 문구를 **만들 길이 하나도 없을 때만**
+    /// 끈다: 유료는 이번 달 남은 수가 0 일 때, 무료는 `route` 가 `.nextDate` 일 때(기본분·보상·확인 중인 보상이 없고 광고도 못 본다).
+    /// ⚠ **모르면 끄지 않는다**(`baseRemaining == nil`). 안드로이드 `AdRewardGate.canChangeManualText` 와 같다.
+    static func canChangeManualText(
+        freeTier: Bool,
+        baseRemaining: Int?,
+        adReward: AdRewardStatus?,
+        adsConfigured: Bool
+    ) -> Bool {
+        guard let baseRemaining else { return true }
+        if !freeTier { return baseRemaining > 0 }
+        return route(freeTier: true, baseRemaining: baseRemaining, adReward: adReward, adsConfigured: adsConfigured) != .nextDate
+    }
+
     /// §1-1 표 그대로. `baseRemaining` 은 이번 달 남은 기본분(모르면 nil — 0 으로 본다).
     static func route(
         freeTier: Bool,

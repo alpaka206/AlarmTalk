@@ -424,6 +424,12 @@ struct AlarmEditorSheet: View {
                 manualRemaining: manualQuota?.remaining,
                 manualLimit: manualQuota?.limit,
                 manualAdCredits: manualQuota?.adReward?.credits,
+                manualChangeEnabled: AdRewardGate.canChangeManualText(
+                    freeTier: planAccess == .free,
+                    baseRemaining: manualQuota?.remaining,
+                    adReward: manualQuota?.adReward,
+                    adsConfigured: RewardedAds.shared.configured && auth.session != nil
+                ),
                 savedWeatherCountry: voiceStudio.weatherCountry,
                 savedWeatherCity: voiceStudio.weatherCity,
                 savedFortuneGender: voiceStudio.fortuneGender,
