@@ -66,6 +66,8 @@ internal fun AlarmListScreen(
     alarmsLoaded: Boolean,
     authSession: AuthSession?,
     voiceProfiles: List<VoiceProfile>,
+    /** 교체 정리가 끝나지 않은 목소리 — 목소리 탭 목록에 보이지 않는다(`VoiceProfileManagementPanel`). */
+    settlingVoiceProfileIds: Set<String> = emptySet(),
     pendingVoiceDraft: VoiceProfile?,
     voiceProfileBusy: Boolean,
     // 목소리 탭에서 한 일이 안 됐다는 이유(`MainViewModel.voiceTabError`) — 탭 맨 위에 빨간 글자로.
@@ -281,6 +283,7 @@ internal fun AlarmListScreen(
                     VoiceProfileManagementPanel(
                         onCreateAlarmWithVoice = onCreateAlarmWithVoice,
                         voiceProfiles = voiceProfiles,
+                        settlingVoiceProfileIds = settlingVoiceProfileIds,
                         pendingVoiceDraft = pendingVoiceDraft,
                         voiceProfileBusy = voiceProfileBusy,
                         subscriptionResponse = subscriptionResponse,

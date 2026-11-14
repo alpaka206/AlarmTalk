@@ -498,12 +498,16 @@
   `12초 이상 녹음해 주세요`로 바뀌며, 유효한 녹음처럼 `녹음을 저장했어요`라고 말하지 않는다.
   재생·다시 녹음 버튼은 12초 이상 녹음이 준비된 뒤에만 나타나고, 짧은 녹음 상태에서는
   마이크 버튼으로 바로 다시 시작한다.
-- 음원 준비의 `녹음/파일` 선택은 양쪽이 같은 폭·높이의 2분할 버튼이다. 제목 글자만 작은
-  캡슐로 남기지 않으며, 전체 칸이 보이는 버튼과 터치 영역이 된다.
+- 음원 준비의 `녹음/파일` 선택은 날씨 지역 시트의 나라 고르기(대한민국·일본·미국)와 **같은 세그먼트**다
+  (2026-11-15 오너). 두 칸은 같은 폭이고 칸 전체가 터치 영역이다 — 안드로이드 `EditorSegmentedSelector`,
+  iOS 시스템 `.segmented` 피커. 녹음 안내는 "너무 짧으면 목소리가 다르게 나올 수 있어요." 한 줄이다 —
+  "허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요." 는 2026-11-15 오너 지시로 지웠다.
 - 접힌 예시 대본은 카드 높이와 화살표가 함께 부드럽게 이어진다. 시스템의 동작 줄이기 설정을
   존중하며, 전개 애니메이션이 끝날 때까지 입력을 막지 않는다.
 - `내 목소리` 머리의 월 등록 한도는 **`생성 가능 n/m회`** 로 쓴다. `이번 달 n/m` 만
-  쓰면 무엇을 세는지, 남은 횟수인지 사용한 횟수인지 알 수 없다. `n` 은 이번 달(KST)
+  쓰면 무엇을 세는지, 남은 횟수인지 사용한 횟수인지 알 수 없다. **무료(내 목소리를 쓸 수 없는 계정)는
+  `생성 가능 0/0회`** 다(2026-11-15 오너 "생성 못하는 상태면 0/0회로 표시") — 만들 몫이 없다는 사실 그대로이고,
+  `0/1회` 처럼 이용권이 있는데 다 쓴 것으로 읽히지 않는다. `추가` 는 끄지 않는다 — 누르면 이용권 안내다. `n` 은 이번 달(KST)
   정식 등록 원장의 남은 횟수라 앱에 `1/1` 을 박아 추정하지 않는다. 다만 목소리 목록·초안과
   독립인 조회이므로 새로고침을 시작할 때 함께 병렬로 요청해 추가 왕복을 만들지 않는다.
   **언제 다시 읽는지**는 아래 「월 등록 한도」에 있다 — 한 번 읽은 값을 프로세스가 끝날 때까지 들고
@@ -2967,7 +2971,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 남은 세대 판정 | — | **세대 값**으로 가른다(`applied` 초과만 남김) — 겹치는 알람 id 로 가르면 뒤 세대 칸을 지운다 | — |
 | 변화 없는 회차도 확인은 잇는다 | — | `applyIfChanged` — 바뀐 게 없어도 남은 칸이 있으면 **확인만** 이어서 한다 | — |
 | 미확인 목록은 세대별로 | — | `pendingApply` 가 세대별 칸에 담고 **확인은 전부·제거는 내 것만** | — |
-| 정리 중인 교체 목소리 | `settlingVoiceProfileIds` — 목록엔 두되 흐리게, **자동 선택·저장 게이트에서 제외** | `isReplacementSettling` — 같은 규칙(`selectDefaultVoiceProfileIfNeeded`·저장 판정·저장 알럿) | — |
+| 정리 중인 교체 목소리 | `settlingVoiceProfileIds` — **고르기 시트·목소리 탭 목록에서 뺀다**(2026-11-15 오너. 그전에는 흐리게 두었다 — `VoiceAudioCard` 의 `readyOwnProfiles`·`VoiceProfileManagementPanel` 의 `VoiceCatalogGroup`), **자동 선택·저장 게이트에서 제외** | `isReplacementSettling` — 같은 규칙(편집기 `voiceProfileOptions`·목소리 탭 `visibleOwnVoices` 에서 뺀다, `selectDefaultVoiceProfileIfNeeded`·저장 판정·저장 알럿) | — |
 | 표식 확정은 예약까지 | `commitLocked` — 디스크 실패 시 **메모리도 되돌려** 재시도 가능 | `confirmIfReservationsSettled` — 옛 예약 해제 실패면 확정 보류 | — |
 | 푸시를 놓쳐도 수렴 | `VoiceReplacementMarkerStore` + `reconcileInaccessibleVoiceAlarms` | `VoiceReplacementMarkerStore` + `onAuthoritativeRefresh` | `voice_profiles.custom_audio_invalidated_at` (마이그레이션 #106) |
 | 직접 입력 판정(로컬) | `AlarmEntity.usesCustomMessageVoice()` | `LocalAlarmRecord.usesCustomMessageVoice` | `messages.category = 'custom'` |

@@ -15,6 +15,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
 import androidx.compose.ui.text.style.TextAlign
@@ -54,9 +55,15 @@ fun ClipPreparationScreen(
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.padding(top = 16.dp))
+        // ⚠ **막대 끝의 점(머티리얼 기본 stop indicator)과 틈을 끈다**(2026-11-15 오너 "끝에 표시는 왜 있는거야").
+        // 목소리 만들기의 진행 막대(`VoiceProfileManagementPanel`)와 같은 모양이다 — iOS `ProgressView` 에도 점이 없다.
         LinearProgressIndicator(
             progress = { percent / 100f },
             modifier = Modifier.fillMaxWidth().widthIn(max = 280.dp),
+            strokeCap = StrokeCap.Round,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
         )
         Spacer(Modifier.padding(top = 16.dp))
         Text(

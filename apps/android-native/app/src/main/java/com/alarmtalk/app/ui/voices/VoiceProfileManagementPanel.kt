@@ -351,6 +351,11 @@ private fun RerecordReasonLine(text: String) {
 @Composable
 internal fun VoiceProfileManagementPanel(
     voiceProfiles: List<VoiceProfile>,
+    /**
+     * 교체 정리가 끝나지 않은 목소리 — 목록 행에서 **뺀다**(2026-11-15 오너 "목소리페이지에서도 안뜨게").
+     * 교체 대상 판정(`replaceTargetVoice`)은 그대로 `ownVoices` 를 본다 — 보이지 않을 뿐 등록된 목소리다.
+     */
+    settlingVoiceProfileIds: Set<String> = emptySet(),
     pendingVoiceDraft: VoiceProfile?,
     voiceProfileBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
@@ -2068,23 +2073,26 @@ internal fun VoiceProfileManagementPanel(
             title = stringResource(R.string.voices_my_voices_title),
         ) {
             // 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
-            // 유료 사용자에게만 의미가 있다(무료는 눌렀을 때 이용권 안내로 간다).
-            // 유료만 숫자를 본다. 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면 이미 다 쓴
-            // 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고 눌렀을 때 안내한다.
+            // ⚠ **무료는 '생성 가능 0/0회'다**(2026-11-15 오너 "생성 못하는 상태면 0/0회로 표시"). 만들 몫이 없다는
+            // 사실 그대로다 — '0/1회'는 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 되므로 쓰지 않는다.
+            // 유료는 서버 원장의 남은/총 횟수다. iOS `addVoiceHeaderTrailing` 과 같은 판정이다.
             val monthlyQuota = voiceDraftQuota?.takeIf { canCreateVoice && it.registrationLimit > 0 }
-            monthlyQuota?.let { quota ->
-                MutedText(
-                    stringResource(
-                        R.string.voices_monthly_quota,
-                        quota.registrationRemaining.coerceAtLeast(0),
-                        quota.registrationLimit,
-                    ),
+            val quotaLabel = when {
+                !canCreateVoice -> stringResource(R.string.voices_monthly_quota, 0, 0)
+                monthlyQuota != null -> stringResource(
+                    R.string.voices_monthly_quota,
+                    monthlyQuota.registrationRemaining.coerceAtLeast(0),
+                    monthlyQuota.registrationLimit,
                 )
+                else -> null
+            }
+            quotaLabel?.let { label ->
+                MutedText(label)
                 Spacer(modifier = Modifier.width(10.dp))
             }
             // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 옆에 '생성 가능 0/1회'가 있어
-            // 왜 흐린지가 그 자리에서 읽힌다. 무료는 숫자가 없으니 끄지 않고(왜 흐린지 알 길이
-            // 없다) 항상 눌리게 두어 이용권 안내 모달로 보낸다.
+            // 왜 흐린지가 그 자리에서 읽힌다. 무료는 끄지 않는다 — 누르면 이용권 안내 모달로 간다(만들 길이
+            // 이용권뿐이라는 걸 알려 주는 유일한 자리다).
             val monthlyExhausted = monthlyRegistrationUsedUp(monthlyQuota)
             Button(
                 onClick = {
@@ -2105,7 +2113,7 @@ internal fun VoiceProfileManagementPanel(
         }
 
         VoiceCatalogGroup(
-            ownVoices.map { profile ->
+            ownVoices.filter { it.id !in settlingVoiceProfileIds }.map { profile ->
                 {
                     // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬
                     // 다운로드 중 "다운로드 중" → 둘 다 완료면 표시 없음.
@@ -2484,14 +2492,8 @@ internal fun VoiceProfileManagementPanel(
                                         onRedoRecording = { discardRecordedAudio() },
                                     )
                                     rerecordReason?.let { reason -> RerecordReasonLine(reason) }
-                                    // 곁에 없는 사람의 목소리를 등록하려는 경우가 흔하다.
-                                    // 업로드할 파일이 없어도 방법이 있다는 걸 알려 준다.
-                                    // 두 안내를 마침표마다 줄을 나눠 둔다 — 한 문단으로 붙이면
-                                    // 서로 다른 이야기가 한 덩어리로 읽힌다.
-                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        MutedText(stringResource(R.string.voices_record_status_hint))
-                                        MutedText(stringResource(R.string.voices_record_video_tip))
-                                    }
+                                    // '영상을 틀고 녹음해도 돼요' 줄은 2026-11-15 오너 지시로 지웠다 — 되살리지 말 것.
+                                    MutedText(stringResource(R.string.voices_record_status_hint))
                                     // 남은 화면 높이를 대사 카드가 채운다(내용이 짧으면 그만큼만).
                                     // 짧은 창 폴백에선 페이지가 스크롤되므로 weight 대신 높이 캡.
                                     VoiceRecordScriptCard(

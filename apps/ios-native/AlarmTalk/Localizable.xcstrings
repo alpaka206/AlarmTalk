@@ -5446,23 +5446,6 @@
         }
       }
     },
-    "허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Have permission but no audio file? Play a video of them and record that."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "許可を得た声で音源がなければ、動画を流して録音しても大丈夫です。"
-          }
-        }
-      }
-    },
     "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10586,6 +10569,28 @@
         }
       }
     },
+    "voice.capture.mode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How to add"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加方法"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "만드는 방법"
+          }
+        }
+      }
+    },
     "voice.section.own" : {
       "localizations" : {
         "en" : {
@@ -11585,40 +11590,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "毎週：%@"
-          }
-        }
-      }
-    },
-    "목소리 정리 중이에요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Finishing up this voice"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音声を整理中です"
-          }
-        }
-      }
-    },
-    "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We’re finishing up your replaced voice. Please pick it again in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "変更した音声を整理しています。しばらくしてからもう一度選んでください。"
           }
         }
       }

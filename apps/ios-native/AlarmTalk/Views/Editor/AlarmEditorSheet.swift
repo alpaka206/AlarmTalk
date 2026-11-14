@@ -1196,20 +1196,17 @@ struct AlarmEditorSheet: View {
         // ⚠ **무료면 내 목소리를 아예 보이지 않는다**(2026-11-09 오너: "잠금 표시도 할 필요 없이 노출할 필요 자체가 없어").
         //   예전 iOS 는 자물쇠를 달아 두고 누르면 이용권 알럿을 띄웠다. 무료는 기본 목소리만 쓸 수 있으니(서버 `tts.ts`) 고를 수
         //   없는 것을 늘어놓지 않는다 — 안드로이드 `editorVisibleVoiceProfiles` 와 같다(무료면 기본 목소리만).
+        // ⚠ **교체 정리가 끝나지 않은 목소리(정리 중)도 보이지 않는다**(2026-11-15 오너 "정리중이면 안뜨게" — 2026-08-25 의
+        //   '자리에 두고 흐리게' 를 뒤집었다). 이미 그 목소리를 고른 알람은 저장(`finishScheduling`)이 막는다.
         let own = (freeVoiceTier ? [] : voiceStudio.profiles)
-            .filter { $0.isReadyForAlarmSelection && !isSystemVoice($0) }
+            .filter { $0.isReadyForAlarmSelection && !isSystemVoice($0) && !voiceStudio.isReplacementSettling($0.id) }
             .map {
                 VoiceSelectionSheet.Option(
                     id: $0.id,
                     name: $0.displayName,
                     // 관계 라벨이 아니라 '내 목소리' — 안드로이드 `ownedVoiceDetail`.
                     detail: ownVoiceOptionDetail(),
-                    locked: false,
-                    // 교체 정리가 끝나지 않은 목소리는 **자리에 두되 못 고른다** — 감추면
-                    // 사라진 것으로 보여 고장으로 읽힌다.
-                    unavailableReason: voiceStudio.isReplacementSettling($0.id)
-                        ? String(localized: "목소리 정리 중이에요")
-                        : nil
+                    locked: false
                 )
             }
         let system = voiceStudio.profiles
@@ -1277,16 +1274,8 @@ struct AlarmEditorSheet: View {
             showVoicePlanLockedAlert()
             return
         }
-        // 교체 정리가 끝나지 않은 목소리 — 지금 고르면 뒤이은 정리가 그 알람까지 되돌릴 수
-        // 없이 벗긴다. 이유를 말하고 물러선다(행은 목록에 그대로 있다).
-        if option.unavailableReason != nil {
-            voiceGateAlert = VoiceGateAlertContent(
-                title: String(localized: "아직 준비 중이에요"),
-                message: String(localized: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요."),
-                offersPlanActions: false
-            )
-            return
-        }
+        // 교체 정리가 끝나지 않은 목소리는 목록에 없으니(`voiceProfileOptions`) 여기 올 일이 없다. 이미 고른 알람은
+        // 저장(`finishScheduling`)이 막는다.
         // '직접 녹음' 은 프로필이 아니라 **갈래 전환**이다. 예전에는 이 전환을 세그먼트의
         // `.onChange` 가 맡았는데, 세그먼트를 없앴으니 부수효과도 여기로 옮긴다 —
         // 준비된 음성 무효화 / 미리듣기 정지 / (TTS 로 돌아갈 때) 녹음 중단.

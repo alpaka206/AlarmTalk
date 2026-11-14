@@ -229,7 +229,6 @@
     <string name="editor_voice_row_title">Voice</string>
     <string name="editor_voice_select">Select voice</string>
     <string name="editor_voice_select_title">Choose a voice</string>
-    <string name="editor_voice_replacement_settling">Finishing up this voice</string>
     <string name="editor_block_voice_settling_title">Almost ready</string>
     <string name="msg_voice_replacement_settling">We’re finishing up your replaced voice. Please pick it again in a moment.</string>
     <string name="editor_voice_source_local">Record it</string>
@@ -441,7 +440,6 @@
     <string name="voices_record_done">Recording saved</string>
     <string name="common_voice_record_preview">Play recording</string>
     <string name="common_voice_record_again">Record again</string>
-    <string name="voices_record_video_tip">Have permission but no audio file? Play a video of them and record that.</string>
     <string name="voices_record_script_title">Example script</string>
     <string name="voices_record_too_short">Record at least 12 seconds</string>
     <string name="voices_record_status_hint">Too short and the voice may not match.</string>

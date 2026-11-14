@@ -240,10 +240,8 @@ internal fun AlarmEditorScreen(
      */
     storeEntitledNow: Boolean,
     voiceProfiles: List<VoiceProfile>,
-    /** 교체 정리가 끝나지 않아 아직 고를 수 없는 목소리들(흐리게 그리고 못 고르게 한다). */
+    /** 교체 정리가 끝나지 않아 아직 고를 수 없는 목소리들 — 고르기 시트에 보이지 않고, 이미 고른 알람은 저장이 막힌다. */
     settlingVoiceProfileIds: Set<String> = emptySet(),
-    /** 그 목소리를 눌렀을 때 이유를 알린다. */
-    onVoiceUnavailable: (String) -> Unit = {},
     voiceProfileBusy: Boolean,
     voiceProfileLoadFinished: Boolean,
     stockClips: List<StockClip>,
@@ -1931,7 +1929,6 @@ internal fun AlarmEditorScreen(
                             editor = editor,
                                 voiceProfiles = visibleVoiceProfiles,
                                 settlingVoiceProfileIds = settlingVoiceProfileIds,
-                                onVoiceUnavailable = onVoiceUnavailable,
                                 // 미리듣기는 id 로 인사말 클립을 찾는다(기본 목소리는 내장 인사말).
                                 onPreviewVoice = { voiceId -> voicePreview.previewVoice(voiceId, stockClips) },
                                 previewPlayingVoiceId = voicePreview.playingVoiceId,

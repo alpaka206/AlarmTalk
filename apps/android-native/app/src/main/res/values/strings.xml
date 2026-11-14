@@ -238,7 +238,6 @@
     <string name="editor_voice_row_title">목소리</string>
     <string name="editor_voice_select">목소리 선택</string>
     <string name="editor_voice_select_title">목소리 고르기</string>
-    <string name="editor_voice_replacement_settling">목소리 정리 중이에요</string>
     <string name="editor_block_voice_settling_title">아직 준비 중이에요</string>
     <string name="msg_voice_replacement_settling">바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.</string>
     <string name="editor_voice_source_local">직접 녹음</string>
@@ -463,7 +462,6 @@
     <string name="voices_record_done">녹음을 저장했어요</string>
     <string name="common_voice_record_preview">녹음 들어보기</string>
     <string name="common_voice_record_again">다시 녹음</string>
-    <string name="voices_record_video_tip">허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요.</string>
     <string name="voices_record_script_title">예시 대본</string>
     <string name="voices_record_too_short">12초 이상 녹음해 주세요</string>
     <string name="voices_record_status_hint">너무 짧으면 목소리가 다르게 나올 수 있어요.</string>

@@ -455,12 +455,10 @@ struct VoiceCloneUploadFlow: View {
         if sourceMode == .record {
             recordingSection
             rerecordReasonLine
-            VStack(alignment: .leading, spacing: 4) {
-                Text(String(localized: "너무 짧으면 목소리가 다르게 나올 수 있어요."))
-                Text(String(localized: "허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요."))
-            }
-            .font(theme.typography.bodySmall)
-            .foregroundStyle(theme.palette.onSurfaceVariant)
+            // '영상을 틀고 녹음해도 돼요' 줄은 2026-11-15 오너 지시로 지웠다 — 되살리지 말 것.
+            Text(String(localized: "너무 짧으면 목소리가 다르게 나올 수 있어요."))
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
             scriptSection
         } else {
             fileSection
@@ -606,29 +604,16 @@ struct VoiceCloneUploadFlow: View {
         .padding(.vertical, 72)
     }
 
+    /// 녹음 / 파일 — 날씨 지역 시트의 나라 고르기(`WeatherRegionPickerSheet`)와 **같은 시스템 세그먼트**다
+    /// (2026-11-15 오너 "대한민국, 일본, 미국처럼"). 예전에는 캡슐 버튼 두 개였다. 안드로이드 짝은 `VoiceCaptureModeSelector`.
     private var sourceModeSection: some View {
-        HStack(spacing: 8) {
+        Picker(String(localized: "voice.capture.mode", defaultValue: "만드는 방법"), selection: $sourceMode) {
             ForEach(VoiceCloneSourceMode.allCases) { mode in
-                // 두 갈래는 버튼 스타일·색만 다르다.
-                let label = Text(mode.label)
-                    .font(theme.typography.bodyMedium.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 5)
-                if sourceMode == mode {
-                    Button { sourceMode = mode } label: { label }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                        .tint(theme.palette.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                } else {
-                    Button { sourceMode = mode } label: { label }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .tint(theme.palette.primary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
+                Text(mode.label).tag(mode)
             }
         }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("voice-capture-mode")
     }
 
     private var fileSection: some View {
