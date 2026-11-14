@@ -268,8 +268,29 @@ AdMob 은 200 이 아니면 다시 부른다(공식 재전송은 짧다 — 1초
    목적은 광고·분석·부정 방지, '추적'(타사 데이터와 결합한 타깃팅)은 iOS 에서 하지 않는다. Play '광고 포함' 표시, App Store
    심사 메모(보상형 광고 위치·코드 없음)도 함께 바꾼다.
 6. **Play Console** — ⚠ 광고를 켜기 전에는 앱 매니페스트가 광고 SDK 의 `AD_ID`·`ACCESS_ADSERVICES_*` 권한을 **뺀다**
-   (`tools:node="remove"`, 1.2.16 — 쓰지 않는 광고 ID 를 두면 Play 가 신고를 요구한다). 켜는 회차에 그 줄을 지운다. 유럽 등의
+   (`tools:node="remove"`, 1.2.16 — 쓰지 않는 광고 ID 를 두면 Play 가 신고를 요구한다). 켜는 회차에 그 줄을 지운다
+   (**2026-11-15 지웠다** — 광고를 넣어 출시한다. 그 빌드를 올리기 전에 Play 의 광고 ID 신고·데이터 보안·'광고 포함' 을 고친다). 유럽 등의
    동의 양식(UMP)은 앱에 있다 — AdMob 콘솔의 '개인정보 보호 및 메시지' 에서 GDPR 메시지를 만들어 게시해야 실제로 뜬다.
+
+### 연결 기록 (2026-11-15)
+
+- **AdMob 계정**: 오너가 고른 구글 계정의 기존 애드센스 게시자(`pub-1595468297676450`, 개인, 지급 통화 USD)로 만들었다.
+  계정 검토는 최대 24시간이다.
+- **앱**: 안드로이드 `ca-app-pub-1595468297676450~9176554305`(com.alarmtalk.app), iOS `ca-app-pub-1595468297676450~1837120339`
+  (App Store 6799711245). 둘 다 '검토 필요 · 광고 게재 제한' 으로 시작한다 — app-ads.txt 인증이 풀어 준다.
+- **보상형 광고 단위**(보상 1개 · `manual_tts`, SSV 주소는 AdMob 의 '콜백 URL 확인' 을 통과했다):
+  안드로이드 운영 `…/9188337603` · dev `…/1400191979`, iOS 운영 `…/7468061820` · dev `…/4758138009`(앞부분은 모두
+  `ca-app-pub-1595468297676450`).
+- **app-ads.txt**: `apps/landing/public/app-ads.txt`. 랜딩이 배포된 뒤 AdMob 앱 목록에서 '업데이트 확인' 을 누른다. AdMob 은
+  스토어 등록정보의 개발자 웹사이트 도메인 루트에서 찾는다.
+- **워커**: `ADMOB_REWARDED_AD_UNITS` 를 dev(dev 단위 둘)·운영(운영 단위 둘)에 넣었다. **`ADMOB_REWARDED_ADS_ENABLED` 는 아직
+  꺼 두었다** — 출시 회차에 운영에서 켠다.
+- **빌드**: 운영만 실제 ID 다(안드로이드 `~/.gradle/gradle.properties` 의 `alarmTalkProdAdmob*`, iOS `Local.xcconfig` 의
+  `[config=Release]`). dev·DEBUG 는 Google 시험 단위 그대로다 — 개발 기기에서 실광고를 보거나 누르면 무효 트래픽으로 새 계정이
+  막힐 수 있다. dev 단위로 흐름을 보려면 먼저 AdMob 에 테스트 기기를 등록한다.
+- iOS `Info.plist` 에 `SKAdNetworkItems`(Google `cstr6suwn9.skadnetwork`)를 넣었다.
+- **남은 일**: Play 광고 ID 신고·데이터 보안·'광고 포함', App Store 개인정보 라벨(`docs/legal/store-disclosures.ko.md` 의 표를
+  다시 쓴다), 유럽 등에 배포하면 AdMob '개인정보 보호 및 메시지' 의 GDPR 메시지 게시, 출시 회차의 스위치 켜기와 7번 공개 문구.
 
 7. **공개 문구 — 출시 때 추가할 문장**(2026-10-26, v1.3 W17). 지금의 랜딩·`llms.txt`·스토어 설명 원문((D))에는 광고 보상을
    **쓰지 않았다** — 운영에 나가지 않은 기능을 광고하면 메타데이터가 실제 기능과 어긋난다(App Store 2.3·Play 메타데이터 정책).
