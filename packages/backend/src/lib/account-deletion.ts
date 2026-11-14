@@ -27,8 +27,25 @@ export interface AccountDeletionRequest {
  * 카카오 연결이 카카오 쪽에서 끊겼을 때의 웹훅(`routes/kakao-webhook.ts`). 두 길이 같은 규칙을 지나도록 여기 한 곳에 둔다.
  * [userKey] 는 계정 id(또는 옛 토큰의 구글 id)다.
  */
-export async function requestAccountDeletion(db: Client, userKey: string, now: Date): Promise<AccountDeletionRequest> {
+/**
+ * 카카오로만 가입했고 아직 유예가 아닌 계정 — 카카오 연결 해제 웹훅이 신청할 수 있는 조건(개발자 고정 조각).
+ * ⚠ **쓰기 문장 안에서 다시 본다**(코덱스 #994). 웹훅이 계정을 읽은 뒤 쓰기 전에 구글·애플 로그인이 같은 이메일로 그 계정에
+ *   붙을 수 있다 — 읽은 값으로만 판단하면 다른 로그인 수단이 생긴 계정을 유예로 넘긴다.
+ */
+const KAKAO_ONLY_ACTIVE_SQL = ` AND kakao_id IS NOT NULL
+              AND COALESCE(password_hash, '') = ''
+              AND COALESCE(google_id, '') = ''
+              AND COALESCE(apple_id, '') = ''
+              AND deletion_status != 'pending_deletion'`;
+
+export async function requestAccountDeletion(
+  db: Client,
+  userKey: string,
+  now: Date,
+  options: { onlyIfKakaoOnlyActive?: boolean } = {},
+): Promise<AccountDeletionRequest> {
   const purgeAt = new Date(now.getTime() + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
+  const eligibility = options.onlyIfKakaoOnlyActive ? KAKAO_ONLY_ACTIVE_SQL : '';
   // 트랜잭션이 다시 돌면 다시 채운다.
   let pushTargets: DeletedPushTarget[] = [];
   const res = await withRetryableWriteTransaction(db, async (tx) => {
@@ -40,7 +57,7 @@ export async function requestAccountDeletion(db: Client, userKey: string, now: D
                 deletion_purge_at = ?,
                 token_epoch = token_epoch + 1,
                 updated_at = datetime('now')
-            WHERE google_id = ? OR id = ?`,
+            WHERE (google_id = ? OR id = ?)${eligibility}`,
       args: [now.toISOString(), purgeAt.toISOString(), userKey, userKey],
     });
     if (updated.rowsAffected > 0) {

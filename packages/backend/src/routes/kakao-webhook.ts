@@ -57,22 +57,30 @@ kakaoWebhook.on(['GET', 'POST'], '/unlink', async (c) => {
     return c.body(null, 200);
   }
 
-  try {
-    const result = await handleKakaoUnlink(getDB(c.env), kakaoId, new Date());
-    // 회원번호는 적지 않는다(사람을 가리키는 값). 무엇을 했는지만 남긴다.
-    logStructured('info', { at: 'auth.kakao.unlink_webhook', referrer_type: referrerType, outcome: result.outcome });
-    if (result.pushTargets.length > 0) {
-      // 다른 기기에 '탈퇴 신청됨' 신호(`POST /user/me/deletion` 과 같다). 놓쳐도 그 기기의 다음 요청이 403 으로 같은 정리를 한다.
-      const targets = result.pushTargets;
-      try {
-        c.executionCtx.waitUntil(sendAccountDeletionRequestedPush(c.env, targets).catch(() => {}));
-      } catch {
-        // executionCtx 없음(테스트)
+  // ⚠ **먼저 200 으로 답하고 처리는 응답 뒤에 잇는다**(코덱스 #994). 카카오는 3초 안의 200 을 요구하는데, DB 조회와 여러 번
+  //   왕복하는 쓰기 트랜잭션을 기다리면 Turso 가 느린 날 그 시간을 넘긴다 — 그러면 카카오가 끊고, 요청에 묶인 처리도 함께 잘린다.
+  //   `waitUntil` 에 맡기면 응답과 상관없이 끝까지 돈다(실패는 경보, '탈퇴 신청됨' 신호도 그 안에서).
+  const work = (async () => {
+    try {
+      const result = await handleKakaoUnlink(getDB(c.env), kakaoId, new Date());
+      // 회원번호는 적지 않는다(사람을 가리키는 값). 무엇을 했는지만 남긴다.
+      logStructured('info', { at: 'auth.kakao.unlink_webhook', referrer_type: referrerType, outcome: result.outcome });
+      if (result.pushTargets.length > 0) {
+        // 다른 기기에 '탈퇴 신청됨' 신호(`POST /user/me/deletion` 과 같다). 놓쳐도 그 기기의 다음 요청이 403 으로 같은 정리를 한다.
+        await sendAccountDeletionRequestedPush(c.env, result.pushTargets).catch(() => {});
       }
+    } catch (err) {
+      logRouteError(c, err);
     }
-  } catch (err) {
-    logRouteError(c, err);
+  })();
+  let deferred = false;
+  try {
+    c.executionCtx.waitUntil(work);
+    deferred = true;
+  } catch {
+    // executionCtx 가 없는 실행(테스트) — 여기서 끝까지 기다린다.
   }
+  if (!deferred) await work;
   return c.body(null, 200);
 });
 

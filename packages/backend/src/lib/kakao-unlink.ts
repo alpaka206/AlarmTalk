@@ -26,7 +26,9 @@ export type KakaoUnlinkOutcome =
   /** 이미 탈퇴 유예다 — 기한을 다시 미루지 않는다. */
   | 'already_pending'
   /** 카카오로만 가입한 계정을 탈퇴 유예로 두었다. */
-  | 'deletion_requested';
+  | 'deletion_requested'
+  /** 읽은 뒤 쓰기 전에 상태가 바뀌었다(다른 로그인 수단이 붙었거나 유예가 됐다) — 바꾸지 않았다. */
+  | 'changed';
 
 export interface KakaoUnlinkResult {
   outcome: KakaoUnlinkOutcome;
@@ -46,8 +48,9 @@ export async function handleKakaoUnlink(db: Client, kakaoId: string, now: Date):
   );
   if (hasOtherLogin) return { outcome: 'other_login', pushTargets: [] };
   if (row.deletion_status === 'pending_deletion') return { outcome: 'already_pending', pushTargets: [] };
-  const request = await requestAccountDeletion(db, String(row.id), now);
+  // 위 판단을 쓰기 문장 안에서 한 번 더 한다 — 그 사이 다른 로그인 수단이 붙었으면 바꾸지 않는다(코덱스 #994).
+  const request = await requestAccountDeletion(db, String(row.id), now, { onlyIfKakaoOnlyActive: true });
   return request.requested
     ? { outcome: 'deletion_requested', pushTargets: request.pushTargets }
-    : { outcome: 'not_found', pushTargets: [] };
+    : { outcome: 'changed', pushTargets: [] };
 }

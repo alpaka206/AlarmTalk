@@ -19,6 +19,7 @@ vi.mock('../src/lib/fcm', async (importOriginal) => ({
 }));
 
 import kakaoWebhook from '../src/routes/kakao-webhook';
+import { requestAccountDeletion } from '../src/lib/account-deletion';
 
 const ADMIN_KEY = 'admin-key-for-test';
 const ENV = {
@@ -46,21 +47,30 @@ const EXECUTION_CTX = {
   props: {},
 } as never;
 
+/** 응답을 받은 뒤 `waitUntil` 로 넘긴 처리까지 끝나기를 기다린다 — 처리는 응답 뒤에 돈다(코덱스 #994). */
+async function settled(response: Promise<Response>) {
+  const res = await response;
+  await Promise.all(waited);
+  return res;
+}
+
 function getUnlink(params: Record<string, string>, auth = `KakaoAK ${ADMIN_KEY}`, env: Env = ENV) {
   const query = new URLSearchParams(params).toString();
-  return buildApp().request(`/kakao/unlink?${query}`, { headers: { Authorization: auth } }, env, EXECUTION_CTX);
+  return settled(buildApp().request(`/kakao/unlink?${query}`, { headers: { Authorization: auth } }, env, EXECUTION_CTX));
 }
 
 function postUnlink(params: Record<string, string>) {
-  return buildApp().request(
-    '/kakao/unlink',
-    {
-      method: 'POST',
-      headers: { Authorization: `KakaoAK ${ADMIN_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(params).toString(),
-    },
-    ENV,
-    EXECUTION_CTX,
+  return settled(
+    buildApp().request(
+      '/kakao/unlink',
+      {
+        method: 'POST',
+        headers: { Authorization: `KakaoAK ${ADMIN_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(params).toString(),
+      },
+      ENV,
+      EXECUTION_CTX,
+    ),
   );
 }
 
@@ -158,6 +168,30 @@ describe('카카오 연결 해제 웹훅 — 계정에 하는 일', () => {
     const res = await getUnlink({ app_id: '1500680', user_id: '111', referrer_type: 'UNLINK_FROM_APPS' });
     expect(res.status).toBe(200);
     expect((await user('kakao-only')).deletion_purge_at).toBe('2026-12-01T00:00:00.000Z');
+  });
+
+  it('처리를 기다리지 않고 먼저 200 으로 답한다 — 처리는 waitUntil 로 응답 뒤에 끝난다(카카오 3초 규칙)', async () => {
+    const query = new URLSearchParams({ app_id: '1500680', user_id: '111', referrer_type: 'UNLINK_FROM_APPS' }).toString();
+    const res = await buildApp().request(
+      `/kakao/unlink?${query}`,
+      { headers: { Authorization: `KakaoAK ${ADMIN_KEY}` } },
+      ENV,
+      EXECUTION_CTX,
+    );
+    expect(res.status).toBe(200);
+    expect(waited).toHaveLength(1);
+    await Promise.all(waited);
+    expect((await user('kakao-only')).deletion_status).toBe('pending_deletion');
+  });
+
+  it('쓰기 문장이 조건을 다시 본다 — 읽은 뒤 다른 로그인 수단이 붙은 계정은 유예로 넘기지 않는다(코덱스 #994)', async () => {
+    // 웹훅이 읽은 뒤 구글 로그인이 같은 이메일로 붙은 상황을 흉내 낸다.
+    await db.execute("UPDATE users SET google_id = 'google-sub' WHERE id = 'kakao-only'");
+    const request = await requestAccountDeletion(db, 'kakao-only', new Date(), { onlyIfKakaoOnlyActive: true });
+    expect(request.requested).toBe(false);
+    expect((await user('kakao-only')).deletion_status).toBe('active');
+    // 비밀번호가 있는 계정·이미 유예인 계정도 같다.
+    expect((await requestAccountDeletion(db, 'kakao-and-email', new Date(), { onlyIfKakaoOnlyActive: true })).requested).toBe(false);
   });
 
   it('모르는 회원번호도 200 이다', async () => {
