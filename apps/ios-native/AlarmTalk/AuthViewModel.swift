@@ -134,13 +134,15 @@ final class AuthViewModel: ObservableObject {
 
     /// 이미 가입된 이메일로 가입을 시도했을 때의 답 — 그 밖의 실패면 nil(호출부가 원래 문장을 쓴다).
     /// 비밀번호 계정이면 로그인으로 돌리고, 소셜 계정이면 그 자리에서 말한다. 소셜은 어느 쪽인지 말하지 않는다 —
-    /// 이 앱의 소셜 로그인은 애플뿐인데 구글로 가입한(안드로이드) 사람도 같은 코드를 받는다.
+    /// 서버는 `provider` 를 싣지만 이 앱의 오류 값(`APIError.server`)이 그 칸을 들고 오지 않는다. 그래서 세 간편 로그인을
+    /// 다 적는다(2026-11-14 카카오 추가 — 예전 문장 "Apple 또는 Google" 은 카카오로 가입한 사람에게 틀린 말이 된다).
+    /// 안드로이드는 `provider` 로 가른다(`MainViewModelAuthActions.kt` 의 `duplicateEmailMessage`).
     nonisolated static func duplicateEmailOutcome(for error: Error) -> (message: String, redirectsToLogin: Bool)? {
         switch (error as? APIError)?.serverErrorCode {
         case "AUTH_EMAIL_TAKEN":
             return (String(localized: "이미 가입된 이메일이에요. 로그인해 주세요."), true)
         case "AUTH_EMAIL_SOCIAL":
-            return (String(localized: "Apple 또는 Google로 가입된 이메일이에요. 처음 가입한 방법으로 로그인해 주세요."), false)
+            return (String(localized: "간편 로그인으로 가입된 이메일이에요. 카카오, Apple, Google 중 처음 가입한 방법으로 로그인해 주세요."), false)
         default:
             return nil
         }
@@ -243,6 +245,44 @@ final class AuthViewModel: ObservableObject {
         defer { isBusy = false }
         await serializeAuthServerMutation { [weak self] in
             await self?.performLoginWithApple(idToken: idToken, name: name, email: email, rawNonce: rawNonce, authorizationCode: authorizationCode, appleUserIdHint: appleUserIdHint)
+        }
+    }
+
+    /// 카카오 로그인 — SDK 가 카카오톡(없으면 카카오계정 웹)을 띄우고, 받은 액세스 토큰을 우리 세션으로 바꾼다.
+    /// 취소는 조용히 끝낸다. 안드로이드 `MainViewModel.finishKakaoLogin` 의 짝.
+    ///
+    /// ⚠ **SDK 단계에서는 `isBusy` 를 세우지 않는다.** 카카오톡으로 넘어갔다가 로그인을 마치지 않고 손으로 돌아오면
+    /// SDK 가 결과를 영영 주지 않을 수 있다 — 그동안 화면 전체가 잠긴다. 잠그는 것은 서버 교환뿐이다.
+    func loginWithKakao() async {
+        guard !isBusy else { return }
+        let outcome: KakaoSignIn.Outcome
+        do {
+            outcome = try await KakaoSignIn.signIn()
+        } catch {
+            reportFailure("Kakao sign-in failed", error)
+            failStatus(String(localized: "카카오 로그인을 완료하지 못했어요. 다시 시도해 주세요."))
+            return
+        }
+        guard case .token(let accessToken) = outcome else { return }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        await serializeAuthServerMutation { [weak self] in
+            await self?.performLoginWithKakao(accessToken: accessToken)
+        }
+    }
+
+    private func performLoginWithKakao(accessToken: String) async {
+        do {
+            let accountRequest = beginAccountRequest()
+            let nextSession = try await AlarmTalkAPI.shared.loginWithKakao(accessToken: accessToken)
+            await adoptSignedInSession(nextSession, accountRequest: accountRequest, method: "kakao")
+            // 애플 로그인과 같은 뒤처리 — 탈퇴 유예 점검과 필수 약관 동의 게이트.
+            await refreshUser()
+            await checkConsentStatus()
+        } catch {
+            reportFailure("Kakao token exchange failed", error)
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "카카오 로그인을 완료하지 못했어요. 다시 시도해 주세요.")))
         }
     }
 
@@ -2485,6 +2525,10 @@ final class AuthViewModel: ObservableObject {
         }
         KeychainStore.deleteSession()
         session = nil
+        // 이 기기의 카카오 토큰도 버린다(로그아웃·탈퇴 신청·자동 만료 모두) — 카카오로 로그인한 적이 없으면 아무것도
+        // 하지 않는다. 카카오 **연결 끊기**는 여기서 하지 않는다: 탈퇴는 30일 안에 다시 로그인하면 철회되므로 서버가 파기
+        // 뒤에 끊는다(`index.ts` 의 유예 파기).
+        KakaoSignIn.discardDeviceToken()
         // 세션이 끝났다 — 떠 있던 요청의 응답은 다음 세션에 적지 않는다(`sessionRevision`).
         sessionRevision &+= 1
         invalidateInFlightConsentStatus(clearGateRequest: true)

@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
@@ -784,6 +785,21 @@ internal fun AlarmTalkApp(
         googleSignInLauncher.launch(GoogleSignIn.getClient(context, options).signInIntent)
     }
 
+    // 카카오 로그인 — SDK 가 카카오톡(없으면 카카오계정 웹)을 띄우고 액세스 토큰을 돌려준다. 취소는 조용히 끝낸다.
+    val kakaoSignInScope = rememberCoroutineScope()
+    fun launchKakaoSignIn() {
+        kakaoSignInScope.launch {
+            when (val result = loginWithKakao(context)) {
+                is KakaoLoginResult.Success -> viewModel.finishKakaoLogin(result.accessToken)
+                KakaoLoginResult.Cancelled -> Unit
+                is KakaoLoginResult.Failed -> {
+                    AlarmTalkLog.reportError("Kakao sign-in failed", result.error)
+                    viewModel.showKakaoSignInFailed()
+                }
+            }
+        }
+    }
+
     fun logout() {
         viewModel.logout {
             signOutGoogleAccount(context)
@@ -1314,6 +1330,8 @@ internal fun AlarmTalkApp(
                       authNavigate(AuthRoute.Auth(nextMode))
                   },
                   onGoogleSignIn = ::launchGoogleSignIn,
+                  // 람다로 넘긴다 — 지역 함수 참조는 캡처가 첫 콤포지션 값으로 굳을 수 있다(CLAUDE.md).
+                  onKakaoSignIn = { launchKakaoSignIn() },
                   onFindPassword = { authNavigate(AuthRoute.ResetPassword) },
               )
           }

@@ -43,6 +43,25 @@
   <string>$(ADMOB_REWARDED_AD_UNIT_ID)</string>
   <key>GADDelayAppMeasurementInit</key>
   <true/>
+  <!-- 카카오 로그인(KakaoSignIn.swift). 앱 키는 project.yml 의 KAKAO_NATIVE_APP_KEY. 카카오톡이 로그인 뒤 kakao<앱 키>://oauth 로
+       돌려보내고, 카카오톡을 열 수 있는지 묻는 데 kakaokompassauth 가 필요하다. -->
+  <key>KAKAO_NATIVE_APP_KEY</key>
+  <string>$(KAKAO_NATIVE_APP_KEY)</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>kakao-login</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>kakao$(KAKAO_NATIVE_APP_KEY)</string>
+      </array>
+    </dict>
+  </array>
+  <key>LSApplicationQueriesSchemes</key>
+  <array>
+    <string>kakaokompassauth</string>
+  </array>
   <key>UIApplicationSceneManifest</key>
   <dict>
     <key>UIApplicationSupportsMultipleScenes</key>

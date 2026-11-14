@@ -33,6 +33,7 @@
 		14891DB57D9E8C8C1DB132BC /* AppSourceText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F42D74888D3AA5B05964052 /* AppSourceText.swift */; };
 		14BEBC10C8EB922C30A26F98 /* AlarmTalkAPIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FAA02E16F860ED36A858566 /* AlarmTalkAPIModels.swift */; };
 		14D7153F328C6DFE552BBAF9 /* BlockingScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C88E7D845E4834C339CFCE38 /* BlockingScreen.swift */; };
+		14DD0A419EC0A08BB798A75B /* KakaoSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D14378717A586983A89ADBF /* KakaoSignIn.swift */; };
 		1594BA4E516859CF2C50DCFA /* voice_greeting_dohyun_ja.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 2B816ECA535DDD4DF4F3D173 /* voice_greeting_dohyun_ja.mp3 */; };
 		15A5B1EC292BE3B14658F982 /* VoiceStudioViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BC54CB113C89792079DBAF /* VoiceStudioViewModel.swift */; };
 		167ABA806544F7B513BA6563 /* VoicePreparationScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C49BDCC317453325C1EA65F /* VoicePreparationScreenshotUITests.swift */; };
@@ -48,6 +49,7 @@
 		1E9A263F624211B29A75FEEA /* CheerVariety.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2055981ADD308D940D2D5DA9 /* CheerVariety.swift */; };
 		1F91FD72D98E3051B4FD6BD7 /* AlarmTimeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FFCC8AFC12D1CB8AD6A44F /* AlarmTimeCalculatorTests.swift */; };
 		211DD3BCAC0CE23AD3436301 /* AlarmTalkBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521C02BC3EAB475219595232 /* AlarmTalkBrand.swift */; };
+		219EC12ACB963DE0E1097803 /* KakaoSDKCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 600782C16BA484729D4DB4B4 /* KakaoSDKCommon */; };
 		21D7DDA9CD92D6DFE3F9431D /* HitAreaProbeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F488E5D7F55A7279468FA6E9 /* HitAreaProbeUITests.swift */; };
 		228A10E322923716D69F87B0 /* BundledLegalDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0257F633E24964349ADD8C /* BundledLegalDocument.swift */; };
 		22DF2F7D22E677AE5857AA95 /* ConsentScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A35A337D287686CD7E5648 /* ConsentScreenshotUITests.swift */; };
@@ -114,6 +116,7 @@
 		4782087541F062C7FB42F907 /* BottomSheetHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F1B0A3B4CA06019853F34D /* BottomSheetHost.swift */; };
 		4805F65EA1223D7E24417D22 /* ObservedRingMarkerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602993500E518F7B23A028BA /* ObservedRingMarkerStore.swift */; };
 		48F7AD578B49FDD7234B4E98 /* license_ofl_1_1.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1E4779B9B3184263A018270C /* license_ofl_1_1.txt */; };
+		49165A0BBDF7A26945A62D65 /* license_apache_2_0.txt in Resources */ = {isa = PBXBuildFile; fileRef = C0526E1D1135CBBCE4AD42A5 /* license_apache_2_0.txt */; };
 		496C23BF2BF03B282CBF1E97 /* BillingPanelComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A16A1874C65D3C925FAE2EF /* BillingPanelComponents.swift */; };
 		49B32F22AC1AE75B1F8C3009 /* PreviewSeedLeakTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAF9AD1708532E9CF22B407D /* PreviewSeedLeakTests.swift */; };
 		4ADA36B2EB592A70D97F7BF3 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 920F8A0EE7DA7744FBDA1206 /* AuthViewModel.swift */; };
@@ -140,6 +143,7 @@
 		5250E609D4BAC7AF74B9485C /* AlarmSwipeDeleteUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 820BEA3D852D2A9153C506A2 /* AlarmSwipeDeleteUITests.swift */; };
 		53289664AD6C8783B454760D /* EntryRefreshFreshnessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4843EEDBACE08AE27F5F8DD /* EntryRefreshFreshnessTests.swift */; };
 		5492863435B4BD0E97A7F73B /* GradientCta.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4FA548127A2AE3F3ED3B6D3 /* GradientCta.swift */; };
+		560CF198E2E123BC59B10AD4 /* KakaoSDKUser in Frameworks */ = {isa = PBXBuildFile; productRef = 0728A15FCB272599765FD2D8 /* KakaoSDKUser */; };
 		567E773BE244A680AF7B1BCC /* WeatherAttributionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68623B8C742341D6D3C7DF72 /* WeatherAttributionTests.swift */; };
 		575988ABEFC6557E72CB222B /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21CBB976863F3883B2FCE2A2 /* Theme.swift */; };
 		59DBB9915C0BE83812284186 /* FortuneBirthDateEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A565E1FA348483063072D64 /* FortuneBirthDateEditTests.swift */; };
@@ -156,6 +160,7 @@
 		5FFBDEEDEEE60E169DCEE577 /* AdRewardGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEB4870AAB02927DB41C3B8 /* AdRewardGate.swift */; };
 		613DAAC531F90DC43FB7819A /* AlarmIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC77A311E60BF357633E18D /* AlarmIntents.swift */; };
 		617C9082C9278C6D6BAF85BC /* Connectivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4550D201D10C8EEFA653F6 /* Connectivity.swift */; };
+		62110A5820C9D14A05D9EC16 /* KakaoLoginButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96F0C449766E1EFCB19E478B /* KakaoLoginButton.swift */; };
 		622BF9FEE49772584B889551 /* FreePlanVoiceLockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49EFA49237024C6A06804BA5 /* FreePlanVoiceLockTests.swift */; };
 		624594B6D1A9D657DF902C04 /* TimeWheelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E7477E7C446FAC757144181 /* TimeWheelPicker.swift */; };
 		625F6BD70B90E9FBA00CB7D0 /* SentryInitializationGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23AE48BE6B56229D39895A9D /* SentryInitializationGateTests.swift */; };
@@ -394,6 +399,7 @@
 		FA9B722109464AA4DE0FBE8F /* license_mit.txt in Resources */ = {isa = PBXBuildFile; fileRef = 5959914AF1770BDECFF5C1F6 /* license_mit.txt */; };
 		FAB97B744143A054E5775C1C /* ContentSignalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 316B53480C62C46C5B03D6BD /* ContentSignalsTests.swift */; };
 		FB4EFC084C7BB429F8B0822E /* voice_greeting_mina_ja.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 9F00D81D710775948D22F715 /* voice_greeting_mina_ja.mp3 */; };
+		FDDA4BEC061E20B4C165ED95 /* KakaoSDKAuth in Frameworks */ = {isa = PBXBuildFile; productRef = F33EA6172299CB978018C165 /* KakaoSDKAuth */; };
 		FDE7F606F313F39BE459D19D /* AccessSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE78632AE30E18FFA63B74D /* AccessSnapshotStore.swift */; };
 		FDF7FCD6E8BA38D1DCD2F161 /* AlarmsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7EBDD70C5FB802C400559B /* AlarmsListView.swift */; };
 		FE2B275819243CE8B5EE7AC1 /* StringExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BFC93E56F33A4EC79AB6F5C /* StringExtensions.swift */; };
@@ -615,6 +621,7 @@
 		6B0CE801C40646A872577E22 /* voice_greeting_mina_en.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_mina_en.mp3; sourceTree = "<group>"; };
 		6B6E896183E3629C90F1B730 /* BackgroundSyncTaskLaunchHandlerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncTaskLaunchHandlerTests.swift; sourceTree = "<group>"; };
 		6BB3292333BDA9F421AC0D0A /* VoiceStudioViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceStudioViewModelTests.swift; sourceTree = "<group>"; };
+		6D14378717A586983A89ADBF /* KakaoSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoSignIn.swift; sourceTree = "<group>"; };
 		6DFEB7343510C3EED544917B /* TimeWheelSettleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelSettleTests.swift; sourceTree = "<group>"; };
 		6E362F291A9E83445BE588E2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6F10C03ABE07CF4A44D21B61 /* AlarmTalkTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AlarmTalkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -673,6 +680,7 @@
 		956BC28B0AE290CC6A39878E /* RepeatWeekdayChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepeatWeekdayChips.swift; sourceTree = "<group>"; };
 		95B28A584FFD00AD1BF0633C /* BillingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingPanel.swift; sourceTree = "<group>"; };
 		9641A64BF7F32B31E960BA67 /* VoiceStudioViewModel+ErrorMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VoiceStudioViewModel+ErrorMapping.swift"; sourceTree = "<group>"; };
+		96F0C449766E1EFCB19E478B /* KakaoLoginButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoLoginButton.swift; sourceTree = "<group>"; };
 		981A8751DB9609566B67BD85 /* AlertTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertTitleTests.swift; sourceTree = "<group>"; };
 		98CCA14FD6E4C634ECED32A9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		990682BABD1C4BBE186FC3D5 /* PendingSignOutStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSignOutStore.swift; sourceTree = "<group>"; };
@@ -744,6 +752,7 @@
 		BDEB4870AAB02927DB41C3B8 /* AdRewardGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdRewardGate.swift; sourceTree = "<group>"; };
 		BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmVoiceStopOwnershipTests.swift; sourceTree = "<group>"; };
 		BF9A7E6AC906D0AC985A3C99 /* AsyncSerialGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncSerialGateTests.swift; sourceTree = "<group>"; };
+		C0526E1D1135CBBCE4AD42A5 /* license_apache_2_0.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = license_apache_2_0.txt; sourceTree = "<group>"; };
 		C0F1B0A3B4CA06019853F34D /* BottomSheetHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSheetHost.swift; sourceTree = "<group>"; };
 		C126C14310B53BBF9AAB0EB4 /* VoicePackStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePackStore.swift; sourceTree = "<group>"; };
 		C147826DE6871E7FF9B5563D /* AlarmTalkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkApp.swift; sourceTree = "<group>"; };
@@ -845,6 +854,9 @@
 				AE3A84A0F4DE15D657B8FEDB /* Sentry in Frameworks */,
 				6F0A448943D96E700A94AD46 /* GoogleMobileAds in Frameworks */,
 				C8C0133CDF55BF16FF04051A /* GoogleUserMessagingPlatform in Frameworks */,
+				219EC12ACB963DE0E1097803 /* KakaoSDKCommon in Frameworks */,
+				FDDA4BEC061E20B4C165ED95 /* KakaoSDKAuth in Frameworks */,
+				560CF198E2E123BC59B10AD4 /* KakaoSDKUser in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -951,6 +963,7 @@
 				2E08EA39F68F4C059B5B58EC /* AuthBackdrop.swift */,
 				C88E7D845E4834C339CFCE38 /* BlockingScreen.swift */,
 				B63D58A42E36FE6F60DC05E0 /* ConsentView.swift */,
+				96F0C449766E1EFCB19E478B /* KakaoLoginButton.swift */,
 				AC8E6B3DC78145608078758B /* LandingView.swift */,
 				F22A748B61AC101C73FABFB6 /* LoginView.swift */,
 				757B82D057BE9B65E819C252 /* PasswordResetView.swift */,
@@ -1277,6 +1290,7 @@
 		D7219620F6AA373FB36C235B /* Licenses */ = {
 			isa = PBXGroup;
 			children = (
+				C0526E1D1135CBBCE4AD42A5 /* license_apache_2_0.txt */,
 				5959914AF1770BDECFF5C1F6 /* license_mit.txt */,
 				1E4779B9B3184263A018270C /* license_ofl_1_1.txt */,
 			);
@@ -1391,6 +1405,7 @@
 				6E362F291A9E83445BE588E2 /* Info.plist */,
 				DAD47DD9BE2DBBFF3D0FEE46 /* InfoPlist.xcstrings */,
 				F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */,
+				6D14378717A586983A89ADBF /* KakaoSignIn.swift */,
 				9D9D718046B0F0BECA023287 /* KeyboardDismissGesture.swift */,
 				A70196163DEB277ED30F5976 /* KeychainStore.swift */,
 				5AEC8A234A39D4E7AAFC0F82 /* KoreanLunarHolidayEngine.swift */,
@@ -1501,6 +1516,9 @@
 				113301E9251EE3A26158F72C /* Sentry */,
 				890600B3064A007734C4436B /* GoogleMobileAds */,
 				BF27BE623092D96C4641ADD6 /* GoogleUserMessagingPlatform */,
+				600782C16BA484729D4DB4B4 /* KakaoSDKCommon */,
+				F33EA6172299CB978018C165 /* KakaoSDKAuth */,
+				0728A15FCB272599765FD2D8 /* KakaoSDKUser */,
 			);
 			productName = AlarmTalk;
 			productReference = DCB68718409EED0E6D7B5440 /* AlarmTalk.app */;
@@ -1580,6 +1598,7 @@
 			packageReferences = (
 				9C00832844D797D6A55C38E9 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
 				D8290EFA5C6FA5A842178215 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */,
+				12C4B4C3889514B9B64574E1 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */,
 				C926258EE80C50446452EE5A /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -1617,6 +1636,7 @@
 				6E9757CB768DE2E4F0811133 /* landing_preview_mina.mp3 in Resources */,
 				6E567F2C627B2B25CEB98DA2 /* landing_preview_narin.mp3 in Resources */,
 				DE434ADAA110DCE34A306779 /* landing_preview_siwoo.mp3 in Resources */,
+				49165A0BBDF7A26945A62D65 /* license_apache_2_0.txt in Resources */,
 				FA9B722109464AA4DE0FBE8F /* license_mit.txt in Resources */,
 				48F7AD578B49FDD7234B4E98 /* license_ofl_1_1.txt in Resources */,
 				39A7D17C9DF3C10D3D61B1AE /* pretendard_bold.otf in Resources */,
@@ -1803,6 +1823,8 @@
 				990A7E3AA0A6BA5103D0DAEA /* HolidayOffToggle.swift in Sources */,
 				BBF0654D24C76A9D352ADD7F /* HolidayStore.swift in Sources */,
 				24532A821DBDA7E12D150865 /* InputSanitizer.swift in Sources */,
+				62110A5820C9D14A05D9EC16 /* KakaoLoginButton.swift in Sources */,
+				14DD0A419EC0A08BB798A75B /* KakaoSignIn.swift in Sources */,
 				421E397B946BD60DACEEAC12 /* KeyboardDismissGesture.swift in Sources */,
 				0E5B76527C4E572E042DC557 /* KeychainStore.swift in Sources */,
 				68198E3D4BC57296B43E7DE7 /* KoreanLunarHolidayEngine.swift in Sources */,
@@ -2162,6 +2184,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				KAKAO_NATIVE_APP_KEY = 5ff9bb2b1270702347556630be69905a;
 				MARKETING_VERSION = 1.3.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -2320,6 +2343,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				KAKAO_NATIVE_APP_KEY = 5ff9bb2b1270702347556630be69905a;
 				MARKETING_VERSION = 1.3.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -2406,6 +2430,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		12C4B4C3889514B9B64574E1 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kakao/kakao-ios-sdk";
+			requirement = {
+				kind = exactVersion;
+				version = 2.30.0;
+			};
+		};
 		9C00832844D797D6A55C38E9 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/googleads/swift-package-manager-google-mobile-ads";
@@ -2433,10 +2465,20 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0728A15FCB272599765FD2D8 /* KakaoSDKUser */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12C4B4C3889514B9B64574E1 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */;
+			productName = KakaoSDKUser;
+		};
 		113301E9251EE3A26158F72C /* Sentry */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C926258EE80C50446452EE5A /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
 			productName = Sentry;
+		};
+		600782C16BA484729D4DB4B4 /* KakaoSDKCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12C4B4C3889514B9B64574E1 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */;
+			productName = KakaoSDKCommon;
 		};
 		890600B3064A007734C4436B /* GoogleMobileAds */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -2447,6 +2489,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D8290EFA5C6FA5A842178215 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */;
 			productName = GoogleUserMessagingPlatform;
+		};
+		F33EA6172299CB978018C165 /* KakaoSDKAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 12C4B4C3889514B9B64574E1 /* XCRemoteSwiftPackageReference "kakao-ios-sdk" */;
+			productName = KakaoSDKAuth;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

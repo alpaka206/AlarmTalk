@@ -113,6 +113,11 @@ val legalPolicyVersion: String = run {
     distinct.single()
 }
 
+// 카카오 네이티브 앱 키(카카오 앱 1500680). 정식 앱 키에는 iOS 번들·정식 패키지가, dev 키에는
+// `com.alarmtalk.app.dev` 가 등록돼 있다 — 패키지와 키가 어긋나면 카카오가 로그인을 거절한다.
+val KAKAO_PROD_NATIVE_APP_KEY = "5ff9bb2b1270702347556630be69905a"
+val KAKAO_DEV_NATIVE_APP_KEY = "0389478fa308f9bfa024700eb5266fcd"
+
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -285,6 +290,10 @@ android {
                 alarmTalkDevAdmobRewardedAdUnitId.asBuildConfigString(),
             )
             manifestPlaceholders["admobAppId"] = alarmTalkDevAdmobAppId
+            // 카카오 로그인 — dev 앱(`com.alarmtalk.app.dev`) 전용 네이티브 앱 키. 같은 카카오 앱(1500680)의 두 번째
+            // 키라 서버의 앱 ID 대조는 그대로 통과한다. 네이티브 앱 키는 앱에 실리는 공개 식별자다(키 해시로 지킨다).
+            buildConfigField("String", "KAKAO_NATIVE_APP_KEY", KAKAO_DEV_NATIVE_APP_KEY.asBuildConfigString())
+            manifestPlaceholders["kakaoScheme"] = "kakao$KAKAO_DEV_NATIVE_APP_KEY"
         }
         create("prod") {
             dimension = "environment"
@@ -310,6 +319,8 @@ android {
                 alarmTalkProdAdmobRewardedAdUnitId.asBuildConfigString(),
             )
             manifestPlaceholders["admobAppId"] = alarmTalkProdAdmobAppId
+            buildConfigField("String", "KAKAO_NATIVE_APP_KEY", KAKAO_PROD_NATIVE_APP_KEY.asBuildConfigString())
+            manifestPlaceholders["kakaoScheme"] = "kakao$KAKAO_PROD_NATIVE_APP_KEY"
         }
     }
 
@@ -443,6 +454,8 @@ dependencies {
     // debug/사이드로드에선 no-op(콜백에서 예외 방어). 구 com.google.android.play:core 미사용.
     implementation("com.google.android.play:app-update:2.1.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+    // 카카오 로그인(카카오톡 앱 → 없으면 카카오계정). 저장소는 settings.gradle.kts 의 카카오 저장소.
+    implementation("com.kakao.sdk:v2-user:2.26.0")
     // ⚠ 앱 코드는 위치 API 를 쓰지 않지만 지우지 말 것 — billing 8.0.0 이 이걸 19.0.0 으로
     // 끌어온다. 이 줄이 그 전이 의존을 21.3.0 으로 올려 두고 있어, 지우면 APK 에서 빠지는 게
     // 아니라 19.0.0 으로 내려간다(2026-09-29 `:app:dependencies` 전후 비교로 확인).

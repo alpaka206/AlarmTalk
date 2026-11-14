@@ -361,6 +361,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         AlarmTalkLog.startCrashReporting()
+        // 카카오 로그인 SDK — 앱 키를 적어 둘 뿐이다(네트워크 없음). 로그인 화면보다 먼저 켜져 있어야 한다.
+        KakaoSignIn.configure()
         // 앱을 켜 둔 동안 온 알림도 배너로 보인다(아래 `willPresent`). 시스템은 델리게이트가 없으면 전경 알림을 버린다.
         UNUserNotificationCenter.current().delegate = self
         // ⚠ **BGTask 핸들러는 launch 가 끝나기 전에 등록돼 있어야 한다.**

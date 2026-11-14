@@ -807,23 +807,6 @@
         }
       }
     },
-    "간편 로그인" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quick sign-in"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "簡単ログイン"
-          }
-        }
-      }
-    },
     "같은 시각 알람이 있어요" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6042,40 +6025,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "メールアドレスまたはパスワードが正しくありません。ご確認のうえ、もう一度お試しください。"
-          }
-        }
-      }
-    },
-    "이메일 인증" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verify email"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メール認証"
-          }
-        }
-      }
-    },
-    "이메일 인증 완료" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Email verified"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メール認証完了"
           }
         }
       }
@@ -13048,19 +12997,144 @@
         }
       }
     },
-    "Apple 또는 Google로 가입된 이메일이에요. 처음 가입한 방법으로 로그인해 주세요." : {
+    "간편 로그인으로 가입된 이메일이에요. 카카오, Apple, Google 중 처음 가입한 방법으로 로그인해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This email is registered with Apple or Google. Please sign in the way you first signed up."
+            "value" : "This email is registered with a quick sign-in. Please sign in the way you first signed up: Kakao, Apple, or Google."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AppleまたはGoogleで登録済みのメールです。最初に登録した方法でログインしてください。"
+            "value" : "簡単ログインで登録済みのメールです。カカオ、Apple、Googleのうち最初に登録した方法でログインしてください。"
+          }
+        }
+      }
+    },
+    "카카오 로그인" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Login with Kakao"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カカオログイン"
+          }
+        }
+      }
+    },
+    "카카오 로그인을 완료하지 못했어요. 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't complete your Kakao login. Please try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カカオログインを完了できませんでした。もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "또는 이메일로" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "or with email"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "またはメールで"
+          }
+        }
+      }
+    },
+    "또는 이메일로 가입" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "or sign up with email"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "またはメールで登録"
+          }
+        }
+      }
+    },
+    "인증 받기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send code"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コード送信"
+          }
+        }
+      }
+    },
+    "인증됨" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verified"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認証済み"
+          }
+        }
+      }
+    },
+    "auth.email.resendShort" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resend"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再送信"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 받기"
           }
         }
       }
