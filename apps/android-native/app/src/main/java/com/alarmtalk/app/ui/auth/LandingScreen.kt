@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -492,11 +493,19 @@ private fun VoicePreviewCard(accent: Color) {
         p.start(); isPlaying = true
     }
 
+    // 카드 어디를 눌러도 재생·일시정지한다(2026-11-14 오너). 예전에는 동그란 버튼만 눌려서 문장 쪽을 누르면
+    // 아무 반응이 없었다. 버튼은 이제 그림이고, TalkBack 은 카드 하나를 '목소리 미리듣기, <문장>' 으로 읽는다.
+    val cardInteraction = remember { MutableInteractionSource() }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        // 람다로 넘긴다 — 지역 함수 참조는 캡처가 달라도 같은 값으로 보여 Compose 가 건너뛴다(CLAUDE.md 「Compose 콜백에 지역 함수 참조」).
+        onClick = { toggle() },
+        modifier = Modifier
+            .fillMaxWidth()
+            .wakerPressScale(cardInteraction),
         shape = WakerPanelShape,
         color = GlassFill,
         border = BorderStroke(1.dp, GlassBorder),
+        interactionSource = cardInteraction,
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -504,8 +513,6 @@ private fun VoicePreviewCard(accent: Color) {
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Surface(
-                // 람다로 넘긴다 — 지역 함수 참조는 캡처가 달라도 같은 값으로 보여 Compose 가 건너뛴다(CLAUDE.md 「Compose 콜백에 지역 함수 참조」).
-                onClick = { toggle() },
                 modifier = Modifier.size(48.dp),
                 shape = WakerPillShape,
                 color = accent.copy(alpha = 0.18f),
