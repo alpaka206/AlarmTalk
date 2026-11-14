@@ -93,6 +93,9 @@
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
     <string name="billing_plan_personal_feature_manual">自分で入力 月30回(登録した声も)</string>
     <string name="billing_plan_personal_name">プラス</string>
+    <string name="billing_plan_personal_headline">好きな声で\n起こしてくれます</string>
+    <string name="billing_plan_personal_feature_no_ads">広告なし</string>
+    <string name="billing_plan_trial_price_line">%1$s無料、その後%2$s</string>
     <string name="billing_play_manage_description">アプリで解約を完了できませんでした。Google Playの定期購入管理から直接解約できます。契約状態は変わっていません。</string>
     <string name="billing_play_manage_open">Google Playを開く</string>
     <string name="billing_play_manage_title">Google Playでの管理が必要です</string>

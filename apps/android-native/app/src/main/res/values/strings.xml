@@ -99,6 +99,9 @@
     <string name="billing_plan_personal_feature_voice">원하는 목소리 1개 등록</string>
     <string name="billing_plan_personal_feature_manual">직접 입력 월 30회(등록한 목소리 포함)</string>
     <string name="billing_plan_personal_name">플러스</string>
+    <string name="billing_plan_personal_headline">원하는 목소리로\n깨워 줘요</string>
+    <string name="billing_plan_personal_feature_no_ads">광고 없이 쓰기</string>
+    <string name="billing_plan_trial_price_line">%1$s 무료, 이후 %2$s</string>
     <string name="billing_play_manage_description">앱에서 해지를 완료하지 못했어요. Google Play 구독 관리에서 직접 해지할 수 있어요. 구독 상태는 바뀌지 않았어요.</string>
     <string name="billing_play_manage_open">Google Play 열기</string>
     <string name="billing_play_manage_title">Google Play에서 직접 관리가 필요해요</string>

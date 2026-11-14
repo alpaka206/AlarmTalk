@@ -93,6 +93,9 @@
     <string name="billing_plan_personal_feature_voice">Register 1 voice of your choice</string>
     <string name="billing_plan_personal_feature_manual">Type it yourself: 30 a month (incl. your registered voice)</string>
     <string name="billing_plan_personal_name">Plus</string>
+    <string name="billing_plan_personal_headline">Wake up to\nthe voice you want</string>
+    <string name="billing_plan_personal_feature_no_ads">No ads</string>
+    <string name="billing_plan_trial_price_line">%1$s free, then %2$s</string>
     <string name="billing_play_manage_description">We couldn\'t complete the cancellation in the app. You can cancel directly in Google Play subscriptions. Your subscription hasn\'t changed.</string>
     <string name="billing_play_manage_open">Open Google Play</string>
     <string name="billing_play_manage_title">Manage it directly in Google Play</string>

@@ -17,15 +17,14 @@ struct AuxiliarySheetHost: View {
         // 이 화면의 오류는 **그 오류가 난 자리 옆**에서 말한다.
         // 위에 띄우면 (1) 같은 말이 두 번 나오고 (2) 배너가 생겼다 사라지며 본문이
         // 아래로 밀렸다 올라와, 사용자에게는 "경고는 없고 화면만 튀는" 것으로 보인다.
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // 제목은 네비게이션 바에 있다 — 여기 `ScreenHeader` 를 되살리지 말 것.
-                switch screen {
-                case .billing:
-                    BillingPanel()
-                }
+        // ⚠ **여기서 `ScrollView` 로 감싸지 않는다**(2026-11-15 A안). 이용권 화면은 스스로 스크롤 영역과 **아래 고정 영역**
+        // (시작 버튼·자동 결제 안내)을 나눈다 — 바깥에서 통째로 스크롤하면 버튼이 바닥에 붙지 않는다.
+        // 제목은 네비게이션 바에 있다 — 여기 `ScreenHeader` 를 되살리지 말 것.
+        Group {
+            switch screen {
+            case .billing:
+                BillingPanel()
             }
-            .padding(20)
         }
         .homeGradientBackground()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

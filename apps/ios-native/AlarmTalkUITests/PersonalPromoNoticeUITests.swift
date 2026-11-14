@@ -190,9 +190,9 @@ final class PersonalPromoNoticeUITests: XCTestCase {
             "프로모 문구를 두 번 말했다 — 카드 위 한 줄이 남았다"
         )
         // 상품을 못 받아도 버튼은 비활성 '결제하기' 로 그려진다 — 있기만 하면 된다. 가격을 받는 동안의
-        // 자리표시는 버튼이 아니라서 기다린다.
+        // 자리표시는 버튼이 아니라서 기다린다. A안(2026-11-15)부터 시작 버튼은 카드가 아니라 **화면 아래 고정 영역**에 있다.
         XCTAssertTrue(
-            personal.buttons["결제하기"].waitForExistence(timeout: 15),
+            app.buttons["결제하기"].waitForExistence(timeout: 15),
             "프로모로 현재가 된 개인 카드에 결제 버튼이 없다 — `isCurrent` 로 버튼을 숨겼다"
         )
         shot("03-이용권")

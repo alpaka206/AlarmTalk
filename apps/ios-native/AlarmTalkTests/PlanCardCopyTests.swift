@@ -22,7 +22,15 @@ struct PlanCardCopyTests {
     @Test("두 카드가 직접 입력 횟수를 말한다")
     func cardsStateManualQuota() {
         #expect(PlanCard.features(for: .free).last == "기본 목소리로 직접 입력 월 3회")
-        #expect(PlanCard.features(for: .personal).last == "직접 입력 월 30회(등록한 목소리 포함)")
+        #expect(PlanCard.features(for: .personal)[2] == "직접 입력 월 30회(등록한 목소리 포함)")
+    }
+
+    /// 플러스는 광고를 보지 않는다(2026-11-15 오너 — 무료 화면에 광고를 더 넣을 예정이라 혜택으로 적는다).
+    /// 안드로이드 `billing_plan_personal_feature_no_ads` 의 짝이다.
+    @Test("플러스 카드가 광고 없이 쓴다고 말한다")
+    func personalCardSaysNoAds() {
+        #expect(PlanCard.features(for: .personal).last == "광고 없이 쓰기")
+        #expect(!PlanCard.features(for: .free).contains("광고 없이 쓰기"))
     }
 
     @Test("직접 입력 횟수 줄이 안드로이드 values-en·values-ja 와 같다", arguments: [

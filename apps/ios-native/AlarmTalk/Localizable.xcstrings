@@ -13280,6 +13280,74 @@
         }
       }
     },
+    "%@ 무료, 이후 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ free, then %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@無料、その後%2$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 무료, 이후 %2$@"
+          }
+        }
+      }
+    },
+    "광고 없이 쓰기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No ads"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告なし"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "광고 없이 쓰기"
+          }
+        }
+      }
+    },
+    "billing.plan.personal.headline" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wake up to\nthe voice you want"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好きな声で\n起こしてくれます"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "원하는 목소리로\n깨워 줘요"
+          }
+        }
+      }
+    },
     "%@ 무료" : {
       "localizations" : {
         "en" : {

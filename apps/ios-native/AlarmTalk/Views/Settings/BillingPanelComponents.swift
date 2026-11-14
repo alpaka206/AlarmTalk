@@ -86,210 +86,9 @@ let BillingDisplayDateFormatter: DateFormatter = {
     return formatter
 }()
 
-/// 결제 플랜 카드 한 장. IAP 가격은 StoreKit `Product.displayPrice` 를 그대로
-/// 사용해 region/통화/세금이 자동 반영된다.
-struct PlanCard: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-    @EnvironmentObject private var subscriptions: SubscriptionManager
-    let tier: PlanTier
-    /// '현재 이용권' 뱃지·강조. 결제 버튼과는 **따로** 정한다(`showsPurchase`).
-    let isCurrent: Bool
-    /// 결제 버튼을 그리는가(`PlanScreenCurrent.showsPurchase`). 산 이용권의 현재 카드엔 없고,
-    /// 프로모로 현재가 된 개인 카드엔 있다 — `isCurrent` 로 대신하지 말 것.
-    let showsPurchase: Bool
-    /// 현재 카드의 상태 한 줄 — 지금은 기간 한정 개인 플랜의 "플러스 무료 이용 중 · …까지" 뿐이다
-    /// (안드로이드 `SubscriptionPlanCard` 의 `currentStatusText` 자리 — 가격 바로 아래).
-    let statusText: String?
-    let isBusy: Bool
-    let onPurchase: () -> Void
-
-    /// 카드에 보여줄 가격. 스토어 값이 있으면 그걸, 없으면 폴백을 쓴다.
-    /// 무료는 상품이 아니라 그냥 0원이다.
-    private var priceLabel: String? {
-        if tier == .free { return String(localized: "0원") }
-        return subscriptions.priceLabel(for: tier).map { String(localized: "월 \(String($0))") }
-    }
-
-    /// 지금 받을 수 있는 무료 체험 기간 표기 — 결제 버튼이 있는 카드에서만.
-    private var trialLabel: String? {
-        guard showsPurchase, tier != .free, let period = subscriptions.freeTrialPeriod(for: tier) else { return nil }
-        return SubscriptionManager.trialPeriodLabel(period)
-    }
-
-    var body: some View {
-        // Android `SubscriptionPlanCard`(`ui/billing/BillingPanels.kt`): WakerCardShape(22),
-        // 현재 플랜이면 primaryContainer@0.44 / primary@0.48 보더, 아니면 surface /
-        // outlineVariant 보더. 헤더에 잠금 뱃지를 두지 않고 기능 불릿 목록을 렌더한다.
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                Text(tier.displayLabel)
-                    .font(.headline)
-                    .foregroundStyle(theme.palette.onSurface)
-                Spacer()
-                if isCurrent {
-                    Text(String(localized: "현재 이용권"))
-                        .font(.caption.weight(.semibold))
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 10)
-                        .background(Capsule().fill(theme.palette.primary))
-                        .foregroundStyle(theme.palette.onPrimary)
-                }
-            }
-
-            // ⚠ **한 줄 설명(`description(for:)`)을 되살리지 말 것**(2026-08-11 요청).
-            // 아래 기능 불릿이 같은 말을 더 구체적으로 하고 있었다 — 안드로이드에도 없다.
-
-            // 가격은 **플랜 이름 바로 아래**다(안드로이드와 같은 자리). 버튼에 넣으면
-            // 액션 라벨과 가격이 한 덩어리가 되어 무엇을 누르는지 흐려진다.
-            if let priceLabel = priceLabel, let trialLabel {
-                // ⚠ **무료 기간을 크게, 그 뒤 가격을 옆에**(2026-11-09 오너 — 고르기 시안 '무료 기간 크게 + 첫 결제일').
-                // 결제 시트가 처음 청구할 금액이 0 이라는 것을 카드가 먼저 말한다. 안드로이드 `billing_plan_trial_headline`·
-                // `billing_plan_trial_then` 과 같은 자리다.
-                HStack(alignment: .lastTextBaseline, spacing: 8) {
-                    Text(String(localized: "\(String(trialLabel)) 무료"))
-                        .font(theme.typography.headlineSmall)
-                        .fontWeight(.bold)
-                        .foregroundStyle(theme.palette.onSurface)
-                    Text(String(localized: "이후 \(String(priceLabel))"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(theme.palette.primary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else if let priceLabel = priceLabel {
-                Text(priceLabel)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(theme.palette.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // 상태 한 줄은 **가격 바로 아래**다(안드로이드와 같은 자리·같은 결 — 강조색 semibold).
-            if isCurrent, let statusText {
-                Text(statusText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(theme.palette.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                // 목록은 카탈로그 **키**(한국어 원문)라 그리는 자리에서 `LocalizedStringKey` 로 감싼다.
-                // 한 카드 안에서 같은 줄이 두 번 나오지 않으므로 글자를 id 로 삼아도 안전하다.
-                ForEach(Self.features(for: tier), id: \.self) { feature in
-                    PlanFeatureRow(text: LocalizedStringKey(feature))
-                }
-            }
-
-            if tier != .free {
-                purchaseButtons
-            }
-
-            if trialLabel != nil, let disclosure = subscriptions.trialDisclosure(for: tier) {
-                // 자동 결제와 해지를 **결제 버튼 바로 아래 한 문장**으로 — 첫 결제일·금액·해지(App Store 지침 3.1.2: 체험 기간,
-                // 체험 뒤 가격·주기, 결제 시점, 해지 방법을 결제 전에 보인다). 결제 확인 알럿도 같은 문장을 쓴다.
-                Text(disclosure)
-                    .font(.footnote)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-            }
-
-            // ⚠ **개인 카드의 '선물하기' 를 되살리지 말 것**(2026-10-14, App Store 지침 3.1.1 두 번째 반려).
-            // 사서 받은 코드를 쳐서 유료 기능을 여는 길이었다. 할인·무료 이용은 스토어 오퍼 코드로 준다.
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-                .fill(isCurrent ? theme.palette.primaryContainer.opacity(0.44) : theme.palette.surface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-                .stroke(
-                    isCurrent ? theme.palette.primary.opacity(0.48) : theme.palette.outlineVariant,
-                    lineWidth: 1
-                )
-        )
-        // 카드 한 장을 컨테이너로 묶는다 — 안의 글자·버튼은 각자 그대로 읽힌다(`.contain`).
-        // UI 테스트가 '현재 이용권' 뱃지·결제 버튼·상태 문구가 **어느 카드에** 있는지 가리는 자리다
-        // (`PersonalPromoNoticeUITests`). 카드마다 같은 글자가 있어 화면 전체로는 특정할 수 없다.
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("planCard.\(tier.apiKey)")
-    }
-
-    /// 월간 가격 버튼 (월간만 판매). Product 가 아직 fetch 되지 않았으면 비활성.
-    @ViewBuilder
-    private var purchaseButtons: some View {
-        if let plan = SubscriptionProduct.make(tier: tier) {
-            priceButton(for: plan)
-        }
-    }
-
-    @ViewBuilder
-    private func priceButton(for plan: SubscriptionProduct) -> some View {
-        // ⚠ **산 현재 이용권 카드에는 버튼을 그리지 않는다**(2026-08-24 지시, 안드로이드
-        // `SubscriptionPlanCard`(`ui/billing/BillingPanels.kt`)의 `if (showsPurchase)` —
-        // 판정은 양쪽 다 `PlanScreenCurrent.showsPurchase` 다).
-        // 예전에는 비활성 '사용 중' 버튼을 그렸는데, 누를 수 없는 버튼은 자리를 차지하면서
-        // **누를 수 있는 것처럼** 보인다 — 카드 위쪽 '현재 이용권' 뱃지가 이미 같은 말을 한다.
-        //
-        // ⚠ **`isCurrent` 로 되돌리지 말 것**(2026-09-29). 프로모만 쓰는 계정은 개인 카드가 '현재'
-        // 인데 산 이용권이 아니라 결제 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야 하고, 버튼을
-        // 숨기면 살 길이 사라진다(`PlanScreenCurrent.showsPurchase`).
-        if !showsPurchase {
-            EmptyView()
-        } else if subscriptions.product(for: plan) != nil {
-            Button {
-                onPurchase()
-            } label: {
-                VStack(spacing: 2) {
-                    if subscriptions.isPurchasing {
-                        // 결제 진행 중 — 스피너로 in-progress 를 분명히 한다.
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(theme.palette.onPrimary)
-                    } else {
-                        // ⚠ **버튼에 가격을 넣지 말 것**(2026-08-11 요청). 가격은 카드 위쪽
-                        // 제 자리에 있고, 버튼은 **무엇을 하는지**만 말한다 — 안드로이드도
-                        // 액션 라벨만 둔다.
-                        Text(trialLabel.map { String(localized: "\(String($0)) 무료로 시작하기") } ?? String(localized: "결제하기"))
-                            .font(.subheadline.weight(.semibold))
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.palette.primary)
-            .foregroundStyle(theme.palette.onPrimary)
-            .disabled(isBusy || subscriptions.isPurchasing)
-        } else if subscriptions.isLoadingProducts || !subscriptions.hasAttemptedProductFetch {
-            // 아직 첫 fetch 가 끝나지 않음 — "준비중" 대신 로딩 스켈레톤을 보여줘
-            // 첫 진입이 망가진 화면처럼 보이지 않게 한다.
-            RoundedRectangle(cornerRadius: 6)
-                .fill(theme.palette.outline.opacity(0.18))
-                .frame(maxWidth: .infinity)
-                .frame(height: 40)
-                .overlay(ProgressView().controlSize(.small))
-                .accessibilityLabel(String(localized: "가격 불러오는 중"))
-        } else {
-            // ⚠ **"준비중" 같은 말을 지어내지 말 것.** 가격은 **스토어가 권위**라 못 받아
-            // 올 수 있는데(시뮬레이터·미출시 트랙 등), 그때 "준비중" 이라고 쓰면 우리가
-            // 상품 상태를 단정하는 셈이다 — 대개는 상품이 멀쩡하고 조회만 실패한 것이다.
-            // 가격은 카드 위쪽이 폴백으로 이미 말하고 있다.
-            // 누르면 결제로는 못 가므로 **비활성**이다 — 살 수 없다는 사실은 그대로 전한다.
-            Button {
-                // no-op — 상품을 못 받았으니 결제로 갈 수 없다.
-            } label: {
-                Text(String(localized: "결제하기"))
-                    .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-            }
-            .buttonStyle(.bordered)
-            .disabled(true)
-        }
-    }
-
-
+/// 이용권 카드의 기능 문구 — 플러스 큰 카드의 체크 목록과 무료 한 줄 카드가 쓴다(A안, 2026-11-15).
+/// 이름은 옛 카드(`PlanCard`)의 것을 그대로 둔다 — 문구 테스트(`PlanCardCopyTests`)가 이 이름으로 읽는다.
+enum PlanCard {
     /// 플랜별 기능 불릿. 안드로이드 `ui/billing/BillingPanels.kt` 의
     /// `billing_plan_*_feature_*` 문자열과 **글자까지 같아야 한다.**
     ///
@@ -320,25 +119,215 @@ struct PlanCard: View {
                 String(localized: "원하는 목소리 1개 등록"),
                 String(localized: "등록한 목소리로 듣는 날씨·운세 문구"),
                 String(localized: "직접 입력 월 30회(등록한 목소리 포함)"),
+                // 플러스는 광고를 보지 않는다(보상형 광고는 무료 계정에게만 — `docs/spec/ad-rewards.md` §1). 2026-11-15 오너: 나중에
+                // 무료 화면 중간중간에도 광고를 넣을 예정이라 플러스 혜택으로 적는다. 안드로이드 `billing_plan_personal_feature_no_ads`.
+                String(localized: "광고 없이 쓰기"),
             ]
         }
     }
 }
 
-/// 플랜 카드 안의 기능 한 줄(점 + 텍스트). Android `PlanFeatureRow`
-/// (`ui/billing/BillingPanels.kt`): 6dp primary 점 + bodyMedium onSurfaceVariant 텍스트.
-struct PlanFeatureRow: View {
+/// 플러스 큰 카드(A안, 2026-11-15 오너 — 캔버스 proposal-10). 안드로이드 `PlusPlanHeroCard` 와 같다.
+/// 배지는 지금 쓰는 중이면 '현재 이용권', 체험을 줄 수 있으면 'n개월 무료'. 가격 줄은 체험이 있으면
+/// "1개월 무료, 이후 월 ₩3,900", 없으면 "월 ₩3,900". 상태 한 줄(프로모)은 가격 아래다. 시작 버튼은 카드가 아니라
+/// 화면 아래 고정 영역(`BillingPanel.bottomBar`)에 있다.
+struct PlusPlanHeroCard: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @EnvironmentObject private var subscriptions: SubscriptionManager
+    let isCurrent: Bool
+    /// 시작 버튼을 그리는가(`PlanScreenCurrent.showsPurchase`) — 체험 표기도 이때만 한다.
+    let showsPurchase: Bool
+    let statusText: String?
+
+    private var priceLabel: String? {
+        subscriptions.priceLabel(for: .personal).map { String(localized: "월 \(String($0))") }
+    }
+
+    private var trialLabel: String? {
+        guard showsPurchase, let period = subscriptions.freeTrialPeriod(for: .personal) else { return nil }
+        return SubscriptionManager.trialPeriodLabel(period)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 10) {
+                Text(PlanTier.personal.displayLabel)
+                    .font(.headline)
+                    .foregroundStyle(theme.palette.onSurface)
+                Spacer()
+                if let badge = isCurrent ? String(localized: "현재 이용권") : trialLabel.map({ String(localized: "\(String($0)) 무료") }) {
+                    Text(badge)
+                        .font(.caption.weight(.bold))
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
+                        .background(Capsule().fill(theme.palette.primary))
+                        .foregroundStyle(theme.palette.onPrimary)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "billing.plan.personal.headline", defaultValue: "원하는 목소리로\n깨워 줘요"))
+                    .font(theme.typography.headlineSmall)
+                    .fontWeight(.bold)
+                    .foregroundStyle(theme.palette.onSurface)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let priceLabel {
+                    Text(trialLabel.map { String(localized: "\(String($0)) 무료, 이후 \(String(priceLabel))") } ?? priceLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(theme.palette.primary)
+                }
+                if isCurrent, let statusText {
+                    Text(statusText)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(theme.palette.primary)
+                }
+            }
+            Rectangle()
+                .fill(theme.palette.primary.opacity(0.24))
+                .frame(height: 1)
+            VStack(alignment: .leading, spacing: 10) {
+                // 목록은 카탈로그 키(한국어 원문)라 그리는 자리에서 `LocalizedStringKey` 로 감싼다.
+                ForEach(PlanCard.features(for: .personal), id: \.self) { feature in
+                    PlanCheckRow(text: LocalizedStringKey(feature))
+                }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: theme.shapes.large, style: .continuous)
+                .fill(theme.palette.primaryContainer.opacity(0.44))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.large, style: .continuous)
+                .stroke(theme.palette.primary.opacity(0.48), lineWidth: 1)
+        )
+        // UI 테스트가 '현재 이용권' 배지·상태 문구가 **어느 카드에** 있는지 가리는 자리다(`PersonalPromoNoticeUITests`).
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("planCard.personal")
+    }
+}
+
+/// 무료 한 줄 카드(A안) — 이름·가격 한 줄(지금 쓰는 중이면 '현재 이용권' 배지), 아래에 혜택을 " · " 로 이은 한 줄.
+/// 안드로이드 `FreePlanSummaryCard` 와 같다.
+struct FreePlanSummaryCard: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    let isCurrent: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 8) {
+                Text(PlanTier.free.displayLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(theme.palette.onSurface)
+                Text(String(localized: "0원"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(theme.palette.primary)
+                Spacer()
+                if isCurrent {
+                    Text(String(localized: "현재 이용권"))
+                        .font(.caption.weight(.bold))
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 10)
+                        .background(Capsule().fill(theme.palette.primary))
+                        .foregroundStyle(theme.palette.onPrimary)
+                }
+            }
+            Text(verbatim: PlanCard.features(for: .free).joined(separator: " · "))
+                .font(.footnote)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
+                .fill(theme.palette.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("planCard.free")
+    }
+}
+
+/// 화면 아래 고정 영역의 시작 버튼(A안). 옛 `PlanCard.priceButton` 의 세 상태를 그대로 옮겼다 —
+/// 상품이 있으면 결제, 첫 조회 중이면 자리표시, 못 받았으면 비활성 '결제하기'.
+struct PlanPurchaseButton: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @EnvironmentObject private var subscriptions: SubscriptionManager
+    let tier: PlanTier
+    let isBusy: Bool
+    let onPurchase: () -> Void
+
+    private var trialLabel: String? {
+        subscriptions.freeTrialPeriod(for: tier).map { SubscriptionManager.trialPeriodLabel($0) }
+    }
+
+    var body: some View {
+        if let plan = SubscriptionProduct.make(tier: tier) {
+            if subscriptions.product(for: plan) != nil {
+                Button {
+                    onPurchase()
+                } label: {
+                    Group {
+                        if subscriptions.isPurchasing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(theme.palette.onPrimary)
+                        } else {
+                            // ⚠ **버튼에 가격을 넣지 말 것**(2026-08-11 요청) — 가격은 카드가 말하고, 버튼은 무엇을 하는지만 말한다.
+                            Text(trialLabel.map { String(localized: "\(String($0)) 무료로 시작하기") } ?? String(localized: "결제하기"))
+                                .font(.headline)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(theme.palette.primary)
+                .foregroundStyle(theme.palette.onPrimary)
+                .disabled(isBusy || subscriptions.isPurchasing)
+            } else if subscriptions.isLoadingProducts || !subscriptions.hasAttemptedProductFetch {
+                RoundedRectangle(cornerRadius: theme.shapes.medium)
+                    .fill(theme.palette.outline.opacity(0.18))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .overlay(ProgressView().controlSize(.small))
+                    .accessibilityLabel(String(localized: "가격 불러오는 중"))
+            } else {
+                // ⚠ **"준비중" 같은 말을 지어내지 말 것** — 가격은 스토어가 권위라 못 받아 올 수 있다. 살 수 없다는 사실만 전한다.
+                Button {
+                    // no-op — 상품을 못 받았으니 결제로 갈 수 없다.
+                } label: {
+                    Text(String(localized: "결제하기"))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .disabled(true)
+            }
+        }
+    }
+}
+
+/// 플러스 혜택 한 줄 — 강조색 체크 + 글자(A안). 안드로이드 `PlanCheckRow` 와 같다.
+struct PlanCheckRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let text: LocalizedStringKey
 
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(theme.palette.primary)
-                .frame(width: 6, height: 6)
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(theme.palette.primary)
+                .accessibilityHidden(true)
             Text(text)
-                .font(theme.typography.bodyMedium)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .font(.subheadline)
+                .foregroundStyle(theme.palette.onSurface)
         }
     }
 }
