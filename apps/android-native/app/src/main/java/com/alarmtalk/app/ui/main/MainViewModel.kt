@@ -69,6 +69,12 @@ internal val SIGNUP_REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENT_TYPES + "o
 internal val KNOWN_CONSENT_TYPES =
     listOf("terms", "privacy", "age14", "marketing", "voice_biometric", "overseas_transfer")
 
+/**
+ * 목소리 권리 확인의 동의 기록 유형 — 서버 `VOICE_RIGHTS_CONSENT`(계정마다 한 번). 법정 동의가 아니라 [KNOWN_CONSENT_TYPES]
+ * (동의 화면이 그리는 것)에 넣지 않는다 — 묻는 곳은 목소리 등록 시트(`VoiceConsentSheet`)다.
+ */
+internal const val VOICE_RIGHTS_CONSENT_TYPE = "voice_rights"
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
     internal val authSessionStore = AuthSessionStore(application)
@@ -956,6 +962,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var sensitiveConsentMissing by mutableStateOf<List<String>>(emptyList())
         internal set
 
+    // 목소리 권리 확인을 이미 받았는가 — 서버 `voice_rights_attested`(계정마다 한 번이라 새 기기·재설치에서도 다시 묻지 않는다).
+    // **null 은 '모른다'** 다: 그 칸이 없는 옛 서버이거나 아직 상태를 못 받았다. 그때는 등록마다 시트에서 묻되 서버에 적지 않는다.
+    var voiceRightsAttested by mutableStateOf<Boolean?>(null)
+        internal set
+
     // 개정에 따른 재동의인지(=이 계정에 이미 동의 기록이 있는지). 동의 화면 문구가 갈린다.
     var consentIsReconsent by mutableStateOf(false)
         internal set
@@ -991,7 +1002,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal data class SensitiveConsentRequest(
         val types: List<String>,
         val resumeVoiceDrafts: List<VoiceProfileCreationDraft>? = null,
-        // 목소리 권리 확인(계정마다 한 번)도 이 시트에서 받는가 — `VoiceRightsAttestation`.
+        // 목소리 권리 확인(계정마다 한 번 — 서버 `voice_rights`)도 이 시트에서 받는가. [types](빠진 법정 동의)와 따로 둔다 —
+        // 서버가 그 기록을 다룰 때만 함께 적기 때문이다([submitVoiceConsents]).
         val asksRights: Boolean = false,
     )
 
@@ -1632,6 +1644,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 401 로 세션이 끊긴 뒤에도 동의 시트가 로그아웃 화면 위에 계속 떠 있고, 다른 계정이
         // 로그인해 '동의' 를 누르는 순간 앞 사용자의 녹음이 그 계정으로 업로드된다(Codex #660).
         sensitiveConsentMissing = emptyList()
+        voiceRightsAttested = null
         pendingSensitiveConsent = null
         // 종료 안내·계정 응답 장부도 계정별 상태다. 앞 계정의 안내가 새 계정 화면에 남으면
         // 안 되고, 떠 있던 요청의 응답은 앞 계정의 것이라 순번을 앞질러 버린다

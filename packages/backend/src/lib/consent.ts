@@ -15,6 +15,8 @@
  *                     (법적 문구는 후속 wave 에서 정비).
  *  - overseas_transfer 국외 이전 — 크로스보더 TTS/번역(Vertex)이 텍스트를 국외로
  *                     전송하므로 해당 경로 사용 시 별도 필수.
+ *  - voice_rights     목소리 권리 확인 — 법정 동의가 아니라 **등록하는 목소리의 권리 보증**(약관 제7조)을 받았다는
+ *                     기록이다. 아래 `VOICE_RIGHTS_CONSENT` 참조.
  */
 import type { DbExecutor } from './transactions';
 
@@ -25,6 +27,7 @@ const CONSENT_TYPES = [
   'marketing',
   'voice_biometric',
   'overseas_transfer',
+  'voice_rights',
 ] as const;
 
 export type ConsentType = (typeof CONSENT_TYPES)[number];
@@ -70,6 +73,19 @@ export const REQUIRED_CONSENT_TYPES = [...GENERAL_REQUIRED_CONSENTS, 'overseas_t
  * 없어 등록 도중 모달이 뜨지 않는다. 거절한 사람에게만 목소리 등록 화면에서 다시 묻는다.
  */
 export const FEATURE_CONSENT_TYPES = ['voice_biometric'] as const;
+
+/**
+ * 목소리 권리 확인 — "본인 목소리이거나 목소리 주인이 동의한 목소리만 등록한다"(약관 제7조 권리 보증)를 **계정마다 한 번**
+ * 받는다(2026-11-15 오너: "서버에 저장해서 한번 동의 했으면 안해도 되도록 해"). 앞으로 등록하는 목소리 전부에 대한 확인이다.
+ *
+ * 법정 동의가 아니지만 같은 표(`user_consents`)에 같은 모양(유형·문서 버전·여부·시각)으로 적는다 — 받은 사실과 시각이
+ * 남아야 하는 기록이라서다. 다른 유형과 갈리는 점:
+ *  - 가입 화면이 묻지 않는다 — 위 어느 목록(필수·기능·선택)에도 없어 `collect` 에 안 든다. 묻는 곳은 목소리 등록 시트다.
+ *  - 음성 라우트를 막지 않는다 — `SENSITIVE_REQUIRED_CONSENTS` 에 없다. 그래서 `sensitive_missing` 에 안 들고 철회 파기도 없다.
+ *    옛 앱은 이 기록을 모르고 등록마다 입구 모달로 묻는다 — 서버가 막으면 옛 앱의 등록이 통째로 막힌다.
+ *  - 받았는지는 `GET /user/consents/status` 의 `voice_rights_attested` 하나로 알린다.
+ */
+export const VOICE_RIGHTS_CONSENT = 'voice_rights' as const;
 
 /** 처리방침/약관 문서의 **게시 중인 최신** 버전. 새로 기록하는 동의는 앱이 보여 준 문서의 버전으로 저장하되,
  *  그 값은 `ACCEPTED_POLICY_VERSIONS` 안의 것만 받는다(클라가 보낸 임의의 값을 그대로 쓰면 위조된 높은 값이 이후의
@@ -198,6 +214,8 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
   marketing: 3,
   voice_biometric: 3,
   overseas_transfer: 3,
+  // 기록은 2026-11-15 부터 생긴다(새 앱만 보낸다). 확인 문구를 고쳐 다시 받아야 할 때만 올린다.
+  voice_rights: 3,
 };
 
 /**

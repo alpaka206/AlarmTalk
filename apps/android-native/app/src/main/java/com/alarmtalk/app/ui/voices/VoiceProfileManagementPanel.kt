@@ -2078,7 +2078,7 @@ internal fun VoiceProfileManagementPanel(
             Button(
                 onClick = {
                     // 입구 권리 확인 모달은 없앴다 — 권리 확인은 '등록' 을 누를 때 빠진 동의와 한 시트에서 계정마다 한 번 받는다
-                    // (`VoiceRightsAttestation`, 2026-11-15).
+                    // (서버 `voice_rights` 기록, 2026-11-15).
                     if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
                 },
                 enabled = !voiceProfileBusy && !monthlyExhausted,

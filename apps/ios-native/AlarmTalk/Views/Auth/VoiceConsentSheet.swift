@@ -9,7 +9,7 @@ import SwiftUI
 /// 강제한다 — 그 403 이 이 시트를 연다.
 ///
 /// 목소리 권리 확인도 여기서 함께 받는다 — **앞으로 등록하는 목소리 전부**에 대한 확인을 계정마다 한 번
-/// (`VoiceRightsAttestation`, 2026-11-15 오너). 예전에는 '추가' 입구 모달이 등록마다 따로 물었다.
+/// (서버 `voice_rights` 기록, 2026-11-15 오너). 예전에는 '추가' 입구 모달이 등록마다 따로 물었다.
 /// 문구는 `docs/legal/consent-and-permission-copy.ko.md` §2 를 따른다.
 ///
 /// Android `VoiceConsentSheet.kt` 의 1:1 포팅.
@@ -158,26 +158,6 @@ struct VoiceConsentSheet: View {
         """) }
 }
 
-
-/// 목소리 등록 권리 확인 — **계정마다 한 번**(2026-11-15 오너: "권리 권한도 그냥 앞으로 등록하는 목소리 전부로 해").
-///
-/// '등록' 을 누를 때 빠진 법정 동의와 함께 `VoiceConsentSheet` 에서 **앞으로 등록하는 목소리 전부**에 대한 확인을 받고
-/// 계정별로 이 기기에 적는다. 법정 동의 유형이 아니라 서버에 기록하지 않는다(예전 입구 모달도 기록하지 않았다) — 다른
-/// 기기에서는 한 번 더 묻는다. 안드로이드 `VoiceRightsAttestation` 과 같다. 규칙: `docs/spec/consent.md` 「목소리 권리 확인」.
-enum VoiceRightsAttestation {
-    /// 계정별 저장 키. 테스트가 지우려고 쓴다.
-    static func storageKey(userID: String) -> String { "voiceRightsAttested.\(userID)" }
-
-    static func isAttested(userID: String?) -> Bool {
-        guard let userID else { return false }
-        return UserDefaults.standard.bool(forKey: storageKey(userID: userID))
-    }
-
-    static func markAttested(userID: String?) {
-        guard let userID else { return }
-        UserDefaults.standard.set(true, forKey: storageKey(userID: userID))
-    }
-}
 
 #if DEBUG
 #Preview("목소리 등록 동의") {

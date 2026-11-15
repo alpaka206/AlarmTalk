@@ -8,6 +8,22 @@ final class AuthUserDecodingTests: XCTestCase {
         return decoder
     }
 
+    /// 동의 상태의 목소리 권리 확인 칸(`voice_rights_attested`, 2026-11-15). 칸이 없는 옛 서버는 nil(모른다)이어야 한다 —
+    /// false 로 읽으면 등록 시트가 그 서버가 모르는 `voice_rights` 를 보내 400 으로 막힌다. 안드로이드 `ConsentStatusResponseTest`.
+    func test_consentStatusDecodesVoiceRightsAttested() throws {
+        let base = """
+        "needs_consent": false, "needs_collection": false, "required": [], "missing": [], "collect": [],
+        "optional": [], "prechecked": [], "sensitive_missing": [], "has_prior_consent": true, "policy_version": "8"
+        """
+        let attested = try decoder().decode(
+            ConsentStatusResponse.self,
+            from: Data("{\(base), \"voice_rights_attested\": true}".utf8)
+        )
+        XCTAssertEqual(attested.voiceRightsAttested, true)
+        let older = try decoder().decode(ConsentStatusResponse.self, from: Data("{\(base)}".utf8))
+        XCTAssertNil(older.voiceRightsAttested)
+    }
+
     /// 옛 서버 응답에는 가족 알람 칸이 남아 있을 수 있다(모양이 어긋난 값까지) — 읽지 않고 넘긴다.
     func test_authUserDecodingFallsBackLikeAndroidSessionStore() throws {
         let json = """

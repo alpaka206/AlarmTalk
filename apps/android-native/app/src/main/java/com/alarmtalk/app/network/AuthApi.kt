@@ -280,6 +280,12 @@ data class ConsentStatusResponse(
      */
     @SerializedName("sensitive_missing") val sensitiveMissing: List<String> = emptyList(),
     /**
+     * 목소리 권리 확인을 이미 받았는가(계정마다 한 번 — 서버 `user_consents` 의 `voice_rights`).
+     * **null 은 '모른다'** 다 — 이 칸이 없는 옛 서버다. 그때는 등록마다 시트에서 묻되 서버에 적지 않는다
+     * (옛 서버는 모르는 유형을 400 으로 거절해, 적으려 하면 등록이 막힌다).
+     */
+    @SerializedName("voice_rights_attested") val voiceRightsAttested: Boolean? = null,
+    /**
      * 화면을 띄워 물어봐야 하는가(= collect 가 비어 있지 않은가). `needsConsent` 와 의미가 다르다 —
      * 그쪽은 '앱을 막는 게이트' 신호라 필수 유형만 보고, 이쪽은 선택 동의 재수집까지 포함한다.
      */

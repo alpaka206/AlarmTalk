@@ -893,6 +893,7 @@ internal fun MainViewModel.applyConsentStatus(
     // 없어 CTA 까지 비활성인 죽은 화면이 된다(Codex #660).
     consentCollect = collected.filter { it in KNOWN_CONSENT_TYPES }
     sensitiveConsentMissing = status.sensitiveMissing
+    voiceRightsAttested = status.voiceRightsAttested
     consentIsReconsent = status.hasPriorConsent
     // 서버는 '물어볼 게 있다' 고 하는데 그게 전부 못 그리는 선택 유형이면 띄우지 않는다.
     consentNeedsCollection = status.needsCollection && consentCollect.isNotEmpty()
@@ -1083,9 +1084,14 @@ internal fun MainViewModel.submitVoiceConsents() {
     // 세션 정리에서 pendingSensitiveConsent 를 비우는 것만으로는 못 막는다 — 그때 이어서
     // 등록하면 앞 계정이 녹음한 음성이 뒤 계정으로 올라간다(Codex #660).
     val ownerUserId = session.user.id
-    // 서버에 적을 법정 동의 없이 **권리 확인만** 받은 경우 — 기록할 것이 없으니 왕복 없이 이 기기에 적고 이어서 만든다.
-    if (request.types.isEmpty()) {
-        if (request.asksRights) VoiceRightsAttestation.markAttested(getApplication(), ownerUserId)
+    // 빠진 법정 동의와 목소리 권리 확인을 **한 요청으로** 적는다 — 둘 중 하나만 남는 일이 없다. 권리 확인은 서버가 그 기록을
+    // 다룰 때만(`voiceRightsAttested == false`) 싣는다. null 은 그 칸이 없는 옛 서버이거나 아직 상태를 못 받은 것이라, 실으면
+    // 옛 서버가 모르는 유형(400)으로 거절해 등록이 막힌다.
+    val recordsRights = request.asksRights && voiceRightsAttested == false
+    val recordedTypes = if (recordsRights) request.types + VOICE_RIGHTS_CONSENT_TYPE else request.types
+    // 적을 것이 없다(옛 서버에서 권리 확인만 받았다) — 이 실행 동안은 받은 것으로 두고 왕복 없이 이어서 만든다.
+    if (recordedTypes.isEmpty()) {
+        if (request.asksRights) voiceRightsAttested = true
         pendingSensitiveConsent = null
         request.resumeVoiceDrafts?.let { createVoiceProfiles(it) }
         return
@@ -1098,7 +1104,7 @@ internal fun MainViewModel.submitVoiceConsents() {
                 com.alarmtalk.app.network.RecordConsentsRequest(
                     // 시트가 실제로 물어본 유형만 기록한다 — 국외 이전만 요구된 자리에서
                     // 음성 생체정보까지 함께 넣으면 묻지도 않은 동의를 받아 버린다.
-                    consents = request.types.map { type ->
+                    consents = recordedTypes.map { type ->
                         com.alarmtalk.app.network.ConsentItemRequest(
                             type = type,
                             agreed = true,
@@ -1121,8 +1127,9 @@ internal fun MainViewModel.submitVoiceConsents() {
             // 위 동의 화면 제출과 같은 이유 — 진행 중인 조회의 답이 이 결과를 덮지 않게 한다.
             consentStatusRevision += 1
             sensitiveConsentMissing = sensitiveConsentMissing - request.types.toSet()
-            // 같은 시트에서 받은 권리 확인 — 법정 동의 기록이 성공한 뒤에만 적는다(실패하면 시트가 남아 다시 받는다).
-            if (request.asksRights) VoiceRightsAttestation.markAttested(getApplication(), ownerUserId)
+            // 같은 시트에서 받은 권리 확인 — 기록이 성공한 뒤에만 받은 것으로 둔다(실패하면 시트가 남아 다시 받는다).
+            // 서버에 적지 못한 옛 서버(위 recordsRights=false)에서도 이 실행 동안은 다시 묻지 않는다.
+            if (request.asksRights) voiceRightsAttested = true
             pendingSensitiveConsent = null
             // 민감 동의 제출은 일반 동의 403을 해결하지 않는다. 무효화한 조회를 다시 이어 간다.
             if (consentGatePendingUserId == ownerUserId) checkConsentStatus()

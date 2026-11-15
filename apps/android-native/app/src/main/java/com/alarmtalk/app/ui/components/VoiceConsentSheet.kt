@@ -33,7 +33,7 @@ import androidx.compose.ui.window.Dialog
  * 서버도 같은 지점(`voice-profile`·`tts` 라우트)에서만 강제한다.
  *
  * 문구는 `docs/legal/consent-and-permission-copy.ko.md` §2 를 따른다. 목소리 권리 확인도 여기서 함께 받는다 — **앞으로
- * 등록하는 목소리 전부**에 대한 확인을 계정마다 한 번(`VoiceRightsAttestation`, 2026-11-15). 예전에는 '추가' 입구 모달이
+ * 등록하는 목소리 전부**에 대한 확인을 계정마다 한 번(서버 `voice_rights` 기록, 2026-11-15). 예전에는 '추가' 입구 모달이
  * 등록마다 따로 물었다.
  */
 @Composable

@@ -187,6 +187,8 @@ describe('lib/consent — config', () => {
       marketing: 3,
       voice_biometric: 3,
       overseas_transfer: 3,
+      // 목소리 권리 확인(2026-11-15)도 기준선 3 이다 — 확인 문구를 고쳐 다시 받아야 할 때만 올린다.
+      voice_rights: 3,
     });
     expect(USAGE_EVENT_MIN_PRIVACY_VERSION).toBe(5);
   });
@@ -449,6 +451,7 @@ interface StatusBody {
   prechecked: string[];
   has_prior_consent: boolean;
   policy_version: string;
+  voice_rights_attested: boolean;
 }
 
 function buildUserApp() {
@@ -528,6 +531,19 @@ describe('POST /user/consents — 저장되는 정책 버전', () => {
       );
     }
     expect(mockConsentInserts.map((r) => r.version)).toEqual(['8', '7']);
+  });
+
+  // 등록 시트는 빠진 법정 동의와 목소리 권리 확인을 **한 요청**으로 적는다 — 둘 중 하나만 남는 일이 없다.
+  it('목소리 권리 확인(voice_rights)도 같은 요청·같은 표에 적는다', async () => {
+    const res = await postConsents([
+      { type: 'voice_biometric', agreed: true },
+      { type: 'voice_rights', agreed: true },
+    ]);
+    expect(res.status).toBe(200);
+    expect(mockConsentInserts).toEqual([
+      { type: 'voice_biometric', version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { type: 'voice_rights', version: CURRENT_POLICY_VERSION, agreed: 1 },
+    ]);
   });
 
   it('version 필드는 호환을 위해 받기만 하고 무시한다 — 400 으로 깨지 않는다', async () => {
@@ -753,6 +769,29 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
     expect(body.needs_consent).toBe(true);
     expect(body.needs_collection).toBe(true);
     expect(body.collect).toEqual([...REQUIRED_CONSENT_TYPES, 'voice_biometric', 'marketing']);
+  });
+
+  // 목소리 권리 확인은 **계정마다 한 번**이다(2026-11-15 오너: "서버에 저장해서 한번 동의 했으면 안해도 되도록 해").
+  // 기기가 아니라 서버가 기억하므로 새 기기·재설치에서도 다시 묻지 않는다. 법정 동의가 아니라 가입 화면 목록에는 끼지 않는다.
+  it('목소리 권리 확인 기록이 있으면 voice_rights_attested 가 true 다 — 가입 화면 목록에는 끼지 않는다', async () => {
+    mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
+    let body = await consentStatus();
+    expect(body.voice_rights_attested).toBe(false);
+    // 아직 안 받았어도 가입 화면은 뜨지 않는다 — 묻는 곳은 목소리 등록 시트다.
+    expect(body.needs_collection).toBe(false);
+    expect(body.collect).toEqual([]);
+
+    mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3'), consentRow('voice_rights')];
+    body = await consentStatus();
+    expect(body.voice_rights_attested).toBe(true);
+    for (const list of [body.collect, body.missing, body.sensitive_missing, body.optional, body.prechecked]) {
+      expect(list).not.toContain('voice_rights');
+    }
+    expect(body.needs_collection).toBe(false);
+
+    // 거절로 적힌 기록은 받은 것이 아니다.
+    mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3'), consentRow('voice_rights', 0)];
+    expect((await consentStatus()).voice_rights_attested).toBe(false);
   });
 
   it('민감 동의가 모두 유효하면 sensitive_missing 은 빈 배열', async () => {
