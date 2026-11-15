@@ -1,7 +1,5 @@
 package com.alarmtalk.app
 
-import com.alarmtalk.app.alarm.AlarmStreamVolume
-import com.alarmtalk.app.alarm.VoiceVolumeRamp
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -26,8 +24,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height as androidxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height as androidxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -35,14 +33,17 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -53,9 +54,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.alarmtalk.app.ads.RewardedAdFlow
+import com.alarmtalk.app.ads.RewardedAds
+import com.alarmtalk.app.ads.RewardedWatchResult
+import com.alarmtalk.app.ads.findHostActivity
+import com.alarmtalk.app.alarm.AlarmStreamVolume
+import com.alarmtalk.app.alarm.VoiceVolumeRamp
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioLimits
-import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
@@ -64,26 +70,23 @@ import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.DynamicPromptPreferenceStore
 import com.alarmtalk.app.data.DynamicPromptPreferences
-import com.alarmtalk.app.data.isSystemVoiceId
-import com.alarmtalk.app.data.isVoicePackVoiceId
-import com.alarmtalk.app.data.clipCacheKey
-import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
-import com.alarmtalk.app.network.apiErrorCode
-import com.alarmtalk.app.network.ManualQuotaResponse
-import com.alarmtalk.app.ads.RewardedAds
-import com.alarmtalk.app.ads.RewardedAdFlow
-import com.alarmtalk.app.ads.RewardedWatchResult
-import com.alarmtalk.app.ads.findHostActivity
+import com.alarmtalk.app.data.clipCacheKey
+import com.alarmtalk.app.data.isSystemVoiceId
+import com.alarmtalk.app.data.isVoicePackVoiceId
+import com.alarmtalk.app.data.toDynamicPromptSettings
+import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.DynamicPromptSettings
+import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.VoiceProfile
+import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.trimmedOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1809,12 +1812,22 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    val navigationBarFill = MaterialTheme.colorScheme.background
+    val navigationBarInset = contentPadding.calculateBottomPadding()
     Box(
         modifier = Modifier
             .fillMaxSize()
             // 다른 탭·하위 화면과 같은 밤하늘 그라데이션이다(CLAUDE.md 디자인 토큰 — `homeGradientBrush` 는 모든 탭과 하위
             // 전체화면). 2026-11-15 전까지 편집기만 칠하지 않아 단색 배경이었고, iOS 편집기와 휠 숫자 색이 달라 보였다.
             .background(homeGradientBrush())
+            // 아래 시스템 내비게이션 바 자리는 하단 버튼 줄과 같은 색으로 칠한다 — iOS 는 버튼 줄 색이 홈 막대 자리까지
+            // 이어진다. 그라데이션 끝색이 비치면 버튼 줄과 이음매가 생긴다(2026-11-15 A32 3버튼 실측).
+            .drawBehind {
+                val inset = navigationBarInset.toPx()
+                if (inset > 0f) {
+                    drawRect(navigationBarFill, topLeft = Offset(0f, size.height - inset), size = Size(size.width, inset))
+                }
+            }
             // ⚠ **입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시).
             // 스크롤 컨테이너가 탭을 소비하므로 **뒤에 깐 레이어로는 닿지 않는다** —
             // 부모에 걸어 Final 패스에서 '아무도 소비하지 않은 탭' 만 받는다
