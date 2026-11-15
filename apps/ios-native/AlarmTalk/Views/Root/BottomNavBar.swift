@@ -12,6 +12,10 @@ struct BottomNavBar: View {
         HStack(spacing: 6) {
             ForEach(NativeTab.allCases) { tab in
                 Button {
+                    // 고른 탭을 다시 눌러도 아무 일도 하지 않는다. ⚠ **`.disabled` 로 막지 말 것** — 잠긴 버튼은 SwiftUI 가
+                    // 흐리게 칠해, 고른 탭이 primary 가 아니라 칙칙한 #58708B 로 보였다(안 고른 탭보다 어두웠다). 안드로이드는
+                    // 고른 탭이 primary 그대로다(2026-11-15 두 앱 화면 대조).
+                    guard selected != tab else { return }
                     if let onSelect {
                         onSelect(tab)
                     } else {
@@ -26,6 +30,9 @@ struct BottomNavBar: View {
                         // 하고 있었다(목소리·더보기가 SF 모양의 자체 드로어블).
                         Image(systemName: selected == tab ? tab.selectedSystemImage : tab.systemImage)
                             .font(.system(size: 22, weight: .semibold))
+                            // 아이콘 자리는 높이를 같게 둔다 — ••• 처럼 낮은 글리프도 글자 줄이 다른 탭과 맞는다(안드로이드는
+                            // 24dp 아이콘 상자). 예전에는 '더보기' 글자만 위로 떠 있었다.
+                            .frame(height: 26)
                         Text(tab.title)
                             .font(.caption2.weight(selected == tab ? .semibold : .medium))
                     }
@@ -42,7 +49,7 @@ struct BottomNavBar: View {
                     .foregroundStyle(selected == tab ? theme.palette.primary : theme.palette.onSurfaceVariant)
                 }
                 .buttonStyle(.plain)
-                .disabled(selected == tab)
+                .accessibilityAddTraits(selected == tab ? .isSelected : [])
             }
         }
         .padding(.horizontal, 6)
