@@ -151,16 +151,8 @@ struct LoginView: View {
                         findPasswordRow
                     }
 
-                    if let message = auth.statusMessage {
-                        // ⚠ **성공을 빨간색으로 그리지 말 것.** 이 자리에는 "인증 코드를
-                        // 보냈어요"(안내)와 "비밀번호가 달라요"(오류)가 함께 온다 —
-                        // 전부 error 색으로 칠하면 코드를 잘 받은 사용자가 뭔가
-                        // 잘못된 줄 안다(안드로이드는 AuthErrorText/AuthNoticeText 로 나눈다).
-                        Text(message)
-                            .font(theme.typography.bodySmall)
-                            .foregroundStyle(auth.statusIsError ? AuthSceneColors.error : AuthSceneColors.notice)
-                            .padding(.top, 4)
-                    }
+                    // 안내(`statusMessage` — "인증 코드를 보냈어요"·소셜 로그인 실패 등)는 폼 맨 아래 글줄이 아니라 **위쪽
+                    // 토스트**다(아래 `.authToast` — 2026-11-15 오너). 맨 아래면 키보드 뒤에 숨는다. 안내와 오류는 색으로 가른다.
 
                     modeSwitchRow
                 }
@@ -173,6 +165,11 @@ struct LoginView: View {
             .scrollDismissesKeyboard(.interactively)
             }
         }
+        .authToast(message: auth.statusMessage, isError: auth.statusIsError) { auth.statusMessage = nil }
+        #if DEBUG
+        // 화면 확인용 — `-UIPreviewAuthToast "<문장>"` 이면 그 문장을 토스트로 띄운다(`UIPreviewSeed.authToast`).
+        .task { if let preview = UIPreviewSeed.authToast { auth.statusMessage = preview } }
+        #endif
         // 제목은 화면 **안**에 있다(위 Text) — 네비게이션 바에 또 그리면 같은 말이 두 번 나온다.
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)

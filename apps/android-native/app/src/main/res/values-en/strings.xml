@@ -93,6 +93,9 @@
     <string name="billing_plan_personal_feature_voice">Register 1 voice of your choice</string>
     <string name="billing_plan_personal_feature_manual">Type it yourself: 30 a month (incl. your registered voice)</string>
     <string name="billing_plan_personal_name">Plus</string>
+    <string name="billing_plan_personal_headline">Wake up to\nthe voice you want</string>
+    <string name="billing_plan_personal_feature_no_ads">No ads</string>
+    <string name="billing_plan_trial_price_line">%1$s free, then %2$s</string>
     <string name="billing_play_manage_description">We couldn\'t complete the cancellation in the app. You can cancel directly in Google Play subscriptions. Your subscription hasn\'t changed.</string>
     <string name="billing_play_manage_open">Open Google Play</string>
     <string name="billing_play_manage_title">Manage it directly in Google Play</string>
@@ -229,7 +232,6 @@
     <string name="editor_voice_row_title">Voice</string>
     <string name="editor_voice_select">Select voice</string>
     <string name="editor_voice_select_title">Choose a voice</string>
-    <string name="editor_voice_replacement_settling">Finishing up this voice</string>
     <string name="editor_block_voice_settling_title">Almost ready</string>
     <string name="msg_voice_replacement_settling">We’re finishing up your replaced voice. Please pick it again in a moment.</string>
     <string name="editor_voice_source_local">Record it</string>
@@ -441,7 +443,6 @@
     <string name="voices_record_done">Recording saved</string>
     <string name="common_voice_record_preview">Play recording</string>
     <string name="common_voice_record_again">Record again</string>
-    <string name="voices_record_video_tip">Have permission but no audio file? Play a video of them and record that.</string>
     <string name="voices_record_script_title">Example script</string>
     <string name="voices_record_too_short">Record at least 12 seconds</string>
     <string name="voices_record_status_hint">Too short and the voice may not match.</string>
@@ -587,7 +588,7 @@
     <string name="consent_load_failed">Couldn\'t load your consents. Tap to retry.</string>
     <string name="r3app_bottom_create_alarm_desc">Create alarm</string>
     <string name="r3app_update_required_title">An update is needed</string>
-    <string name="r3app_update_required_body">This version is no longer supported.\nPlease update to the latest version.</string>
+    <string name="r3app_update_required_body">You need the latest version to keep using AlarmTalk.\nYour alarms and voices stay after updating.</string>
     <string name="r3app_update_required_button">Update</string>
     <string name="r3app_update_downloaded">An update has been downloaded. Restart the app to apply it.</string>
     <string name="r3app_update_restart">Restart</string>

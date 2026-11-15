@@ -404,7 +404,8 @@ internal fun PlayModeSelector(
 //
 // ⚠ 주석에 적혀 있던 '목소리/녹음·파일 소스' 는 **더 이상 없다.** 그 세그먼트는 없앴고
 // '직접 녹음' 은 목소리 목록의 마지막 항목이 됐다(`VoiceAudioCard` 의 `recordingOption`).
-// 지금 쓰는 곳은 `PlayModeSelector`(재생 방식)와 `VoiceProfileManagementPanel` 이다.
+// 지금 쓰는 곳은 `PlayModeSelector`(재생 방식)·날씨 지역 시트의 나라·목소리 만들기의 녹음/파일
+// (`VoiceCaptureModeSelector`, 2026-11-15 오너 — 나라 고르기처럼)이다.
 @Composable
 internal fun EditorSegmentedSelector(
     options: List<Pair<String, String>>,
@@ -415,6 +416,8 @@ internal fun EditorSegmentedSelector(
     lockedValues: Set<String> = emptySet(),
     /// 칸 글자 앞에 붙일 아이콘(값 → 아이콘). 없으면 글자만이다.
     icons: Map<String, ImageVector> = emptyMap(),
+    /// false 면 흐리게 그리고 눌러도 바꾸지 않는다(녹음 중에 방식을 못 바꾸게 하는 자리).
+    enabled: Boolean = true,
 ) {
     // ⚠ **선택 표시는 배경 하나가 미끄러져 옮겨간다.** 예전에는 칸마다 색이 즉시
     // 바뀌어(`Surface(color=...)`) 전환이 툭 끊겼다 — iOS 는 `matchedGeometryEffect` 로
@@ -429,7 +432,9 @@ internal fun EditorSegmentedSelector(
         label = "play-mode-thumb",
     )
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.38f),
         shape = WakerButtonShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
         border = wakerCardBorder(),
@@ -471,7 +476,7 @@ internal fun EditorSegmentedSelector(
                             label = label,
                             selected = selected == value,
                             locked = lockedValues.contains(value),
-                            onClick = { onSelect(value) },
+                            onClick = { if (enabled) onSelect(value) },
                             modifier = Modifier.weight(1f),
                             icon = icons[value],
                         )

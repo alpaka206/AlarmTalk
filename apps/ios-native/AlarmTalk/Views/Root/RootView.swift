@@ -72,7 +72,7 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if versionGate.updateRequired || auth.consentUnsupported {
+            if versionGate.updateRequired || auth.consentUnsupported || UIPreviewSeed.updateRequired {
                 // 최소지원버전 미만 — 로그인 여부와 무관하게 앱 진입을 막고 업데이트만 유도.
                 //
                 // ⚠ **`consentUnsupported` 도 같은 화면이다.** 서버가 앱이 번들한 것보다

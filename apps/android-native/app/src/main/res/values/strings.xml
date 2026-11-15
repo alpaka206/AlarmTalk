@@ -99,6 +99,9 @@
     <string name="billing_plan_personal_feature_voice">원하는 목소리 1개 등록</string>
     <string name="billing_plan_personal_feature_manual">직접 입력 월 30회(등록한 목소리 포함)</string>
     <string name="billing_plan_personal_name">플러스</string>
+    <string name="billing_plan_personal_headline">원하는 목소리로\n깨워 줘요</string>
+    <string name="billing_plan_personal_feature_no_ads">광고 없이 쓰기</string>
+    <string name="billing_plan_trial_price_line">%1$s 무료, 이후 %2$s</string>
     <string name="billing_play_manage_description">앱에서 해지를 완료하지 못했어요. Google Play 구독 관리에서 직접 해지할 수 있어요. 구독 상태는 바뀌지 않았어요.</string>
     <string name="billing_play_manage_open">Google Play 열기</string>
     <string name="billing_play_manage_title">Google Play에서 직접 관리가 필요해요</string>
@@ -238,7 +241,6 @@
     <string name="editor_voice_row_title">목소리</string>
     <string name="editor_voice_select">목소리 선택</string>
     <string name="editor_voice_select_title">목소리 고르기</string>
-    <string name="editor_voice_replacement_settling">목소리 정리 중이에요</string>
     <string name="editor_block_voice_settling_title">아직 준비 중이에요</string>
     <string name="msg_voice_replacement_settling">바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.</string>
     <string name="editor_voice_source_local">직접 녹음</string>
@@ -463,7 +465,6 @@
     <string name="voices_record_done">녹음을 저장했어요</string>
     <string name="common_voice_record_preview">녹음 들어보기</string>
     <string name="common_voice_record_again">다시 녹음</string>
-    <string name="voices_record_video_tip">허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요.</string>
     <string name="voices_record_script_title">예시 대본</string>
     <string name="voices_record_too_short">12초 이상 녹음해 주세요</string>
     <string name="voices_record_status_hint">너무 짧으면 목소리가 다르게 나올 수 있어요.</string>
@@ -611,7 +612,7 @@
     <string name="consent_load_failed">동의 내역을 불러오지 못했어요. 눌러서 다시 시도해 주세요.</string>
     <string name="r3app_bottom_create_alarm_desc">알람 만들기</string>
     <string name="r3app_update_required_title">업데이트가 필요해요</string>
-    <string name="r3app_update_required_body">이 버전은 더 이상 쓸 수 없어요.\n최신 버전으로 업데이트해 주세요.</string>
+    <string name="r3app_update_required_body">새 버전에서만 쓸 수 있어요.\n업데이트해도 알람과 목소리는 그대로 남아요.</string>
     <string name="r3app_update_required_button">업데이트하기</string>
     <string name="r3app_update_downloaded">업데이트를 다 받았어요. 재시작하면 적용돼요.</string>
     <string name="r3app_update_restart">재시작</string>

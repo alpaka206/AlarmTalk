@@ -85,106 +85,71 @@ struct BillingPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // ⚠ **상단 '현재 이용권' 요약 카드를 되살리지 말 것**(2026-08-11 요청).
-            // 플랜 카드가 이미 '현재 이용권' 배지로 지금 등급을 말하는데, 그 위에 흰 박스를
-            // 한 겹 더 두면 같은 사실을 두 번 말하면서 정작 고르는 카드들을 아래로 민다.
-            // 안드로이드에도 그 카드가 없다.
-            //
-            // ⚠ '이용권 선택' 머리말도 뺐다 — 화면 제목이 이미 '이용권' 이다.
-
-            // 기간 한정 개인 플랜 — **한 번만** 말한다. 가짜 구독 카드·해지 버튼을 만들지 않는다
-            // (해지할 구독이 없다. 서버도 `subscription: null` 이다).
-            // 프로모만 쓰는 계정은 개인 카드의 상태 문구로 말하고(`planScreen.promoOnPersonalCard`),
-            // 산 이용권·보류 행이 있는 계정만 예전처럼 카드 위 한 줄이다.
-            let promoLastDay = personalPromoLastDay
-            let screen = planScreen(promoActive: promoLastDay != nil)
-            // 플랜 카드가 **그려지는가** — 첫 로딩(스켈레톤)과 가져오기 실패(다시 시도)에는 카드가
-            // 한 장도 없다. ⚠ 그때 개인 카드에 앉을 문구를 그냥 두면 **어디에도 안 보인다**(오프라인
-            // 첫 진입 등) — 카드가 없는 동안은 카드 위 한 줄로 되돌린다(`drawsPromoLineAboveList`).
-            let showsSkeleton = subscriptions.isLoadingProducts && subscriptions.products.isEmpty
-            let showsFetchError = subscriptions.products.isEmpty
-                && subscriptions.productFetchFailed
-                && subscriptions.hasAttemptedProductFetch
-            let cardsVisible = !showsSkeleton && !showsFetchError
-            if screen.drawsPromoLineAboveList(cardsVisible: cardsVisible), let promoLastDay {
-                personalPromoLine(lastDay: promoLastDay)
-            }
-            let personalCardStatus: String? = screen.promoOnPersonalCard
-                ? promoLastDay.map { Self.personalPromoLineText(lastDay: $0) }
-                : nil
-
-            if showsSkeleton {
-                // 첫 로딩 — 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 스켈레톤.
-                BillingPlansSkeleton()
-            } else if showsFetchError {
-                // 가져오기 실패(일시적 blip)로 제품이 비어버린 경우 — 영구 비활성
-                // 대신 "다시 시도" 로 재요청할 수 있게 한다.
-                BillingProductsErrorState(isRetrying: subscriptions.isLoadingProducts) {
-                    Task { await subscriptions.fetchProducts() }
-                }
-            } else {
-                ForEach(PlanTier.allCases, id: \.self) { tier in
-                    PlanCard(
-                        tier: tier,
-                        isCurrent: screen.isCurrent(tier),
-                        // ⚠ '현재' 와 따로 본다 — 프로모로 현재가 된 개인 카드에도 결제 버튼이 남는다.
-                        showsPurchase: screen.showsPurchase(tier),
-                        statusText: tier == .personal ? personalCardStatus : nil,
-                        isBusy: socialFeatures.isBusy,
-                        onPurchase: { beginPurchase(tier: tier) }
-                    )
-                }
-            }
-
-            // ⚠ **복원 → 해지 순서로 **붙여** 둔다**(2026-08-24 지시, 안드로이드
-            // `BillingPanels.kt` 와 같은 배치). 예전에는 이 둘 사이에 약관 각주와 결과
-            // 메시지가 끼어 있어 **다른 묶음처럼** 보였다. 되돌릴 수 있는 액션(복원)이
-            // 위, 되돌릴 수 없는 액션(해지)이 아래다.
-            restorePurchasesButton
-
-            if socialFeatures.subscription?.subscription != nil {
-                Button(role: .destructive) {
-                    // ⚠ **App Store 구독이면 곧바로 시스템 시트를 연다**(코덱스 #730 2차).
-                    //   서버는 애플 구독 해지를 **항상** `STORE_CANCEL_UNSUPPORTED` 로
-                    //   거절한다(`routes/billing-mutation.ts`). 그런데 아래 알럿은 먼저
-                    //   '기간 종료 해지 / 지금 해지(일할 환불)' 를 고르게 한다 — 우리가
-                    //   할 수 없는 일을 고르고 확인하게 만드는 것이고, 환불 문구는 약속처럼
-                    //   읽힌다. 실제 결과는 어느 쪽을 눌러도 같은 시트다.
-                    //   모드 선택은 Play 구독에만 뜻이 있다.
-                    if isAppStoreSubscription {
-                        Task { await openAppStoreSubscriptionManagement() }
-                    } else {
-                        showCancelSubscriptionSheet = true
+        // ── 요금제 화면 A안(2026-11-15 오너 — 캔버스 proposal-10 '플러스 한 장 + 아래 고정 버튼') ──
+        // 위(스크롤): 플러스 큰 카드 · 무료 한 줄 카드 · 약관 각주. 아래(고정): 시작 버튼 · 자동 결제 안내 · 복원 · 해지.
+        // 안드로이드 `SubscriptionPanel` 과 같은 배치다. 아래 영역은 스크롤 **밖**이라 내용이 그 뒤로 지나가지 않는다.
+        //
+        // ⚠ **상단 '현재 이용권' 요약 카드를 되살리지 말 것**(2026-08-11 요청) — 카드의 '현재 이용권' 배지가 이미 말한다.
+        // ⚠ '이용권 선택' 머리말도 뺐다 — 화면 제목이 이미 '이용권' 이다.
+        //
+        // 기간 한정 개인 플랜 — **한 번만** 말한다. 가짜 구독 카드·해지 버튼을 만들지 않는다(서버도 `subscription: null` 이다).
+        // 프로모만 쓰는 계정은 플러스 카드의 상태 문구로 말하고(`planScreen.promoOnPersonalCard`), 산 이용권·보류 행이 있는
+        // 계정만 예전처럼 카드 위 한 줄이다.
+        let promoLastDay = personalPromoLastDay
+        let screen = planScreen(promoActive: promoLastDay != nil)
+        // 카드가 **그려지는가** — 첫 로딩(스켈레톤)과 가져오기 실패(다시 시도)에는 카드가 없다. ⚠ 그때 플러스 카드에 앉을
+        // 문구를 그냥 두면 **어디에도 안 보인다** — 카드가 없는 동안은 카드 위 한 줄로 되돌린다(`drawsPromoLineAboveList`).
+        let showsSkeleton = subscriptions.isLoadingProducts && subscriptions.products.isEmpty
+        let showsFetchError = subscriptions.products.isEmpty
+            && subscriptions.productFetchFailed
+            && subscriptions.hasAttemptedProductFetch
+        let cardsVisible = !showsSkeleton && !showsFetchError
+        let personalCardStatus: String? = screen.promoOnPersonalCard
+            ? promoLastDay.map { Self.personalPromoLineText(lastDay: $0) }
+            : nil
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if screen.drawsPromoLineAboveList(cardsVisible: cardsVisible), let promoLastDay {
+                        personalPromoLine(lastDay: promoLastDay)
                     }
-                } label: {
-                    // ⚠ **'이전 구매 복원' 과 같은 폭·같은 여백이다**(2026-08-24 지시).
-                    // 글자 폭에 맞춘 작은 버튼으로 되돌리지 말 것 — 위아래 버튼이 전부
-                    // 화면 폭인데 여기만 작으면 눌러야 할 것으로 보이지 않는다.
-                    Label(String(localized: "이용권 해지"), systemImage: "rectangle.portrait.and.arrow.right")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                    if showsSkeleton {
+                        // 첫 로딩 — 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 스켈레톤.
+                        BillingPlansSkeleton()
+                    } else if showsFetchError {
+                        // 가져오기 실패(일시적 blip) — 영구 비활성 대신 "다시 시도" 로 재요청할 수 있게 한다.
+                        BillingProductsErrorState(isRetrying: subscriptions.isLoadingProducts) {
+                            Task { await subscriptions.fetchProducts() }
+                        }
+                    } else {
+                        PlusPlanHeroCard(
+                            isCurrent: screen.isCurrent(.personal),
+                            // ⚠ '현재' 와 따로 본다 — 프로모로 현재가 된 플러스에도 시작 버튼이 남는다.
+                            showsPurchase: screen.showsPurchase(.personal),
+                            statusText: personalCardStatus
+                        )
+                        FreePlanSummaryCard(isCurrent: screen.isCurrent(.free))
+                    }
+
+                    SubscriptionTermsFootnote()
+
+                    if let feedback = purchaseFeedback {
+                        Text(feedback)
+                            .font(.footnote)
+                            .foregroundStyle(AlarmTalkTheme.textSecondary)
+                            .padding(.top, 4)
+                    }
+
+                    if let lastError = subscriptions.lastError {
+                        Text(lastError)
+                            .font(.footnote)
+                            .foregroundStyle(AlarmTalkTheme.error)
+                            .padding(.top, 4)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .disabled(socialFeatures.isBusy)
+                .padding(20)
             }
-
-            SubscriptionTermsFootnote()
-
-            if let feedback = purchaseFeedback {
-                Text(feedback)
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-                    .padding(.top, 4)
-            }
-
-            if let lastError = subscriptions.lastError {
-                Text(lastError)
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.error)
-                    .padding(.top, 4)
-            }
+            bottomBar(showsPurchase: cardsVisible && screen.showsPurchase(.personal))
         }
         // ⚠ **`.sectionSurface()` 로 되돌리지 말 것**(2026-08-11 요청). 플랜 카드들이 이미
         // 각자 카드라, 그 전체를 또 한 겹 카드로 감싸면 **카드 안의 카드**가 된다 —
@@ -442,6 +407,63 @@ struct BillingPanel: View {
         purchaseFeedback = String(localized: "설정 앱 > Apple 계정 > 구독 에서 해지할 수 있어요.")
     }
 
+    // MARK: - Bottom bar (A안)
+
+    /// 화면 아래 고정 영역 — 시작 버튼과 자동 결제 안내, 그 아래 복원·해지 글자 버튼. 안드로이드 `SubscriptionPanel` 의 아래 영역과 같다.
+    /// 자동 결제 안내는 **시작 버튼 바로 아래 한 문장**이다(App Store 지침 3.1.2: 체험 기간, 체험 뒤 가격·주기, 결제 시점,
+    /// 해지 방법을 결제 전에 보인다). 결제 확인 알럿도 같은 문장을 쓴다.
+    @ViewBuilder
+    private func bottomBar(showsPurchase: Bool) -> some View {
+        VStack(spacing: 8) {
+            if showsPurchase {
+                PlanPurchaseButton(tier: .personal, isBusy: socialFeatures.isBusy) {
+                    beginPurchase(tier: .personal)
+                }
+                if subscriptions.freeTrialPeriod(for: .personal) != nil,
+                   let disclosure = subscriptions.trialDisclosure(for: .personal) {
+                    Text(disclosure)
+                        .font(.footnote)
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            // ⚠ **복원 → 해지 순서**(2026-08-24 지시) — 되돌릴 수 있는 액션이 먼저, 되돌릴 수 없는 액션이 마지막.
+            // A안(2026-11-15)부터 둘 다 **작은 글자 버튼**이다 — 화면 폭 버튼이던 2026-08-17·08-24 지시를 오너가 시안으로 바꿨다.
+            HStack(spacing: 20) {
+                restorePurchasesButton
+                if socialFeatures.subscription?.subscription != nil {
+                    cancelSubscriptionButton
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+    }
+
+    private var cancelSubscriptionButton: some View {
+        Button(role: .destructive) {
+            // ⚠ **App Store 구독이면 곧바로 시스템 시트를 연다**(코덱스 #730 2차). 서버는 애플 구독 해지를 **항상**
+            //   `STORE_CANCEL_UNSUPPORTED` 로 거절한다 — '기간 종료 해지 / 지금 해지' 를 고르게 하면 할 수 없는 일을
+            //   고르게 만드는 셈이다. 모드 선택은 Play 구독에만 뜻이 있다.
+            if isAppStoreSubscription {
+                Task { await openAppStoreSubscriptionManagement() }
+            } else {
+                showCancelSubscriptionSheet = true
+            }
+        } label: {
+            Text(String(localized: "이용권 해지"))
+                .font(.subheadline.weight(.medium))
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(AlarmTalkTheme.error)
+        .disabled(socialFeatures.isBusy)
+    }
+
     // MARK: - Restore
 
     private var restorePurchasesButton: some View {
@@ -463,16 +485,14 @@ struct BillingPanel: View {
                     ProgressView()
                         .controlSize(.small)
                 }
-                Label(String(localized: "이전 구매 복원"), systemImage: "arrow.clockwise.circle")
+                Text(String(localized: "이전 구매 복원"))
             }
-            // ⚠ **글자 폭에 맞춘 작은 버튼으로 되돌리지 말 것**(2026-08-17 지시).
-            // 위쪽 결제 버튼이 전부 화면 폭인데 여기만 작으면 **눌러야 할 것으로
-            // 보이지 않는다.** 같은 폭·같은 세로 여백으로 둔다(안드로이드도 같다).
-            .font(.subheadline.weight(.semibold))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
+            // A안(2026-11-15): 화면 아래 고정 영역의 **작은 글자 버튼**이다(안드로이드도 같다).
+            .font(.subheadline.weight(.medium))
+            .padding(.vertical, 8)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
+        .foregroundStyle(AlarmTalkTheme.primary)
         .disabled(subscriptions.isPurchasing)
     }
 

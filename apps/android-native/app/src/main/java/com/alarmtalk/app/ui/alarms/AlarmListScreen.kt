@@ -66,6 +66,8 @@ internal fun AlarmListScreen(
     alarmsLoaded: Boolean,
     authSession: AuthSession?,
     voiceProfiles: List<VoiceProfile>,
+    /** 교체 정리가 끝나지 않은 목소리 — 목소리 탭 목록에 보이지 않는다(`VoiceProfileManagementPanel`). */
+    settlingVoiceProfileIds: Set<String> = emptySet(),
     pendingVoiceDraft: VoiceProfile?,
     voiceProfileBusy: Boolean,
     // 목소리 탭에서 한 일이 안 됐다는 이유(`MainViewModel.voiceTabError`) — 탭 맨 위에 빨간 글자로.
@@ -242,6 +244,26 @@ internal fun AlarmListScreen(
                 modifier = Modifier.padding(top = 24.dp),
             )
         }
+    // ⚠ **이용권은 목록(LazyColumn) 밖에서 그린다**(2026-11-15 A안 — 시작 버튼·결제 안내를 화면 아래에 고정한다).
+    // 목록 안 `item` 으로는 바닥에 붙일 수 없다. 남은 높이를 주고(`weight(1f)`) 패널이 스크롤 영역과 고정 영역을 나눈다.
+    if (selectedTab == NativeTab.Billing) {
+        SubscriptionPanel(
+            billingBusy = billingBusy,
+            subscriptionResponse = subscriptionResponse,
+            planPrices = planPrices,
+            planTrials = planTrials,
+            onPurchasePlay = onPurchasePlay,
+            onCancelSubscription = onCancelSubscription,
+            onRestorePurchases = onRestorePurchases,
+            personalPromo = planScreenPersonalPromo,
+            // 관리자 기간 지급의 끝 — 구독 응답이 있으면 그 값, 없으면 계정 응답의 값.
+            planGrantEndsAt = subscriptionResponse?.planGrant?.endsAt
+                ?: authSession?.user?.planGrant?.endsAt,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        )
+    } else {
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -281,6 +303,7 @@ internal fun AlarmListScreen(
                     VoiceProfileManagementPanel(
                         onCreateAlarmWithVoice = onCreateAlarmWithVoice,
                         voiceProfiles = voiceProfiles,
+                        settlingVoiceProfileIds = settlingVoiceProfileIds,
                         pendingVoiceDraft = pendingVoiceDraft,
                         voiceProfileBusy = voiceProfileBusy,
                         subscriptionResponse = subscriptionResponse,
@@ -394,25 +417,10 @@ internal fun AlarmListScreen(
                 }
             }
 
-            NativeTab.Billing -> {
-                // 상단바는 목록 **밖**에 고정돼 있다(위 Column 참조).
-                item {
-                    SubscriptionPanel(
-                        billingBusy = billingBusy,
-                        subscriptionResponse = subscriptionResponse,
-                        planPrices = planPrices,
-                        planTrials = planTrials,
-                        onPurchasePlay = onPurchasePlay,
-                        onCancelSubscription = onCancelSubscription,
-                        onRestorePurchases = onRestorePurchases,
-                        personalPromo = planScreenPersonalPromo,
-                        // 관리자 기간 지급의 끝 — 구독 응답이 있으면 그 값, 없으면 계정 응답의 값.
-                        planGrantEndsAt = subscriptionResponse?.planGrant?.endsAt
-                            ?: authSession?.user?.planGrant?.endsAt,
-                    )
-                }
-            }
+            // 이용권은 목록 밖에서 그린다(아래 고정 버튼 — 위 `if (selectedTab == NativeTab.Billing)`).
+            NativeTab.Billing -> Unit
         }
+    }
     }
     }
     }

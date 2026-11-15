@@ -5446,23 +5446,6 @@
         }
       }
     },
-    "허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Have permission but no audio file? Play a video of them and record that."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "許可を得た声で音源がなければ、動画を流して録音しても大丈夫です。"
-          }
-        }
-      }
-    },
     "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5497,19 +5480,19 @@
         }
       }
     },
-    "이 버전은 더 이상 쓸 수 없어요.\n최신 버전으로 업데이트해 주세요." : {
+    "새 버전에서만 쓸 수 있어요.\n업데이트해도 알람과 목소리는 그대로 남아요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This version is no longer supported.\nPlease update to the latest version."
+            "value" : "You need the latest version to keep using AlarmTalk.\nYour alarms and voices stay after updating."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このバージョンはご利用いただけなくなりました。\n最新バージョンにアップデートしてください。"
+            "value" : "最新バージョンでのみご利用いただけます。\nアップデートしてもアラームと声はそのまま残ります。"
           }
         }
       }
@@ -10586,6 +10569,28 @@
         }
       }
     },
+    "voice.capture.mode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How to add"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加方法"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "만드는 방법"
+          }
+        }
+      }
+    },
     "voice.section.own" : {
       "localizations" : {
         "en" : {
@@ -11585,40 +11590,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "毎週：%@"
-          }
-        }
-      }
-    },
-    "목소리 정리 중이에요" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Finishing up this voice"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音声を整理中です"
-          }
-        }
-      }
-    },
-    "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We’re finishing up your replaced voice. Please pick it again in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "変更した音声を整理しています。しばらくしてからもう一度選んでください。"
           }
         }
       }
@@ -13305,6 +13276,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "アラーム一覧と声タブに表示される名前です。名前は空にできず、%lld文字まで入力できます。"
+          }
+        }
+      }
+    },
+    "%@ 무료, 이후 %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ free, then %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@無料、その後%2$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 무료, 이후 %2$@"
+          }
+        }
+      }
+    },
+    "광고 없이 쓰기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No ads"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "広告なし"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "광고 없이 쓰기"
+          }
+        }
+      }
+    },
+    "billing.plan.personal.headline" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wake up to\nthe voice you want"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好きな声で\n起こしてくれます"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "원하는 목소리로\n깨워 줘요"
           }
         }
       }

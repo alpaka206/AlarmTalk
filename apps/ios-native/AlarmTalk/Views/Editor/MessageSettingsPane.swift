@@ -26,6 +26,8 @@ struct MessageSettingsPane: View {
     var manualLimit: Int?
     /// 무료가 기본분을 다 쓰고 남은 광고 보상 — 있으면 '(0/3)' 대신 보상 수를 말한다(안드로이드 `editorp_random_manual_ad_credits` 짝).
     var manualAdCredits: Int? = nil
+    /// 직접 입력 문구의 '변경하기' 를 눌리게 둘까 — 새로 만들 길이 없으면 false(`AdRewardGate.canChangeManualText`).
+    var manualChangeEnabled: Bool = true
     /// 저장된 날씨·운세 값(없으면 고르는 순간 입력창을 띄운다).
     let savedWeatherCountry: String
     let savedWeatherCity: String
@@ -345,6 +347,8 @@ struct MessageSettingsPane: View {
             PromptDetailCard(
                 title: String(localized: "문구"),
                 value: draftManualText.isEmpty ? String(localized: "아직 입력하지 않았어요") : draftManualText,
+                // 이번 달 더 만들 길이 없으면 회색(위 '직접 입력 (0/3)' 이 이유를 말한다).
+                changeEnabled: manualChangeEnabled,
                 onChange: {
                     contextBeforeDialog = nil
                     manualDialogOpen = true

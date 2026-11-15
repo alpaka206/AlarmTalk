@@ -39,6 +39,13 @@
   <string>$(VOICE_ALARM_SENTRY_ENVIRONMENT)</string>
   <key>GADApplicationIdentifier</key>
   <string>$(ADMOB_APP_ID)</string>
+  <key>SKAdNetworkItems</key>
+  <array>
+    <dict>
+      <key>SKAdNetworkIdentifier</key>
+      <string>cstr6suwn9.skadnetwork</string>
+    </dict>
+  </array>
   <key>ALARMTALK_ADMOB_REWARDED_AD_UNIT_ID</key>
   <string>$(ADMOB_REWARDED_AD_UNIT_ID)</string>
   <key>GADDelayAppMeasurementInit</key>

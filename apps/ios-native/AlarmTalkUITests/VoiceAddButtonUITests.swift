@@ -52,13 +52,15 @@ final class VoiceAddButtonUITests: XCTestCase {
         let file = app.buttons["파일"]
         XCTAssertTrue(record.exists)
         XCTAssertTrue(file.exists)
-        // 버튼 바깥 frame만 늘리면 보이는 캡슐은 글자 크기로 남는다. 두 라벨 자체가
-        // 전체 칸을 채우고 Android 2분할과 같은 높이인지 실제 접근성 프레임으로 고정한다.
+        // 녹음/파일은 날씨 지역 시트의 나라 고르기와 같은 **시스템 세그먼트**다(2026-11-15 오너). 두 칸이 같은 폭으로
+        // 줄을 나눠 채우는지 실제 접근성 프레임으로 고정한다(높이는 시스템 세그먼트의 것이다).
         XCTAssertEqual(record.frame.width, file.frame.width, accuracy: 1)
-        XCTAssertGreaterThanOrEqual(record.frame.height, 38)
         XCTAssertGreaterThan(record.frame.width, 120)
         XCTAssertTrue(app.staticTexts["너무 짧으면 목소리가 다르게 나올 수 있어요."].exists)
-        XCTAssertTrue(app.staticTexts["허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요."].exists)
+        XCTAssertFalse(
+            app.staticTexts["허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요."].exists,
+            "2026-11-15 오너 지시로 지운 안내다"
+        )
         XCTAssertFalse(app.staticTexts["12초 이상 2분 이하로 녹음해 주세요"].exists)
 
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())

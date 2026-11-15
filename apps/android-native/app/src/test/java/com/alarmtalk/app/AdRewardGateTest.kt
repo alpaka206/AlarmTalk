@@ -41,6 +41,25 @@ class AdRewardGateTest {
     }
 
     @Test
+    fun `변경하기는 새로 만들 길이 없을 때만 끈다 — 유료 0·30, 무료는 광고까지 막혔을 때`() {
+        // 유료: 남은 수로만 가른다.
+        assertFalse(AdRewardGate.canChangeManualText(false, 0, null, adsConfigured = true))
+        assertTrue(AdRewardGate.canChangeManualText(false, 5, null, adsConfigured = true))
+        // 무료 0/3: 광고가 열려 있으면 눌린다(바꾸고 저장하면 광고 안내로 간다).
+        assertTrue(AdRewardGate.canChangeManualText(true, 0, reward(), adsConfigured = true))
+        // 광고가 없는 빌드·운영 스위치가 꺼진 서버·이번 달 광고 상한이면 회색이다.
+        assertFalse(AdRewardGate.canChangeManualText(true, 0, reward(), adsConfigured = false))
+        assertFalse(AdRewardGate.canChangeManualText(true, 0, reward(canWatch = false, reason = "disabled"), adsConfigured = true))
+        assertFalse(AdRewardGate.canChangeManualText(true, 0, reward(remaining = 0, canWatch = false, reason = "monthly_limit"), adsConfigured = true))
+        // 보상이 남았거나 확인 중이면 만들 수 있다.
+        assertTrue(AdRewardGate.canChangeManualText(true, 0, reward(credits = 1, canWatch = false), adsConfigured = false))
+        assertTrue(AdRewardGate.canChangeManualText(true, 0, reward(pending = 1, canWatch = false), adsConfigured = false))
+        // 남은 수를 모르면(응답 전·오프라인) 끄지 않는다 — 모르는 것은 0 이 아니다.
+        assertTrue(AdRewardGate.canChangeManualText(true, null, null, adsConfigured = false))
+        assertTrue(AdRewardGate.canChangeManualText(false, null, null, adsConfigured = false))
+    }
+
+    @Test
     fun `표 — 플러스·체험·관리자 지급이면 광고 없이 30회 규칙`() {
         assertEquals(ManualCreationRoute.PLAN_RULES, AdRewardGate.route(false, 0, reward(), adsConfigured = true))
     }

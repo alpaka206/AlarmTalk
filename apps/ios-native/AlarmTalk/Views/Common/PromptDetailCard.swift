@@ -13,6 +13,8 @@ struct PromptDetailCard: View {
     let value: String
     /// 값 아래 작은 안내(예: 되짚지 못한 옛 지역의 "목록에서 다시 골라 주세요"). 없으면 안 그린다.
     var note: String? = nil
+    /// false 면 '변경하기' 를 흐리게 두고 누르지 못한다(직접 입력을 이번 달 더 만들 수 없을 때 — 안드로이드 `changeEnabled`).
+    var changeEnabled: Bool = true
     let onChange: () -> Void
 
     var body: some View {
@@ -40,7 +42,8 @@ struct PromptDetailCard: View {
                 Button("변경하기", action: onChange)
                     .font(theme.typography.bodyMedium.weight(.semibold))
                     .buttonStyle(.plain)
-                    .foregroundStyle(theme.palette.primary)
+                    .foregroundStyle(changeEnabled ? theme.palette.primary : theme.palette.onSurfaceVariant.opacity(0.6))
+                    .disabled(!changeEnabled)
             }
             .padding(.vertical, 12)
         }

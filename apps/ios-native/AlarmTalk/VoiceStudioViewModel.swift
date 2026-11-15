@@ -654,9 +654,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 candidateProfileIDs: resolvedProfiles.map(\.id)
             )
             replacementSuppressedProfileIDs = unsettled.union(unpersistedSuppressedProfileIDs)
-            // ⚠ **정리 중인 목소리도 목록에 남긴다**(2026-08-25 지시). 감추면 사용자에게는
-            // **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고 `replacementSuppressedProfileIDs`
-            // 로 흐리게 그린 뒤 못 고르게 한다(`VoiceSelectionSheet.Option.unavailableReason`).
+            // ⚠ **정리 중인 목소리도 `profiles` 에는 남긴다** — 교체·강등 판정이 이 목록을 본다. 화면에서 감추는 것은
+            // 보여 주는 자리(편집기 `voiceProfileOptions`·목소리 탭 `visibleOwnVoices`)가 `replacementSuppressedProfileIDs`
+            // 로 한다(2026-11-15 오너 "정리중이면 안뜨게").
             profiles = resolvedProfiles
             // 프로필 조회는 여기까지 왔다는 것 자체가 성공이다(실패하면 throw).
             accessibleVoicesAreAuthoritative = true
@@ -1551,9 +1551,8 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 그 사이 만든 새 목소리 알람까지 다음 회차가 되돌릴 수 없이 벗긴다. 다음 정리가
     /// 확정되면 곧바로 풀린다(메모리 전용 — 재시작 후에는 새로고침이 다시 판단한다).
     ///
-    /// ⚠ **목록에서 빼는 것이 아니라 '고를 수 없음' 이다**(2026-08-25 지시). 감추면
-    /// 사용자에게는 목소리가 **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고 흐리게
-    /// 그린 뒤 이유를 말한다.
+    /// ⚠ **보여 주는 목록에서는 뺀다**(2026-11-15 오너 "정리중이면 안뜨게" — 2026-08-25 의 '흐리게 두고 이유를
+    /// 말한다' 를 뒤집었다). 편집기 고르기 시트·목소리 탭이 이 집합으로 거른다. 이미 고른 알람은 저장이 막는다.
     /// ⚠ **`@Published` 여야 한다**(Codex #703 P2). 이 값은 목록 행의 흐림·저장 게이트·
     /// 배너를 모두 좌우하는데, 푸시 경로의 정리는 새로고침이 끝난 **뒤에** 이 집합만
     /// 바꾼다 — 관측되지 않으면 이미 열려 있는 편집기가 옛 상태(고를 수 있음·배너 없음)를

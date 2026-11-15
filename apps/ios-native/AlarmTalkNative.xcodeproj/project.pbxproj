@@ -385,6 +385,7 @@
 		EF5C050C6DCD44C4045038D0 /* LocalHolidayCalendarLunarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F51D645677265F4903D07EFE /* LocalHolidayCalendarLunarTests.swift */; };
 		F07FB40F608D6690144075E7 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98CCA14FD6E4C634ECED32A9 /* RootView.swift */; };
 		F0C2A0E2DF53A9C510B3A7AD /* AlarmDefaultLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74B8155FF17FAB4F76FB99E6 /* AlarmDefaultLabel.swift */; };
+		F21EA54990D952AB76B6DF70 /* AuthToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200E05EB0BAAE8FF0C51D29 /* AuthToast.swift */; };
 		F257AFC84C3E1A8F0AE60485 /* FunctionalE2EUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */; };
 		F29D4B5CEFD2CDD3FE0AA3AA /* VoicePackStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C126C14310B53BBF9AAB0EB4 /* VoicePackStore.swift */; };
 		F37299F27A2A2588F8EB18CC /* AsyncSerialGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF9A7E6AC906D0AC985A3C99 /* AsyncSerialGateTests.swift */; };
@@ -730,6 +731,7 @@
 		AF3E03716A45AD4CC387DBEE /* APIErrorMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIErrorMessages.swift; sourceTree = "<group>"; };
 		AF9E58DC1740C8A82595E9C9 /* VoicePacks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePacks.swift; sourceTree = "<group>"; };
 		AFDD372A3465266C2A553883 /* HelperFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperFormatters.swift; sourceTree = "<group>"; };
+		B200E05EB0BAAE8FF0C51D29 /* AuthToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthToast.swift; sourceTree = "<group>"; };
 		B2CCF512C575A060A0E72E6C /* BucketVariantResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketVariantResolver.swift; sourceTree = "<group>"; };
 		B3712A9DC7E2B0D7C482B215 /* StockClipManifestStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockClipManifestStoreTests.swift; sourceTree = "<group>"; };
 		B4E97D92CF52F3E44F04E894 /* PendingAlarmCancellationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingAlarmCancellationStore.swift; sourceTree = "<group>"; };
@@ -961,6 +963,7 @@
 			isa = PBXGroup;
 			children = (
 				2E08EA39F68F4C059B5B58EC /* AuthBackdrop.swift */,
+				B200E05EB0BAAE8FF0C51D29 /* AuthToast.swift */,
 				C88E7D845E4834C339CFCE38 /* BlockingScreen.swift */,
 				B63D58A42E36FE6F60DC05E0 /* ConsentView.swift */,
 				96F0C449766E1EFCB19E478B /* KakaoLoginButton.swift */,
@@ -1776,6 +1779,7 @@
 				974A3C55BF92271DF01C5112 /* AudioUserFacingError.swift in Sources */,
 				A6E4507993DE6307C2A87CE5 /* AuthBackdrop.swift in Sources */,
 				513527318A50D83C97E73EA6 /* AuthEmailFormat.swift in Sources */,
+				F21EA54990D952AB76B6DF70 /* AuthToast.swift in Sources */,
 				4ADA36B2EB592A70D97F7BF3 /* AuthViewModel.swift in Sources */,
 				4CF35FECD70107F67DB3AEB0 /* AuxiliaryScreen.swift in Sources */,
 				918CB0198810A501FC415D2D /* AuxiliarySheetHost.swift in Sources */,

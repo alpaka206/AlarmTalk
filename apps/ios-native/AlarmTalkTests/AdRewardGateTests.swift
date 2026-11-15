@@ -50,6 +50,32 @@ final class AdRewardGateTests: XCTestCase {
         XCTAssertEqual(AdRewardGate.route(freeTier: true, baseRemaining: nil, adReward: nil, adsConfigured: true), .nextDate)
     }
 
+    /// '변경하기' 는 새로 만들 길이 없을 때만 끈다 — 안드로이드 `AdRewardGateTest` 의 같은 이름 사례와 같은 표다.
+    func test_changeManualTextOnlyBlockedWhenNothingCanBeMade() {
+        // 유료: 남은 수로만 가른다.
+        XCTAssertFalse(AdRewardGate.canChangeManualText(freeTier: false, baseRemaining: 0, adReward: nil, adsConfigured: true))
+        XCTAssertTrue(AdRewardGate.canChangeManualText(freeTier: false, baseRemaining: 5, adReward: nil, adsConfigured: true))
+        // 무료 0/3: 광고가 열려 있으면 눌린다.
+        XCTAssertTrue(AdRewardGate.canChangeManualText(freeTier: true, baseRemaining: 0, adReward: reward(), adsConfigured: true))
+        // 광고 없는 빌드·꺼진 스위치·이번 달 광고 상한이면 회색이다.
+        XCTAssertFalse(AdRewardGate.canChangeManualText(freeTier: true, baseRemaining: 0, adReward: reward(), adsConfigured: false))
+        XCTAssertFalse(AdRewardGate.canChangeManualText(
+            freeTier: true, baseRemaining: 0, adReward: reward(canWatch: false, reason: "disabled"), adsConfigured: true
+        ))
+        XCTAssertFalse(AdRewardGate.canChangeManualText(
+            freeTier: true, baseRemaining: 0, adReward: reward(remaining: 0, canWatch: false, reason: "monthly_limit"), adsConfigured: true
+        ))
+        // 보상이 남았거나 확인 중이면 만들 수 있다.
+        XCTAssertTrue(AdRewardGate.canChangeManualText(
+            freeTier: true, baseRemaining: 0, adReward: reward(credits: 1, canWatch: false), adsConfigured: false
+        ))
+        XCTAssertTrue(AdRewardGate.canChangeManualText(
+            freeTier: true, baseRemaining: 0, adReward: reward(pending: 1, canWatch: false), adsConfigured: false
+        ))
+        // 남은 수를 모르면 끄지 않는다.
+        XCTAssertTrue(AdRewardGate.canChangeManualText(freeTier: true, baseRemaining: nil, adReward: nil, adsConfigured: false))
+    }
+
     func test_nextGrantDateIsReadInKST() {
         let formatted = AdRewardGate.formattedNextGrantDate("2026-10-31T15:00:00Z", locale: Locale(identifier: "ko_KR"))
         XCTAssertEqual(formatted, "2026년 11월 1일")

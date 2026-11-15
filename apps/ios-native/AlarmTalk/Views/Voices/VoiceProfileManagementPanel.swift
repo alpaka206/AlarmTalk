@@ -67,6 +67,12 @@ struct VoiceProfileManagementPanel: View {
         return voice.profiles.filter { !isSystemVoice($0) }
     }
 
+    /// 목록에 그리는 내 목소리 — 교체 정리가 끝나지 않은 목소리(정리 중)는 **보이지 않는다**(2026-11-15 오너
+    /// "목소리페이지에서도 안뜨게"). 안드로이드 `VoiceProfileManagementPanel` 의 `settlingVoiceProfileIds` 거르기와 같다.
+    private var visibleOwnVoices: [VoiceProfile] {
+        ownVoices.filter { !voice.isReplacementSettling($0.id) }
+    }
+
     /// ⚠ **만료까지 보는 판정**(2026-08-31 리뷰, 안드로이드 `isPaidVoiceEntitledNow` 미러).
     /// `PlanTier.bestKnown` 은 구매 직후 깜빡임을 줄이려고 만료 시각을 보지 않는데,
     /// 오프라인이거나 갱신이 느리면 **만료된 스냅샷으로도** 유료로 읽혀 숨겨야 할 목소리가
@@ -357,9 +363,9 @@ struct VoiceProfileManagementPanel: View {
         VoiceSectionCard(
             title: String(localized: "voice.section.own", defaultValue: "내 목소리"),
             trailing: AnyView(addVoiceHeaderTrailing),
-            hasContent: !ownVoices.isEmpty
+            hasContent: !visibleOwnVoices.isEmpty
         ) {
-            ForEach(Array(ownVoices.enumerated()), id: \.element.id) { index, profile in
+            ForEach(Array(visibleOwnVoices.enumerated()), id: \.element.id) { index, profile in
                 if index > 0 {
                     Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
                 }
@@ -391,10 +397,14 @@ struct VoiceProfileManagementPanel: View {
     /// 섹션 헤더 오른쪽 — 남은 생성 횟수 + '추가'. 안드로이드 `VoiceProfileManagementPanel.kt:1266-1297`.
     private var addVoiceHeaderTrailing: some View {
         HStack(spacing: 10) {
-            // ⚠ **유료만 숫자를 본다.** 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면
-            // 이미 다 쓴 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고,
-            // 눌렀을 때 이용권 안내로 보낸다.
-            if let quota = monthlyQuota, paidVoiceEntitledNow, quota.registrationLimit > 0 {
+            // ⚠ **무료는 '생성 가능 0/0회'다**(2026-11-15 오너 "생성 못하는 상태면 0/0회로 표시"). 만들 몫이 없다는
+            // 사실 그대로다 — '0/1회'는 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 되므로 쓰지 않는다. 버튼은
+            // 끄지 않고 눌렀을 때 이용권 안내로 보낸다. 안드로이드 `VoiceProfileManagementPanel` 의 `quotaLabel` 과 같다.
+            if !paidVoiceEntitledNow {
+                Text(String(localized: "생성 가능 \(0)/\(0)회"))
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            } else if let quota = monthlyQuota, quota.registrationLimit > 0 {
                 Text(String(localized: "생성 가능 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)회"))
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
