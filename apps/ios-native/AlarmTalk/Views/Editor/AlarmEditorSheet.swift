@@ -242,15 +242,17 @@ struct AlarmEditorSheet: View {
                 // 타입 메타데이터를 복사하는 런타임 루틴(`initializeWithCopy`)이 스택을
                 // 다 써서 편집기를 여는 순간 **세그폴트로 죽었다**(2026-08-07).
                 // 한 계층에 조각 6개까지만 두고, 새 섹션은 새 `@ViewBuilder` 프로퍼티로.
-                VStack(alignment: .leading, spacing: 16) {
+                // 여백·간격은 안드로이드 편집기와 같다 — 좌우 16(`editorHorizontalPadding`), 섹션 사이 20(`spacedBy(20.dp)`),
+                // 아래 24(`editorBottomPadding`). 2026-11-15 전까지 iOS 만 좌우 20·사이 16·아래 20 이었다.
+                VStack(alignment: .leading, spacing: 20) {
                     timeWheelSection
                     repeatCard
                     alarmModeSection
                     detailSettingsSection
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.top, 8)
-                .padding(.bottom, 20)
+                .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.interactively)
             // 확정 단계에서는 편집을 받지 않는다 — 바꿔도 저장에 들어갈 자리가 없다(`committingSave`).
