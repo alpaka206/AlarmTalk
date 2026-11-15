@@ -31,7 +31,7 @@ struct ClipPreparationView: View {
     /// 편집기에서 여는 일반 준비 관문은 기존 퍼센트 화면을 유지한다.
     var registrationStyle = false
 
-    /// ⚠ **관문이 막은 그 목소리.** 이 화면은 서버에서 새로 받은 매니페스트로 "준비됐어요" 라고 하는데,
+    /// ⚠ **관문이 막은 그 목소리.** 이 화면은 서버에서 새로 받은 매니페스트로 다 받았다고 보는데,
     /// 관문은 앱이 들고 있는 매니페스트를 본다 — 거기에도 이 목소리의 클립이 실릴 때까지 끝내지 않는다
     /// (`pollingCanStop` 의 `targetClipsLoaded`). 안 넘기면 돌아가자마자 관문이 또 막는다.
     var targetVoiceID: String?
@@ -70,6 +70,14 @@ struct ClipPreparationView: View {
                 await voiceStudio.refresh(session: auth.session, force: true)
                 onDismiss?()
             }
+        }
+        // 편집기 관문에서 연 화면도 다 받으면 **저절로 닫는다** — '준비됐어요'·'완료' 를 따로 보여 주지 않는다(2026-11-15 오너:
+        // "목소리 받기 · 준비됨 / 이거 없이 다 되면 자동으로 닫히도록"). 닫는 시점은 `preparationSettled` 다 — 다 받았고 관문이
+        // 보는 매니페스트에도 그 목소리가 실렸을 때. '다 받음' 만 보고 닫으면 관문이 옛 목록으로 또 막는다(아래 `refresh`).
+        // 고른 목소리는 지금처럼 적용하지 않은 채다(안드로이드 편집기 `preparationVoiceId` 와 같다).
+        .onChange(of: preparationSettled) { _, settled in
+            guard !registrationStyle, settled else { return }
+            onDismiss?()
         }
         .task { if !registrationStyle { await refresh() } }
         // 받는 동안 값이 움직이므로 주기적으로 다시 센다. 한 번에 매니페스트·렌더 상태를 서버에
@@ -131,13 +139,11 @@ struct ClipPreparationView: View {
                 }
 
                 if let onDismiss {
-                    Button(shownIsReady ? String(localized: "완료") : String(localized: "백그라운드에서 계속")) {
+                    Button(String(localized: "백그라운드에서 계속")) {
                         onDismiss()
                     }
                     .font(theme.typography.bodyMedium)
-                    .foregroundStyle(
-                        shownIsReady ? theme.palette.primary : theme.palette.onSurfaceVariant
-                    )
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
             }
             .padding(.horizontal, 24)
@@ -219,8 +225,9 @@ struct ClipPreparationView: View {
         bottomActionTopGap + bottomActionHeight + bottomActionBottomGap
     }
 
+    /// 언제나 퍼센트다 — 다 받으면 화면이 저절로 닫히므로 '준비됐어요' 를 그리지 않는다(위 `onChange(of: preparationSettled)`).
     private var headline: String {
-        shownIsReady ? String(localized: "준비됐어요") : "\(shownPercent)%"
+        "\(shownPercent)%"
     }
 
     /// 화면이 그리는 목소리 — 관문이 막은 그 목소리가 있으면 **그 하나만**(`shownVoices`).
@@ -246,9 +253,6 @@ struct ClipPreparationView: View {
     /// ⚠ **무엇을 기다리는지 말한다.** 퍼센트만 있으면 멈춘 것처럼 보인다 —
     /// 특히 서버 렌더 구간은 다운로드와 달리 몇 분이 걸릴 수 있다.
     private var statusLine: String {
-        if shownIsReady {
-            return String(localized: "이제 오프라인에서도 목소리로 울려요.")
-        }
         if !shownFailedVoiceIDs.isEmpty {
             return String(localized: "목소리를 만들다 실패했어요. 다시 시도해 주세요.")
         }
@@ -299,7 +303,7 @@ struct ClipPreparationView: View {
         } else if let targetVoiceID,
                   !voiceStudio.stockClips.contains(where: { $0.voiceProfileId == targetVoiceID }) {
             // ⚠ **관문과 이 화면이 같은 목록을 보게 맞춘다**(2026-09-21). 이 화면은 서버에서
-            //   새로 받아 "준비됐어요" 라고 하는데, 관문(`hasCompleteBucket`)은 앱이 들고 있는
+            //   새로 받아 다 받았다고 보는데, 관문(`hasCompleteBucket`)은 앱이 들고 있는
             //   매니페스트를 본다 — 거기 이 목소리의 클립이 하나도 없으면 돌아가자마자 또 막고
             //   고른 목소리를 되돌린다. 여기서 한 번 받아 두면 그 고리가 끊긴다.
             await voiceStudio.loadStockClips(session: auth.session, force: true)

@@ -18,9 +18,12 @@ class ClipPreparationScreenLocalizationTest {
     @Test
     fun `영어 일본어에서 모든 준비 상태와 재시도 버튼을 번역한다`() {
         val base = ApplicationProvider.getApplicationContext<Context>()
-        val keys = listOf(R.string.voices_clip_prep_ready, R.string.voices_clip_prep_ready_body,
+        // '준비됐어요'·'완료' 는 없다 — 다 받으면 화면이 저절로 닫힌다(2026-11-15).
+        val keys = listOf(
             R.string.voices_clip_prep_failed_body, R.string.voices_clip_prep_rendering_body,
-            R.string.voices_clip_prep_downloading_body, R.string.voices_clip_prep_retry)
+            R.string.voices_clip_prep_downloading_body, R.string.voices_clip_prep_retry,
+            R.string.voices_clip_prep_background,
+        )
         for (language in listOf("en", "ja")) {
             val config = Configuration(base.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }
             val context = base.createConfigurationContext(config)

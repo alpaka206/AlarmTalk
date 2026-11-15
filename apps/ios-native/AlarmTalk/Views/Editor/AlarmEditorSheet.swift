@@ -109,7 +109,7 @@ struct AlarmEditorSheet: View {
     @ViewBuilder
     private var preparationSheet: some View {
         // ⚠ `targetVoiceID` 를 반드시 넘긴다 — 안 넘기면 준비 화면이 앱의 매니페스트에 그 목소리가
-        // 실리기 전에 "준비됐어요" 로 끝나, 돌아가면 관문이 또 막는다(2026-08-18).
+        // 실리기 전에 끝났다고 보고 저절로 닫혀, 돌아가면 관문이 또 막는다(2026-08-18 · 2026-11-15 저절로 닫힘).
         ClipPreparationView(onDismiss: { preparationVoiceID = nil }, targetVoiceID: preparationVoiceID)
             .environmentObject(auth)
             .environmentObject(voiceStudio)

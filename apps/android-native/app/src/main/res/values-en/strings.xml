@@ -671,7 +671,6 @@
     <string name="msg_voice_preset_only">This message can\'t be made with a default voice. Pick a prepared message or type your own.</string>
     <string name="msg_voice_locked_free_plan">You\'re on the Free plan now, so this voice can\'t be used. Subscribe again to bring it back.</string>
     <string name="clip_prefetch_notification_title">Downloading voices</string>
-    <string name="voices_clip_prep_done">Done</string>
     <string name="voices_clip_prep_background">Continue in the background</string>
     <string name="r3app_stock_replacement_title">Downloading the new voices</string>
     <string name="r3app_stock_replacement_body">The built-in voices have changed, so we\'re downloading the audio your alarms use. Alarms ring in the new voice once this finishes.\n\nA weak connection can stop it partway. If that happens, tap the button below.</string>
@@ -733,8 +732,6 @@
     <string name="notification_download_description">Shows progress while alarm voices are downloading.</string>
     <string name="legal_terms_url">https://alarm-talk.com/en/terms</string>
     <string name="legal_privacy_url">https://alarm-talk.com/en/privacy</string>
-    <string name="voices_clip_prep_ready">Ready</string>
-    <string name="voices_clip_prep_ready_body">Your voice alarms are ready to ring offline.</string>
     <string name="voices_clip_prep_failed_body">Could not create the voice. Please try again.</string>
     <string name="voices_clip_prep_rendering_body">Creating your voice. This may take a few minutes.</string>
     <string name="voices_clip_prep_downloading_body">Downloading your voice. The download continues even if you close the app.</string>

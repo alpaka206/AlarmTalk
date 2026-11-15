@@ -10356,28 +10356,6 @@
         }
       }
     },
-    "완료" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Done"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完了"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "완료"
-          }
-        }
-      }
-    },
     "음성 생체정보 처리에 동의해요" : {
       "localizations" : {
         "en" : {
@@ -10400,28 +10378,6 @@
         }
       }
     },
-    "이제 오프라인에서도 목소리로 울려요." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your voice alarms are ready to ring offline."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オフラインでも声でアラームが鳴ります。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이제 오프라인에서도 목소리로 울려요."
-          }
-        }
-      }
-    },
     "준비 중이에요" : {
       "localizations" : {
         "en" : {
@@ -10440,28 +10396,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "준비 중이에요"
-          }
-        }
-      }
-    },
-    "준비됐어요" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ready"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "準備ができました"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "준비됐어요"
           }
         }
       }

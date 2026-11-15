@@ -697,7 +697,6 @@
     <!-- 돌아오는 길은 구독이다 — '다시 등록' 은 코드 입력으로 읽힌다(2026-10-14, App Store 지침 3.1.1). -->
     <string name="msg_voice_locked_free_plan">무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 구독하면 돌아와요.</string>
     <string name="clip_prefetch_notification_title">목소리를 받고 있어요</string>
-    <string name="voices_clip_prep_done">완료</string>
     <string name="voices_clip_prep_background">백그라운드에서 계속</string>
     <string name="r3app_stock_replacement_title">목소리를 새로 받고 있어요</string>
     <string name="r3app_stock_replacement_body">기본 목소리가 바뀌어서 알람에 쓸 음성을 다시 받는 중이에요. 다 받아야 알람이 새 목소리로 울려요.\n\n네트워크가 불안정하면 멈출 수 있어요. 그럴 때는 아래 버튼을 눌러 주세요.</string>
@@ -758,8 +757,6 @@
     <string name="notification_download_description">알람 목소리를 받는 진행 상황을 표시해요.</string>
     <string name="legal_terms_url">https://alarm-talk.com/ko/terms</string>
     <string name="legal_privacy_url">https://alarm-talk.com/ko/privacy</string>
-    <string name="voices_clip_prep_ready">준비됐어요</string>
-    <string name="voices_clip_prep_ready_body">이제 오프라인에서도 목소리로 울려요.</string>
     <string name="voices_clip_prep_failed_body">목소리를 만들다 실패했어요. 다시 시도해 주세요.</string>
     <string name="voices_clip_prep_rendering_body">목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.</string>
     <string name="voices_clip_prep_downloading_body">목소리를 받고 있어요. 앱을 닫아도 계속 받아요.</string>

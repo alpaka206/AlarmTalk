@@ -2341,6 +2341,13 @@ internal fun AlarmEditorScreen(
         // 내 목소리는 떠 있는 동안 3초마다 다시 센다 — 그 목소리가 다 준비되면 멈춘다(실패로는 멈추지 않는다 — 스펙
         // voice-and-message 「준비 페이지의 3초 폴링」). 예전에는 열 때 한 번만 세어, 연 순간의 퍼센트에 멈춰 있었다.
         LaunchedEffect(voiceId, preparedNow) {
+            // 다 받으면 **저절로 닫는다** — '준비됐어요'·'완료' 를 따로 보여 주지 않는다(2026-11-15 오너: "목소리 받기 · 준비됨 /
+            // 이거 없이 다 되면 자동으로 닫히도록"). 고른 목소리는 지금처럼 적용하지 않은 채다 — 다시 고르면 이제 바로 붙는다.
+            // 관문과 이 화면은 같은 매니페스트(`stockClips`)로 세므로, 닫은 뒤 관문이 또 막지 않는다.
+            if (preparedNow) {
+                preparationVoiceId = null
+                return@LaunchedEffect
+            }
             while (!preparedNow && !isSystemVoiceId(voiceId)) {
                 kotlinx.coroutines.delay(3000)
                 onPrepareClipsFor()
