@@ -291,14 +291,17 @@ struct RadioRow: View {
 
     var body: some View {
         Button(action: onTap) {
+            // ⚠ **고르는 표시는 글자 왼쪽이다** — 안드로이드 `SnoozeRadioRow`(라디오 버튼 → 12 → 글자)와 같은 자리.
+            // 2026-11-15 두 앱 화면 대조 전까지 iOS 만 글자 오른쪽에 체크 동그라미를 두어, 같은 문구 목록이 두 앱에서
+            // 좌우가 달랐다. 글리프는 각 OS 것(SF 의 라디오 모양 `largecircle.fill.circle`)을 쓴다.
             HStack(spacing: 12) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(selected ? theme.palette.primary : theme.palette.outline)
                 Text(label)
                     .font(theme.typography.bodyLarge)
                     .foregroundStyle(theme.palette.onSurface)
                 Spacer(minLength: 8)
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(selected ? theme.palette.primary : theme.palette.outline)
             }
             .padding(.vertical, 14)
             .contentShape(Rectangle())

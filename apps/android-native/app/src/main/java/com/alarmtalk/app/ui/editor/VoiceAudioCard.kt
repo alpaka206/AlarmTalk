@@ -378,8 +378,11 @@ internal fun VoiceOutputSettingsPane(
     onDismiss: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+        // 편집기와 같은 밤하늘 그라데이션이다(CLAUDE.md 디자인 토큰 — 하위 전체화면 포함, iOS 편집기 pane 과 같다).
+        // 편집기 위로 밀려 들어오므로 불투명해야 하는데 그라데이션도 불투명하다. 2026-11-15 전까지 단색 `background`.
+        modifier = Modifier.fillMaxSize().background(homeGradientBrush()),
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // 상단바는 공용 `WakerTopBar` 하나다 — 화면마다 손으로 그리지 말 것
