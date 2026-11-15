@@ -156,7 +156,9 @@ class VoiceRegistrationFailureWiringTest {
             1,
             guardedPurges,
         )
-        assertTrue(failure.contains("if (error is VoiceCreateAbortedException || sessionChanged())"))
+        // 계정이 바뀐 것만 본다 — 인라인 동의 기록 뒤에 끊던 내부 예외(`VoiceCreateAbortedException`)는 그 갈래와 함께
+        // 지웠다(2026-11-15, 동의는 업로드 전에 시트가 받는다).
+        assertTrue(failure.contains("if (sessionChanged()) {"))
     }
 
     // ── 등록 창 — 받아서 그 안에 그린다 ───────────────────────────────────

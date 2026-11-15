@@ -58,9 +58,6 @@ struct VoiceCloneUploadFlow: View {
     @State private var listenerTitle: String = ""
     @State private var previewLanguage: String = VoiceStudioViewModel.appVoiceLanguage()
     @State private var submitted: Bool = false
-    /// 음성 생체정보 동의 인라인 체크. 가입 화면에서 **거절한 사람에게만** 뜬다
-    /// (`auth.consentSensitiveMissing`). 한 번 동의하면 서버 기록이 남아 다시 보이지 않는다.
-    @State private var voiceBiometricAgreed: Bool = false
     @State private var fileImporterPresented: Bool = false
     @State private var selectedFileURL: URL?
     @State private var selectedFileName: String?
@@ -113,46 +110,23 @@ struct VoiceCloneUploadFlow: View {
         }
     }
 
-    /// 가입 때 음성 생체정보를 거절해 **여기서 다시 받아야 하는** 상태인가.
-    private var needsBiometricConsent: Bool {
-        auth.consentSensitiveMissing.contains("voice_biometric")
-    }
-
-    /// 이 화면의 **인라인 체크박스가 실제로 묻는** 유형. 여기 없는 유형은 그 체크로 기록하면
-    /// 안 되고(본 적 없는 동의가 기록된다), 전용 시트로 따로 물어야 한다.
-    /// 안드로이드 짝은 `MainViewModelVoiceActions.INLINE_COVERED_CONSENTS`.
-    private static let inlineCoveredConsents: Set<String> = ["voice_biometric"]
-
-    /// 인라인이 덮지 못하는, 아직 없는 민감 동의(보통 국외 이전 — 가입 필수라 대개 비어 있다).
+    /// 아직 없는 민감 동의 — '등록' 을 누르면 권리 확인과 함께 **시트 하나**로 받는다(2026-11-15 오너). 이름 화면의
+    /// 생체정보 체크칸은 없앴다. 안드로이드 `MainViewModelVoiceActions.createVoiceProfiles` 와 같은 판정이다.
     private var unaskedSensitiveConsents: [String] {
-        auth.consentSensitiveMissing.filter { !Self.inlineCoveredConsents.contains($0) }
+        auth.consentSensitiveMissing
     }
 
-    /// 등록을 눌러도 되는지 — **법정 동의만** 본다.
+    /// 등록을 눌러도 되는지 — 동의 상태 응답이 왔는가만 본다(빠진 동의·권리 확인은 누를 때 시트가 받는다).
     private var registrationConsentSatisfied: Bool {
-        Self.registrationConsentSatisfied(
-            statusChecked: auth.consentStatusChecked,
-            needsBiometric: needsBiometricConsent,
-            biometricAgreed: voiceBiometricAgreed
-        )
+        Self.registrationConsentSatisfied(statusChecked: auth.consentStatusChecked)
     }
 
     /// 위 판정의 순수 함수 형태 — 회귀 테스트가 이걸 고정한다.
     ///
-    /// ⚠ **권리 보증 확인(attestation)은 여기 없다.** 그 내용은 약관 제7조가 이미 담고
-    /// 있고(「본인의 목소리 또는 적법한 권한과 명시적 동의를 받은 사람의 목소리만 등록할 수
-    /// 있습니다」·「권한 없는 음성 등록으로 발생하는 책임은 해당 이용자가 부담합니다」),
-    /// 약관은 가입 필수 동의라 이미 받았다. 등록마다 체크박스로 다시 받는 것은 계약상
-    /// 중복이었다. 화면에는 **비차단 안내**로 남겨 업로드 시점 고지만 유지한다.
-    ///
-    /// ⚠ **`statusChecked` 를 빼지 말 것.** 동의 상태 응답 전에는 `needsBiometric` 이
-    /// 항상 false 라, 거절한 사람에게 체크박스가 안 그려진 채 제출이 열려 403 을 맞는다.
-    static func registrationConsentSatisfied(
-        statusChecked: Bool,
-        needsBiometric: Bool,
-        biometricAgreed: Bool
-    ) -> Bool {
-        statusChecked && (!needsBiometric || biometricAgreed)
+    /// ⚠ **`statusChecked` 를 빼지 말 것.** 동의 상태 응답 전에는 빠진 동의 목록이 늘 비어 있어, 가입 때 거절한
+    /// 사람에게 시트를 띄우지 못한 채 제출이 나가 403 을 맞는다.
+    static func registrationConsentSatisfied(statusChecked: Bool) -> Bool {
+        statusChecked
     }
 
     private var canSubmit: Bool {
@@ -234,19 +208,15 @@ struct VoiceCloneUploadFlow: View {
                 localError = AudioUserFacingError.message(for: error, fallback: String(localized: "파일을 선택하지 못했어요."))
             }
         }
-        // ⚠ **동의를 받았으면 등록을 이어서 한다**(Codex #703 P2). 시트의 CTA 는
-        // '동의하고 목소리 만들기' 인데, 동의만 기록하고 끝나면 아무 일도 일어나지 않은
-        // 것처럼 보여 사용자가 등록을 다시 눌러야 한다는 걸 스스로 알아내야 한다.
-        .onChange(of: auth.consentSensitiveMissing) { _, _ in
-            guard resumeSubmitAfterConsent, unaskedSensitiveConsents.isEmpty else { return }
+        // ⚠ **이 시트에서 동의했으면 등록을 이어서 한다**(Codex #703 P2). 시트의 CTA 는 '동의하고 목소리 만들기' 인데,
+        // 동의만 기록하고 끝나면 사용자가 등록을 다시 눌러야 한다는 걸 스스로 알아내야 한다. 판정은 '이 요청에 동의했는가'
+        // 하나다(`agreedSensitiveConsentRequestID`) — 권리 확인만 받은 경우는 서버 동의 목록이 바뀌지 않아서다(2026-11-15).
+        // 그냥 닫았으면 이어받기를 취소한다 — 안 그러면 한참 뒤 사용자가 누르지도 않은 등록이 시작된다.
+        .onChange(of: auth.pendingSensitiveConsent) { old, new in
+            guard new == nil, resumeSubmitAfterConsent, let old else { return }
             resumeSubmitAfterConsent = false
-            Task { await submit() }
-        }
-        // 시트를 그냥 닫았으면(동의 없이) 이어받기를 취소한다 — 안 그러면 한참 뒤 다른
-        // 이유로 목록이 바뀔 때 사용자가 누르지도 않은 등록이 시작된다.
-        .onChange(of: auth.pendingSensitiveConsent) { _, request in
-            if request == nil, !unaskedSensitiveConsents.isEmpty {
-                resumeSubmitAfterConsent = false
+            if auth.agreedSensitiveConsentRequestID == old.id {
+                Task { await submit() }
             }
         }
         // 녹음이 끝났다(사용자가 멈췄든, 전화·블루투스·백그라운드로 끝났든) — 기기에서 판정한다.
@@ -569,12 +539,6 @@ struct VoiceCloneUploadFlow: View {
         //   클론 문구의 결은 서버가 등록 녹음 전사로 추정한 말투를 따른다
         //   (`docs/spec/voice-and-message.md` §4-2). 안드로이드 `VoiceRegistrationStep.Details` 와 같다.
         languageSection
-        // ⚠ **물을 것이 없으면 상자째 그리지 않는다**(2026-09-19 실기기: 언어 선택 아래에
-        //   빈 상자가 남았다). 권리 고지 문구를 동의 화면으로 옮긴 뒤로는, 이미 동의한
-        //   사람에게 **내용 없는 배경만** 그려졌다. 판정은 `needsBiometricConsent` 하나다.
-        if needsBiometricConsent {
-            consentSection
-        }
     }
 
     private var languageSection: some View {
@@ -702,50 +666,6 @@ struct VoiceCloneUploadFlow: View {
         .outlinedButtonShape()
     }
 
-    /// 등록 직전 고지·동의. 생체정보 동의는 **전용 모달이 아니라 폼 안의 체크박스**로 받는다
-    /// — 등록하려는 흐름을 끊지 않고, 무엇에 동의하는지가 화면에 그대로 보인다.
-    /// (`VoiceConsentSheet` 는 폼 밖에서 호출된 경로를 위한 폴백이다.)
-    private var consentSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // ⚠ **권리 고지 문구를 여기 두지 않는다**(2026-09-19 지시). 권리 보증은 가입 때
-            // 필수로 받는 약관 제7조가 이미 담당한다 — 등록할 때마다 같은 말을 다시 읽히면
-            // 만들기 흐름만 길어진다. 아직 동의하지 않은 사람에게 묻는 **생체정보 체크는
-            // 남긴다**(그건 고지가 아니라 실제로 받아야 하는 동의다).
-            // (상자를 그릴지는 `detailsSection` 이 `needsBiometricConsent` 로 정한다 —
-            //  여기 오면 늘 물을 것이 있다.)
-            consentCheck(
-                isOn: $voiceBiometricAgreed,
-                label: String(localized: "음성 생체정보 처리에 동의해요"),
-                description: String(localized: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요.")
-            )
-        }
-        .sectionSurface()
-    }
-
-    private func consentCheck(isOn: Binding<Bool>, label: String, description: String) -> some View {
-        Button {
-            isOn.wrappedValue.toggle()
-        } label: {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: isOn.wrappedValue ? "checkmark.square.fill" : "square")
-                    .font(.title3)
-                    .foregroundStyle(isOn.wrappedValue ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(label)
-                        .font(theme.typography.bodyMedium)
-                        .foregroundStyle(theme.palette.onSurface)
-                    Text(description)
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                }
-                .multilineTextAlignment(.leading)
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
     @ViewBuilder
     private var statusSection: some View {
         // 이 창의 문장은 전부 '안 됐다' 는 이유다(이름 없음·녹음 없음·동의 기록 실패·서버 거절) — 빨간 글자다. 안드로이드
@@ -821,29 +741,19 @@ struct VoiceCloneUploadFlow: View {
             voice.statusMessage = String(localized: "목소리 이름을 입력해 주세요.")
             return
         }
-        // ⚠ **인라인이 묻지 못한 민감 동의는 업로드 전에 시트로 받는다.** 그냥 올리면
-        // 녹음이 나간 **뒤에** 403 이 오고, 그 시트는 등록 문맥을 모른 채 TTS 카피를 띄운다.
-        if !unaskedSensitiveConsents.isEmpty {
+        // ⚠ **빠진 민감 동의와 목소리 권리 확인은 업로드 전에 시트 하나로 받는다**(2026-11-15 오너: "생성할때 모달로 떠서
+        // 한번에 다 받고 다음부터 안받게"). 그냥 올리면 녹음이 나간 **뒤에** 403 이 온다. 권리 확인은 계정마다 한 번이다
+        // (`VoiceRightsAttestation`). 다 받았으면 아무것도 띄우지 않는다.
+        let needsRightsAttestation = !VoiceRightsAttestation.isAttested(userID: auth.session?.user.id)
+        if !unaskedSensitiveConsents.isEmpty || needsRightsAttestation {
             auth.requestSensitiveConsent(
-                // 시트에는 **아직 없는 민감 동의 전체**를 담는다 — 인라인 체크는 아직 서버에
-                // 기록되지 않았으므로 여기서 함께 받아야 한 번에 끝난다.
                 types: auth.consentSensitiveMissing,
-                registeringVoice: true
+                registeringVoice: true,
+                asksRights: needsRightsAttestation
             )
-            // **시트가 떴을 때만** 이어받는다. 모르는 유형이라 업데이트 게이트로 갔으면
-            // 이어받을 것이 없다 — 플래그를 켜 두면 한참 뒤 목록이 바뀔 때 사용자가 누르지도
-            // 않은 등록이 시작된다.
+            // **시트가 떴을 때만** 이어받는다. 모르는 유형이라 업데이트 게이트로 갔으면 이어받을 것이 없다.
             resumeSubmitAfterConsent = auth.pendingSensitiveConsent != nil
             return
-        }
-        // 인라인으로 받은 생체정보 동의를 **업로드 전에** 기록한다. 순서를 뒤집으면
-        // 서버가 그 동의를 요구하는 라우트에서 403 이 나 등록이 통째로 실패한다.
-        if needsBiometricConsent, voiceBiometricAgreed {
-            let recorded = await auth.submitSensitiveConsents(types: ["voice_biometric"])
-            guard recorded else {
-                voice.statusMessage = String(localized: "동의를 기록하지 못했어요. 다시 시도해 주세요.")
-                return
-            }
         }
         let trimmedRelationship = relationshipSelection.resolved.nilIfBlank
         let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank

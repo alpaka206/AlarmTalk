@@ -265,7 +265,8 @@ struct RootView: View {
                         busy: auth.isBusy,
                         types: request.types,
                         registeringVoice: request.registeringVoice,
-                        onAgree: { Task { await auth.submitSensitiveConsents(types: request.types) } },
+                        asksRights: request.asksRights,
+                        onAgree: { Task { await auth.agreeToPendingSensitiveConsent() } },
                         onDismiss: {
                             auth.clearActionError(.sensitiveConsent)
                             auth.pendingSensitiveConsent = nil

@@ -567,10 +567,15 @@ final class AuthViewModel: ObservableObject {
         /// 상태에서 TTS 문구가 떠서 사용자는 '문구 생성 동의' 인 줄 알고 눌렀는데 실제로는
         /// 녹음이 올라가고 클론이 만들어진다.
         var registeringVoice: Bool = false
+        /// 목소리 권리 확인(계정마다 한 번 — `VoiceRightsAttestation`)도 이 시트에서 받는가.
+        /// 법정 동의 유형이 아니라 `types` 에 넣지 않는다 — 서버에 보낼 것이 아니다.
+        var asksRights: Bool = false
     }
 
     /// 떠 있어야 하는 민감 동의 시트. nil 이면 없음.
     @Published var pendingSensitiveConsent: SensitiveConsentRequest?
+    /// 마지막으로 **동의해서** 닫힌 시트 요청 — 등록 화면이 이어서 만들지를 이것으로 가른다(그냥 닫은 것과 구별).
+    @Published private(set) var agreedSensitiveConsentRequestID: UUID?
 
     /// 동의 상태 조회의 **세대**. 늦게 도착한 앞선 응답이 최신 상태를 덮는 것을 막는다.
     ///
@@ -614,7 +619,7 @@ final class AuthViewModel: ObservableObject {
     ///   시트가 떴거나 업데이트 게이트로 보냈다는 뜻이다. 멈춘 동작을 나중에 이어받을지는
     ///   호출자가 정한다(`pendingSensitiveConsent` 가 떠 있으면 이어받을 수 있다).
     @discardableResult
-    func requestSensitiveConsent(types: [String], registeringVoice: Bool) -> Bool {
+    func requestSensitiveConsent(types: [String], registeringVoice: Bool, asksRights: Bool = false) -> Bool {
         let wanted = types.filter { Self.sensitiveConsentTypes.contains($0) }
         // ⚠ **모르는 유형을 조용히 버리지 않는다**(Codex #703 P2). 이 앱으로 받을 방법이
         // 없는 동의를 그냥 지나가면, 호출자는 '시트를 띄웠다' 고 믿고 자기 동작을 멈추는데
@@ -624,11 +629,11 @@ final class AuthViewModel: ObservableObject {
             consentUnsupported = true
             return false
         }
-        // 받을 것이 없으면 막지 않는다.
-        guard !wanted.isEmpty else { return true }
+        // 받을 것이 없으면 막지 않는다(권리 확인을 받아야 하면 법정 동의가 없어도 시트를 띄운다).
+        guard !wanted.isEmpty || asksRights else { return true }
         // 이미 시트가 떠 있으면 그것이 이 유형들을 덮는다 — 겹쳐 띄우지 않는다.
         guard pendingSensitiveConsent == nil else { return false }
-        pendingSensitiveConsent = SensitiveConsentRequest(types: wanted, registeringVoice: registeringVoice)
+        pendingSensitiveConsent = SensitiveConsentRequest(types: wanted, registeringVoice: registeringVoice, asksRights: asksRights)
         return false
     }
     /// 비밀번호 재설정 코드를 발송한 이메일. 비어 있지 않으면 UI(PasswordResetView)가
@@ -2060,8 +2065,34 @@ final class AuthViewModel: ObservableObject {
     ///
     /// 성공하면 `consentSensitiveMissing` 에서 그 유형을 지운다 — 안 지우면 목소리 등록
     /// 화면이 이미 받은 동의를 또 묻는다.
+    /// 시트의 '동의' — 빠진 법정 동의를 기록하고(있으면), 권리 확인을 이 기기에 적은 뒤 시트를 닫는다.
+    /// 기록이 실패하면 시트를 남겨 다시 누를 수 있게 한다. 안드로이드 `submitVoiceConsents` 와 같은 순서다.
+    ///
+    /// ⚠ **시트는 맨 마지막에 내린다.** 등록 화면은 시트가 내려가는 순간 '이 요청에 동의했는가' 를 보고 이어 만든다 —
+    /// 기록 도중에 시트를 내리면(`submitSensitiveConsents` 처럼) 그 순간에는 동의 표식이 아직 없어 이어받기가 취소된다.
+    func agreeToPendingSensitiveConsent() async {
+        guard let request = pendingSensitiveConsent else { return }
+        if !request.types.isEmpty {
+            guard await recordSensitiveConsents(types: request.types) else { return }
+        }
+        // 기록하는 동안 다른 시트로 바뀌었거나(로그아웃 등) 닫혔으면 그 시트의 동의로 적지 않는다.
+        guard pendingSensitiveConsent?.id == request.id else { return }
+        if request.asksRights {
+            VoiceRightsAttestation.markAttested(userID: session?.user.id)
+        }
+        agreedSensitiveConsentRequestID = request.id
+        pendingSensitiveConsent = nil
+    }
+
     @discardableResult
     func submitSensitiveConsents(types: [String]) async -> Bool {
+        guard await recordSensitiveConsents(types: types) else { return false }
+        pendingSensitiveConsent = nil
+        return true
+    }
+
+    /// 민감 동의를 서버에 기록하고 빠진 목록에서 지운다 — 시트는 건드리지 않는다(내리는 쪽이 정한다).
+    private func recordSensitiveConsents(types: [String]) async -> Bool {
         guard let token else {
             statusMessage = String(localized: "로그인이 필요해요.")
             return false
@@ -2087,7 +2118,6 @@ final class AuthViewModel: ObservableObject {
             // 위 `submitConsents` 와 같은 이유 — 진행 중인 조회의 답이 이 결과를 덮지 않게 한다.
             invalidateInFlightConsentStatus()
             consentSensitiveMissing.removeAll { recordable.contains($0) }
-            pendingSensitiveConsent = nil
             return true
         } catch {
             if handleConsentVersionMismatch(error, action: .sensitiveConsent) { return false }

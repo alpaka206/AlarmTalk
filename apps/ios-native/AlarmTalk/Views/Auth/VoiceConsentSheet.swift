@@ -8,7 +8,8 @@ import SwiftUI
 /// 된다(개인정보보호법 제22조제5항). 서버도 같은 지점(`voice-profile`·`tts` 라우트)에서만
 /// 강제한다 — 그 403 이 이 시트를 연다.
 ///
-/// 이번 목소리의 권리 확인은 등록 입구 모달에서 받는다. 여기서는 부족한 법정 동의만 받는다.
+/// 목소리 권리 확인도 여기서 함께 받는다 — **앞으로 등록하는 목소리 전부**에 대한 확인을 계정마다 한 번
+/// (`VoiceRightsAttestation`, 2026-11-15 오너). 예전에는 '추가' 입구 모달이 등록마다 따로 물었다.
 /// 문구는 `docs/legal/consent-and-permission-copy.ko.md` §2 를 따른다.
 ///
 /// Android `VoiceConsentSheet.kt` 의 1:1 포팅.
@@ -17,6 +18,8 @@ struct VoiceConsentSheet: View {
     let types: [String]
     /// 동의 직후 목소리 등록이 이어지는가.
     let registeringVoice: Bool
+    /// 목소리 권리 확인(계정마다 한 번)도 함께 받는가.
+    var asksRights: Bool = false
     let onAgree: () -> Void
     let onDismiss: () -> Void
     /// 직전 동의 기록이 실패한 이유 — 버튼 줄 위에 빨간 글자로 그린다(`AuthViewModel.actionErrorMessage`).
@@ -24,6 +27,7 @@ struct VoiceConsentSheet: View {
 
     @State private var biometric = false
     @State private var overseas = false
+    @State private var rights = false
 
     private var asksBiometric: Bool { types.contains("voice_biometric") }
     private var asksOverseas: Bool { types.contains("overseas_transfer") }
@@ -38,7 +42,7 @@ struct VoiceConsentSheet: View {
 
     /// 이미 유효한 법정 동의는 다시 묻지 않는다.
     private var allChecked: Bool {
-        (!asksBiometric || biometric) && (!asksOverseas || overseas)
+        (!asksBiometric || biometric) && (!asksOverseas || overseas) && (!asksRights || rights)
     }
 
     var body: some View {
@@ -55,10 +59,23 @@ struct VoiceConsentSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if asksBiometric {
-                        check($biometric, String(localized: "내 목소리(생체정보)를 음성 프로필 생성·클론·TTS 생성에 사용하는 것에 동의합니다."))
+                        // 목소리 등록 자리에서는 예전 이름 화면 체크칸의 문구(법무 문서 §2② — 라벨 + 부연 세 문단)를 그대로 쓴다.
+                        // 체크칸을 이 시트로 옮겼기 때문이다(2026-11-15). 판정은 안드로이드와 같은 `registrationContext` 다.
+                        if registrationContext {
+                            check(
+                                $biometric,
+                                String(localized: "음성 생체정보 처리에 동의해요"),
+                                description: String(localized: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요.")
+                            )
+                        } else {
+                            check($biometric, String(localized: "내 목소리(생체정보)를 음성 프로필 생성·클론·TTS 생성에 사용하는 것에 동의합니다."))
+                        }
                     }
                     if asksOverseas {
                         check($overseas, String(localized: "음성 AI 처리를 위해 목소리와 문구가 국외(미국 등)로 이전·처리되는 것에 동의합니다."))
+                    }
+                    if asksRights {
+                        check($rights, String(localized: "본인 목소리이거나, 목소리 주인이 음성 복제와 알람 사용에 명시적으로 동의한 목소리만 등록합니다. 앞으로 등록하는 목소리도 모두 목소리 주인의 동의를 확인하며, 무단 등록·권리 침해·사칭으로 생기는 책임은 등록한 사람에게 있음을 확인합니다."))
                     }
                 }
             }
@@ -92,7 +109,7 @@ struct VoiceConsentSheet: View {
         .padding(24)
     }
 
-    private func check(_ binding: Binding<Bool>, _ label: String) -> some View {
+    private func check(_ binding: Binding<Bool>, _ label: String, description: String? = nil) -> some View {
         Button {
             binding.wrappedValue.toggle()
         } label: {
@@ -100,10 +117,18 @@ struct VoiceConsentSheet: View {
                 Image(systemName: binding.wrappedValue ? "checkmark.square.fill" : "square")
                     .font(.title3)
                     .foregroundStyle(binding.wrappedValue ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
-                Text(label)
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.text)
-                    .multilineTextAlignment(.leading)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(label)
+                        .font(.footnote)
+                        .foregroundStyle(AlarmTalkTheme.text)
+                        .multilineTextAlignment(.leading)
+                    if let description {
+                        Text(description)
+                            .font(.footnote)
+                            .foregroundStyle(AlarmTalkTheme.textSecondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
@@ -123,6 +148,27 @@ struct VoiceConsentSheet: View {
         (Google, 미국)을 거쳐 처리돼요. 이 과정에서 데이터가 국외로 전송됩니다. 동의하지 않아도 \
         알람 자체는 쓸 수 있지만, 목소리로 읽어주는 알람은 만들 수 없어요.
         """) }
+}
+
+
+/// 목소리 등록 권리 확인 — **계정마다 한 번**(2026-11-15 오너: "권리 권한도 그냥 앞으로 등록하는 목소리 전부로 해").
+///
+/// '등록' 을 누를 때 빠진 법정 동의와 함께 `VoiceConsentSheet` 에서 **앞으로 등록하는 목소리 전부**에 대한 확인을 받고
+/// 계정별로 이 기기에 적는다. 법정 동의 유형이 아니라 서버에 기록하지 않는다(예전 입구 모달도 기록하지 않았다) — 다른
+/// 기기에서는 한 번 더 묻는다. 안드로이드 `VoiceRightsAttestation` 과 같다. 규칙: `docs/spec/consent.md` 「목소리 권리 확인」.
+enum VoiceRightsAttestation {
+    /// 계정별 저장 키. 테스트가 지우려고 쓴다.
+    static func storageKey(userID: String) -> String { "voiceRightsAttested.\(userID)" }
+
+    static func isAttested(userID: String?) -> Bool {
+        guard let userID else { return false }
+        return UserDefaults.standard.bool(forKey: storageKey(userID: userID))
+    }
+
+    static func markAttested(userID: String?) {
+        guard let userID else { return }
+        UserDefaults.standard.set(true, forKey: storageKey(userID: userID))
+    }
 }
 
 #if DEBUG

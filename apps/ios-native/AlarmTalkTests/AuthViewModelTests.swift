@@ -971,6 +971,86 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNil(vm.pendingSensitiveConsent)
     }
 
+    /// 법정 동의가 다 있어도 **목소리 권리 확인**을 아직 안 받았으면 시트를 띄운다 — 계정마다 한 번(2026-11-15 오너:
+    /// "권리 권한도 그냥 앞으로 등록하는 목소리 전부로 해"). 권리 확인은 서버에 보낼 유형이 아니라 `types` 에 넣지 않는다.
+    func test_requestSensitiveConsent_권리_확인만_받아도_시트를_띄운다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        let canProceed = vm.requestSensitiveConsent(types: [], registeringVoice: true, asksRights: true)
+
+        XCTAssertFalse(canProceed, "시트에서 받을 때까지 등록은 멈춘다")
+        XCTAssertEqual(vm.pendingSensitiveConsent?.types, [])
+        XCTAssertEqual(vm.pendingSensitiveConsent?.asksRights, true)
+    }
+
+    /// 권리 확인만 받은 시트는 서버에 아무것도 보내지 않고 이 기기에 적은 뒤 닫힌다. 등록 화면은 '이 요청에 동의했다'
+    /// 는 표식을 보고 이어서 만든다 — 서버 동의 목록은 바뀌지 않으니 그것으로는 알 수 없다.
+    func test_agreeToPendingSensitiveConsent_권리_확인만이면_기기에_적고_닫는다() async {
+        let key = VoiceRightsAttestation.storageKey(userID: "user-1")
+        UserDefaults.standard.removeObject(forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        _ = vm.requestSensitiveConsent(types: [], registeringVoice: true, asksRights: true)
+        let requestID = vm.pendingSensitiveConsent?.id
+
+        await vm.agreeToPendingSensitiveConsent()
+
+        XCTAssertNil(api.lastRecordConsentsRequest, "법정 동의가 아니라 서버에 보낼 것이 없다")
+        XCTAssertTrue(VoiceRightsAttestation.isAttested(userID: "user-1"), "다음 등록부터는 묻지 않는다")
+        XCTAssertNil(vm.pendingSensitiveConsent)
+        XCTAssertNotNil(requestID)
+        XCTAssertEqual(vm.agreedSensitiveConsentRequestID, requestID)
+    }
+
+    /// 빠진 법정 동의와 권리 확인을 **한 번에** 받는다 — 기록이 성공한 뒤에만 권리 확인을 적고 시트를 닫는다.
+    func test_agreeToPendingSensitiveConsent_법정_동의와_권리_확인을_함께_받는다() async {
+        let key = VoiceRightsAttestation.storageKey(userID: "user-1")
+        UserDefaults.standard.removeObject(forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "rights-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+        _ = vm.requestSensitiveConsent(types: ["voice_biometric"], registeringVoice: true, asksRights: true)
+        let requestID = vm.pendingSensitiveConsent?.id
+
+        await vm.agreeToPendingSensitiveConsent()
+
+        XCTAssertEqual(api.lastRecordConsentsRequest?.consents.map(\.type), ["voice_biometric"], "권리 확인은 서버에 보내지 않는다")
+        XCTAssertTrue(VoiceRightsAttestation.isAttested(userID: "user-1"))
+        XCTAssertNil(vm.pendingSensitiveConsent)
+        XCTAssertEqual(vm.agreedSensitiveConsentRequestID, requestID)
+    }
+
+    /// 기록이 실패하면 권리 확인도 적지 않고 시트를 남긴다 — 다시 눌러 한 번에 끝낸다. 동의 표식도 남기지 않아,
+    /// 사용자가 시트를 닫으면 등록이 저절로 이어지지 않는다.
+    func test_agreeToPendingSensitiveConsent_기록이_실패하면_시트를_남긴다() async {
+        let key = VoiceRightsAttestation.storageKey(userID: "user-1")
+        UserDefaults.standard.removeObject(forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        let api = MockAuthAPI()
+        api.recordConsentsResult = .failure(APIError.invalidResponse)
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "rights-fail-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+        _ = vm.requestSensitiveConsent(types: ["voice_biometric"], registeringVoice: true, asksRights: true)
+
+        await vm.agreeToPendingSensitiveConsent()
+
+        XCTAssertNotNil(vm.pendingSensitiveConsent)
+        XCTAssertFalse(VoiceRightsAttestation.isAttested(userID: "user-1"))
+        XCTAssertNil(vm.agreedSensitiveConsentRequestID)
+    }
+
     /// 받을 것이 없으면 막지 않는다 — 호출자가 그대로 진행한다.
     func test_requestSensitiveConsent_받을_것이_없으면_막지_않는다() {
         let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())

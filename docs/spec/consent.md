@@ -41,8 +41,9 @@
      `FEATURE_CONSENT_TYPES` 를 `collect` 에 담고(`routes/user.ts` 의
      `GET /user/consents/status`), 앱은 `collect` 그대로 그린다
      (`ui/auth/ConsentScreen.kt` 의 `showVoiceBiometric`, iOS `ConsentView`).
-     ② 거기서 **거절한 사람만** 목소리 등록 화면에서 `sensitive_missing` 으로 다시
-     만난다(인라인 체크박스).
+     ② 거기서 **거절한 사람만** 목소리를 등록할 때 `sensitive_missing` 으로 다시
+     만난다 — '등록' 을 누르는 순간 뜨는 시트(`VoiceConsentSheet`)다. 2026-11-15 전에는 이름
+     화면의 인라인 체크박스였다(아래 「목소리 권리 확인」 과 한 시트로 합쳤다).
    - ⚠ **`collect` 에 안 담긴다고 적지 말 것.** 담긴다 — 회귀 테스트가 그 모양을 고정한다
      (`test/consent.test.ts` 의 "동의 기록이 없으면 필수 4종 + 선택 2종…"). 등록하는
      순간에만 물으면 그때가 가장 거부감이 큰 자리라, 일부러 가입 화면에서 먼저 묻고
@@ -93,13 +94,18 @@
 - **마케팅 재유도**는 거절자에게 **다른 이유로 화면이 이미 뜰 때만** 함께 노출한다.
   마케팅만으로 화면이 뜨면 거절자는 그 화면을 영영 보게 된다. 앱 화면에서만 유도하고
   푸시·이메일로 권하지 않는다(그 메시지 자체가 광고성 정보로 평가된다).
-- **목소리 등록 입구에서 권리 확인 모달을 받는다**(2026-10-16 오너 결정). '추가'를 누르면 등록 화면으로
-  이동하기 전에 본인 목소리 또는 목소리 주인이 음성 복제·알람 사용에 명시적으로 동의한 목소리인지 확인한다.
-  [취소][동의하기] 중 동의하기를 눌러야 등록을 시작한다. 소유·책임 확인 체크박스 두 개는 없앤다.
-  이는 이번에 등록할 목소리에 대한 이용자 확인이다. 공급자의 목소리 주인 본인 인증을 수행했다는 뜻은 아니며,
-  서버의 법정 동의 유형·버전을 새로 만들거나 이미 받은 법정 동의를 다시 기록하지 않는다.
-  생체정보·국외 이전 동의가 부족하면 기존의 별도 동의를 받고, 성공한 뒤에만 음성을 업로드한다.
-  초안 미리듣기로 돌아오는 경우는 새로운 등록 진입이 아니므로 다시 묻지 않는다.
+- **목소리 권리 확인은 계정마다 한 번, '등록' 을 누를 때 빠진 동의와 함께 시트 하나로 받는다**(2026-11-15 오너:
+  "권리 권한도 그냥 앞으로 등록하는 목소리 전부로 해 / 등록할때마다 확인받아야한다는건 없잖아"). 2026-10-16 부터는
+  '추가' 입구의 [취소][동의하기] 모달이 등록마다 물었다 — 그 모달과 이름 화면의 생체정보 체크칸을 함께 없앴다.
+  - 문구는 **앞으로 등록하는 목소리 전부**에 대한 확인이다(법무 문서 `docs/legal/consent-and-permission-copy.ko.md`
+    §2①). 이용자의 확인일 뿐 공급자가 목소리 주인의 본인 인증을 했다는 뜻이 아니다.
+  - **법정 동의 유형이 아니다** — 서버에 기록하지 않고, 이 기기에 계정별로 적는다(`VoiceRightsAttestation`).
+    새 기기·재설치 뒤에는 한 번 더 묻는다. 예전 입구 모달도 서버에 기록하지 않았다.
+  - 시트는 **빠진 것만** 그린다: 생체정보(가입 때 거절한 사람)·국외 이전·권리 확인. 셋 다 있으면 시트 없이 곧바로
+    만든다 — 「한 번 받은 동의는 다시 묻지 않는다」.
+  - 시트의 '동의하고 목소리 만들기' 는 빠진 법정 동의를 기록하고 권리 확인을 적은 **뒤에** 같은 녹음으로 등록을 이어
+    간다. 기록이 실패하면 아무것도 적지 않고 시트를 남긴다. 닫으면 등록하지 않는다.
+  - 업로드 **전에** 받는다 — 녹음이 나간 뒤에 받으면 이미 처리한 생체정보에 사후 동의를 받는 꼴이다.
 ## 한 번 받은 동의는 다시 묻지 않는다
 
 > 규칙(2026-08-26 확정): **받아야 하는 동의는 전부 받는다. 한 번 받은 동의는 다시 묻지
@@ -243,9 +249,9 @@
 | 철회 = 삭제 | `withdrawVoiceBiometricConsent` (`MainViewModelAuthActions`) | `AuthViewModel.withdrawVoiceBiometricConsent` | `deleteSensitiveVoiceDataForUser` |
 | 마스터 행 범위 | `masterTypes`=`shownTypes`, `setAll`·`allChecked` 도 같은 집합 (`ConsentScreen`) | 같음 (`ConsentView.masterTypes`) | — |
 | 다시 묻는 자리 | `sensitiveConsentMissing`·`showConsentScreen` (`MainViewModel`) | `consentSensitiveMissing`·`showConsentScreen` (`AuthViewModel`) | `collect` / `sensitive_missing` (`routes/user.ts`) |
-| 묻지 않은 것 기록 금지 | `INLINE_COVERED_CONSENTS` (`MainViewModelVoiceActions`) | `inlineCoveredConsents` (`VoiceCloneUploadFlow`) | `POST /user/consents` 는 받은 것만 기록 |
+| 묻지 않은 것 기록 금지 | 시트가 그린 `types` 만 (`submitVoiceConsents` — `MainViewModelAuthActions`) | 같음 (`AuthViewModel.agreeToPendingSensitiveConsent`) | `POST /user/consents` 는 받은 것만 기록 |
 | 모르는 유형 | 필수→`consentUnsupported`, 선택→버림 (`checkConsentStatus`) | 같음 (`AuthViewModel.checkConsentStatus`) | `optional` 필드 |
-| 등록 입구 권리 확인 | `VoiceProfileManagementPanel.registrationConsentOpen` → `showCreateForm` | 같은 패널의 `registrationConsentOpen` → `route = .clone` | 별도 동의 유형을 기록하지 않음 |
+| 목소리 권리 확인(계정마다 한 번) | `VoiceRightsAttestation` (`ui/main/VoiceRightsAttestation.kt`) ← `createVoiceProfiles`·`submitVoiceConsents` | `VoiceRightsAttestation` (`Views/Auth/VoiceConsentSheet.swift`) ← `VoiceCloneUploadFlow.submit`·`AuthViewModel.agreeToPendingSensitiveConsent` — `AuthViewModelTests` | 기록하지 않음(법정 동의 유형이 아니다) |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 403 뒤 목록·겹친 조회 실패 | `refreshConsentCollectAfterGate`·`applyConsentStatusFailure` (`MainViewModelAuthActions`), `consentGatePendingUserId` (`MainViewModel`) | `handleConsentRequired` → `checkConsentStatus`, `consentGatePendingUserID` (`AuthViewModel`) — `AuthViewModelTests` | `GET /user/consents/status` |
 | 동의 뒤 막혔던 알람 전송 다시 돌기 — **없다**(2026-10-29, 알람을 올리지 않는다. 옛 자리 안드로이드 `submitConsents` 의 알람 전송·iOS `consentSubmitGeneration` 을 지웠다) | — | — | — |

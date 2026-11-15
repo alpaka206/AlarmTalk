@@ -365,8 +365,8 @@ internal fun VoiceProfileManagementPanel(
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
     storeEntitledNow: Boolean,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
-    // 두 번째 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
-    onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
+    // 빠진 동의·권리 확인은 뷰모델이 '등록' 을 누를 때 시트(`VoiceConsentSheet`)로 한 번에 받는다(2026-11-15).
+    onCreateVoiceProfile: (VoiceProfileCreationDraft) -> Boolean,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     /** 카테고리별 완전한 세트 크기(서버 제공). 앱에 개수를 박지 않는다. */
@@ -408,10 +408,6 @@ internal fun VoiceProfileManagementPanel(
     // '생성 중' 화면을 닫아도 계속되고, 앱이 죽으면 서버 cron 이 이어받는다.
     prerenderDrive: PrerenderDriveState? = null,
     onStartPrerenderDrive: (String) -> Unit = {},
-    // 아직 없는 민감 동의. 가입 화면에서 음성 생체정보(선택)를 거절한 사람만 비어 있지 않다 —
-    // 그 사람에게만 '세부 정보' 단계 아래에 인라인 동의 항목을 그리고, 체크해야 등록이 눌린다.
-    // 한 번 동의하면 서버 기록이 남아 이 목록이 비고 다음 등록부터는 보이지 않는다.
-    sensitiveConsentMissing: List<String> = emptyList(),
     // 등록 흐름(등록·저장·다시 만들기)의 거절 — 뷰모델이 올리고 **이 창이 자기 안에** 그린다
     // (`MainViewModel.voiceRegistrationFailure`). 앱 스낵바는 이 창 뒤에 가려 안 보인다.
     voiceRegistrationFailure: VoiceRegistrationFailure? = null,
@@ -435,17 +431,7 @@ internal fun VoiceProfileManagementPanel(
     var profileNameTooLong by remember { mutableStateOf(false) }
     var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
-    // 인라인 동의 체크. 등록 요청이 나가기 전 단계에서만 의미가 있으므로 다이얼로그를 닫을 때
-    // 함께 초기화한다(closeCreateDialog).
-    var voiceBiometricAgreed by remember { mutableStateOf(false) }
     var currentStep by remember { mutableStateOf(VoiceRegistrationStep.Source) }
-    // 가입 화면에서 음성 생체정보(선택)를 거절한 사람에게만 인라인 동의 항목을 그린다.
-    // 한 번 동의하면 서버 기록이 남아 sensitiveConsentMissing 이 비고 다시 뜨지 않는다.
-    val needsBiometricConsent = "voice_biometric" in sensitiveConsentMissing
-    // 등록(=draft 생성=실제 클론 생성)을 눌러도 되는지 — **법정 동의만** 본다.
-    // 권리 보증 확인은 약관 제7조가 담당하므로 체크박스가 아니라 안내 문구다
-    // (VoiceRegistrationAttestation 주석 참조).
-    val registrationConsentSatisfied = !needsBiometricConsent || voiceBiometricAgreed
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     // 등록을 거절당해 음원 준비 단계로 돌아온 이유(말소리 없음 — `RegistrationFailureSurface.ReRecord`). 녹음 카드(파일
@@ -473,7 +459,6 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
-    var registrationConsentOpen by remember { mutableStateOf(false) }
     // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 띄우는 '임시 목소리 삭제' 경고.
     var draftExitWarningOpen by remember { mutableStateOf(false) }
     // 서버가 "이번 달 등록을 다 썼다" 고 답해 등록 흐름을 끝냈다 — 이유를 말하는 알럿(스펙
@@ -1477,7 +1462,6 @@ internal fun VoiceProfileManagementPanel(
         profileVoiceLanguage = defaultVoiceLanguage
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
-        voiceBiometricAgreed = false
         currentStep = VoiceRegistrationStep.Source
         selectedAudio = null
         mediaPlayer?.release()
@@ -2029,9 +2013,6 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         if (createPreparing) return
-        // 버튼이 이미 비활성이지만, 파일 경로의 비동기 크롭을 거쳐 다시 들어올 수 있어
-        // 여기서도 막는다 — 확인·동의 없이 녹음이 나가는 경로가 하나도 없어야 한다.
-        if (!registrationConsentSatisfied) return
         if (inputMode == VoiceCaptureMode.Record) {
             val audio = selectedAudio ?: run {
                 localMessage = context.getString(R.string.voices_prepare_recording_first)
@@ -2042,7 +2023,7 @@ internal fun VoiceProfileManagementPanel(
             // 스냅샷이 남아 엉뚱한 목소리에 확인창이 뜨는 것을 막는다).
             // ViewModel 이 요청을 시작하지 못했으면(false — 스테일 세션/플랜/개수 상태 등)
             // '만드는 중' 스텝에 진입하지 않는다 — 못 닫는 화면에 갇히는 것을 막는다.
-            val accepted = onCreateVoiceProfile(creationDraft(audio), voiceBiometricAgreed)
+            val accepted = onCreateVoiceProfile(creationDraft(audio))
             if (accepted) enterCreatingStep()
             return
         }
@@ -2056,7 +2037,7 @@ internal fun VoiceProfileManagementPanel(
                 if (error != null) {
                     localMessage = error
                 } else {
-                    val accepted = onCreateVoiceProfile(creationDraft(audio), voiceBiometricAgreed)
+                    val accepted = onCreateVoiceProfile(creationDraft(audio))
                     if (accepted) enterCreatingStep()
                 }
             }.onFailure { error ->
@@ -2096,7 +2077,9 @@ internal fun VoiceProfileManagementPanel(
             val monthlyExhausted = monthlyRegistrationUsedUp(monthlyQuota)
             Button(
                 onClick = {
-                    if (canOpenCreateForm) registrationConsentOpen = true else voicePlanGateOpen = true
+                    // 입구 권리 확인 모달은 없앴다 — 권리 확인은 '등록' 을 누를 때 빠진 동의와 한 시트에서 계정마다 한 번 받는다
+                    // (`VoiceRightsAttestation`, 2026-11-15).
+                    if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
                 },
                 enabled = !voiceProfileBusy && !monthlyExhausted,
                 colors = wakerButtonColors(),
@@ -2238,29 +2221,6 @@ internal fun VoiceProfileManagementPanel(
         )
     }
 
-    // 이번에 등록할 목소리의 권리는 입구에서 확인한다. 법정 민감 동의는 기존 업로드 경로가 따로 받는다.
-    if (registrationConsentOpen) {
-        IosAlertDialog(
-            title = stringResource(R.string.voice_registration_consent_title),
-            message = stringResource(R.string.voice_registration_consent_body),
-            onDismiss = { registrationConsentOpen = false },
-            actions = listOf(
-                IosAlertAction(
-                    label = stringResource(R.string.voice_consent_cancel),
-                    onClick = { registrationConsentOpen = false },
-                ),
-                IosAlertAction(
-                    label = stringResource(R.string.voice_registration_consent_agree),
-                    emphasized = true,
-                    enabled = !voiceProfileBusy && canOpenCreateForm && !monthlyRegistrationUsedUp(voiceDraftQuota),
-                    onClick = {
-                        registrationConsentOpen = false
-                        if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
-                    },
-                ),
-            ),
-        )
-    }
 
     if (voicePlanGateOpen) {
         PlanGateDialog(
@@ -2608,17 +2568,6 @@ internal fun VoiceProfileManagementPanel(
                                     selected = profileVoiceLanguage,
                                     onSelect = { profileVoiceLanguage = it },
                                 )
-                                // 등록 직전 확인 — 이 단계에 두는 이유는 다음 버튼('등록')이
-                                // draft 를 만들고, draft 생성이 곧 실제 ElevenLabs 클론 생성이기
-                                // 때문이다. 마지막 '저장하기'(승격) 앞에 두면 이미 목소리를
-                                // 만들어 놓고 사후 동의를 받는 꼴이 된다.
-                                VoiceRegistrationAttestation(
-                                    // 가입 화면에서 이미 동의했으면 그리지 않는다 — 한 번 받은
-                                    // 동의를 등록할 때마다 다시 묻지 않는다.
-                                    showBiometricConsent = needsBiometricConsent,
-                                    biometricAgreed = voiceBiometricAgreed,
-                                    onBiometricAgreedChange = { voiceBiometricAgreed = it },
-                                )
                             }
 
                             VoiceRegistrationStep.Creating -> {
@@ -2887,12 +2836,8 @@ internal fun VoiceProfileManagementPanel(
                                             submitCreateProfile(resolvedProfileName)
                                         }
                                     },
-                                    // 확인·동의를 체크해야 등록이 눌린다. 서버도 같은 지점에서
-                                    // 403 으로 막지만, 요청을 보내 튕기기 전에 무엇에 동의하는지
-                                    // 부터 보여준다.
                                     enabled = !voiceProfileBusy && !isRecording && !createPreparing &&
-                                        (canSubmitRecord || canSubmitSingleFile) &&
-                                        registrationConsentSatisfied,
+                                        (canSubmitRecord || canSubmitSingleFile),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {

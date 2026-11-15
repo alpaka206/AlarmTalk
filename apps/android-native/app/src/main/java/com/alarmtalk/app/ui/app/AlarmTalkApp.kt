@@ -1105,6 +1105,7 @@ internal fun AlarmTalkApp(
             // 동의 직후 실제로 목소리를 만드는지로 문맥을 정한다 — 묻는 항목으로 파생하면
             // 국외 이전만 빠진 등록에서 TTS 카피가 떠 사용자를 속인다(Codex #660).
             registeringVoice = request.resumeVoiceDrafts != null,
+            asksRights = request.asksRights,
             onAgree = viewModel::submitVoiceConsents,
             errorText = viewModel.actionErrorFor(SignedInAction.SENSITIVE_CONSENT),
             onDismiss = {
@@ -1601,7 +1602,6 @@ internal fun AlarmTalkApp(
                           voiceDraftQuotaExhausted = monthlyRegistrationUsedUp(viewModel.voiceDraftQuota),
                           voiceDraftQuota = viewModel.voiceDraftQuota,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
-                          sensitiveConsentMissing = viewModel.sensitiveConsentMissing,
                           onGenerateTts = viewModel::generateTtsAudio,
                           stockClips = viewModel.stockClips,
                           expectedVariants = viewModel.expectedVariants,

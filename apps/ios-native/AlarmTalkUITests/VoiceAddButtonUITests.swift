@@ -38,22 +38,16 @@ final class VoiceAddButtonUITests: XCTestCase {
         let addButton = app.buttons["추가"].firstMatch
         XCTAssertTrue(addButton.waitForExistence(timeout: 30))
         addButton.tap()
-        let consent = app.alerts["목소리를 등록하기 전에"]
-        XCTAssertTrue(consent.waitForExistence(timeout: 5))
-        XCTAssertTrue(consent.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "목소리 주인")).firstMatch.exists)
-        consent.buttons["취소"].tap()
-        XCTAssertFalse(app.staticTexts["목소리 만들기"].exists, "취소하면 등록 화면에 들어가지 않는다")
-        addButton.tap()
-        XCTAssertTrue(consent.waitForExistence(timeout: 5), "새 등록 진입마다 확인한다")
-        consent.buttons["동의하기"].tap()
-
+        // 입구의 권리 확인 모달은 없앴다(2026-11-15 오너: "등록할때마다 확인받아야한다는건 없잖아"). 권리 확인은
+        // '등록' 을 누를 때 빠진 동의와 함께 시트 하나로, 계정마다 한 번만 받는다.
         XCTAssertTrue(app.staticTexts["목소리 만들기"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists, "'추가' 는 곧바로 등록 화면을 연다")
         let record = app.buttons["녹음"]
         let file = app.buttons["파일"]
         XCTAssertTrue(record.exists)
         XCTAssertTrue(file.exists)
-        // 녹음/파일은 날씨 지역 시트의 나라 고르기와 같은 **시스템 세그먼트**다(2026-11-15 오너). 두 칸이 같은 폭으로
-        // 줄을 나눠 채우는지 실제 접근성 프레임으로 고정한다(높이는 시스템 세그먼트의 것이다).
+        // 녹음/파일은 날씨 지역 시트의 나라 고르기·편집기 재생 방식과 같은 **앱 세그먼트**다(2026-11-15 오너). 두 칸이
+        // 같은 폭으로 줄을 나눠 채우는지 실제 접근성 프레임으로 고정한다.
         XCTAssertEqual(record.frame.width, file.frame.width, accuracy: 1)
         XCTAssertGreaterThan(record.frame.width, 120)
         XCTAssertTrue(app.staticTexts["너무 짧으면 목소리가 다르게 나올 수 있어요."].exists)

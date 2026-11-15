@@ -85,9 +85,7 @@ internal fun AlarmListScreen(
     voiceDraftQuotaExhausted: Boolean = false,
     // 이번 달 목소리 생성 쿼터(추가 버튼 옆 '남은/전체' 표시).
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
-    onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
-    // 목소리 등록 화면의 인라인 동의 항목에 그대로 넘긴다.
-    sensitiveConsentMissing: List<String> = emptyList(),
+    onCreateVoiceProfile: (VoiceProfileCreationDraft) -> Boolean,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     /** 카테고리별 완전한 세트 크기(서버 제공). 앱에 개수를 박지 않는다. */
@@ -310,7 +308,6 @@ internal fun AlarmListScreen(
                         voiceDraftQuotaExhausted = voiceDraftQuotaExhausted,
                         authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
-                        sensitiveConsentMissing = sensitiveConsentMissing,
                         onGenerateTts = onGenerateTts,
                         stockClips = stockClips,
                         expectedVariants = expectedVariants,

@@ -991,6 +991,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal data class SensitiveConsentRequest(
         val types: List<String>,
         val resumeVoiceDrafts: List<VoiceProfileCreationDraft>? = null,
+        // 목소리 권리 확인(계정마다 한 번)도 이 시트에서 받는가 — `VoiceRightsAttestation`.
+        val asksRights: Boolean = false,
     )
 
     internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
