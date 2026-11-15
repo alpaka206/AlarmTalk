@@ -58,8 +58,8 @@ enum UIPreviewSeed {
         #endif
     }
 
-    /// 목소리 등록 동의 시트(`VoiceConsentSheet`)를 바로 띄우는 실행 인자 — `-UIPreviewConsentSheet "voice_biometric,rights"`.
-    /// 쉼표로 물을 항목을 준다(`rights` = 목소리 권리 확인, 나머지는 민감 동의 유형). `-UIPreviewSeed` 와 함께 쓴다.
+    /// 목소리 등록 동의 시트(`VoiceConsentSheet`)를 바로 띄우는 실행 인자 — `-UIPreviewConsentSheet "voice_biometric,overseas_transfer"`.
+    /// 쉼표로 물을 민감 동의 유형을 준다. `-UIPreviewSeed` 와 함께 쓴다.
     /// 시트는 녹음·파일을 거친 '등록' 에서만 떠서, 높이·문구를 확인하려고 둔다.
     static var consentSheetItems: [String]? {
         #if DEBUG

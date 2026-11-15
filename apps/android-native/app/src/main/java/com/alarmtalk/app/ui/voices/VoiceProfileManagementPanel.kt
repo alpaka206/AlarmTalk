@@ -2077,8 +2077,8 @@ internal fun VoiceProfileManagementPanel(
             val monthlyExhausted = monthlyRegistrationUsedUp(monthlyQuota)
             Button(
                 onClick = {
-                    // 입구 권리 확인 모달은 없앴다 — 권리 확인은 '등록' 을 누를 때 빠진 동의와 한 시트에서 계정마다 한 번 받는다
-                    // (서버 `voice_rights` 기록, 2026-11-15).
+                    // 입구 권리 확인 모달은 없앴다 — 권리 보증은 약관 제7조(가입 필수 동의)로 받고, 빠진 법정 동의만
+                    // '등록' 을 누를 때 시트로 받는다(2026-11-15 오너).
                     if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
                 },
                 enabled = !voiceProfileBusy && !monthlyExhausted,

@@ -383,9 +383,6 @@ final class AuthViewModel: ObservableObject {
     @Published private(set) var consentPrechecked: [String] = []
     /// 목소리 등록 화면에서 인라인으로 다시 물어야 하는 민감 동의.
     @Published private(set) var consentSensitiveMissing: [String] = []
-    /// 목소리 권리 확인을 이미 받았는가 — 서버 `voice_rights_attested`(계정마다 한 번이라 새 기기·재설치에서도 다시 묻지 않는다).
-    /// **nil 은 '모른다'** 다: 그 칸이 없는 옛 서버이거나 아직 상태를 못 받았다. 그때는 등록마다 시트에서 묻되 서버에 적지 않는다.
-    @Published private(set) var consentVoiceRightsAttested: Bool?
     /// 개정에 따른 재동의인지(이미 동의한 적 있는 계정). 문구가 달라야 한다.
     @Published private(set) var consentIsReconsent = false
     /// **이 계정의 동의 상태 응답을 실제로 받았는가.** 성공·실패 모두 true 다 —
@@ -560,10 +557,6 @@ final class AuthViewModel: ObservableObject {
     /// 목소리/TTS 라우트가 그 자리에서 요구하는 민감 동의. 가입 게이트와 별개다.
     static let sensitiveConsentTypes: Set<String> = ["voice_biometric", "overseas_transfer"]
 
-    /// 목소리 권리 확인의 동의 기록 유형 — 서버 `VOICE_RIGHTS_CONSENT`(계정마다 한 번). 법정 동의가 아니라
-    /// `knownConsentTypes`(동의 화면이 그리는 것)·`sensitiveConsentTypes` 어디에도 넣지 않는다 — 묻는 곳은 등록 시트다.
-    static let voiceRightsConsentType = "voice_rights"
-
     /// 목소리를 만들려는 순간에 받아야 하는 민감 동의 요청.
     struct SensitiveConsentRequest: Identifiable, Equatable {
         let id = UUID()
@@ -574,9 +567,6 @@ final class AuthViewModel: ObservableObject {
         /// 상태에서 TTS 문구가 떠서 사용자는 '문구 생성 동의' 인 줄 알고 눌렀는데 실제로는
         /// 녹음이 올라가고 클론이 만들어진다.
         var registeringVoice: Bool = false
-        /// 목소리 권리 확인(계정마다 한 번 — 서버 `voice_rights`)도 이 시트에서 받는가. `types`(빠진 법정 동의)와 따로 둔다 —
-        /// 서버가 그 기록을 다룰 때만 함께 적기 때문이다(`agreeToPendingSensitiveConsent`).
-        var asksRights: Bool = false
     }
 
     /// 떠 있어야 하는 민감 동의 시트. nil 이면 없음.
@@ -626,7 +616,7 @@ final class AuthViewModel: ObservableObject {
     ///   시트가 떴거나 업데이트 게이트로 보냈다는 뜻이다. 멈춘 동작을 나중에 이어받을지는
     ///   호출자가 정한다(`pendingSensitiveConsent` 가 떠 있으면 이어받을 수 있다).
     @discardableResult
-    func requestSensitiveConsent(types: [String], registeringVoice: Bool, asksRights: Bool = false) -> Bool {
+    func requestSensitiveConsent(types: [String], registeringVoice: Bool) -> Bool {
         let wanted = types.filter { Self.sensitiveConsentTypes.contains($0) }
         // ⚠ **모르는 유형을 조용히 버리지 않는다**(Codex #703 P2). 이 앱으로 받을 방법이
         // 없는 동의를 그냥 지나가면, 호출자는 '시트를 띄웠다' 고 믿고 자기 동작을 멈추는데
@@ -636,11 +626,11 @@ final class AuthViewModel: ObservableObject {
             consentUnsupported = true
             return false
         }
-        // 받을 것이 없으면 막지 않는다(권리 확인을 받아야 하면 법정 동의가 없어도 시트를 띄운다).
-        guard !wanted.isEmpty || asksRights else { return true }
+        // 받을 것이 없으면 막지 않는다.
+        guard !wanted.isEmpty else { return true }
         // 이미 시트가 떠 있으면 그것이 이 유형들을 덮는다 — 겹쳐 띄우지 않는다.
         guard pendingSensitiveConsent == nil else { return false }
-        pendingSensitiveConsent = SensitiveConsentRequest(types: wanted, registeringVoice: registeringVoice, asksRights: asksRights)
+        pendingSensitiveConsent = SensitiveConsentRequest(types: wanted, registeringVoice: registeringVoice)
         return false
     }
     /// 비밀번호 재설정 코드를 발송한 이메일. 비어 있지 않으면 UI(PasswordResetView)가
@@ -735,11 +725,7 @@ final class AuthViewModel: ObservableObject {
             accountEntryAnswer = AccountEntryAnswer(entry: 1, outcome: .answered)
             planAnsweredEntry = 1
             if let items = UIPreviewSeed.consentSheetItems {
-                pendingSensitiveConsent = SensitiveConsentRequest(
-                    types: items.filter { $0 != "rights" },
-                    registeringVoice: true,
-                    asksRights: items.contains("rights")
-                )
+                pendingSensitiveConsent = SensitiveConsentRequest(types: items, registeringVoice: true)
             }
         }
         #endif
@@ -1922,7 +1908,6 @@ final class AuthViewModel: ObservableObject {
             consentOptional = status.optional
             consentPrechecked = status.prechecked
             consentSensitiveMissing = status.sensitiveMissing
-            consentVoiceRightsAttested = status.voiceRightsAttested
             consentIsReconsent = status.hasPriorConsent
             // 서버가 게시 중인 문서 버전. 409 를 만났을 때 "업데이트하면 풀리는가" 판단에 쓴다.
             serverPolicyVersionHint = status.policyVersion
@@ -2076,24 +2061,16 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    /// 시트의 '동의' — 빠진 법정 동의와 목소리 권리 확인을 **한 요청으로** 서버에 적은 뒤 시트를 닫는다.
-    /// 기록이 실패하면 시트를 남겨 다시 누를 수 있게 한다. 안드로이드 `submitVoiceConsents` 와 같은 순서다.
-    ///
-    /// 권리 확인은 서버가 그 기록을 다룰 때만(`consentVoiceRightsAttested == false`) 함께 싣는다. nil 은 그 칸이 없는 옛
-    /// 서버이거나 아직 상태를 못 받은 것이라, 실으면 옛 서버가 모르는 유형(400)으로 거절해 등록이 막힌다 — 그때는 이
-    /// 실행 동안만 받은 것으로 둔다.
+    /// 시트의 '동의' — 빠진 법정 동의를 서버에 기록한 뒤 시트를 닫는다. 기록이 실패하면 시트를 남겨 다시 누를 수 있게 한다.
+    /// 안드로이드 `submitVoiceConsents` 와 같은 순서다.
     ///
     /// ⚠ **시트는 맨 마지막에 내린다.** 등록 화면은 시트가 내려가는 순간 '이 요청에 동의했는가' 를 보고 이어 만든다 —
     /// 기록 도중에 시트를 내리면(`submitSensitiveConsents` 처럼) 그 순간에는 동의 표식이 아직 없어 이어받기가 취소된다.
     func agreeToPendingSensitiveConsent() async {
         guard let request = pendingSensitiveConsent else { return }
-        let recordsRights = request.asksRights && consentVoiceRightsAttested == false
-        if !request.types.isEmpty || recordsRights {
-            guard await recordSensitiveConsents(types: request.types, includingVoiceRights: recordsRights) else { return }
-        }
+        guard await recordSensitiveConsents(types: request.types) else { return }
         // 기록하는 동안 다른 시트로 바뀌었거나(로그아웃 등) 닫혔으면 그 시트의 동의로 적지 않는다.
         guard pendingSensitiveConsent?.id == request.id else { return }
-        if request.asksRights { consentVoiceRightsAttested = true }
         agreedSensitiveConsentRequestID = request.id
         pendingSensitiveConsent = nil
     }
@@ -2110,8 +2087,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 민감 동의를 서버에 기록하고 빠진 목록에서 지운다 — 시트는 건드리지 않는다(내리는 쪽이 정한다).
-    /// `includingVoiceRights` 면 목소리 권리 확인(`voice_rights`)도 같은 요청에 싣는다 — 둘 중 하나만 남는 일이 없다.
-    private func recordSensitiveConsents(types: [String], includingVoiceRights: Bool = false) async -> Bool {
+    private func recordSensitiveConsents(types: [String]) async -> Bool {
         guard let token else {
             statusMessage = String(localized: "로그인이 필요해요.")
             return false
@@ -2119,7 +2095,7 @@ final class AuthViewModel: ObservableObject {
         clearActionError(.sensitiveConsent)
         let ownerUserID = session?.user.id
         let recordable = types.filter { Self.knownConsentTypes.contains($0) }
-        guard !recordable.isEmpty || includingVoiceRights else {
+        guard !recordable.isEmpty else {
             statusMessage = String(localized: "앱을 업데이트해야 동의를 진행할 수 있어요.")
             return false
         }
@@ -2129,8 +2105,7 @@ final class AuthViewModel: ObservableObject {
 
         let version = Self.currentPolicyVersion
         let request = RecordConsentsRequest(
-            consents: (recordable + (includingVoiceRights ? [Self.voiceRightsConsentType] : []))
-                .map { ConsentItemRequest(type: $0, agreed: true, version: version) }
+            consents: recordable.map { ConsentItemRequest(type: $0, agreed: true, version: version) }
         )
         do {
             _ = try await api.recordConsents(request, token: token)
@@ -2591,7 +2566,6 @@ final class AuthViewModel: ObservableObject {
         consentOptional = []
         consentPrechecked = []
         consentSensitiveMissing = []
-        consentVoiceRightsAttested = nil
         // 떠 있던 민감 동의 시트도 앞 계정의 것이다 — 남기면 다음 계정이 게이트를 지나는 순간 자기가 부르지 않은 시트를
         // 보고, 이미 준 동의를 또 기록한다(안드로이드 `clearUserScopedRemoteState` 의 `pendingSensitiveConsent`).
         pendingSensitiveConsent = nil

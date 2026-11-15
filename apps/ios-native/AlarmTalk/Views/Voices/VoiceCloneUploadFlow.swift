@@ -741,16 +741,11 @@ struct VoiceCloneUploadFlow: View {
             voice.statusMessage = String(localized: "목소리 이름을 입력해 주세요.")
             return
         }
-        // ⚠ **빠진 민감 동의와 목소리 권리 확인은 업로드 전에 시트 하나로 받는다**(2026-11-15 오너: "생성할때 모달로 떠서
-        // 한번에 다 받고 다음부터 안받게"). 그냥 올리면 녹음이 나간 **뒤에** 403 이 온다. 권리 확인은 계정마다 한 번이라
-        // 서버가 기억한다(`consentVoiceRightsAttested` — 새 기기·재설치에서도 다시 묻지 않는다). 다 받았으면 아무것도 띄우지 않는다.
-        let needsRightsAttestation = auth.consentVoiceRightsAttested != true
-        if !unaskedSensitiveConsents.isEmpty || needsRightsAttestation {
-            auth.requestSensitiveConsent(
-                types: auth.consentSensitiveMissing,
-                registeringVoice: true,
-                asksRights: needsRightsAttestation
-            )
+        // ⚠ **빠진 민감 동의는 업로드 전에 시트 하나로 받는다**(2026-11-15 오너: "생성할때 모달로 떠서 한번에 다 받고
+        // 다음부터 안받게"). 그냥 올리면 녹음이 나간 **뒤에** 403 이 온다. 가입 때 다 받았으면 아무것도 띄우지 않는다.
+        // 목소리 권리 확인은 따로 받지 않는다 — 약관 제7조로 갈음한다(`docs/spec/consent.md` 「목소리 권리 확인」).
+        if !unaskedSensitiveConsents.isEmpty {
+            auth.requestSensitiveConsent(types: auth.consentSensitiveMissing, registeringVoice: true)
             // **시트가 떴을 때만** 이어받는다. 모르는 유형이라 업데이트 게이트로 갔으면 이어받을 것이 없다.
             resumeSubmitAfterConsent = auth.pendingSensitiveConsent != nil
             return

@@ -43,7 +43,7 @@
      (`ui/auth/ConsentScreen.kt` 의 `showVoiceBiometric`, iOS `ConsentView`).
      ② 거기서 **거절한 사람만** 목소리를 등록할 때 `sensitive_missing` 으로 다시
      만난다 — '등록' 을 누르는 순간 뜨는 시트(`VoiceConsentSheet`)다. 2026-11-15 전에는 이름
-     화면의 인라인 체크박스였다(아래 「목소리 권리 확인」 과 한 시트로 합쳤다).
+     화면의 인라인 체크박스였다(아래 「빠진 법정 동의는 '등록' 을 누를 때 시트 하나로 받는다」).
    - ⚠ **`collect` 에 안 담긴다고 적지 말 것.** 담긴다 — 회귀 테스트가 그 모양을 고정한다
      (`test/consent.test.ts` 의 "동의 기록이 없으면 필수 4종 + 선택 2종…"). 등록하는
      순간에만 물으면 그때가 가장 거부감이 큰 자리라, 일부러 가입 화면에서 먼저 묻고
@@ -94,29 +94,24 @@
 - **마케팅 재유도**는 거절자에게 **다른 이유로 화면이 이미 뜰 때만** 함께 노출한다.
   마케팅만으로 화면이 뜨면 거절자는 그 화면을 영영 보게 된다. 앱 화면에서만 유도하고
   푸시·이메일로 권하지 않는다(그 메시지 자체가 광고성 정보로 평가된다).
-- **목소리 권리 확인은 계정마다 한 번, '등록' 을 누를 때 빠진 동의와 함께 시트 하나로 받는다**(2026-11-15 오너:
-  "권리 권한도 그냥 앞으로 등록하는 목소리 전부로 해 / 등록할때마다 확인받아야한다는건 없잖아"). 2026-10-16 부터는
-  '추가' 입구의 [취소][동의하기] 모달이 등록마다 물었다 — 그 모달과 이름 화면의 생체정보 체크칸을 함께 없앴다.
-  - 문구는 **앞으로 등록하는 목소리 전부**에 대한 확인이다(법무 문서 `docs/legal/consent-and-permission-copy.ko.md`
-    §2①). 이용자의 확인일 뿐 공급자가 목소리 주인의 본인 인증을 했다는 뜻이 아니다.
-  - **서버가 계정마다 기억한다**(2026-11-15 오너: "서버에 저장해서 한번 동의 했으면 안해도 되도록 해") — 새 기기·재설치
-    뒤에도 다시 묻지 않는다. 법정 동의는 아니지만 받은 사실과 시각이 남아야 해서 같은 표(`user_consents`)에 같은 모양
-    (유형 `voice_rights`·문서 버전·여부·시각)으로 적는다. 다른 유형과 갈리는 점:
-    - 가입 화면이 묻지 않는다 — `collect` 에 안 든다. 묻는 곳은 등록 시트 하나다.
-    - 음성 라우트를 막지 않는다 — `sensitive_missing` 에 안 들고 철회 파기도 없다. 옛 앱은 이 기록을 모르고 등록마다
-      입구 모달로 묻는다 — 서버가 막으면 옛 앱의 등록이 통째로 막힌다.
-    - 받았는지는 `GET /user/consents/status` 의 `voice_rights_attested` 하나로 알린다.
-    - ⚠ 그 칸이 **없으면 '모른다'** 다(옛 서버, 또는 상태를 받기 전). 그때는 시트에서 묻되 `voice_rights` 를 보내지 않고
-      그 실행 동안만 받은 것으로 둔다 — 보내면 옛 서버가 모르는 유형(400)으로 거절해 등록이 막힌다.
-    - 확인 문구가 다시 받아야 할 만큼 바뀌면 `CONSENT_MIN_POLICY_VERSION.voice_rights` 를 올린다(다른 유형과 같은 레버).
-  - 시트는 **빠진 것만** 그린다: 생체정보(가입 때 거절한 사람)·국외 이전·권리 확인. 셋 다 있으면 시트 없이 곧바로
-    만든다 — 「한 번 받은 동의는 다시 묻지 않는다」.
-  - 시트의 '동의하고 목소리 만들기' 는 빠진 법정 동의와 권리 확인을 **한 요청**(`POST /user/consents`)으로 기록한
-    **뒤에** 같은 녹음으로 등록을 이어 간다. 한 트랜잭션이라 둘 중 하나만 적히지 않는다. 기록이 실패하면 시트를 남긴다.
-    닫으면 등록하지 않는다.
+- **목소리 권리 확인은 따로 받지 않는다 — 약관 제7조로 갈음한다**(2026-11-15 오너: "본인이 등록해서 공유하는것도
+  아니고 본인이 쓰는거니깐", "목소리를 무단 등록하지않겠다는 내용이 약관에 있으면 되는거잖아"). 약관 제7조(음성 등록 및
+  권리 보증)는 가입 때 필수로 동의한다 — 본인 또는 적법한 권한·동의를 받은 목소리만 등록하고, 무단 등록으로 생기는
+  분쟁·책임은 이용자가 진다. 등록한 목소리는 그 사람의 알람에만 쓰여(공유 기능은 2026-10-20 에 없앴다) 등록할 때 따로
+  확인받을 이유가 없다.
+  - 예전: 2026-10-16 ~ 11-15 에는 '추가' 입구의 [취소][동의하기] 모달이 등록마다 물었고, 11-15 하루 동안은 등록 시트의
+    체크칸으로 계정마다 한 번 받았다(배포 전에 걷었다). **되살리지 말 것.**
+  - 생체정보 동의를 등록 자리에서 받는 사람에게는 그 부연이 "본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할
+    수 있어요(이용약관 제7조)" 를 함께 보여 준다(법무 문서 `docs/legal/consent-and-permission-copy.ko.md` §2).
+- **빠진 법정 동의는 '등록' 을 누를 때 시트 하나로 받는다**(2026-11-15 오너: "생성할때 모달로 떠서 한번에 다 받고
+  다음부터 안받게"). 이름 화면의 생체정보 체크칸은 없앴다.
+  - 시트는 **빠진 것만** 그린다: 생체정보(가입 때 거절한 사람)·국외 이전. 다 있으면 시트 없이 곧바로 만든다 —
+    「한 번 받은 동의는 다시 묻지 않는다」. **가입 때 다 동의한 사람은 등록할 때 아무것도 보지 않는다.**
+  - 시트의 '동의하고 목소리 만들기' 는 빠진 법정 동의를 기록한 **뒤에** 같은 녹음으로 등록을 이어 간다. 기록이
+    실패하면 시트를 남긴다. 닫으면 등록하지 않는다.
   - 업로드 **전에** 받는다 — 녹음이 나간 뒤에 받으면 이미 처리한 생체정보에 사후 동의를 받는 꼴이다.
-  - ⚠ **시트에 높이 상한을 박지 않는다.** 생체정보(부연 세 줄)와 권리 확인을 함께 받으면 예전 상한(320)을 넘어 맨 아래
-    권리 확인이 가려진 채 동의 버튼이 꺼져 있었다. 화면에 들어가면 그대로, 넘칠 때만 스크롤한다(안드로이드
+  - ⚠ **시트에 높이 상한을 박지 않는다.** 생체정보(부연 세 줄)와 다른 항목을 함께 받으면 예전 상한(320)을 넘어 맨 아래
+    항목이 가려진 채 동의 버튼이 꺼져 있었다(2026-11-15). 화면에 들어가면 그대로, 넘칠 때만 스크롤한다(안드로이드
     `weight(1f, fill = false)`, iOS `ViewThatFits`).
 ## 한 번 받은 동의는 다시 묻지 않는다
 
@@ -261,9 +256,9 @@
 | 철회 = 삭제 | `withdrawVoiceBiometricConsent` (`MainViewModelAuthActions`) | `AuthViewModel.withdrawVoiceBiometricConsent` | `deleteSensitiveVoiceDataForUser` |
 | 마스터 행 범위 | `masterTypes`=`shownTypes`, `setAll`·`allChecked` 도 같은 집합 (`ConsentScreen`) | 같음 (`ConsentView.masterTypes`) | — |
 | 다시 묻는 자리 | `sensitiveConsentMissing`·`showConsentScreen` (`MainViewModel`) | `consentSensitiveMissing`·`showConsentScreen` (`AuthViewModel`) | `collect` / `sensitive_missing` (`routes/user.ts`) |
-| 묻지 않은 것 기록 금지 | 시트가 그린 것만 — `types` 와 그린 권리 확인 (`submitVoiceConsents` — `MainViewModelAuthActions`) | 같음 (`AuthViewModel.agreeToPendingSensitiveConsent`) | `POST /user/consents` 는 받은 것만 기록 |
+| 묻지 않은 것 기록 금지 | 시트가 그린 `types` 만 (`submitVoiceConsents` — `MainViewModelAuthActions`) | 같음 (`AuthViewModel.agreeToPendingSensitiveConsent`) | `POST /user/consents` 는 받은 것만 기록 |
 | 모르는 유형 | 필수→`consentUnsupported`, 선택→버림 (`checkConsentStatus`) | 같음 (`AuthViewModel.checkConsentStatus`) | `optional` 필드 |
-| 목소리 권리 확인(계정마다 한 번, 서버 기록) | `voiceRightsAttested` (`MainViewModel`) ← `createVoiceProfiles`·`submitVoiceConsents`, `VOICE_RIGHTS_CONSENT_TYPE` — `ConsentStatusResponseTest` | `consentVoiceRightsAttested` (`AuthViewModel`) ← `VoiceCloneUploadFlow.submit`·`agreeToPendingSensitiveConsent` — `AuthViewModelTests`·`AuthUserDecodingTests` | `VOICE_RIGHTS_CONSENT` (`lib/consent.ts`), `voice_rights_attested` (`GET /user/consents/status`) — `consent.test.ts` |
+| 목소리 권리 확인 — **받지 않는다**(약관 제7조로 갈음, 2026-11-15) | — (`createVoiceProfiles` 는 `sensitiveConsentMissing` 만 본다) | — (`VoiceCloneUploadFlow.submit` 은 `consentSensitiveMissing` 만 본다) | — |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 403 뒤 목록·겹친 조회 실패 | `refreshConsentCollectAfterGate`·`applyConsentStatusFailure` (`MainViewModelAuthActions`), `consentGatePendingUserId` (`MainViewModel`) | `handleConsentRequired` → `checkConsentStatus`, `consentGatePendingUserID` (`AuthViewModel`) — `AuthViewModelTests` | `GET /user/consents/status` |
 | 동의 뒤 막혔던 알람 전송 다시 돌기 — **없다**(2026-10-29, 알람을 올리지 않는다. 옛 자리 안드로이드 `submitConsents` 의 알람 전송·iOS `consentSubmitGeneration` 을 지웠다) | — | — | — |

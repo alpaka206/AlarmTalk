@@ -8,8 +8,8 @@ import SwiftUI
 /// 된다(개인정보보호법 제22조제5항). 서버도 같은 지점(`voice-profile`·`tts` 라우트)에서만
 /// 강제한다 — 그 403 이 이 시트를 연다.
 ///
-/// 목소리 권리 확인도 여기서 함께 받는다 — **앞으로 등록하는 목소리 전부**에 대한 확인을 계정마다 한 번
-/// (서버 `voice_rights` 기록, 2026-11-15 오너). 예전에는 '추가' 입구 모달이 등록마다 따로 물었다.
+/// 목소리 권리 확인은 받지 않는다 — 약관 제7조(가입 필수 동의)의 권리 보증으로 갈음한다(2026-11-15 오너). 예전에는
+/// '추가' 입구 모달이 등록마다 따로 물었다.
 /// 문구는 `docs/legal/consent-and-permission-copy.ko.md` §2 를 따른다.
 ///
 /// Android `VoiceConsentSheet.kt` 의 1:1 포팅.
@@ -18,8 +18,6 @@ struct VoiceConsentSheet: View {
     let types: [String]
     /// 동의 직후 목소리 등록이 이어지는가.
     let registeringVoice: Bool
-    /// 목소리 권리 확인(계정마다 한 번)도 함께 받는가.
-    var asksRights: Bool = false
     let onAgree: () -> Void
     let onDismiss: () -> Void
     /// 직전 동의 기록이 실패한 이유 — 버튼 줄 위에 빨간 글자로 그린다(`AuthViewModel.actionErrorMessage`).
@@ -27,7 +25,6 @@ struct VoiceConsentSheet: View {
 
     @State private var biometric = false
     @State private var overseas = false
-    @State private var rights = false
 
     private var asksBiometric: Bool { types.contains("voice_biometric") }
     private var asksOverseas: Bool { types.contains("overseas_transfer") }
@@ -42,7 +39,7 @@ struct VoiceConsentSheet: View {
 
     /// 이미 유효한 법정 동의는 다시 묻지 않는다.
     private var allChecked: Bool {
-        (!asksBiometric || biometric) && (!asksOverseas || overseas) && (!asksRights || rights)
+        (!asksBiometric || biometric) && (!asksOverseas || overseas)
     }
 
     var body: some View {
@@ -110,9 +107,6 @@ struct VoiceConsentSheet: View {
             }
             if asksOverseas {
                 check($overseas, String(localized: "음성 AI 처리를 위해 목소리와 문구가 국외(미국 등)로 이전·처리되는 것에 동의합니다."))
-            }
-            if asksRights {
-                check($rights, String(localized: "본인 목소리이거나, 목소리 주인이 음성 복제와 알람 사용에 명시적으로 동의한 목소리만 등록합니다. 앞으로 등록하는 목소리도 모두 목소리 주인의 동의를 확인하며, 무단 등록·권리 침해·사칭으로 생기는 책임은 등록한 사람에게 있음을 확인합니다."))
             }
         }
     }

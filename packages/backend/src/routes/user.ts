@@ -14,7 +14,6 @@ import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
   SENSITIVE_REQUIRED_CONSENTS,
-  VOICE_RIGHTS_CONSENT,
   FEATURE_CONSENT_TYPES,
   OPTIONAL_CONSENT_TYPES,
   CURRENT_POLICY_VERSION,
@@ -339,9 +338,6 @@ user.get('/consents/status', async (c) => {
       // 보통 비어 있고, 가입 때 voice_biometric 을 거절한 사람만 여기에 남는다 — 클라는
       // 목소리 등록 화면에서 이 값으로 인라인 동의 항목을 띄운다.
       sensitive_missing: missingConsentTypesFrom(latest, SENSITIVE_REQUIRED_CONSENTS),
-      // 목소리 권리 확인을 이미 받았는가(`VOICE_RIGHTS_CONSENT` — 계정마다 한 번). 등록 시트가 권리 확인 칸을 띄울지
-      // 이 값으로 정한다. 법정 동의가 아니라 collect·sensitive_missing 에는 넣지 않는다.
-      voice_rights_attested: missingConsentTypesFrom(latest, [VOICE_RIGHTS_CONSENT]).length === 0,
       // 이 계정에 동의 기록이 하나라도 있으면 '개정에 따른 재동의' 다. 처음 가입한 사람과
       // 문구가 달라야 한다 — 이미 동의했던 사람에게 '서비스 이용을 위해 동의해 주세요' 는
       // 왜 또 묻는지 설명하지 못한다.

@@ -398,16 +398,15 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
     // 끝난다(이 함수가 false 를 돌려주면 패널은 스텝을 전진시키지 않는다).
     if (voiceProfileBusy) return false
 
-    // 아직 없는 민감 동의와 목소리 권리 확인 — **한 시트에서 한 번에** 받는다(2026-11-15 오너: "생성할때 모달로 떠서
-    // 한번에 다 받고 다음부터 안받게"). 이름 화면의 생체정보 체크칸과 '추가' 입구의 권리 확인 모달은 없앴다.
-    // 이미 유효한 동의는 서버 `sensitive_missing` 에서 빠지므로 다시 묻지 않고, 권리 확인은 계정마다 한 번이라 서버가
-    // 기억한다(`voiceRightsAttested` — 새 기기·재설치에서도 다시 묻지 않는다). 다 받았으면 아무것도 띄우지 않는다.
-    val needsRightsAttestation = voiceRightsAttested != true
-    if (sensitiveConsentMissing.isNotEmpty() || needsRightsAttestation) {
+    // 아직 없는 민감 동의 — **한 시트에서 한 번에** 받는다(2026-11-15 오너: "생성할때 모달로 떠서 한번에 다 받고
+    // 다음부터 안받게"). 이름 화면의 생체정보 체크칸과 '추가' 입구의 권리 확인 모달은 없앴다. 이미 유효한 동의는 서버
+    // `sensitive_missing` 에서 빠지므로 다시 묻지 않는다 — 가입 때 다 받았으면 아무것도 띄우지 않는다.
+    // 목소리 권리 확인은 따로 받지 않는다 — 약관 제7조(가입 필수 동의)의 권리 보증으로 갈음한다(2026-11-15 오너: "본인이
+    // 등록해서 공유하는것도 아니고 본인이 쓰는거니깐"). 되살리지 말 것 — `docs/spec/consent.md` 「목소리 권리 확인」.
+    if (sensitiveConsentMissing.isNotEmpty()) {
         pendingSensitiveConsent = MainViewModel.SensitiveConsentRequest(
             types = sensitiveConsentMissing,
             resumeVoiceDrafts = drafts,
-            asksRights = needsRightsAttestation,
         )
         return false
     }

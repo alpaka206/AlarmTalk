@@ -746,9 +746,6 @@ struct ConsentStatusResponse: Decodable, Equatable {
     /// 음성 라우트가 요구하는 민감 동의 중 아직 없는 것. 가입 때 `voice_biometric` 을
     /// 거절한 사람만 남는다 — 목소리 등록 화면에서 인라인으로 다시 묻는 근거다.
     var sensitiveMissing: [String] = []
-    /// 목소리 권리 확인을 이미 받았는가(계정마다 한 번 — 서버 `user_consents` 의 `voice_rights`). **옵셔널이어야 한다** —
-    /// 이 칸이 없는 옛 서버의 응답도 디코딩이 깨지지 않고 nil(모른다)이 된다. 안드로이드 `ConsentStatusResponse.voiceRightsAttested`.
-    var voiceRightsAttested: Bool? = nil
     /// 이 계정에 동의 기록이 하나라도 있으면 '개정에 따른 재동의' 다.
     /// 처음 가입한 사람과 문구가 달라야 한다.
     var hasPriorConsent: Bool = false
