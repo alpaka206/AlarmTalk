@@ -49,7 +49,6 @@ class MainActivity : ComponentActivity() {
                     AlarmTalkApp(
                         viewModel = viewModel,
                         onCheckInAppUpdate = inAppUpdateManager::checkForUpdates,
-                        onCompleteInAppUpdate = inAppUpdateManager::completeFlexibleUpdate,
                     )
                 }
             }

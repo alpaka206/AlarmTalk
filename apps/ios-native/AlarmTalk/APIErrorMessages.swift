@@ -24,7 +24,7 @@ enum APIErrorMessages {
     /// 리터럴을 따로 두면 번역 카탈로그 항목이 둘로 갈라진다(안드로이드는
     /// `R.string.auth_error_email_invalid` 한 곳이다).
     static var emailInvalid: String {
-        String(localized: "이메일 주소 형식이 올바르지 않아요. 다시 확인해 주세요.")
+        String(localized: "이메일 주소 형식이 올바르지 않아요.")
     }
 
     /// 원인을 가를 수 없는 일시 실패의 중립 문구 — `INTERNAL_ERROR` 의 문장이자, 이메일 인증
@@ -57,7 +57,7 @@ enum APIErrorMessages {
         case "AUTH_EMAIL_INVALID":
             return emailInvalid
         case "AUTH_EMAIL_CODE_INVALID":
-            return String(localized: "인증 코드가 맞지 않아요. 다시 확인해 주세요.")
+            return String(localized: "인증 코드가 맞지 않아요.")
         case "AUTH_EMAIL_CODE_EXPIRED":
             return String(localized: "인증 코드가 만료됐어요. 다시 받아 주세요.")
         case "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED":

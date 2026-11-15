@@ -90,7 +90,6 @@ internal fun AlarmTalkApp(
     // Play In-App Update 훅. 프리뷰/테스트에선 no-op 기본값. 실제 트리거는 MainActivity 가
     // InAppUpdateManager 에 연결한다.
     onCheckInAppUpdate: () -> Unit = {},
-    onCompleteInAppUpdate: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // 빌드 산출물이라 실행 중에 바뀌지 않는다 — 한 번만 본다.
@@ -327,18 +326,7 @@ internal fun AlarmTalkApp(
         }
     }
 
-    // FLEXIBLE 업데이트 다운로드 완료 → 재시작 안내 스낵바. 액션 시 completeUpdate() 로 설치 마무리.
-    LaunchedEffect(viewModel.flexibleUpdateDownloaded) {
-        if (!viewModel.flexibleUpdateDownloaded) return@LaunchedEffect
-        val result = snackbarHostState.showSnackbar(
-            message = context.getString(R.string.r3app_update_downloaded),
-            actionLabel = context.getString(R.string.r3app_update_restart),
-            duration = SnackbarDuration.Indefinite,
-        )
-        if (result == SnackbarResult.ActionPerformed) {
-            onCompleteInAppUpdate()
-        }
-    }
+    // 다 받은 FLEXIBLE 업데이트는 '재시작' 안내 없이 앱이 뒤로 갈 때 조용히 설치된다(`InAppUpdateManager`, 2026-11-16).
 
     LaunchedEffect(message) {
         val currentMessage = message ?: return@LaunchedEffect
@@ -1290,6 +1278,7 @@ internal fun AlarmTalkApp(
                       DisposableEffect(Unit) {
                           onDispose {
                               viewModel.passwordResetCodeSentTo = null
+                              viewModel.passwordResetVerified = null
                               viewModel.message = null
                           }
                       }
@@ -1297,9 +1286,11 @@ internal fun AlarmTalkApp(
                       contentPadding = padding,
                       busy = authBusy,
                       codeSentTo = viewModel.passwordResetCodeSentTo,
+                      verifiedEmail = viewModel.passwordResetVerified,
                       codeFieldClearTick = viewModel.emailCodeFieldClearTick,
                       onBack = { authBack() },
                       onRequestCode = viewModel::requestPasswordReset,
+                      onVerifyCode = { resetEmail, resetCode -> viewModel.verifyPasswordResetCode(resetEmail, resetCode) },
                       onConfirm = { resetEmail, resetCode, newPassword ->
                           viewModel.confirmPasswordReset(resetEmail, resetCode, newPassword) { authBack() }
                       },

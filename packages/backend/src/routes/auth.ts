@@ -459,6 +459,48 @@ auth.post('/password-reset', async (c) => {
 
 // 비밀번호 재설정 확정: 코드 검증 → 새 비밀번호 해시로 교체 + token_epoch+1(유출된 기존 세션
 // 전부 폐기) → 코드 소모. 비밀번호 계정에만 허용한다.
+// 비밀번호 재설정 코드 확인(2026-11-16 오너 — 가입처럼 코드를 먼저 확인한 뒤 새 비밀번호로 넘어간다).
+// 코드를 **쓰지 않는다** — 소모는 재설정 확정(`/password-reset/confirm`)이 성공할 때다. 판정은 가입의 인증 확인과
+// 같은 `checkEmailVerificationCode` 이고 용도만 재설정이다(틀린 횟수도 같은 코드에 쌓인다). 비밀번호 계정이 아니면
+// 확정과 같은 답(AUTH_EMAIL_CODE_INVALID)을 준다 — 확인은 통과했는데 확정이 거절하는 갈래를 만들지 않는다.
+auth.post('/password-reset/verify', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = EmailVerificationConfirmRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const email = normalizeAuthEmail(parsed.data.email);
+  const db = getDB(c.env);
+
+  try {
+    const check = await checkEmailVerificationCode(
+      db,
+      c.env,
+      email,
+      parsed.data.code,
+      EMAIL_VERIFICATION_PURPOSE_RESET,
+    );
+    if (!check.ok) {
+      return c.json(errorBody(check.code, check.message), check.status);
+    }
+    const account = await classifyExistingAccount(db, email);
+    if (!account || account.kind !== 'password') {
+      return c.json(errorBody('AUTH_EMAIL_CODE_INVALID', 'Invalid email verification code'), 400);
+    }
+    return c.json({ success: true });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json(errorBody('AUTH_EMAIL_CODE_VERIFY_FAILED', 'Failed to verify email code'), 500);
+  }
+});
+
 auth.post('/password-reset/confirm', async (c) => {
   let body: unknown;
   try {

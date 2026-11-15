@@ -276,6 +276,8 @@ internal fun MainViewModel.requestPasswordReset(email: String) {
             api.requestPasswordReset(PasswordResetRequest(email = normalizedEmail))
         }.onSuccess { response ->
             passwordResetCodeSentTo = normalizedEmail
+            // 새 코드를 받았으면 앞의 확인은 끝났다 — 서버는 가장 새 코드만 본다.
+            passwordResetVerified = null
             // 다시 받았으면 칸의 옛 숫자를 비운다([requestEmailVerification] 과 같은 이유).
             emailCodeFieldClearTick++
             message = response.debugCode
@@ -285,6 +287,42 @@ internal fun MainViewModel.requestPasswordReset(email: String) {
         }.onFailure { error ->
             AlarmTalkLog.reportError("Password reset request failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_send_failed))
+        }
+        authBusy = false
+    }
+}
+
+/**
+ * 비밀번호 재설정 코드 확인(2026-11-16 오너 — 가입처럼 코드를 먼저 확인한 뒤 새 비밀번호로 넘어간다).
+ * 코드를 쓰지 않는다 — 확정([confirmPasswordReset])이 같은 코드를 한 번 더 판정한다. 실패 문장·칸 비우기는
+ * 확정과 같은 규칙이다(문장은 위쪽 안내, 거절이면 칸을 비운다). iOS `AuthViewModel.verifyPasswordResetCode`.
+ */
+internal fun MainViewModel.verifyPasswordResetCode(email: String, code: String) {
+    // 확인이 도는 동안의 두 번째 탭은 버린다 — 같은 숫자를 한 번 더 보내 시도 횟수를 태운다.
+    if (authBusy) return
+    val normalizedEmail = email.trim().lowercase()
+    if (normalizedEmail.isBlank() || code.trim().length != 6) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_verification_code_six_digits_required)
+        return
+    }
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.verifyPasswordResetCode(
+                EmailVerificationConfirmRequest(
+                    email = normalizedEmail,
+                    code = code.trim(),
+                ),
+            )
+        }.onSuccess {
+            passwordResetVerified = normalizedEmail
+            message = getApplication<android.app.Application>().getString(R.string.msg_email_verification_completed)
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Password reset code verify failed", error)
+            val app = getApplication<android.app.Application>()
+            // 폴백은 중립 문장이다 — '맞지 않아요' 는 `AUTH_EMAIL_CODE_INVALID` 일 때만([emailCodeFailureMessage]).
+            message = emailCodeFailureMessage(app, error, app.getString(R.string.api_error_server))
+            clearEmailCodeFieldIfRefused(error)
         }
         authBusy = false
     }
@@ -315,15 +353,16 @@ internal fun MainViewModel.confirmPasswordReset(
             )
         }.onSuccess {
             passwordResetCodeSentTo = null
+            passwordResetVerified = null
             message = getApplication<android.app.Application>().getString(R.string.msg_password_reset_done)
             onSuccess()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Password reset confirm failed", error)
             val app = getApplication<android.app.Application>()
             message = emailCodeFailureMessage(app, error, app.getString(R.string.msg_password_reset_failed))
-            // 거절된 숫자를 칸에 남기지 않는다 — 요청 버튼이 '인증 코드 다시 받기' 로 눌리므로
-            // (`PasswordResetScreen`) 다시 받아 새 숫자를 치면 된다.
-            clearEmailCodeFieldIfRefused(error)
+            // 거절된 숫자를 칸에 남기지 않는다. 확인을 마친 뒤 10분이 지나 만료로 거절되면 '인증됨' 도 내려야
+            // 코드 줄과 `다시 받기` 가 돌아온다(가입의 [register] 와 같은 이유).
+            if (clearEmailCodeFieldIfRefused(error)) passwordResetVerified = null
         }
         authBusy = false
     }
@@ -982,6 +1021,36 @@ private fun MainViewModel.handleConsentVersionMismatch(error: Throwable, action:
     return true
 }
 
+/**
+ * 동의 기록은 잠깐 끊긴 네트워크·서버 오류에 **두 번 더** 보낸다(2026-11-16 오너 "되도록 해줘야지"). 버튼은 그동안
+ * '처리 중…' 이다. 기록은 누적이라(유형·버전·동의 여부·시각) 앞 요청이 실제로는 들어갔어도 한 줄 더 남을 뿐이다.
+ * 4xx(버전 불일치·검증 실패·한도)는 다시 보내도 같은 답이라 곧바로 돌려준다. 세 번 다 실패해야 문장을 띄운다
+ * (`msg_consent_record_failed`). iOS `AuthViewModel.recordConsentsRetrying` 과 같다.
+ */
+private suspend fun MainViewModel.recordConsentsRetrying(
+    authorization: String,
+    request: com.alarmtalk.app.network.RecordConsentsRequest,
+) = retryTransientConsentFailure { api.recordConsents(authorization, request) }
+
+private suspend fun <T> retryTransientConsentFailure(block: suspend () -> T): T {
+    for (waitMs in CONSENT_RETRY_DELAYS_MS) {
+        try {
+            return block()
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            // 응답이 없었거나(연결 끊김·시간 초과) 서버 오류(5xx)만 다시 보낸다.
+            val status = com.alarmtalk.app.network.apiFailureOf(error)?.status
+            if (status != null && status < 500) throw error
+            kotlinx.coroutines.delay(waitMs)
+        }
+    }
+    return block()
+}
+
+/** 다시 보내기 전에 기다리는 시간 — 두 번. 첫 시도를 합쳐 세 번 보낸다. */
+private val CONSENT_RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L)
+
 internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
     val session = sessionOrMessage(R.string.msg_login_required_to_use) ?: return
     clearActionError(SignedInAction.CONSENT)
@@ -1018,7 +1087,7 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
     viewModelScope.launch {
         authBusy = true
         runCatching {
-            api.recordConsents(
+            recordConsentsRetrying(
                 authorization,
                 com.alarmtalk.app.network.RecordConsentsRequest(
                     consents = consents,
@@ -1086,7 +1155,7 @@ internal fun MainViewModel.submitVoiceConsents() {
     viewModelScope.launch {
         authBusy = true
         runCatching {
-            api.recordConsents(
+            recordConsentsRetrying(
                 authorization,
                 com.alarmtalk.app.network.RecordConsentsRequest(
                     // 시트가 실제로 물어본 유형만 기록한다 — 국외 이전만 요구된 자리에서

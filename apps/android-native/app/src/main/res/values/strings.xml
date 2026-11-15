@@ -30,13 +30,11 @@
     <string name="auth_divider_email_register">또는 이메일로 가입</string>
     <string name="msg_kakao_login_failed">카카오 로그인을 완료하지 못했어요. 다시 시도해 주세요.</string>
     <string name="msg_register_email_social_kakao">카카오로 가입된 이메일이에요. \'카카오 로그인\'으로 로그인해 주세요.</string>
-    <string name="auth_email_verify_resend">인증 코드 다시 받기</string>    <string name="auth_find_password">비밀번호 찾기</string>
+    <string name="auth_find_password">비밀번호 찾기</string>
     <string name="auth_forgot_password">비밀번호를 잊으셨나요?</string>
     <string name="auth_label_confirm_password">비밀번호 확인</string>
     <string name="auth_label_email">이메일</string>
     <string name="auth_reset_title">비밀번호 재설정</string>
-    <string name="auth_reset_subtitle">가입한 이메일로 인증 코드를 보내드려요.</string>
-    <string name="auth_reset_send_code">인증 코드 받기</string>
     <string name="auth_reset_new_password">새 비밀번호</string>
     <string name="auth_reset_submit">비밀번호 변경</string>
     <string name="msg_password_reset_code_sent">인증 코드를 보냈어요. 메일을 확인해 주세요.</string>
@@ -57,8 +55,8 @@
     <string name="auth_landing_voice_previous">이전 목소리</string>
     <string name="auth_password_hide">비밀번호 숨기기</string>
     <string name="auth_password_mismatch">비밀번호가 일치하지 않아요.</string>
-    <string name="auth_error_email_invalid">이메일 주소 형식이 올바르지 않아요. 다시 확인해 주세요.</string>
-    <string name="auth_error_invalid_credentials">이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.</string>
+    <string name="auth_error_email_invalid">이메일 주소 형식이 올바르지 않아요.</string>
+    <string name="auth_error_invalid_credentials">이메일 또는 비밀번호가 맞지 않아요.</string>
     <string name="auth_password_rule_alnum">영문·숫자 포함</string>
     <string name="auth_password_rule_match">비밀번호 확인 일치</string>
     <string name="auth_password_rule_min">8자 이상</string>
@@ -612,8 +610,6 @@
     <string name="r3app_update_required_title">업데이트가 필요해요</string>
     <string name="r3app_update_required_body">새 버전에서만 쓸 수 있어요.\n업데이트해도 알람과 목소리는 그대로 남아요.</string>
     <string name="r3app_update_required_button">업데이트하기</string>
-    <string name="r3app_update_downloaded">업데이트를 다 받았어요. 재시작하면 적용돼요.</string>
-    <string name="r3app_update_restart">재시작</string>
     <string name="r3app_google_signin_failed">Google 로그인에 실패했어요</string>
     <string name="r3app_google_signin_no_info">Google 로그인 정보를 받지 못했어요. 다시 시도해 주세요.</string>
     <string name="r3dlg_duplicate_alarm_message">%1$s 알람을 새 알람으로 교체할까요?</string>
@@ -676,7 +672,6 @@
     <string name="auth_consent_collapse">항목 접기</string>
     <string name="auth_consent_marketing_detail">새 기능, 이벤트, 혜택 소식을 앱 푸시나 이메일로 보내드려요. 동의하지 않아도 가입과 이용에 아무 제한이 없고, 언제든 더보기에서 끌 수 있어요. 광고는 오전 8시~오후 9시에만 보내고, 직접 맞춘 알람은 광고가 아니라서 설정한 시각에 그대로 울려요.</string>
     <string name="auth_consent_title_updated">약관이 업데이트되었어요</string>
-    <string name="auth_consent_subtitle_updated">내용이 바뀐 항목만 아래에 모았어요. 이미 동의하신 나머지는 그대로 유지돼요.</string>
     <string name="tts_consent_title">알람 문구를 만들려면 동의가 필요해요</string>
     <string name="tts_consent_body">알람 문구를 목소리로 만들 때, 문구와 목소리가 음성 AI 제공자(ElevenLabs)와 문구 생성(Google, 미국)을 거쳐 처리돼요. 이 과정에서 데이터가 국외로 전송돼요. 동의하지 않아도 알람 자체는 쓸 수 있지만, 목소리로 읽어주는 알람은 만들 수 없어요.</string>
     <string name="onb_voice_title_failed">목소리를 받지 못했어요</string>
@@ -704,7 +699,7 @@
     <string name="api_error_rate_limited">요청이 너무 많아요. 잠시 후 다시 시도해 주세요.</string>
     <string name="api_error_request_too_large">보내려는 파일이 너무 커요. 더 짧게 녹음해 주세요.</string>
     <string name="api_error_server">잠시 문제가 생겼어요. 잠시 후 다시 시도해 주세요.</string>
-    <string name="api_error_email_code_invalid">인증 코드가 맞지 않아요. 다시 확인해 주세요.</string>
+    <string name="api_error_email_code_invalid">인증 코드가 맞지 않아요.</string>
     <string name="api_error_email_code_expired">인증 코드가 만료됐어요. 다시 받아 주세요.</string>
     <string name="api_error_email_code_attempts">인증 코드를 너무 많이 틀렸어요. 다시 받아 주세요.</string>
     <string name="api_error_account_pending_deletion">탈퇴 신청 중인 계정이에요. 다시 로그인하면 탈퇴가 취소돼요.</string>

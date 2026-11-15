@@ -28,13 +28,11 @@
     <string name="auth_divider_email_register">またはメールで登録</string>
     <string name="msg_kakao_login_failed">カカオログインを完了できませんでした。もう一度お試しください。</string>
     <string name="msg_register_email_social_kakao">カカオで登録済みのメールです。「カカオログイン」でログインしてください。</string>
-    <string name="auth_email_verify_resend">認証コードを再送信</string>    <string name="auth_find_password">再設定</string>
+    <string name="auth_find_password">再設定</string>
     <string name="auth_forgot_password">パスワードをお忘れですか？</string>
     <string name="auth_label_confirm_password">パスワードの確認</string>
     <string name="auth_label_email">メールアドレス</string>
     <string name="auth_reset_title">パスワード再設定</string>
-    <string name="auth_reset_subtitle">登録メールに認証コードをお送りします。</string>
-    <string name="auth_reset_send_code">認証コードを受け取る</string>
     <string name="auth_reset_new_password">新しいパスワード</string>
     <string name="auth_reset_submit">パスワードを変更</string>
     <string name="msg_password_reset_code_sent">認証コードを送りました。メールをご確認ください。</string>
@@ -55,8 +53,8 @@
     <string name="auth_landing_voice_previous">前の声</string>
     <string name="auth_password_hide">パスワードを隠す</string>
     <string name="auth_password_mismatch">パスワードが一致しません。</string>
-    <string name="auth_error_email_invalid">メールアドレスの形式が正しくありません。ご確認ください。</string>
-    <string name="auth_error_invalid_credentials">メールアドレスまたはパスワードが正しくありません。ご確認のうえ、もう一度お試しください。</string>
+    <string name="auth_error_email_invalid">メールアドレスの形式が正しくありません。</string>
+    <string name="auth_error_invalid_credentials">メールアドレスまたはパスワードが正しくありません。</string>
     <string name="auth_password_rule_alnum">英字と数字を含む</string>
     <string name="auth_password_rule_match">パスワードが一致</string>
     <string name="auth_password_rule_min">8文字以上</string>
@@ -588,8 +586,6 @@
     <string name="r3app_update_required_title">アップデートが必要です</string>
     <string name="r3app_update_required_body">最新バージョンでのみご利用いただけます。\nアップデートしてもアラームと声はそのまま残ります。</string>
     <string name="r3app_update_required_button">アップデートする</string>
-    <string name="r3app_update_downloaded">アップデートをダウンロードしました。アプリを再起動して適用してください。</string>
-    <string name="r3app_update_restart">再起動</string>
     <string name="r3app_google_signin_failed">Googleログインに失敗しました</string>
     <string name="r3app_google_signin_no_info">Googleログイン情報を取得できませんでした。もう一度お試しください。</string>
     <string name="r3dlg_duplicate_alarm_message">%1$sのアラームを新しいアラームに置き換えますか？</string>
@@ -647,7 +643,6 @@
     <string name="auth_consent_collapse">項目を閉じる</string>
     <string name="auth_consent_marketing_detail">新機能、イベント、特典のお知らせをアプリ通知やメールでお送りします。同意しなくても登録・利用に制限はなく、いつでも「その他」からオフにできます。広告は午前8時から午後9時までのみ送信し、ご自身で設定したアラームは広告ではないため設定した時刻にそのまま鳴ります。</string>
     <string name="auth_consent_title_updated">規約が更新されました</string>
-    <string name="auth_consent_subtitle_updated">変更があった項目だけをまとめました。すでに同意済みの項目はそのまま維持されます。</string>
     <string name="tts_consent_title">アラーム文言の作成には同意が必要です</string>
     <string name="tts_consent_body">アラーム文言を音声にする際、文言と声は音声AIプロバイダ(ElevenLabs)と文言生成(Google、米国)を通じて処理されます。この過程でデータが国外へ送信されます。同意しなくてもアラーム自体は使えますが、読み上げアラームは作成できません。</string>
     <string name="onb_voice_title_failed">声を受け取れませんでした</string>
@@ -678,7 +673,7 @@
     <string name="api_error_rate_limited">リクエストが多すぎます。しばらくしてからもう一度お試しください。</string>
     <string name="api_error_request_too_large">ファイルが大きすぎます。もっと短く録音してください。</string>
     <string name="api_error_server">問題が発生しました。しばらくしてからもう一度お試しください。</string>
-    <string name="api_error_email_code_invalid">認証コードが一致しません。もう一度ご確認ください。</string>
+    <string name="api_error_email_code_invalid">認証コードが一致しません。</string>
     <string name="api_error_email_code_expired">認証コードの有効期限が切れました。もう一度受け取ってください。</string>
     <string name="api_error_email_code_attempts">認証コードの入力を間違えすぎました。もう一度受け取ってください。</string>
     <string name="api_error_account_pending_deletion">退会申請中のアカウントです。もう一度ログインすると退会が取り消されます。</string>

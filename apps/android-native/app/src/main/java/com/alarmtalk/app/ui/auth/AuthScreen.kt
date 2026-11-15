@@ -701,7 +701,7 @@ internal fun AuthScreen(
  * 56 이라 한 줄로 맞는다. iOS 짝은 `LoginView.emailVerifyButton`.
  */
 @Composable
-private fun EmailVerifyButton(
+internal fun EmailVerifyButton(
     verified: Boolean,
     codeSent: Boolean,
     enabled: Boolean,
@@ -740,8 +740,9 @@ private fun EmailVerifyButton(
     }
 }
 
+/** 비밀번호 규칙 세 줄 — 가입·비밀번호 재설정 두 화면이 같은 모양으로 쓴다(iOS `PasswordRules`). */
 @Composable
-private fun PasswordRules(
+internal fun PasswordRules(
     passwordAtLeastMin: Boolean,
     passwordHasLetterAndDigit: Boolean,
     passwordMatches: Boolean,

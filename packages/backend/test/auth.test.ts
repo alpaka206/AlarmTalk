@@ -130,6 +130,72 @@ describe('POST /auth/password-reset', () => {
   });
 });
 
+describe('POST /auth/password-reset/verify', () => {
+  it('유효한 재설정 코드 + 비밀번호 계정이면 200 이고 코드를 쓰지 않는다', async () => {
+    await pushValidEmailVerification('kim@test.com'); // checkEmailVerificationCode SELECT
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash' }]); // classify → password
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/verify', { email: 'KIM@test.com', code: EMAIL_CODE }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+    // 재설정 용도로 판정한다(가입 코드로는 통과하지 않는다).
+    const select = mockDB.calls.find((c) => c.sql.includes('FROM email_verification_codes'));
+    expect(select?.args).toEqual(['kim@test.com', 'reset']);
+    // 소모는 확정이 한다 — 확인은 코드도 비밀번호도 건드리지 않는다.
+    expect(mockDB.calls.some((c) => c.sql.includes('consumed_at = '))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE users'))).toBe(false);
+    expect(countedIncrement()).toBe(0);
+  });
+
+  it('코드가 없거나 틀리면 400 AUTH_EMAIL_CODE_INVALID', async () => {
+    mockDB.pushResult([]); // checkEmailVerificationCode → no row
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/verify', { email: 'kim@test.com', code: '000000' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+  });
+
+  it('비밀번호 계정이 아니면 확정과 같은 400 AUTH_EMAIL_CODE_INVALID', async () => {
+    await pushValidEmailVerification('kim@test.com');
+    mockDB.pushResult([]); // classify → 계정 없음
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/verify', { email: 'kim@test.com', code: EMAIL_CODE }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+  });
+
+  it('형식이 틀린 코드는 횟수를 세지 않고 400 AUTH_VALIDATION_FAILED', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/verify', { email: 'kim@test.com', code: '12ab' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_VALIDATION_FAILED');
+    expect(mockDB.calls).toHaveLength(0);
+  });
+});
+
 describe('POST /auth/password-reset/confirm', () => {
   it('유효한 코드 + 비밀번호 계정이면 비밀번호 교체 + token_epoch 증가', async () => {
     await pushValidEmailVerification('kim@test.com'); // checkEmailVerificationCode SELECT

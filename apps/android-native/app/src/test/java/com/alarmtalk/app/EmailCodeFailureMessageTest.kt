@@ -252,9 +252,14 @@ class EmailCodeFailureMessageTest {
             Regex("""codeFieldClearTick = viewModel\.emailCodeFieldClearTick""").findAll(app).count(),
         )
         // 재설정 화면은 코드를 보낸 뒤에도 다시 받을 수 있다 — '다시 받아 주세요' 가 할 수 있는 일이어야 한다.
+        // 버튼은 가입 화면과 같은 `EmailVerifyButton` 이다(보낸 뒤 `다시 받기`, 확인 뒤에만 잠긴다 — 2026-11-16).
         val reset = withoutLineComments(readSource("ui/auth/PasswordResetScreen.kt"))
-        assertTrue(reset.contains("val requestEnabled = !busy && canRequestEmailCode(email)\n"))
-        assertTrue(reset.contains("stringResource(R.string.auth_email_verify_resend)"))
+        assertTrue(reset.contains("EmailVerifyButton("))
+        assertTrue(reset.contains("codeSent = codeSent,"))
+        assertTrue(reset.contains("enabled = !busy && canRequestEmailCode(email) && !verified,"))
+        // 코드를 먼저 확인하고(코드를 쓰지 않는 `/password-reset/verify`) 그다음 새 비밀번호다.
+        assertTrue(reset.contains("onClick = { onVerifyCode(email, code) }"))
+        assertTrue(reset.indexOf("if (verified) {") > reset.indexOf("if (codeSent && !verified) {"))
     }
 
     private val authActions: String by lazy { withoutLineComments(readSource("ui/main/MainViewModelAuthActions.kt")) }

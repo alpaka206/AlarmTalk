@@ -38,7 +38,17 @@ enum UIPreviewSeed {
         #endif
     }
 
-    /// 인증 화면을 바로 띄우는 실행 인자 — `-UIPreviewAuthScreen login|register|reset`.
+    /// 비밀번호 재설정 화면을 그 단계로 띄운다 — `-UIPreviewResetStep code|password`(함께 `-UIPreviewAuthScreen reset`).
+    /// 서버 없이 코드 줄·새 비밀번호 단계를 보려고 둔다.
+    static var resetStep: String? {
+        #if DEBUG
+        return argValue("-UIPreviewResetStep")
+        #else
+        return nil
+        #endif
+    }
+
+    /// 인증 화면을 바로 띄우는 실행 인자 — `-UIPreviewAuthScreen login|register|reset|consent`.
     /// 시뮬레이터에는 스크립트로 탭할 방법이 없어, 화면 확인용 진입점을 인자로 연다.
     static var authScreen: String? {
         #if DEBUG

@@ -139,9 +139,10 @@ struct LoginView: View {
 
                     passwordField
 
+                    // 비밀번호 → 비밀번호 확인 → 규칙 세 줄(안드로이드 `AuthScreen` 과 같은 순서 — 2026-11-16 에 맞췄다).
                     if mode == .register {
-                        passwordRules
                         confirmPasswordField
+                        passwordRules
                     }
 
                     submitButton
@@ -168,7 +169,11 @@ struct LoginView: View {
         .authToast(message: auth.statusMessage, isError: auth.statusIsError) { auth.statusMessage = nil }
         #if DEBUG
         // 화면 확인용 — `-UIPreviewAuthToast "<문장>"` 이면 그 문장을 토스트로 띄운다(`UIPreviewSeed.authToast`).
-        .task { if let preview = UIPreviewSeed.authToast { auth.statusMessage = preview } }
+        .task {
+            if let preview = UIPreviewSeed.authToast { auth.statusMessage = preview }
+            // DEBUG 화면 확인 — `-UIPreviewAuthScreen reset` 은 로그인 화면을 거쳐 비밀번호 재설정을 연다(릴리스에서는 늘 nil).
+            if UIPreviewSeed.authScreen == "reset" { showPasswordReset = true }
+        }
         #endif
         // 제목은 화면 **안**에 있다(위 Text) — 네비게이션 바에 또 그리면 같은 말이 두 번 나온다.
         .navigationTitle("")
@@ -300,8 +305,11 @@ struct LoginView: View {
     /// '이메일 인증' 앞에서 **무엇이 잘못됐는지 들을 길이 없었다.** 빈 칸일 때만 흐리다.
     private var emailVerifyButton: some View {
         let verified = isEmailVerifiedForCurrentInput
-        let enabled = !auth.isBusy && AuthEmailFormat.canRequestEmailCode(email) && !verified
-        return Button {
+        return AuthEmailVerifyButton(
+            verified: verified,
+            codeSent: verificationSent,
+            enabled: !auth.isBusy && AuthEmailFormat.canRequestEmailCode(email) && !verified
+        ) {
             guard AuthEmailFormat.submitOutcome(email: email) == .submit else {
                 emailFormatError = true
                 return
@@ -320,44 +328,7 @@ struct LoginView: View {
                     verificationSent = true
                 }
             }
-        } label: {
-            HStack(spacing: 4) {
-                if verified {
-                    Image(systemName: "checkmark.circle")
-                }
-                Text(verificationLabel)
-                    .lineLimit(1)
-            }
-            .font(theme.typography.labelLarge)
-            // 인증됨은 눌리지 않지만 '꺼진 버튼' 이 아니라 '마친 상태' 로 읽혀야 한다 — 강조색.
-            .foregroundStyle(verified ? AuthSceneColors.accent : (enabled ? AuthSceneColors.text : Color.white.opacity(0x8C / 255.0)))
-            .frame(minWidth: 56)
-            .frame(height: AuthFieldHeight)
-            .padding(.horizontal, 16)
-            // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(
-                    verified ? AuthSceneColors.accent.opacity(0.3) : (enabled ? AuthSceneColors.line : AuthSceneColors.lineSoft),
-                    lineWidth: 1
-                )
-        )
-        .disabled(!enabled)
-        // 칸이 줄어들지 버튼 글자가 잘리지 않는다.
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    // 셋 다 `String(localized:)` 로 번역한 뒤 넘긴다 — 날 리터럴을 `String` 으로 돌려주면 `Text(변수)` 가 번역하지 않아
-    // en/ja 기기에서 한국어가 그대로 뜬다.
-    // ⚠ '다시 받기' 는 **키를 따로 둔다**(`auth.email.resendShort`). 카탈로그의 같은 글자 "다시 받기" 는 음성팩을 **다시
-    //   내려받는** 버튼의 것이라(en "Download again"), 같은 키를 쓰면 영어·일본어 기기에서 코드 재발송이 '다시 다운로드' 가 된다.
-    private var verificationLabel: String {
-        if isEmailVerifiedForCurrentInput { return String(localized: "인증됨") }
-        if verificationSent { return String(localized: "auth.email.resendShort", defaultValue: "다시 받기") }
-        return String(localized: "인증 받기")
     }
 
     private var verificationCodeRow: some View {
@@ -366,53 +337,23 @@ struct LoginView: View {
             // 세로 묶음이라 중앙 정렬이면 버튼이 라벨까지 포함한 높이의 가운데로 올라가
             // **입력칸과 한 줄로 안 맞는다.** 높이도 입력칸과 같은 값(`AuthFieldHeight`)으로
             // 고정해 두 상자의 위·아래가 맞물리게 한다.
-            HStack(alignment: .bottom, spacing: 8) {
-                VocaTextField(
-                    title: "인증 코드",
-                    text: $verificationCode,
-                    // ASCII 숫자만 내는 키패드로 못 박는다 — 서버의 형식 검사는 ASCII 만 받는데
-                    // `.numberPad` 에는 그 보장이 없다(다른 숫자를 실제로 내는 기기가 있는지는
-                    // 확인하지 못했다). 붙여 넣은 값은 아래 새니타이저가 받는다.
-                    keyboardType: .asciiCapableNumberPad,
-                    submitLabel: .next,
-                    enabled: !auth.isBusy
-                )
-                .onChange(of: verificationCode) { _, newValue in
-                    // 숫자 규칙은 새니타이저 한 곳이다(붙여 넣은 값·다른 키보드까지 같은 규칙).
-                    let cleaned = InputSanitizer.sanitizeVerificationCode(newValue)
-                    if cleaned != newValue { verificationCode = cleaned }
-                    // 고쳐 치기 시작하면 옛 경고를 지운다. ⚠ 빈 값에서는 지우지 않는다 — 거절된
-                    // 숫자를 화면이 비운 것(`emailCodeFieldClearTick`)이지 고쳐 친 것이 아니다.
-                    // 거기서 지우면 문장이 뜨자마자 사라진다.
-                    if !cleaned.isEmpty { auth.clearEmailCodeError() }
-                }
-
-                Button {
-                    Task {
-                        let success = await auth.verifyEmailCode(
-                            email: normalizedEmail,
-                            code: verificationCode
-                        )
-                        if success {
-                            verificationCompleted = true
-                            verifiedEmail = normalizedEmail
-                        }
+            AuthCodeConfirmRow(
+                code: $verificationCode,
+                busy: auth.isBusy,
+                // 고쳐 치기 시작하면 옛 경고를 지운다. ⚠ 빈 값에서는 지우지 않는다 — 거절된 숫자를 화면이
+                // 비운 것(`emailCodeFieldClearTick`)이지 고쳐 친 것이 아니다. 거기서 지우면 문장이 뜨자마자 사라진다.
+                onEdited: { auth.clearEmailCodeError() }
+            ) {
+                Task {
+                    let success = await auth.verifyEmailCode(
+                        email: normalizedEmail,
+                        code: verificationCode
+                    )
+                    if success {
+                        verificationCompleted = true
+                        verifiedEmail = normalizedEmail
                     }
-                } label: {
-                    Text("확인")
-                        .font(theme.typography.labelLarge)
-                        .foregroundStyle(confirmCodeEnabled ? AuthSceneColors.text : Color.white.opacity(0x59 / 255.0))
-                        .frame(height: AuthFieldHeight)
-                        .padding(.horizontal, 18)
-                        // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .overlay(
-                    RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                        .stroke(confirmCodeEnabled ? AuthSceneColors.line : AuthSceneColors.lineSoft, lineWidth: 1)
-                )
-                .disabled(!confirmCodeEnabled)
             }
 
             // 다시 받기·인증 확인·가입의 실패는 **이 줄 바로 아래**, 안내 문구의 자리에 뜬다.
@@ -438,11 +379,6 @@ struct LoginView: View {
                 .font(theme.typography.bodySmall)
                 .foregroundStyle(AuthSceneColors.error)
         }
-    }
-
-    /// 6자리가 찼을 때만 눌린다 — 거절 뒤에 칸이 비면 같은 숫자를 다시 보낼 수 없다.
-    private var confirmCodeEnabled: Bool {
-        !auth.isBusy && LoginValidator.isValidVerificationCode(verificationCode)
     }
 
     /// 로그인 실패는 **여기**, 비밀번호 입력창 바로 아래에 붙는다.
@@ -477,28 +413,16 @@ struct LoginView: View {
     }
 
     private var passwordRules: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            RuleRow(text: "8자 이상", satisfied: passwordAtLeastMin)
-            RuleRow(text: "영문·숫자 포함", satisfied: passwordHasLetterAndDigit)
-            RuleRow(text: "비밀번호 확인 일치", satisfied: passwordMatches)
-        }
+        PasswordRules(atLeastMin: passwordAtLeastMin, hasLetterAndDigit: passwordHasLetterAndDigit, matches: passwordMatches)
     }
 
     private var confirmPasswordField: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            VocaSecureField(
-                title: "비밀번호 확인",
-                text: $confirmPassword,
-                isVisible: $isConfirmPasswordVisible,
-                enabled: !auth.isBusy,
-                isError: !confirmPassword.isEmpty && !passwordMatches
-            )
-            if !confirmPassword.isEmpty && !passwordMatches {
-                Text("비밀번호가 일치하지 않아요.")
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.error)
-            }
-        }
+        ConfirmPasswordField(
+            text: $confirmPassword,
+            isVisible: $isConfirmPasswordVisible,
+            enabled: !auth.isBusy,
+            matches: passwordMatches
+        )
     }
 
     private var submitButton: some View {
@@ -763,6 +687,155 @@ private struct RuleRow: View {
     }
 }
 
+/// 이메일 칸 옆 `인증 받기` — 가입·비밀번호 재설정 두 화면이 같은 모양으로 쓴다(안드로이드 `EmailVerifyButton`).
+/// 보낸 뒤 `다시 받기`, 확인 뒤 `✓ 인증됨`. 칸 **옆**에 붙는다(칸 안이 아니다 — 긴 주소를 가리고 코드 줄과 모양이 갈린다).
+///
+/// ⚠ **형식으로 죽이지 않는다** — 가입에서 실질적인 제출 버튼이 이것이다. 예전에는 `emailLooksValid` 로 잠가 놔서,
+/// 주소를 잘못 친 사람은 눌리지 않는 '이메일 인증' 앞에서 **무엇이 잘못됐는지 들을 길이 없었다.** 빈 칸일 때만 흐리다.
+struct AuthEmailVerifyButton: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    let verified: Bool
+    let codeSent: Bool
+    let enabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if verified {
+                    Image(systemName: "checkmark.circle")
+                }
+                Text(label)
+                    .lineLimit(1)
+            }
+            .font(theme.typography.labelLarge)
+            // 인증됨은 눌리지 않지만 '꺼진 버튼' 이 아니라 '마친 상태' 로 읽혀야 한다 — 강조색.
+            .foregroundStyle(verified ? AuthSceneColors.accent : (enabled ? AuthSceneColors.text : Color.white.opacity(0x8C / 255.0)))
+            .frame(minWidth: 56)
+            .frame(height: AuthFieldHeight)
+            .padding(.horizontal, 16)
+            // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .stroke(
+                    verified ? AuthSceneColors.accent.opacity(0.3) : (enabled ? AuthSceneColors.line : AuthSceneColors.lineSoft),
+                    lineWidth: 1
+                )
+        )
+        .disabled(!enabled)
+        // 칸이 줄어들지 버튼 글자가 잘리지 않는다.
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    // 셋 다 `String(localized:)` 로 번역한 뒤 넘긴다 — 날 리터럴을 `String` 으로 돌려주면 `Text(변수)` 가 번역하지 않아
+    // en/ja 기기에서 한국어가 그대로 뜬다.
+    // ⚠ '다시 받기' 는 **키를 따로 둔다**(`auth.email.resendShort`). 카탈로그의 같은 글자 "다시 받기" 는 음성팩을 **다시
+    //   내려받는** 버튼의 것이라(en "Download again"), 같은 키를 쓰면 영어·일본어 기기에서 코드 재발송이 '다시 다운로드' 가 된다.
+    private var label: String {
+        if verified { return String(localized: "인증됨") }
+        if codeSent { return String(localized: "auth.email.resendShort", defaultValue: "다시 받기") }
+        return String(localized: "인증 받기")
+    }
+}
+
+/// 인증 코드 칸과 `확인` — 가입·비밀번호 재설정 두 화면이 같은 모양으로 쓴다(안드로이드 두 화면의 코드 줄).
+///
+/// ⚠ **아래로 정렬한다**(2026-09-17 실기기). 입력칸은 라벨('인증 코드')이 위에 붙은 세로 묶음이라 중앙 정렬이면 버튼이
+/// 라벨까지 포함한 높이의 가운데로 올라가 **입력칸과 한 줄로 안 맞는다.** 높이도 입력칸과 같은 값(`AuthFieldHeight`)이다.
+struct AuthCodeConfirmRow: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Binding var code: String
+    let busy: Bool
+    /// 새니타이저를 거친 값이 비어 있지 않게 바뀔 때.
+    var onEdited: () -> Void = {}
+    let onConfirm: () -> Void
+
+    /// 6자리가 찼을 때만 눌린다 — 거절 뒤에 칸이 비면 같은 숫자를 다시 보낼 수 없다.
+    private var confirmEnabled: Bool {
+        !busy && LoginValidator.isValidVerificationCode(code)
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            VocaTextField(
+                title: "인증 코드",
+                text: $code,
+                // ASCII 숫자만 내는 키패드로 못 박는다 — 서버의 형식 검사는 ASCII 만 받는데
+                // `.numberPad` 에는 그 보장이 없다. 붙여 넣은 값은 아래 새니타이저가 받는다.
+                keyboardType: .asciiCapableNumberPad,
+                submitLabel: .next,
+                enabled: !busy
+            )
+            .onChange(of: code) { _, newValue in
+                // 숫자 규칙은 새니타이저 한 곳이다(붙여 넣은 값·다른 키보드까지 같은 규칙).
+                let cleaned = InputSanitizer.sanitizeVerificationCode(newValue)
+                if cleaned != newValue { code = cleaned }
+                if !cleaned.isEmpty { onEdited() }
+            }
+
+            Button(action: onConfirm) {
+                Text("확인")
+                    .font(theme.typography.labelLarge)
+                    .foregroundStyle(confirmEnabled ? AuthSceneColors.text : Color.white.opacity(0x59 / 255.0))
+                    .frame(height: AuthFieldHeight)
+                    .padding(.horizontal, 18)
+                    // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .stroke(confirmEnabled ? AuthSceneColors.line : AuthSceneColors.lineSoft, lineWidth: 1)
+            )
+            .disabled(!confirmEnabled)
+        }
+    }
+}
+
+/// 비밀번호 확인 칸 — 가입·비밀번호 재설정 두 화면이 같은 모양으로 쓴다(안드로이드 `auth_label_confirm_password`).
+struct ConfirmPasswordField: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Binding var text: String
+    @Binding var isVisible: Bool
+    let enabled: Bool
+    let matches: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            VocaSecureField(
+                title: "비밀번호 확인",
+                text: $text,
+                isVisible: $isVisible,
+                enabled: enabled,
+                isError: !text.isEmpty && !matches
+            )
+            if !text.isEmpty && !matches {
+                Text("비밀번호가 일치하지 않아요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.error)
+            }
+        }
+    }
+}
+
+/// 비밀번호 규칙 세 줄 — 가입·비밀번호 재설정 두 화면이 같은 모양으로 쓴다(안드로이드 `PasswordRules`).
+struct PasswordRules: View {
+    let atLeastMin: Bool
+    let hasLetterAndDigit: Bool
+    let matches: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            RuleRow(text: "8자 이상", satisfied: atLeastMin)
+            RuleRow(text: "영문·숫자 포함", satisfied: hasLetterAndDigit)
+            RuleRow(text: "비밀번호 확인 일치", satisfied: matches)
+        }
+    }
+}
+
 // MARK: - Validation helpers
 
 /// 본 화면이 직접 사용하는 작은 검증 helper. 테스트에서 재사용한다.
@@ -787,7 +860,7 @@ enum LoginValidator {
     }
 
     /// 인증코드 = 정확히 **ASCII 숫자** 6자리 — 서버 `EmailVerificationCodeSchema` 가 받는 모양이다.
-    /// 가입·재설정 두 화면의 확인 버튼이 이 판정으로 열린다(`LoginView.confirmCodeEnabled`·
+    /// 가입·재설정 두 화면의 확인 버튼이 이 판정으로 열린다(`AuthCodeConfirmRow.confirmEnabled`·
     /// `PasswordResetView.canConfirm`).
     ///
     /// 예전에는 `allSatisfy(\.isNumber)` 였고 **부르는 화면이 없었다**(테스트만 불렀다). 그 판정은

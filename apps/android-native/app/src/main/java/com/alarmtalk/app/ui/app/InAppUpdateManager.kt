@@ -7,7 +7,10 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
@@ -24,7 +27,7 @@ import com.google.android.play.core.install.model.UpdateAvailability
  * 서버 /api/app-version 정책 판정을 [MainViewModel] 이 이미 계산해 둔 결과를 그대로 소비한다
  * (버전 비교 중복 구현 금지):
  * - `updateRequired`(min_supported 미달) → **IMMEDIATE**(전면 차단 업데이트)
- * - `updateRecommended`(latest 미달) → **FLEXIBLE**(백그라운드 다운로드 후 재시작 안내)
+ * - `updateRecommended`(latest 미달) → **FLEXIBLE**(백그라운드 다운로드 → 앱이 뒤로 갈 때 조용히 설치)
  *
  * 기존 [UpdateRequiredScreen] 강제 게이트는 그대로 유지된다 — In-App Update 를 사용자가
  * 취소했거나 Play 미가용(사이드로드/디버그) 환경에서의 최종 폴백/안전망이다.
@@ -60,12 +63,12 @@ class InAppUpdateManager(
 
     private var flexibleListenerRegistered = false
 
-    // FLEXIBLE 다운로드 진행 상태 리스너. DOWNLOADED 되면 ViewModel 플래그를 세팅해
-    // AlarmTalkApp 이 '재시작' 스낵바를 띄우게 한다. 종료 상태에선 즉시 unregister.
+    // FLEXIBLE 다운로드 진행 상태 리스너. DOWNLOADED 되면 플래그를 세우고, 앱이 이미 뒤에 있으면 곧바로 설치한다
+    // (앞에 있으면 뒤로 갈 때 — 아래 [appBackgroundObserver]). 종료 상태에선 즉시 unregister.
     private val installListener = InstallStateUpdatedListener { state ->
         runCatching {
             when (state.installStatus()) {
-                InstallStatus.DOWNLOADED -> viewModel.flexibleUpdateDownloaded = true
+                InstallStatus.DOWNLOADED -> onFlexibleUpdateDownloaded()
                 // 다운로드 단계 취소도 사용자 거절 — 세션 스누즈 없이는 다음 resume 에 재요청된다.
                 InstallStatus.CANCELED -> {
                     viewModel.flexibleUpdateDeclined = true
@@ -79,8 +82,22 @@ class InAppUpdateManager(
         }.onFailure { Log.w(TAG, "In-app update install-state handling failed", it) }
     }
 
+    /**
+     * ⚠ 다 받은 업데이트는 **앱이 뒤로 갈 때 조용히 설치한다**(2026-11-16 오너: "자동으로 바뀌면 안돼?").
+     * 앞에서 `completeUpdate()` 를 부르면 Play 가 전면 화면을 띄우고 앱을 다시 켜지만, 뒤에서 부르면 화면을 가리지
+     * 않고 설치한다(Play In-App Updates 문서). 다음에 열면 새 버전이다 — 그래서 '재시작' 스낵바를 없앴다.
+     * 앱 전체가 뒤로 간 것을 본다(`ProcessLifecycleOwner`) — 이 화면만 멈춘 것(울림 화면이 위에 뜬 것)은 아니다.
+     * 설치 뒤 알람 예약은 `MY_PACKAGE_REPLACED`(`BootCompletedReceiver`)가 되살린다 — Play 자동 업데이트와 같은 길이다.
+     */
+    private val appBackgroundObserver = object : DefaultLifecycleObserver {
+        override fun onStop(owner: LifecycleOwner) {
+            if (viewModel.flexibleUpdateDownloaded) completeFlexibleUpdateQuietly()
+        }
+    }
+
     init {
         activity.lifecycle.addObserver(this)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(appBackgroundObserver)
     }
 
     // onResume 마다: 진행 중이던 IMMEDIATE 업데이트를 재개하고, 현재 정책으로 업데이트를 조회한다.
@@ -90,6 +107,7 @@ class InAppUpdateManager(
 
     override fun onDestroy(owner: LifecycleOwner) {
         unregisterFlexibleListener()
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(appBackgroundObserver)
     }
 
     /**
@@ -110,7 +128,7 @@ class InAppUpdateManager(
         runCatching {
             // 프로세스 재시작 등으로 리스너를 놓친 사이 이미 다운로드가 끝난 FLEXIBLE 업데이트 복구.
             if (info.installStatus() == InstallStatus.DOWNLOADED) {
-                viewModel.flexibleUpdateDownloaded = true
+                onFlexibleUpdateDownloaded()
                 return
             }
             val forceUpdate = viewModel.updateRequired
@@ -155,8 +173,22 @@ class InAppUpdateManager(
         }
     }
 
-    /** FLEXIBLE 다운로드 완료 스낵바의 '재시작' 액션에서 호출 — 설치를 마무리(앱 재시작)한다. */
-    fun completeFlexibleUpdate() {
+    private fun onFlexibleUpdateDownloaded() {
+        viewModel.flexibleUpdateDownloaded = true
+        // 받는 사이 앱이 이미 뒤로 갔으면 뒤로 가는 순간은 지나갔다 — 지금 설치한다.
+        val appInForeground = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        if (!appInForeground) completeFlexibleUpdateQuietly()
+    }
+
+    /**
+     * 받아 둔 업데이트를 설치한다(앱이 뒤에 있을 때만 부른다). ⚠ **알람이 울리는(넘겨받는) 중에는 하지 않는다** —
+     * 설치가 프로세스를 끝내 울림이 끊긴다. 그때는 플래그를 남겨 다음에 뒤로 갈 때 다시 본다.
+     */
+    private fun completeFlexibleUpdateQuietly() {
+        if (RingingService.ringingOrHandingOffAlarmIds().isNotEmpty()) {
+            Log.i(TAG, "In-app update install deferred: an alarm is ringing")
+            return
+        }
         runCatching {
             appUpdateManager.completeUpdate()
         }.onFailure { Log.w(TAG, "Failed to complete in-app update", it) }

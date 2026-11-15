@@ -31,6 +31,7 @@ protocol EmailCodeAPIProviding: AnyObject, Sendable {
     func verifyEmailCode(email: String, code: String) async throws -> VerifyEmailCodeResponse
     func register(email: String, password: String, verificationCode: String) async throws -> AuthSession
     func requestPasswordReset(email: String) async throws -> RequestEmailVerificationResponse
+    func verifyPasswordResetCode(email: String, code: String) async throws -> VerifyEmailCodeResponse
     func confirmPasswordReset(email: String, code: String, password: String) async throws -> PasswordResetConfirmResponse
 }
 
@@ -319,7 +320,7 @@ final class AuthViewModel: ObservableObject {
     nonisolated static func loginErrorMessage(for error: Error) -> String {
         let code = (error as? APIError)?.serverErrorCode
         if code == "AUTH_INVALID_CREDENTIALS" {
-            return String(localized: "이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.")
+            return String(localized: "이메일 또는 비밀번호가 맞지 않아요.")
         }
         // 화면이 맡지 않은 코드는 **공용 표**가 받는다 — 안드로이드
         // `ui/main/MainViewModelAuthActions.kt` 의 로그인 갈래와 같은 층 순서다
@@ -636,6 +637,9 @@ final class AuthViewModel: ObservableObject {
     /// 비밀번호 재설정 코드를 발송한 이메일. 비어 있지 않으면 UI(PasswordResetView)가
     /// "코드 + 새 비밀번호" 입력 단계를 노출한다. Android `MainViewModel.passwordResetCodeSentTo`.
     @Published var passwordResetCodeSentTo: String?
+    /// 재설정 코드를 확인한 이메일. 입력 이메일과 같으면 새 비밀번호 단계를 노출한다(2026-11-16).
+    /// Android `MainViewModel.passwordResetVerified`.
+    @Published var passwordResetVerifiedEmail: String?
     /// 설정 화면의 마케팅(광고성 정보 수신) 동의 토글 상태. `loadMarketingConsent` 로 채운다.
     /// **nil = 아직 서버에서 못 읽음** — 그동안 스위치는 비활성이다. false 로 시작하면 동의한 사람에게
     /// '꺼짐' 을 그리고 눌리기까지 한다. Android `MainViewModel.marketingConsentAgreed`.
@@ -924,7 +928,8 @@ final class AuthViewModel: ObservableObject {
 
         do {
             _ = try await emailCodeAPI.requestEmailVerification(email: email)
-            statusMessage = String(localized: "인증 코드를 보냈어요. 메일을 확인해 주세요.")
+            // 안드로이드 `msg_verification_code_sent` 와 같은 말이다(2026-11-16 — 재설정 화면도 안드로이드와 맞췄다).
+            statusMessage = String(localized: "인증 코드를 보냈어요")
             // 다시 받았으면 칸에 남은 앞 코드를 비운다(`emailCodeFieldClearTick` 주석).
             // 서버가 보내지 않고 답한 성공(다시 받기 간격 · 하루 상한)도 응답이 같아 구분하지 못하고 같이
             // 비운다. 그 뒤에 할 일은 둘이 다르다:
@@ -1073,13 +1078,70 @@ final class AuthViewModel: ObservableObject {
         do {
             _ = try await emailCodeAPI.requestPasswordReset(email: normalized)
             passwordResetCodeSentTo = normalized
-            statusMessage = String(localized: "재설정 코드를 보냈어요. 메일을 확인해 주세요.")
+            // 새 코드를 받았으면 앞의 확인은 끝났다 — 서버는 가장 새 코드만 본다.
+            passwordResetVerifiedEmail = nil
+            // 안드로이드 `msg_password_reset_code_sent` 와 같은 말이다(2026-11-16 오너 "안드로이드랑 통일").
+            statusMessage = String(localized: "인증 코드를 보냈어요. 메일을 확인해 주세요.")
             // 다시 받았으면 칸에 남은 앞 코드를 비운다 — 가입 화면과 같은 규칙이다
             // (`emailCodeFieldClearTick` 주석).
             emailCodeFieldClearTick &+= 1
         } catch {
             reportFailure("Password reset request failed", error)
             failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드를 보내지 못했어요")))
+        }
+    }
+
+    /// 동의 기록은 잠깐 끊긴 네트워크·서버 오류에 **두 번 더** 보낸다(2026-11-16 오너 "되도록 해줘야지"). 버튼은 그동안
+    /// '처리 중…' 이다. 기록은 누적이라(유형·버전·동의 여부·시각) 앞 요청이 실제로는 들어갔어도 한 줄 더 남을 뿐이다.
+    /// 4xx(버전 불일치·검증 실패·한도)는 다시 보내도 같은 답이라 곧바로 돌려준다. 세 번 다 실패해야 문장을 띄운다.
+    /// Android `MainViewModelAuthActions.recordConsentsRetrying` 과 같다.
+    private func recordConsentsRetrying(_ request: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
+        var attempt = 0
+        while true {
+            do {
+                return try await api.recordConsents(request, token: token)
+            } catch {
+                attempt += 1
+                guard attempt < Self.consentSubmitAttempts, Self.isTransientConsentFailure(error) else { throw error }
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000)
+            }
+        }
+    }
+
+    /// 첫 시도를 합쳐 세 번 보낸다(기다림 1초·2초).
+    static let consentSubmitAttempts = 3
+
+    /// 다시 보낼 만한 실패인가 — 응답이 없었거나(연결 끊김·시간 초과) 서버 오류(5xx). 4xx 는 같은 답이 다시 온다.
+    nonisolated static func isTransientConsentFailure(_ error: Error) -> Bool {
+        if let apiError = error as? APIError, case .server(let status, _, _) = apiError { return status >= 500 }
+        return error is URLError
+    }
+
+    /// 비밀번호 재설정 코드 확인(2026-11-16 오너 — 가입처럼 코드를 먼저 확인한 뒤 새 비밀번호로 넘어간다).
+    /// 코드를 쓰지 않는다 — 확정(`confirmPasswordReset`)이 같은 코드를 한 번 더 판정한다. 실패 문장과 칸 비우기는
+    /// 확정과 같은 규칙이다(위쪽 토스트, 거절이면 칸을 비운다). Android `MainViewModel.verifyPasswordResetCode`.
+    @discardableResult
+    func verifyPasswordResetCode(email: String, code: String) async -> Bool {
+        let normalized = AuthEmailFormat.normalize(email)
+        let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 확인이 도는 동안의 두 번째 탭은 버린다 — 겹쳐 보낸 같은 숫자가 틀린 횟수를 태운다.
+        guard !isBusy, !normalized.isEmpty, trimmedCode.count == 6 else { return false }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await emailCodeAPI.verifyPasswordResetCode(email: normalized, code: trimmedCode)
+            passwordResetVerifiedEmail = normalized
+            statusMessage = String(localized: "이메일 인증이 완료됐어요.")
+            return true
+        } catch {
+            reportFailure("Password reset code verify failed", error)
+            // 코드가 없거나 표에 없는 실패(네트워크·5xx)는 중립 문장이다 — 맞는 코드를 든 사람에게 틀렸다고 말하지 않는다.
+            failStatus(Self.emailCodeErrorMessage(for: error, fallback: APIErrorMessages.temporaryFailure))
+            if Self.isEmailCodeRefusal((error as? APIError)?.serverErrorCode) {
+                emailCodeFieldClearTick &+= 1
+            }
+            return false
         }
     }
 
@@ -1106,6 +1168,7 @@ final class AuthViewModel: ObservableObject {
                 password: newPassword
             )
             passwordResetCodeSentTo = nil
+            passwordResetVerifiedEmail = nil
             statusMessage = String(localized: "비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요.")
             return true
         } catch {
@@ -1115,6 +1178,8 @@ final class AuthViewModel: ObservableObject {
             failStatus(Self.emailCodeErrorMessage(for: error, fallback: String(localized: "비밀번호 재설정에 실패했어요")))
             if Self.isEmailCodeRefusal((error as? APIError)?.serverErrorCode) {
                 emailCodeFieldClearTick &+= 1
+                // 확인을 마친 뒤 10분이 지나 만료로 거절되면 '인증됨' 도 내려야 코드 줄과 `다시 받기` 가 돌아온다.
+                passwordResetVerifiedEmail = nil
             }
             return false
         }
@@ -2034,7 +2099,7 @@ final class AuthViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
-            _ = try await api.recordConsents(request, token: token)
+            _ = try await recordConsentsRetrying(request, token: token)
             // 화면 상태는 **현재 세션이 그대로일 때만** 건드린다(위 ownerUserID 주석).
             guard session?.user.id == ownerUserID else { return }
             // 상태가 방금 바뀌었다 — 그 전에 떠난 조회의 답은 낡았으므로 버린다.
@@ -2108,7 +2173,7 @@ final class AuthViewModel: ObservableObject {
             consents: recordable.map { ConsentItemRequest(type: $0, agreed: true, version: version) }
         )
         do {
-            _ = try await api.recordConsents(request, token: token)
+            _ = try await recordConsentsRetrying(request, token: token)
             guard session?.user.id == ownerUserID else { return false }
             // 위 `submitConsents` 와 같은 이유 — 진행 중인 조회의 답이 이 결과를 덮지 않게 한다.
             invalidateInFlightConsentStatus()

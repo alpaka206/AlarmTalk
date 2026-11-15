@@ -443,23 +443,6 @@
         }
       }
     },
-    "8자 이상, 영문·숫자 포함" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "8+ characters, with letters and numbers"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "8文字以上、英字と数字を含む"
-          }
-        }
-      }
-    },
     "12초 이상 2분 이하 구간을 선택해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -700,23 +683,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "価格を読み込み中"
-          }
-        }
-      }
-    },
-    "가입한 이메일로 인증 코드를 보내드려요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We'll email a verification code to your account."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登録メールに認証コードをお送りします。"
           }
         }
       }
@@ -3338,23 +3304,6 @@
         }
       }
     },
-    "변경된 내용을 확인하고 동의해 주세요. 이전에 동의하신 항목 중 바뀐 것만 다시 여쭤봐요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Please review the changes and agree. We only ask again about the items that changed since you agreed."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "変更内容をご確認のうえ同意してください。以前同意された項目のうち、変わったものだけ再度お伺いします。"
-          }
-        }
-      }
-    },
     "변경하기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3368,23 +3317,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "変更"
-          }
-        }
-      }
-    },
-    "보기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "View"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "表示"
           }
         }
       }
@@ -5360,23 +5292,6 @@
         }
       }
     },
-    "서비스를 이용하려면 아래 약관에 동의해야 해요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "To use AlarmTalk, please agree to the terms below."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サービスをご利用いただくには、以下の規約への同意が必要です。"
-          }
-        }
-      }
-    },
     "월" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5858,23 +5773,6 @@
         }
       }
     },
-    "이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Email or password doesn't match. Please check and try again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メールアドレスまたはパスワードが正しくありません。ご確認のうえ、もう一度お試しください。"
-          }
-        }
-      }
-    },
     "이메일 인증이 완료됐어요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5888,23 +5786,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "メールアドレスの認証が完了しました。"
-          }
-        }
-      }
-    },
-    "이메일 주소 형식이 올바르지 않아요. 다시 확인해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That email address doesn't look right. Please check and try again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メールアドレスの形式が正しくありません。ご確認ください。"
           }
         }
       }
@@ -6200,40 +6081,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "認証コード"
-          }
-        }
-      }
-    },
-    "인증 코드 다시 받기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Resend code"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "認証コードを再送信"
-          }
-        }
-      }
-    },
-    "인증 코드 받기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Send code"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "認証コードを受け取る"
           }
         }
       }
@@ -6540,23 +6387,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "再生する録音がありません。"
-          }
-        }
-      }
-    },
-    "재설정 코드를 보냈어요. 메일을 확인해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We sent a reset code. Please check your email."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再設定コードを送りました。メールをご確認ください。"
           }
         }
       }
@@ -7999,23 +7829,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "認証コードの有効期限が切れました。もう一度受け取ってください。"
-          }
-        }
-      }
-    },
-    "인증 코드가 맞지 않아요. 다시 확인해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "That verification code doesn't match. Please check it again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "認証コードが一致しません。もう一度ご確認ください。"
           }
         }
       }
@@ -13450,6 +13263,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "例:お母さん、友だち"
+          }
+        }
+      }
+    },
+    "이메일 주소 형식이 올바르지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That email address doesn't look right."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メールアドレスの形式が正しくありません。"
+          }
+        }
+      }
+    },
+    "이메일 또는 비밀번호가 맞지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email or password doesn't match."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メールアドレスまたはパスワードが正しくありません。"
+          }
+        }
+      }
+    },
+    "인증 코드가 맞지 않아요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That verification code doesn't match."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認証コードが一致しません。"
+          }
+        }
+      }
+    },
+    "인증 코드를 보냈어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We've sent your verification code."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認証コードを送りました。"
           }
         }
       }

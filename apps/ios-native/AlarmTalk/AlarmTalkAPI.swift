@@ -714,6 +714,16 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
+    /// 비밀번호 재설정 코드 확인 — 코드를 쓰지 않는다(소모는 확정). 백엔드 `routes/auth.ts` 의 `/password-reset/verify`
+    /// (2026-11-16 — 이 호출을 실은 앱은 서버 배포 뒤에 낸다). Android `AuthApi.verifyPasswordResetCode`.
+    func verifyPasswordResetCode(email: String, code: String) async throws -> VerifyEmailCodeResponse {
+        try await request(
+            "auth/password-reset/verify",
+            method: "POST",
+            body: VerifyEmailCodeRequest(email: email, code: code)
+        )
+    }
+
     /// 비밀번호 재설정 확정 — 6자리 코드 검증 후 새 비밀번호로 교체. 성공 시 서버가
     /// token_epoch 를 올려 기존 세션을 전부 폐기한다. Android `AuthApi.kt:202-205`,
     /// 백엔드 auth.ts:359.

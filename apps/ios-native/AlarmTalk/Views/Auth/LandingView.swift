@@ -81,6 +81,7 @@ struct LandingView: View {
             switch UIPreviewSeed.authScreen {
             case "login": navigateToLogin = .login
             case "register": navigateToLogin = .register
+            case "reset": navigateToLogin = .login
             // 동의 화면은 실제로는 가입/로그인 뒤에만 뜨는데, 그러려면 서버 왕복과
             // '동의 기록이 없는 계정' 이 필요해 화면 확인이 번거로웠다. 여기서 바로 연다.
             case "consent": previewConsent = true
@@ -97,9 +98,7 @@ struct LandingView: View {
                 collect: ["age14", "terms", "privacy", "overseas_transfer", "voice_biometric", "marketing"],
                 optional: ["voice_biometric", "marketing"],
                 isReconsent: false,
-                onAgree: { _ in },
-                onOpenTerms: {},
-                onOpenPrivacy: {}
+                onAgree: { _ in }
             )
         }
         #endif

@@ -23,7 +23,6 @@ struct RootView: View {
     /// Android `MainViewModel.showVoiceSetup` 게이팅 미러(판정은 `refreshOnboardingCompletion`).
     @State private var voiceSetupDone: Bool?
     /// 동의 화면에서 띄우는 인앱 약관 뷰어.
-    @State private var bundledLegalDocument: BundledLegalDocument?
 
     // ⚠ **웰컴 코드 안내 시트를 되살리지 말 것**(2026-09-27 폐지). 무료 계정에 계정당 한 번
     // 쿠폰 입력을 권하던 시트였는데, 기간 한정 개인 플랜으로 무료 계정이 전부 개인이 되면서
@@ -123,18 +122,12 @@ struct RootView: View {
                     isReconsent: auth.consentIsReconsent,
                     prechecked: auth.consentPrechecked,
                     errorMessage: auth.actionErrorMessage(for: .consent),
+                    // 약관·처리방침은 각 줄의 화살표로 **그 자리에서** 펼친다(`ConsentRow.document`, 2026-11-16) — 번들본이다.
+                    // ⚠ 웹으로 되돌리지 말 것(코덱스 #730 2차): `submitConsents` 가 보내는 버전은 빌드 시점의
+                    // `LegalPolicy.bundledVersion` 이라, 랜딩의 실시간 문서를 띄우면 **보여 준 것과 기록한 버전이 달라진다.**
                     onAgree: { agreedOptional in
                         Task { await auth.submitConsents(agreedOptional: agreedOptional) }
-                    },
-                    // ⚠ 외부 브라우저로 내보내지 말 것 — 동의 화면에서 약관을 보러
-                    // 나가면 앱으로 못 돌아오고 체크해 둔 값도 사라진다.
-                    // ⚠ **동의 화면은 번들본을 연다 — 웹으로 되돌리지 말 것**(코덱스 #730 2차).
-                    //   `submitConsents` 가 보내는 버전은 빌드 시점의
-                    //   `LegalPolicy.bundledVersion` 이다. 랜딩의 실시간 문서를 띄우면
-                    //   출시 뒤 개정될 때 **보여 준 것과 기록한 버전이 달라진다.**
-                    //   (설정의 뷰어는 웹 그대로다 — 거긴 안내용이고 안드로이드도 같다.)
-                    onOpenTerms: { bundledLegalDocument = .terms },
-                    onOpenPrivacy: { bundledLegalDocument = .privacy }
+                    }
                 )
             } else if stockReplacement.isPending(for: auth.session?.user.id) {
                 // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새
@@ -243,16 +236,6 @@ struct RootView: View {
                 } else {
                     Text("\(String(days.lastDay))까지 플러스를 무료로 쓸 수 있어요. \(String(days.firstFreeDay))부터는 무료 플랜으로 돌아가요.")
                 }
-            }
-        }
-        .sheet(item: $bundledLegalDocument) { doc in
-            NavigationStack {
-                BundledLegalDocumentView(document: doc)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("닫기") { bundledLegalDocument = nil }
-                        }
-                    }
             }
         }
         // 민감 동의 시트는 **차단 게이트가 없을 때만** 띄운다 — 업데이트 강제·탈퇴 유예·

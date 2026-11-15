@@ -478,6 +478,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var passwordResetCodeSentTo by mutableStateOf<String?>(null)
         internal set
 
+    // 재설정 코드를 확인한 이메일. 입력 이메일과 같으면 새 비밀번호 단계를 노출한다(가입의 [registerEmailVerified] 와 같다).
+    var passwordResetVerified by mutableStateOf<String?>(null)
+        internal set
+
     /**
      * **인증 코드 칸을 비우라는 신호** — 값이 바뀔 때마다 가입·비밀번호 재설정 화면이 코드 칸을 비운다
      * (`AuthScreen`·`PasswordResetScreen` 의 `codeFieldClearTick`). 규칙은 스펙 session-and-auth
@@ -1223,8 +1227,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     var weatherAttribution by mutableStateOf<String?>(null)
         internal set
-    // FLEXIBLE In-App Update 다운로드가 끝나면 InAppUpdateManager 가 true 로 세팅 →
-    // AlarmTalkApp 이 '재시작' 스낵바를 띄우고, 액션 시 completeUpdate() 를 호출한다.
+    // FLEXIBLE In-App Update 다운로드가 끝나면 InAppUpdateManager 가 true 로 세팅 → 앱이 뒤로 갈 때
+    // (알람이 울리는 중이 아니면) completeUpdate() 로 조용히 설치하고 내린다. 화면에 띄우는 것은 없다.
     var flexibleUpdateDownloaded by mutableStateOf(false)
         internal set
     // 권장(FLEXIBLE) 업데이트를 사용자가 취소하면 true → 이 세션(프로세스)에서는 onResume

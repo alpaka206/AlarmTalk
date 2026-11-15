@@ -191,16 +191,8 @@ internal fun ConsentScreen(
                 fontWeight = FontWeight.Bold,
                 color = TextOnScene,
             )
-            // 이미 동의했던 사람에게는 '왜 또 묻는지' 를 먼저 말해 준다. 신규 가입자에게는
-            // 제목만으로 충분해 덧붙이지 않는다.
-            if (isReconsent) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.auth_consent_subtitle_updated),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextOnSceneDim,
-                )
-            }
+            // 제목 아래 안내는 두지 않는다(2026-11-16 오너) — 재동의도 '약관이 업데이트되었어요' 제목 하나다. 예전의
+            // '내용이 바뀐 항목만 아래에 모았어요…' 는 아래 목록이 이미 보여 주는 것을 말로 되풀이했다. iOS `ConsentView` 와 같다.
             // '필수 약관 전체 동의' 는 스크롤 밖에 고정한다 — 항목을 펼쳐 읽다가도 한 번에
             // 동의할 수 있어야 한다. 필수가 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지
             // 않는다(선택 항목은 마스터가 다루지 않으므로 개수에 넣지 않는다).

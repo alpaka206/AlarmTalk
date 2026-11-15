@@ -179,7 +179,6 @@ internal object SnackbarSeverities {
         R.string.billing_restore_none,
         R.string.msg_voice_replacement_settling,
         R.string.msg_verification_code_debug,
-        R.string.r3app_update_downloaded,
         // 알려 주는 것 — 방금 켠 알람이 언제 우는지(`docs/spec/alarm-editor.md` §7, 화면 아래 호스트). 저장이 끝났다는
         // 성공 표시가 아니라 정보다.
         R.string.hs_status_ring_in,

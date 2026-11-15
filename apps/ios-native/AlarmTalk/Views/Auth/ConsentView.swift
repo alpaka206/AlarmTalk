@@ -46,8 +46,6 @@ struct ConsentView: View {
     var errorMessage: String? = nil
     /// 사용자가 실제로 체크한 **선택** 유형만 넘긴다.
     let onAgree: (_ agreedOptional: Set<String>) -> Void
-    let onOpenTerms: () -> Void
-    let onOpenPrivacy: () -> Void
 
     @State private var checked: Set<String> = []
     /// `prechecked` 를 한 번만 반영하기 위한 표시. 매 렌더마다 덮으면 사용자가 해제한 것이
@@ -122,19 +120,9 @@ struct ConsentView: View {
                 .font(.title2.weight(.bold))
                 .foregroundStyle(AlarmTalkTheme.text)
 
-            // 이미 동의했던 사람에게는 '왜 또 묻는지' 를 먼저 말해 준다.
-            // 신규 가입자에게는 제목만으로 충분해 덧붙이지 않는다.
-            if isReconsent {
-                Spacer().frame(height: 8)
-                Text(String(localized: "변경된 내용을 확인하고 동의해 주세요. 이전에 동의하신 항목 중 바뀐 것만 다시 여쭤봐요."))
-                    .font(.subheadline)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            } else {
-                Spacer().frame(height: 8)
-                Text(String(localized: "서비스를 이용하려면 아래 약관에 동의해야 해요."))
-                    .font(.subheadline)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
+            // 제목 아래 안내는 두지 않는다(2026-11-16 오너) — 신규 가입·재동의 모두 제목 하나다. 예전의 '서비스를 이용하려면
+            // 아래 약관에 동의해야 해요.'·'변경된 내용을 확인하고 동의해 주세요…' 는 제목과 아래 목록이 이미 하는 말이었다.
+            // 안드로이드 `ConsentScreen` 과 같다.
 
             ScrollView {
                 // 항목 사이를 띄운다 — 붙어 있으면 어디까지가 한 항목인지 안 보이고,
@@ -207,9 +195,9 @@ struct ConsentView: View {
         case "age14":
             ConsentRow(checked: checked.contains(type), onToggle: toggle, label: isOptional ? String(localized: "[선택] 만 14세 이상입니다") : String(localized: "[필수] 만 14세 이상입니다"))
         case "terms":
-            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: isOptional ? String(localized: "[선택] 이용약관 동의") : String(localized: "[필수] 이용약관 동의"), onOpenDetail: onOpenTerms)
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: isOptional ? String(localized: "[선택] 이용약관 동의") : String(localized: "[필수] 이용약관 동의"), document: .terms)
         case "privacy":
-            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: isOptional ? String(localized: "[선택] 개인정보 처리방침 동의") : String(localized: "[필수] 개인정보 처리방침 동의"), onOpenDetail: onOpenPrivacy)
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: isOptional ? String(localized: "[선택] 개인정보 처리방침 동의") : String(localized: "[필수] 개인정보 처리방침 동의"), document: .privacy)
         case "voice_biometric":
             ConsentRow(
                 checked: checked.contains(type),
@@ -260,7 +248,10 @@ private struct ConsentRow: View {
     /// 동의하는 항목인지와 필수/선택 여부는 고지의 핵심이라 접으면 안 된다.
     var collapsibleDescription: Bool = false
     var emphasized: Bool = false
-    var onOpenDetail: (() -> Void)? = nil
+    /// 약관·처리방침 전문 — 화살표로 **그 자리에서** 펼친다(2026-11-16 오너 "보기로 바꾸든 아래로 펼치는 걸로 하든 통일해").
+    /// 예전에는 iOS 만 '보기' 로 시트를 띄웠다. 안드로이드 `ConsentRow` 의 `detail`(높이 260 안에서 스크롤)과 같다.
+    /// ⚠ 번들본을 읽는다 — 동의 기록에 싣는 버전이 이 빌드의 문서다(`BundledLegalDocument` 주석).
+    var document: BundledLegalDocument? = nil
 
     @State private var expanded = false
 
@@ -268,7 +259,21 @@ private struct ConsentRow: View {
         description != nil && (!collapsibleDescription || expanded)
     }
 
+    /// 화살표가 있는가 — 접힌 설명이나 문서 전문이 있을 때.
+    private var expandable: Bool {
+        (collapsibleDescription && description != nil) || document != nil
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            row
+            if let document, expanded {
+                documentBody(document)
+            }
+        }
+    }
+
+    private var row: some View {
         // ⚠ **위 정렬이다.** 가운데 정렬이면 설명을 펼쳤을 때 체크박스가 **설명 옆으로
         // 내려가** 제목과 어긋난다 — 무엇을 체크하는 칸인지 한눈에 안 들어온다.
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -296,7 +301,7 @@ private struct ConsentRow: View {
             .buttonStyle(.plain)
 
             // ⚠ **펼침은 체크 영역 밖이다.** 안에 두면 설명을 읽으려고 누른 것이 곧 동의가 된다.
-            if collapsibleDescription, description != nil {
+            if expandable {
                 Button {
                     withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
                 } label: {
@@ -310,14 +315,30 @@ private struct ConsentRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(expanded ? String(localized: "설명 접기") : String(localized: "설명 펼치기")))
             }
-
-            if let onOpenDetail {
-                Button(String(localized: "보기"), action: onOpenDetail)
-                    .font(.subheadline)
-                    .foregroundStyle(AlarmTalkTheme.primary)
-            }
         }
         .padding(.vertical, 4)
+    }
+
+    /// 문서 전문 — 체크 칸 밖, 제목 줄 아래에 둔다(안에 두면 읽으려고 누른 것이 곧 동의가 된다). 길어서 높이 260 안에서
+    /// 스크롤하고, 바깥 목록 스크롤과 섞이지 않는다. 들여쓰기는 체크 상자 폭만큼 — 제목과 같은 선에서 시작한다.
+    @ViewBuilder
+    private func documentBody(_ document: BundledLegalDocument) -> some View {
+        ScrollView {
+            Group {
+                if let markdown = document.markdown() {
+                    Text(renderLegalMarkdown(markdown))
+                } else {
+                    Text("문서를 불러오지 못했어요")
+                }
+            }
+            .font(.footnote)
+            .foregroundStyle(AlarmTalkTheme.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: 260)
+        .padding(.leading, 32)
+        .padding(.trailing, 8)
+        .padding(.bottom, 12)
     }
 }
 
@@ -328,7 +349,7 @@ private let previewOptional = ["voice_biometric", "marketing"]
 #Preview("Consent — 신규 가입") {
     ConsentView(
         busy: false, collect: previewCollect, optional: previewOptional, isReconsent: false,
-        onAgree: { _ in }, onOpenTerms: {}, onOpenPrivacy: {}
+        onAgree: { _ in }
     )
     .voiceAlarmPreviewEnvironment()
 }
@@ -336,7 +357,7 @@ private let previewOptional = ["voice_biometric", "marketing"]
 #Preview("Consent — 개정 재동의(마케팅만)") {
     ConsentView(
         busy: false, collect: ["marketing"], optional: ["voice_biometric", "marketing"], isReconsent: true,
-        onAgree: { _ in }, onOpenTerms: {}, onOpenPrivacy: {}
+        onAgree: { _ in }
     )
     .voiceAlarmPreviewEnvironment()
 }
@@ -344,7 +365,7 @@ private let previewOptional = ["voice_biometric", "marketing"]
 #Preview("Consent (dark)") {
     ConsentView(
         busy: false, collect: previewCollect, optional: previewOptional, isReconsent: false,
-        onAgree: { _ in }, onOpenTerms: {}, onOpenPrivacy: {}
+        onAgree: { _ in }
     )
     .preferredColorScheme(.dark)
     .voiceAlarmPreviewEnvironment()

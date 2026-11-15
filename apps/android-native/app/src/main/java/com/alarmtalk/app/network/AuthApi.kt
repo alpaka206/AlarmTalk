@@ -313,6 +313,12 @@ interface AuthApi {
     @POST("auth/password-reset")
     suspend fun requestPasswordReset(@Body request: PasswordResetRequest): EmailVerificationResponse
 
+    // 재설정 코드 확인 — 코드를 쓰지 않는다(소모는 확정). 2026-11-16 서버에 생겼다: 이 호출을 싣은 앱은 서버 배포 뒤에 낸다.
+    @POST("auth/password-reset/verify")
+    suspend fun verifyPasswordResetCode(
+        @Body request: EmailVerificationConfirmRequest,
+    ): EmailVerificationConfirmResponse
+
     @POST("auth/password-reset/confirm")
     suspend fun confirmPasswordReset(
         @Body request: PasswordResetConfirmRequest,
