@@ -183,7 +183,9 @@ struct VoicePreviewConfirmView: View {
             Button(String(localized: "나가고 삭제"), role: .destructive) {
                 Task { await discard() }
             }
-            Button(String(localized: "계속 만들기"), role: .cancel) {}
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `VoiceProfileManagementPanel` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+            Button(String(localized: "계속 만들기")) {}
+                .keyboardShortcut(.defaultAction)
         } message: {
             Text(String(localized: "지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요."))
         }

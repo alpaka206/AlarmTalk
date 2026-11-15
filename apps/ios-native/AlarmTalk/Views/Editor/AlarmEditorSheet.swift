@@ -506,13 +506,8 @@ struct AlarmEditorSheet: View {
         // 새 탈출구다. 그대로 두면 저장이 도는 중에 화면을 뜰 수 있어, 하단 [취소]·[저장]을
         // 잠가 둔 의미가 사라진다.
         .navigationBarBackButtonHidden(isWorking)
-        .alert(item: $validationAlert) { content in
-            Alert(
-                title: Text(content.title),
-                message: Text(content.message),
-                dismissButton: .default(Text(String(localized: "확인")))
-            )
-        }
+        // 저장할 수 없는 사유·검증 실패 안내 — 모양 규칙은 `EditorNoticeAlert` 주석.
+        .modifier(EditorNoticeAlert(content: $validationAlert))
         .voicePlanGateAlert(
             content: $voiceGateAlert,
             onOpenBilling: { onRequestBilling?() },
@@ -577,10 +572,12 @@ struct AlarmEditorSheet: View {
                 set: { if !$0 { pendingVoiceSwitch = nil } }
             )
         ) {
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `VoiceAudioCard` 의 `emphasized = true` 짝(스펙 alarm-editor §4).
             Button(String(localized: "바꾸기")) {
                 if let pending = pendingVoiceSwitch { applyVoiceSelection(pending) }
                 pendingVoiceSwitch = nil
             }
+            .keyboardShortcut(.defaultAction)
             Button(String(localized: "닫기"), role: .cancel) { pendingVoiceSwitch = nil }
         } message: {
             if isVoicePackVoiceID(pendingVoiceSwitch?.id) {
@@ -3408,6 +3405,31 @@ private struct DuplicateAlarmReplaceAlert: ViewModifier {
                 .keyboardShortcut(.defaultAction)
         } message: { item in
             Text(message(item))
+        }
+    }
+}
+
+/// 편집기의 안내 알럿(저장할 수 없는 사유·검증 실패) — 버튼은 '확인' 하나다.
+///
+/// ⚠ **버튼 하나짜리 알럿도 그 버튼이 기본 액션(파란 채움)이다** — 안드로이드 `AlarmEditorScreen` 의 안내가 '확인' 을
+/// `emphasized = true` 로 그리는 자리다(2026-11-15 두 앱 대조: 예전 iOS 는 옛 `Alert` 의 `.default` 라 회색이었다).
+/// 모디파이어로 뗀 이유는 `DuplicateAlarmReplaceAlert` 와 같다(편집기 `chrome` 사슬의 타입 검사 시간 한도).
+private struct EditorNoticeAlert: ViewModifier {
+    @Binding var content: AlarmEditorSheet.ValidationAlertContent?
+
+    func body(content view: Content) -> some View {
+        view.alert(
+            content?.title ?? "",
+            isPresented: Binding(
+                get: { content != nil },
+                set: { if !$0 { content = nil } }
+            ),
+            presenting: content
+        ) { _ in
+            Button(String(localized: "확인")) {}
+                .keyboardShortcut(.defaultAction)
+        } message: { item in
+            Text(item.message)
         }
     }
 }

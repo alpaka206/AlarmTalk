@@ -283,7 +283,9 @@ struct MessageSettingsPane: View {
         // 있어도 이미 값이 바뀐 뒤다). 알럿 전용 상태에 받아 '저장' 에서만 대입한다.
         .alert(String(localized: "직접 입력"), isPresented: $manualDialogOpen) {
             TextField(String(localized: "알람에서 읽어 줄 문구"), text: $manualAlertDraft)
-            Button(String(localized: "취소"), role: .cancel) { cancelContextSelection() }
+            // 안드로이드 `AlarmRandomPromptSettings` 의 직접 입력 알럿과 같은 말('닫기').
+            Button(String(localized: "닫기"), role: .cancel) { cancelContextSelection() }
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `AlarmRandomPromptSettings` 의 `emphasized = true` 짝(스펙 alarm-editor §4).
             Button(String(localized: "저장")) {
                 // 새니타이즈·길이 상한은 여기서 건다 — 서버도 막지만, 앱이 1차
                 // 방어선이라 제어문자·제로폭이 문구에 남으면 TTS 낭독이 망가진다.
@@ -293,6 +295,7 @@ struct MessageSettingsPane: View {
                 )
                 contextBeforeDialog = nil
             }
+            .keyboardShortcut(.defaultAction)
             .disabled(
                 InputSanitizer.sanitizeUserText(manualAlertDraft)
                     .trimmingCharacters(in: .whitespacesAndNewlines)

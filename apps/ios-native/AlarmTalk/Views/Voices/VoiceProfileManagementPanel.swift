@@ -228,6 +228,7 @@ struct VoiceProfileManagementPanel: View {
             // 알럿을 먼저 닫고 그다음 guard 로 return 했다 — 저장을 눌러도 알럿만
             // 닫히고 아무 일도 일어나지 않아, 사용자는 저장된 줄 안다.
             // 이제 빈 값이면 **버튼 자체가 비활성**이라 그 상태가 만들어지지 않는다.
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `ui/voices/VoiceProfileManagementComponents.kt` 의 `emphasized = true` 짝(스펙 alarm-editor §4).
             Button(String(localized: "저장")) {
                 guard let profile = editTarget else { return }
                 let newName = InputSanitizer.clampVoiceName(
@@ -237,6 +238,7 @@ struct VoiceProfileManagementPanel: View {
                 guard !newName.isEmpty, newName != profile.name else { return }
                 Task { await voice.renameProfile(profile, newName: newName, session: auth.session) }
             }
+            .keyboardShortcut(.defaultAction)
             .disabled(
                 InputSanitizer.sanitizeDisplayName(editName)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -279,7 +281,8 @@ struct VoiceProfileManagementPanel: View {
                     }
                 }
             }
-            Button(String(localized: "취소"), role: .cancel) { deleteTarget = nil }
+            // 안드로이드와 같은 말: '목소리 삭제'(`ui/voices/VoiceProfileManagementComponents.kt`) 는 닫기, '정말 삭제할까요?'(`VoiceProfileManagementPanel`) 는 취소.
+            Button(monthlyExhausted ? String(localized: "취소") : String(localized: "닫기"), role: .cancel) { deleteTarget = nil }
         } message: { profile in
             if monthlyExhausted {
                 Text(String(localized: "이 목소리로 만든 알람은 기본 목소리로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요."))
@@ -293,7 +296,9 @@ struct VoiceProfileManagementPanel: View {
         // 이 알럿 하나이고 액션은 닫기 하나다(여는 자리는 `VoicesPanelView`). 제목·본문은 두 앱이
         // 같은 말을 쓰기로 한 문구다(스펙 voice-and-message §4-1 「월 등록 한도」 ③) — 한쪽만 고치지 말 것.
         .alert(String(localized: "이번 달 목소리는 다 만들었어요"), isPresented: $monthlyLimitNoticeOpen) {
-            Button(String(localized: "닫기"), role: .cancel) {}
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `VoiceProfileManagementPanel` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+            Button(String(localized: "닫기")) {}
+                .keyboardShortcut(.defaultAction)
         } message: {
             Text(String(localized: "목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요."))
         }

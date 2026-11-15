@@ -66,7 +66,9 @@ struct ConsentHistoryView: View {
         // 그 시스템 알럿을 Compose 로 흉내 낸 것이므로, 여기서 커스텀 껍데기를 만들면
         // 오히려 원본에서 멀어진다.
         .alert(String(localized: "철회하면 등록한 목소리가 모두 삭제돼요"), isPresented: $withdrawConfirmOpen) {
-            Button(String(localized: "취소"), role: .cancel) { }
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `ConsentHistoryScreen` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+            Button(String(localized: "취소")) { }
+                .keyboardShortcut(.defaultAction)
             Button(String(localized: "철회하고 삭제"), role: .destructive) {
                 Task { await withdraw() }
             }

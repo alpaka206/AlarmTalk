@@ -186,7 +186,9 @@ struct MainTabsView: View {
             }
             .alert(String(localized: "목소리를 아직 받는 중이에요"), isPresented: $voicesNotReadyAlert) {
                 // 받기는 막는 순간 이미 다시 걸었다 — 누를 버튼을 따로 두지 않는다.
-                Button(String(localized: "확인"), role: .cancel) {}
+                // 주행동 = 기본 액션(파란 채움) — 안드로이드 `AlarmTalkApp` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+                Button(String(localized: "확인")) {}
+                    .keyboardShortcut(.defaultAction)
             } message: {
                 Text(voicesNotReadyMessage)
             }

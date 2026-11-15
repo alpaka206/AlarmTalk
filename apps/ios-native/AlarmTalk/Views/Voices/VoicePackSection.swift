@@ -219,7 +219,8 @@ struct VoicePackDetailSheet: View {
                 remove()
                 deleteConfirmCount = nil
             }
-            Button(String(localized: "닫기"), role: .cancel) { deleteConfirmCount = nil }
+            // 안드로이드 `VoicePackSection` 의 지우기 확인과 같은 말('취소').
+            Button(String(localized: "취소"), role: .cancel) { deleteConfirmCount = nil }
         } message: {
             Text(String(localized: "이 목소리를 쓰는 알람 \(Int(deleteConfirmCount ?? 0))개가 미나 목소리로 바뀌어요."))
         }

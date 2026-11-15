@@ -265,10 +265,12 @@ struct VoiceCloneUploadFlow: View {
             Button(String(localized: "다시 녹음")) {
                 discardRecording()
             }
-            // 취소 자리 — 바깥 탭과 같다. 녹음을 지우는 쪽은 버튼으로만(실수로 잃지 않게).
-            Button(String(localized: "그래도 쓰기"), role: .cancel) {
+            // 녹음을 지우는 쪽('다시 녹음')은 버튼으로만 — 실수로 잃지 않게.
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `VoiceProfileManagementPanel` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+            Button(String(localized: "그래도 쓰기")) {
                 recordingReview = nil
             }
+            .keyboardShortcut(.defaultAction)
         } message: { review in
             Text(review.alertMessage ?? "")
         }

@@ -201,10 +201,12 @@ struct RootView: View {
             ),
             presenting: downgradeNotice
         ) { notice in
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `AlarmTalkApp` 의 `emphasized = true` 짝(스펙 alarm-editor §4).
             Button("확인") {
                 DowngradeNoticeStore().clear(userID: auth.session?.user.id)
                 downgradeNotice = nil
             }
+            .keyboardShortcut(.defaultAction)
         } message: { notice in
             // 원인과 무관한 한 문장이다(`downgradeNoticeTitle` 주석).
             Text(downgradeNoticeMessage(notice))
@@ -225,9 +227,11 @@ struct RootView: View {
                 PersonalPromoNoticeStore().optOut(userID: shown.userID, promo: shown.promo)
                 closePersonalPromoNotice(shown)
             }
-            Button("확인", role: .cancel) {
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `AlarmTalkApp` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+            Button("확인") {
                 closePersonalPromoNotice(shown)
             }
+            .keyboardShortcut(.defaultAction)
         } message: { shown in
             if let days = PersonalPromoNotice.dayLabels(for: shown.promo) {
                 // 날짜는 **서버 값**을 기기 로케일로 찍는다 — 마지막 날은 `ends_at − 1초`,

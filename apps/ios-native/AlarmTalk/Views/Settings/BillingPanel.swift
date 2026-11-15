@@ -207,12 +207,14 @@ struct BillingPanel: View {
             ),
             presenting: pendingPurchase
         ) { pending in
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `BillingPanels` 의 `emphasized = true` 짝(스펙 alarm-editor §4).
             Button(String(localized: "billing.confirm.subscribe", defaultValue: "결제하기")) {
                 pendingPurchase = nil
                 if let product = SubscriptionProduct.make(tier: pending) {
                     Task { await confirmAndPurchase(product) }
                 }
             }
+            .keyboardShortcut(.defaultAction)
             Button(String(localized: "취소"), role: .cancel) { pendingPurchase = nil }
         } message: { pending in
             Text(purchaseMessage(for: pending))
@@ -242,7 +244,8 @@ struct BillingPanel: View {
             Task { await openAppStoreSubscriptionManagement() }
         }
         .alert(String(localized: "지금 바로 해지할까요?"), isPresented: $showCancelImmediateConfirm) {
-            Button(String(localized: "지금 해지하기"), role: .destructive) {
+            // 안드로이드 `BillingPanels` 의 '지금 바로 해지할까요?' 와 같은 말('지금 해지').
+            Button(String(localized: "지금 해지"), role: .destructive) {
                 Task {
                     await socialFeatures.cancelSubscription(mode: "immediate", session: auth.session)
                     await auth.refreshUser()
