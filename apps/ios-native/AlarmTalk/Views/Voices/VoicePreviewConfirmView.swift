@@ -160,8 +160,6 @@ struct VoicePreviewConfirmView: View {
                     Spacer(minLength: 4)
                 }
                 .padding(.horizontal, 20)
-                // 상단바 아래 기본 간격(16)에 8 을 더 둔다(2026-11-15 오너) — 등록 화면(`VoiceCloneUploadFlow`)·안드로이드와 같다.
-                .padding(.top, 8)
             }
             actions
         }

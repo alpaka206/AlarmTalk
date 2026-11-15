@@ -27,6 +27,10 @@ struct ClipPreparationView: View {
     /// 닫기(백그라운드에서 계속). nil 이면 닫기 줄을 그리지 않는다.
     var onDismiss: (() -> Void)?
 
+    /// 다 받아 **저절로 닫힐 때** 부른다(편집기 준비 화면). 있으면 `onDismiss` 대신 이것을 부른다 — 띄운 쪽이 닫으면서 고른
+    /// 목소리를 이어서 붙인다(2026-11-15 오너: "고른 목소리도 바로 붙게"). 손으로 닫을 때는 `onDismiss` 다.
+    var onReady: (() -> Void)? = nil
+
     /// 목소리 등록 직후에는 Android 등록 5단계의 마지막 화면 문법을 쓴다.
     /// 편집기에서 여는 일반 준비 관문은 기존 퍼센트 화면을 유지한다.
     var registrationStyle = false
@@ -77,7 +81,7 @@ struct ClipPreparationView: View {
         // 고른 목소리는 지금처럼 적용하지 않은 채다(안드로이드 편집기 `preparationVoiceId` 와 같다).
         .onChange(of: preparationSettled) { _, settled in
             guard !registrationStyle, settled else { return }
-            onDismiss?()
+            if let onReady { onReady() } else { onDismiss?() }
         }
         .task { if !registrationStyle { await refresh() } }
         // 받는 동안 값이 움직이므로 주기적으로 다시 센다. 한 번에 매니페스트·렌더 상태를 서버에

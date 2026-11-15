@@ -177,9 +177,6 @@ struct VoiceCloneUploadFlow: View {
                             Spacer(minLength: 4)
                         }
                         .padding(.horizontal, 20)
-                        // 상단바 아래 기본 간격(16)에 8 을 더 둔다(2026-11-15 오너: "상단에 뒤오가기 버튼 있는거에도 사이에 공간을
-                        // 좀 두고"). 안드로이드 등록 창 본문의 `top = 8.dp` 와 같다.
-                        .padding(.top, 8)
                         .id(Self.contentTopID)
                     }
                     // 음원 준비로 돌려보낸 이유(`rerecordReason`)는 녹음 카드·파일 고르기 바로 아래 — 본문 **위쪽**이다. 본문을

@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// 하위 전체화면의 공용 원형 뒤로가기. Android `WakerBackButton`과 같은 자리·표면을 쓰되
-/// 글리프는 플랫폼 규약대로 SF Symbol을 쓴다.
+/// 하위 전체화면의 공용 뒤로가기 — 화살표 하나다(2026-11-15 오너: "동그라미 빼고"). Android `WakerBackButton` 과 같은 자리를
+/// 쓰되 글리프는 플랫폼 규약대로 SF Symbol 이다. 누르는 범위(44)는 그대로다 — 원이 없어졌다고 줄이지 말 것.
+/// (시스템 내비게이션 바의 뒤로가기는 이 부품이 아니다 — iOS 26 이 그리는 그대로 둔다.)
 struct WakerBackButton: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
@@ -15,10 +16,7 @@ struct WakerBackButton: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(tint ?? theme.palette.onSurface)
                 .frame(width: 44, height: 44)
-                .background(Circle().fill(Color.white.opacity(0x1F / 255.0)))
-                .overlay(
-                    Circle().stroke(Color.hex(0xA6D2FF).opacity(0x5C / 255.0), lineWidth: 1)
-                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
@@ -52,7 +50,9 @@ struct WakerTopBar: View {
         }
         .frame(minHeight: 44)
         .padding(.horizontal, 20)
-        .padding(.bottom, 16)
+        // 상단바 아래 간격은 앱 전체 24 다(2026-11-15 오너: "상단 간격을 전체로 늘려서 공통으로 같도록") — 안드로이드
+        // `WakerTopBarBottomGap` 과 같다. 화면마다 본문 위에 여백을 따로 더하지 말 것.
+        .padding(.bottom, 24)
     }
 }
 

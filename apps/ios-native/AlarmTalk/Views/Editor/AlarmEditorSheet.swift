@@ -97,12 +97,15 @@ struct AlarmEditorSheet: View {
 
     /// 준비 페이지를 띄울 목소리. 아직 클립을 다 못 받은 목소리를 고르면 여기 담긴다.
     @State var preparationVoiceID: String?
+    /// 준비 페이지를 **목소리 고르기**가 열었으면 그 선택 — 다 받아 저절로 닫힐 때 이어서 고른다(2026-11-15 오너: "고른 목소리도
+    /// 바로 붙게 해줘"). 저장·문구 종류가 연 준비 페이지는 닫기만 한다. 안드로이드 `preparationAppliesVoice` 와 같다.
+    @State var preparationPendingVoiceOption: VoiceSelectionSheet.Option?
 
     /// 타입 체커가 body 안에서 인라인 바인딩을 만나면 시간 초과가 나서 밖으로 뺐다.
     private var preparationSheetPresented: Binding<Bool> {
         Binding(
             get: { preparationVoiceID != nil },
-            set: { if !$0 { preparationVoiceID = nil } }
+            set: { if !$0 { preparationVoiceID = nil; preparationPendingVoiceOption = nil } }
         )
     }
 
@@ -110,7 +113,12 @@ struct AlarmEditorSheet: View {
     private var preparationSheet: some View {
         // ⚠ `targetVoiceID` 를 반드시 넘긴다 — 안 넘기면 준비 화면이 앱의 매니페스트에 그 목소리가
         // 실리기 전에 끝났다고 보고 저절로 닫혀, 돌아가면 관문이 또 막는다(2026-08-18 · 2026-11-15 저절로 닫힘).
-        ClipPreparationView(onDismiss: { preparationVoiceID = nil }, targetVoiceID: preparationVoiceID)
+        ClipPreparationView(
+            // 손으로 닫으면('백그라운드에서 계속') 고른 목소리를 붙이지 않는다 — 지금 목소리가 그대로 남는다.
+            onDismiss: { preparationVoiceID = nil; preparationPendingVoiceOption = nil },
+            onReady: { finishClipPreparation() },
+            targetVoiceID: preparationVoiceID
+        )
             .environmentObject(auth)
             .environmentObject(voiceStudio)
             // 시트는 환경을 그대로 물려받지 못하는 자리라 여기서도 다시 꽂는다
@@ -404,7 +412,7 @@ struct AlarmEditorSheet: View {
                 selectedID: voiceSourceMode == .localAudio ? Self.recordingOptionID : voiceStudio.selectedProfileID,
                 playingID: editorPreviewPlayer.isPlaying ? voiceStudio.previewingGreetingVoiceId : nil,
                 preparingID: editorPreviewPlayer.isPreparing ? voiceStudio.previewingGreetingVoiceId : nil,
-                onSelect: selectVoiceOption,
+                onSelect: { selectVoiceOption($0) },
                 onPreview: { option in
                     Task { await voiceStudio.previewGreeting(voiceId: option.id, session: auth.session) }
                 },
@@ -1274,7 +1282,18 @@ struct AlarmEditorSheet: View {
         voiceProfileOptions.first { $0.id == voiceStudio.selectedProfileID }?.name
     }
 
-    func selectVoiceOption(_ option: VoiceSelectionSheet.Option) {
+    /// 준비 페이지가 다 받아 저절로 닫힐 때 — 목소리 고르기에서 열렸으면 **같은 선택을 한 번 더** 한다. 관문은 이제 통과하고,
+    /// 직접 입력 문구가 지워지는 경우의 확인 알럿도 그대로 이어진다(iOS 는 관문이 알럿보다 먼저다).
+    func finishClipPreparation() {
+        let option = preparationPendingVoiceOption
+        preparationPendingVoiceOption = nil
+        preparationVoiceID = nil
+        if let option { selectVoiceOption(option, resumingAfterPreparation: true) }
+    }
+
+    /// - Parameter resumingAfterPreparation: 준비 페이지가 끝나 이어서 고르는 중인가. 그런데도 관문이 또 막으면 준비 페이지는
+    ///   다시 열되 **또 이어 고르지는 않는다** — 관문과 준비도가 어긋난 경우 열고 닫기를 끝없이 되풀이하지 않게.
+    func selectVoiceOption(_ option: VoiceSelectionSheet.Option, resumingAfterPreparation: Bool = false) {
         if option.locked {
             showVoicePlanLockedAlert()
             return
@@ -1296,6 +1315,7 @@ struct AlarmEditorSheet: View {
         // 의 `applyVoiceSelection` 과 같은 순서) — 호칭을 다 받아 놓고 준비 화면으로 보내지 않게.
         // 확정(`commitVoiceSelection`)도 같은 관문을 한 번 더 본다.
         if voiceSourceMode != .ttsProfile, recordingExitNeedsClipPreparation(profileID: option.id) {
+            preparationPendingVoiceOption = resumingAfterPreparation ? nil : option
             preparationVoiceID = option.id
             return
         }
@@ -1307,6 +1327,7 @@ struct AlarmEditorSheet: View {
             if !prefetcher.isRunning {
                 prefetcher.start(session: auth.session, ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs)
             }
+            preparationPendingVoiceOption = resumingAfterPreparation ? nil : option
             preparationVoiceID = option.id
             return
         }

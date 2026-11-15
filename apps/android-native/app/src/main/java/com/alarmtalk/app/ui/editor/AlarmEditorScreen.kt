@@ -426,6 +426,9 @@ internal fun AlarmEditorScreen(
 
     /** 아직 못 받은 목소리를 골랐을 때 띄우는 준비 화면 — 그 목소리 id(닫혀 있으면 null). */
     var preparationVoiceId by remember { mutableStateOf<String?>(null) }
+    // 준비 화면을 **목소리 고르기**가 열었는가 — 그렇다면 다 받는 순간 그 목소리를 붙인다(2026-11-15 오너: "고른 목소리도 바로
+    // 붙게 해줘"). 저장·문구 종류가 연 준비 화면은 닫기만 한다(이어서 할 일이 자리마다 다르다).
+    var preparationAppliesVoice by remember { mutableStateOf(false) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     // 목소리 선택 시트의 '들어보기' — 온보딩/목소리 탭과 같은 재생기를 그대로 쓴다
     // (기본 목소리는 내장 인사말이라 네트워크 없이도 즉시 난다).
@@ -601,8 +604,9 @@ internal fun AlarmEditorScreen(
      * 준비 페이지를 연다. [needsClipPreparation] 이 true 인 **모든** 자리는 이걸 부른다 —
      * 막기만 하고 보내지 않으면 사용자가 할 수 있는 일이 없다.
      */
-    fun openClipPreparation(profileId: String) {
+    fun openClipPreparation(profileId: String, appliesVoiceWhenReady: Boolean = false) {
         preparationVoiceId = profileId
+        preparationAppliesVoice = appliesVoiceWhenReady
         // 고르려던 목소리를 먼저 받는다 — 고른 것은 다 받기 전까지 적용하지 않는다(지금 목소리가 그대로 남는다).
         onPrioritizeVoice(profileId)
         onPrepareClipsFor()
@@ -1942,7 +1946,8 @@ internal fun AlarmEditorScreen(
                                     lastManualText = lastManualText,
                                 )
                             },
-                            onOpenClipPreparation = { profileId -> openClipPreparation(profileId) },
+                            // 목소리 고르기에서 연 준비 화면 — 다 받으면 이 목소리를 붙인다(`preparationAppliesVoice`).
+                            onOpenClipPreparation = { profileId -> openClipPreparation(profileId, appliesVoiceWhenReady = true) },
                             editor = editor,
                                 voiceProfiles = visibleVoiceProfiles,
                                 settlingVoiceProfileIds = settlingVoiceProfileIds,
@@ -2345,6 +2350,10 @@ internal fun AlarmEditorScreen(
             // 이거 없이 다 되면 자동으로 닫히도록"). 고른 목소리는 지금처럼 적용하지 않은 채다 — 다시 고르면 이제 바로 붙는다.
             // 관문과 이 화면은 같은 매니페스트(`stockClips`)로 세므로, 닫은 뒤 관문이 또 막지 않는다.
             if (preparedNow) {
+                // 목소리 고르기에서 열었으면 그 목소리를 붙인다 — 다시 고를 필요가 없다(2026-11-15 오너: "고른 목소리도 바로 붙게").
+                // 확인 알럿(직접 입력 문구가 지워지는 경우)은 고를 때 이미 지났다(`VoiceAudioCard.pendingVoiceSwitch` 가 관문보다 먼저다).
+                if (preparationAppliesVoice) editor.selectTtsVoice(voiceId, lastMessageContext, lastManualText)
+                preparationAppliesVoice = false
                 preparationVoiceId = null
                 return@LaunchedEffect
             }
@@ -2355,7 +2364,8 @@ internal fun AlarmEditorScreen(
         }
         // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
         TrackOpenModal()
-        androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null }) {
+        // 손으로 닫으면('백그라운드에서 계속'·바깥 탭) 고른 목소리를 붙이지 않는다 — 지금 목소리가 그대로 남는다.
+        androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null; preparationAppliesVoice = false }) {
             androidx.compose.material3.Surface(
                 shape = WakerDialogShape,
                 color = MaterialTheme.colorScheme.surface,
@@ -2365,7 +2375,7 @@ internal fun AlarmEditorScreen(
                     // 때문에 100% 에 닿지 못한 채 멈춘다(코덱스 #952). 그 목소리가 목록에 아직 없으면 전부를 보여 준다.
                     voices = shownReadiness,
                     onRetry = onRetryClipRenders,
-                    onDismiss = { preparationVoiceId = null },
+                    onDismiss = { preparationVoiceId = null; preparationAppliesVoice = false },
                     modifier = Modifier.padding(vertical = 32.dp),
                 )
             }

@@ -2398,9 +2398,8 @@ internal fun VoiceProfileManagementPanel(
                                     Modifier.verticalScroll(contentScrollState)
                                 },
                             )
-                            // 상단바 아래 기본 간격(16)에 8 을 더 둔다 — 첫 칸·세그먼트가 뒤로가기 줄에 붙어 보였다(2026-11-15 오너:
-                            // "상단에 뒤오가기 버튼 있는거에도 사이에 공간을 좀 두고"). iOS 등록·확인 화면도 같은 8 이다.
-                            .padding(start = 20.dp, end = 20.dp, top = 8.dp),
+                            // 상단바 아래 간격(24)은 상단바가 갖는다(`WakerTopBarBottomGap`) — 여기서 더하지 않는다.
+                            .padding(horizontal = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         when (currentStep) {
