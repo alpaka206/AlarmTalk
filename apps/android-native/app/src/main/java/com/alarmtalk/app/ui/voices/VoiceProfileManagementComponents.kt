@@ -65,6 +65,8 @@ internal fun VoiceProfileEditDialog(
     onNameChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    // 상한(`VoiceNameMaxLength`)을 넘겨 쳤다 — 입력은 상한에서 막고 이유를 말한다(CLAUDE.md 「말없이 자르지 말 것」).
+    nameTooLong: Boolean = false,
 ) {
     // 공용 알럿으로 통일한다. 예전에는 이것만을 위한 `VoiceFormDialog` 껍데기가 따로 있었는데,
     // 입력 하나짜리 모달이라 알럿과 다를 이유가 없어 껍데기를 걷어냈다.
@@ -93,9 +95,14 @@ internal fun VoiceProfileEditDialog(
             onValueChange = onNameChange,
             placeholder = stringResource(R.string.voicesr_voice_name_label),
         )
-        if (nameError) {
+        val nameErrorText = when {
+            nameError -> stringResource(R.string.voicesr_required_field)
+            nameTooLong -> stringResource(R.string.voices_name_too_long, VoiceNameMaxLength)
+            else -> null
+        }
+        if (nameErrorText != null) {
             Text(
-                text = stringResource(R.string.voicesr_required_field),
+                text = nameErrorText,
                 color = MaterialTheme.colorScheme.error,
                 textAlign = TextAlign.Center,
                 style = IosAlertType.Message,

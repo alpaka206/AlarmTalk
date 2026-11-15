@@ -180,4 +180,20 @@ final class InputSanitizerTests: XCTestCase {
         let nasty = "  관\u{200B}리\u{202E}자\u{0000}   님  "
         XCTAssertEqual(InputSanitizer.sanitizeDisplayName(nasty), "관리자 님 ")
     }
+
+    // MARK: - 목소리 이름 상한 안내 (2026-10-29 — 말없이 자르지 않는다)
+
+    func test_목소리_이름을_넘겨_치면_상한에서_자르고_경고를_켠다() {
+        let limit = InputSanitizer.voiceNameMaxLength
+        let result = InputSanitizer.boundedVoiceName(String(repeating: "가", count: limit + 3), wasTooLong: false)
+        XCTAssertEqual(result.value.utf16.count, limit)
+        XCTAssertTrue(result.tooLong)
+    }
+
+    func test_목소리_이름이_정확히_상한이면_경고를_건드리지_않는다() {
+        let exact = String(repeating: "가", count: InputSanitizer.voiceNameMaxLength)
+        XCTAssertTrue(InputSanitizer.boundedVoiceName(exact, wasTooLong: true).tooLong)
+        XCTAssertFalse(InputSanitizer.boundedVoiceName(exact, wasTooLong: false).tooLong)
+        XCTAssertFalse(InputSanitizer.boundedVoiceName("엄마 목소리", wasTooLong: true).tooLong, "짧아지면 끈다")
+    }
 }

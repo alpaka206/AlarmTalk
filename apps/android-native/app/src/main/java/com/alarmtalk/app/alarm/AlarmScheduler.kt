@@ -56,6 +56,9 @@ class AlarmScheduler(
         }
     }
 
+    /** 이 알람의 OS 예약이 지금 걸려 있는가(`alarm_ready` 판정 — `AlarmRepository.isReadyToRing`). */
+    fun isScheduled(alarmId: String): Boolean = pendingIntentFor(alarmId, PendingIntent.FLAG_NO_CREATE) != null
+
     fun cancel(alarmId: String) {
         val pendingIntent = pendingIntentFor(alarmId, PendingIntent.FLAG_NO_CREATE) ?: return
         alarmManager.cancel(pendingIntent)

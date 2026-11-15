@@ -136,8 +136,11 @@ internal class VoiceOnboardingPreviewController(
                 ?: return
             playingVoiceId = voiceProfileId
             if (alarmVolumePercent != null) raiseAlarmStreamForPreview()
+            var sample: com.alarmtalk.app.data.SamplePlayback? = null
             mediaPlayer = player.apply {
                 setOnCompletionListener {
+                    // 끝까지 들었다 — 멈추거나 오류가 나면 이 콜백이 오지 않는다(오류 리스너가 true 를 돌려준다).
+                    sample?.completed()
                     it.release()
                     if (mediaPlayer === it) mediaPlayer = null
                     if (playingVoiceId == voiceProfileId) playingVoiceId = null
@@ -151,6 +154,7 @@ internal class VoiceOnboardingPreviewController(
                 }
                 start()
             }
+            sample = sampleStarted(voiceProfileId, alarmVolumePercent)
             return
         }
         val clip = com.alarmtalk.app.data.greetingStockClipFor(stockClips, voiceProfileId, appLanguage)
@@ -180,8 +184,10 @@ internal class VoiceOnboardingPreviewController(
                 preparingVoiceId = null
                 playingVoiceId = voiceProfileId
                 if (alarmVolumePercent != null) raiseAlarmStreamForPreview()
+                var sample: com.alarmtalk.app.data.SamplePlayback? = null
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
+                        sample?.completed()
                         it.release()
                         if (mediaPlayer === it) mediaPlayer = null
                         if (playingVoiceId == voiceProfileId) playingVoiceId = null
@@ -195,6 +201,7 @@ internal class VoiceOnboardingPreviewController(
                     }
                     start()
                 }
+                sample = sampleStarted(voiceProfileId, alarmVolumePercent)
             }.onFailure {
                 if (previewRequestId == requestId) {
                     preparingVoiceId = null
@@ -203,6 +210,17 @@ internal class VoiceOnboardingPreviewController(
             }
         }
     }
+
+    /**
+     * 샘플 재생 기록(`sample_started`, `docs/spec/usage-events.md` §7.1) — `start()` 가 돌아온 **뒤에** 적는다.
+     * 알람 크기 미리듣기(목소리 크기 화면)는 '이 목소리가 어떤가' 를 듣는 샘플이 아니라 크기를 재는 것이라 적지 않는다.
+     */
+    private fun sampleStarted(voiceProfileId: String, alarmVolumePercent: Int?): com.alarmtalk.app.data.SamplePlayback? =
+        if (alarmVolumePercent != null) {
+            null
+        } else {
+            com.alarmtalk.app.data.SamplePlayback.start(context, voiceProfileId, surface = "editor")
+        }
 
     /**
      * 미리듣기 플레이어를 만든다. [alarmVolumePercent] 가 있으면 알람 스트림·그 게인으로,

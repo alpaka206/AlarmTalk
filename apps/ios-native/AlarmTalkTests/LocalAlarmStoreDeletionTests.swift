@@ -87,11 +87,10 @@ final class LocalAlarmStoreDeletionTests: XCTestCase {
 
         [stockOnly, stockWithLocalAudio, stockWithRawAudio].forEach { store.upsert($0) }
 
-        // stockOnly 만 보존(삭제 대상 제외), 음원이 붙은 둘은 여전히 삭제 대상.
-        XCTAssertEqual(
-            Set(store.paidAlarmTalks().map(\.id)),
-            Set(["stock-with-local-audio", "stock-with-raw-audio"])
-        )
+        // ⚠ **기본(시스템) 목소리 알람은 무엇을 말하든 무료다**(1.3 — `PaidVoiceGate.usesFreeSystemVoice` 와 한 쌍,
+        // 2026-11-09 iOS 출시 검토 blocker). 음원이 붙은 기본 목소리 알람(직접 입력 결과)도 잠금 대상이 아니다.
+        // 예전 값(음원이 붙은 둘은 잠금 대상)은 1.2.16 규칙이었고, 그대로 두면 무료가 만든 직접 입력이 다음 실행에 잠겼다.
+        XCTAssertEqual(Set(store.paidAlarmTalks().map(\.id)), Set<String>())
     }
 
     /// 스톡 클립 알람은 스테이징된 `stock_<id>` 캐시 파일이 있어 localAudioUri 가

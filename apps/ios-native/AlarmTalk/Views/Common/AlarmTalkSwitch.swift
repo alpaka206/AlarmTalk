@@ -20,13 +20,15 @@ import SwiftUI
 struct AlarmTalkSwitchStyle: ViewModifier {
     @Environment(\.voiceAlarmTheme) private var theme
     @Environment(\.colorScheme) private var colorScheme
+    var muted = false
 
     func body(content: Content) -> some View {
         content
             .toggleStyle(
                 AlarmTalkToggleStyle(
                     palette: theme.palette,
-                    isDark: colorScheme == .dark
+                    isDark: colorScheme == .dark,
+                    muted: muted
                 )
             )
     }
@@ -36,10 +38,12 @@ struct AlarmTalkSwitchStyle: ViewModifier {
 private struct AlarmTalkToggleStyle: ToggleStyle {
     let palette: AlarmTalkPalette
     let isDark: Bool
+    /// 회색으로 그린다 — 켜져 있어도 강조색을 쓰지 않는다(권한이 없어 울리지 않는 알람의 스위치, 2026-11-09 오너).
+    var muted = false
 
     private var trackColor: Color {
         // 안드로이드: checkedTrackColor = primary / uncheckedTrackColor = surfaceVariant
-        palette.primary
+        muted ? palette.outline : palette.primary
     }
 
     // 손잡이는 **양쪽 상태 모두 흰색**이다(2026-08-10 결정).
@@ -84,8 +88,8 @@ private struct AlarmTalkToggleStyle: ToggleStyle {
 }
 
 extension View {
-    /// 앱 공용 스위치 색·스타일을 입힌다.
-    func alarmTalkSwitch() -> some View {
-        modifier(AlarmTalkSwitchStyle())
+    /// 앱 공용 스위치 색·스타일을 입힌다. `muted` 면 켜짐·꺼짐과 상관없이 회색이다(`AlarmRow.switchMuted`).
+    func alarmTalkSwitch(muted: Bool = false) -> some View {
+        modifier(AlarmTalkSwitchStyle(muted: muted))
     }
 }

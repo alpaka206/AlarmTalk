@@ -34,7 +34,9 @@ internal fun GoogleSignInButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.height(56.dp),
-        shape = WakerButtonShape,
+        // 카카오 버튼과 같은 모서리 12(`WakerTileShape`) — 둘은 로그인 화면 맨 위에 한 묶음으로 붙는다. 카카오 가이드가
+        // 카카오 버튼의 모서리를 12 로 정해 두어 그쪽에 맞춘다(iOS 는 Apple 버튼이 같은 값이다).
+        shape = WakerTileShape,
         color = Color.White,
         contentColor = Color(0xFF1F1F1F),
         border = BorderStroke(1.dp, Color(0xFFD7D9DE)),

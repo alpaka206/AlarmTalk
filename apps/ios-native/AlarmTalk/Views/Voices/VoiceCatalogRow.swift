@@ -119,12 +119,8 @@ extension VoiceCatalogRow where Below == EmptyView {
 /// 안드로이드 `VoiceCatalogSectionHeader` 미러. 섹션 하나가 한 장의 카드고 행 사이는
 /// 구분선이다 — 행마다 카드를 두면 목록이 계단처럼 보인다.
 ///
-/// ⚠ **제목을 카드 안으로 되돌리지 말 것.** 안드로이드는 제목이 카드 위에 떠 있고,
-/// 눌러서 **접을 수 있다**(목소리가 많아졌을 때 스스로 접는 선택지). 제목을 카드에 넣으면
-/// 누를 자리가 카드 안이 되어 '행을 누른 것' 과 구분되지 않는다.
-///
-/// ⚠ **처음에는 펼쳐진 상태다.** 접기는 사용자가 고르는 것이지 기본이 아니다 — 기본을
-/// 접힘으로 두면 목소리를 찾으려고 매번 펼쳐야 한다.
+/// ⚠ **접지 않는다**(2026-11-09 오너 — 접기 표시와 기능 삭제). 목소리는 계정당 하나 + 기본 넷이라 접어서 아낄 자리가 없고,
+/// 접힌 채로 두면 쓸 수 있는 목소리가 가려진다. 안드로이드 짝 `VoiceCatalogSectionHeader`.
 struct VoiceSectionCard<Content: View>: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String
@@ -135,37 +131,21 @@ struct VoiceSectionCard<Content: View>: View {
     var hasContent: Bool = true
     @ViewBuilder var content: () -> Content
 
-    @State private var expanded = true
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 4) {
-                Button {
-                    withAnimation(.snappy(duration: 0.22)) { expanded.toggle() }
-                } label: {
-                    HStack(spacing: 2) {
-                        Text(title)
-                            .font(theme.typography.titleSmall)
-                            .fontWeight(.bold)
-                            .foregroundStyle(theme.palette.onSurface)
-                        // 펼침 ⌄ / 접힘 › — 회전으로 상태가 이어져 보이게 한다(안드로이드와 같다).
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                            .rotationEffect(.degrees(expanded ? 0 : -90))
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("\(title) 섹션"))
-                .accessibilityHint(Text(expanded ? String(localized: "접기") : String(localized: "펼치기")))
+                Text(title)
+                    .font(theme.typography.titleSmall)
+                    .fontWeight(.bold)
+                    .foregroundStyle(theme.palette.onSurface)
+                    .accessibilityAddTraits(.isHeader)
 
                 Spacer(minLength: 8)
                 trailing
             }
             .frame(minHeight: 40)
 
-            if expanded && hasContent {
+            if hasContent {
                 VStack(alignment: .leading, spacing: 0) {
                     content()
                 }
@@ -185,47 +165,9 @@ struct VoiceSectionCard<Content: View>: View {
     }
 }
 
-/// 말투 분석이 실패했을 때의 안내 + 재시도.
+/// 사전렌더(알람 음성 준비) 진행 표시. 안드로이드 `VoiceProfileRowComponents.kt` 의 `VoiceProfileRow`.
 ///
-/// ⚠ **이 행이 없으면 사용자는 실패한 줄도 모른다.** 분석이 실패한 목소리는 말투 없이
-/// 밋밋하게 읽는데, 화면에는 아무 표시가 없었다. 서버에는 재시도 라우트가 있는데도
-/// 부를 방법이 앱에 없었다. 안드로이드 `ui/voices/VoiceProfileRowComponents.kt` 의
-/// `voicesr_speech_style_failed` / `voicesr_speech_style_retry` 행과 같은 모양이다.
-struct VoiceSpeechStyleFailedRow: View {
-    let retrying: Bool
-    let onRetry: () -> Void
-
-    var body: some View {
-        RetryRow(message: "말투 분석에 실패했어요", retryTitle: "다시 분석", retrying: retrying, onRetry: onRetry)
-    }
-}
-
-/// 실패 안내 한 줄 + '다시 …' 링크. 말투 분석 실패와 알람 음성 생성 실패가 같은 모양이다.
-private struct RetryRow: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-
-    // 리터럴을 받아 번역 키로 쓴다 — `String` 으로 받으면 그대로(verbatim) 그려진다.
-    let message: LocalizedStringKey
-    let retryTitle: LocalizedStringKey
-    let retrying: Bool
-    let onRetry: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(message)
-                .font(theme.typography.bodySmall)
-                .foregroundStyle(theme.palette.error)
-            Button(retryTitle, action: onRetry)
-                .font(theme.typography.bodySmall.weight(.semibold))
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.palette.primary)
-                .disabled(retrying)
-            Spacer(minLength: 0)
-        }
-    }
-}
-
-/// 사전렌더(알람 음성 준비) 진행·실패 표시. 안드로이드 `VoiceProfileRowComponents.kt:461-485`.
+/// ⚠ **실패도 '준비 중' 으로 그린다**(2026-11-09 오너) — 실패를 보이지 않고 목소리 탭이 스스로 다시 건다(`VoiceAutoRetry`).
 ///
 /// ⚠ **iOS 에는 이게 아예 없었다.** 유료 클론을 등록하면 21개 클립이 서버에서 렌더되는
 /// 동안 알람에 쓸 수 없는데, 화면에는 아무 표시도 없어 "만들었는데 안 쓰인다" 로 보였다.
@@ -233,8 +175,6 @@ struct VoicePrerenderStatusRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     let status: VoicePrerenderStatus
-    let retrying: Bool
-    let onRetry: () -> Void
     /// 이 목소리의 클립을 **몇 개 중 몇 개 받았는가**. 생성이 끝난 뒤의 몫(50~100%)이다.
     var downloadProgress: (done: Int, total: Int)?
 
@@ -265,8 +205,6 @@ struct VoicePrerenderStatusRow: View {
 
     var body: some View {
         switch status.status {
-        case "failed":
-            RetryRow(message: "알람 음성 생성에 실패했어요", retryTitle: "다시 시도", retrying: retrying, onRetry: onRetry)
         case _ where isPreparing:
             HStack(spacing: 8) {
                 ProgressView(value: Double(percent), total: 100)
@@ -287,4 +225,20 @@ struct VoicePrerenderStatusRow: View {
             EmptyView()
         }
     }
+}
+
+/// **실패를 보이지 않고 다시 건다**(2026-11-09 오너: "생성에 실패했어요·말투 분석에 실패했어요를 하지 말고 실패했으면 그냥 생성되고
+/// 재시도해야지"). 사전렌더가 `failed`(서버 cron 이 5번 시도하고 멈춤)거나 말투 분석이 `failed` 면 목소리 탭이 재시도 라우트를
+/// **스스로** 부른다 — 한 목소리에 **앱 실행당 한 번**. 사전렌더 재시도는 cron 이 다시 5번을 시도하게 하고, 말투 분석은 실패해도
+/// 클립이 기본 말투로 만들어지므로 막는 것이 없다. 안드로이드 짝 `VoiceAutoRetry`(`ui/voices/VoiceProfileRowComponents.kt`).
+@MainActor
+enum VoiceAutoRetry {
+    private static var prerender: Set<String> = []
+    private static var speechStyle: Set<String> = []
+
+    /// 이번 실행에서 이 목소리의 사전렌더를 처음 다시 거는가(그렇다면 표시를 남긴다).
+    static func claimPrerender(_ voiceID: String) -> Bool { prerender.insert(voiceID).inserted }
+
+    /// 이번 실행에서 이 목소리의 말투 분석을 처음 다시 거는가.
+    static func claimSpeechStyle(_ voiceID: String) -> Bool { speechStyle.insert(voiceID).inserted }
 }

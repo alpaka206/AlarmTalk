@@ -105,8 +105,7 @@
 |---|---|---|---|
 | `CONSENT_REQUIRED` | 필수 동의 미이행 | 403 | `middleware/consent.ts`, `routes/tts.ts`, `voice-profile.ts` |
 | `CONSENT_STATE_UNAVAILABLE` | 동의 상태 조회 불가 | 500 | `middleware/consent.ts` |
-| `INVALID_NAME` | name 이 문자열이 아님 | 400 | `routes/user.ts` |
-| `INVALID_NAME_LENGTH` | 닉네임 길이 규칙 위반(1~30자) | 400 | `routes/user.ts`, `voice-profile.ts` |
+| `INVALID_NAME_LENGTH` | 목소리 이름 길이 규칙 위반 | 400 | `voice-profile.ts` |
 | `INVALID_DYNAMIC_PROMPT_SETTINGS` | 동적 프롬프트 설정 형식 오류 | 400 | `routes/user.ts` |
 | `NO_FIELDS_TO_UPDATE` | 변경할 필드 없음(프로필) | 400 | `routes/user.ts` |
 | `INVALID_CONSENT_TYPE` | 알 수 없는 동의 type | 400 | `routes/user.ts` |
@@ -166,22 +165,19 @@
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
-| `CODE_NOT_FOUND` | 옛 앱의 코드 등록 — 어떤 본문이든 이것이다(조회하지 않는다) | 404 | `routes/code.ts` |
 
 ## 5. 알람
 
-`routes/alarm-mutation.ts`, `alarm-helpers.ts`(생성/수정 입력 검증). `alarm-query.ts` 는 에러 코드를 내지 않는다.
+`routes/alarm-mutation.ts`(옛 앱의 알람 올리기를 **저장 없이** 받는 호환 경로 — 2026-10-29 서버 알람 사본 삭제), `alarm-helpers.ts`(입력 검증).
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
 | `INVALID_ALARM_ID` | 알람 ID 형식 오류 | 400 | `routes/alarm-mutation.ts` |
-| `ALARM_NOT_FOUND` | 알람 미존재(또는 소유 아님) | 404 | `routes/alarm-mutation.ts` |
 | `REQUIRED_FIELDS_MISSING` | 필수 필드(time 등) 누락 | 400 | `routes/alarm-mutation.ts` |
-| `NO_UPDATE_FIELDS` | 수정할 필드 없음 | 400 | `routes/alarm-mutation.ts` |
 | `NOT_CONNECTED` | `POST /alarm` 의 `target_user_id` 가 호출자가 아닌 사용자(남에게 보내는 알람은 없앴다 — 옛 앱의 가족 알람 보내기가 받는 거절. 그 밖의 값은 무시한다) | 403 | `routes/alarm-mutation.ts` |
-| `VOICE_FEATURE_REQUIRES_PAID_PLAN` | 음성 기능은 유료 플랜 필요 | 403 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts` |
-| `VOICE_PROFILE_NOT_FOUND` | 음성 프로필 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts` |
-| `MESSAGE_NOT_FOUND` | 메시지 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts` |
+| `VOICE_FEATURE_REQUIRES_PAID_PLAN` | 음성 기능은 유료 플랜 필요 | 403 | `tts.ts`, `voice-profile.ts` |
+| `VOICE_PROFILE_NOT_FOUND` | 음성 프로필 미존재 | 404 | `tts.ts`, `voice-profile.ts` |
+| `MESSAGE_NOT_FOUND` | 메시지 미존재 | 404 | `tts.ts` |
 | `INVALID_MESSAGE_ID` | message_id 형식 오류 | 400 | `routes/alarm-helpers.ts`, `tts.ts` |
 | `INVALID_BUCKET_ID` | bucket_id 형식 오류 | 400 | `routes/alarm-mutation.ts`, `alarm-helpers.ts` |
 | `INVALID_ALARM_MODE` | mode 값 허용 밖 | 400 | `routes/alarm-helpers.ts` |
@@ -271,7 +267,7 @@
 `DELIVERY_VERSION_REQUIRED`·`INVALID_DELIVERY_VERSION`·`ALARM_SCHEMA_UPGRADING`, 받는 사람 설정 `INVALID_BOOLEAN`·
 `INVALID_QUIET_WINDOWS`·`INVALID_QUIET_DAYS`·`INVALID_QUIET_TIME`, 공유 코드 발급 `GROUP_FULL`·
 `NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION`, 녹음 업로드 `MULTIPART_BODY_REQUIRED`·`AUDIO_FILE_REQUIRED`·
-`AUDIO_DURATION_TOO_SHORT`·`AUDIO_DURATION_TOO_LONG`. 남긴 것은 `NOT_CONNECTED`(§5)와 `CODE_NOT_FOUND`(§4)다.
+`AUDIO_DURATION_TOO_SHORT`·`AUDIO_DURATION_TOO_LONG`. 남긴 것은 `NOT_CONNECTED`(§5)다(`CODE_NOT_FOUND` 는 2026-10-26 옛 앱 호환 라우트와 함께 지웠다).
 
 ## 8. 푸시 토큰
 

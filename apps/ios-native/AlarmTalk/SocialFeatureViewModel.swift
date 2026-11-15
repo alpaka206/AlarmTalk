@@ -418,14 +418,14 @@ final class SocialFeatureViewModel: ObservableObject {
                 // 둘을 함께 적는다(`user_plan` 은 결제 전 조회에서만 온다).
                 if let plan = nextSubscription.userPlan, planCurrent {
                     $0.userPlan = plan
-                    $0.personalPromo = nextSubscription.personalPromo
+                    $0.personalPromo = nextSubscription.limitedPlan
                 }
             }
             guard silentWrite == .applied else { return nil }
             if refreshStoreState { billingPreflightRevision &+= 1 }
             subscription = nextSubscription
             if let plan = nextSubscription.userPlan {
-                onFreshPlan?(userID, token, plan, nextSubscription.personalPromo, accountRequest)
+                onFreshPlan?(userID, token, plan, nextSubscription.limitedPlan, accountRequest)
             }
             return nextSubscription
         } catch {
@@ -592,6 +592,13 @@ final class SocialFeatureViewModel: ObservableObject {
         // 안드로이드 `lockPaidAlarmTalks` 는 `needsLock` 일 때만 센다.
         let selection = FreePlanLockSelection(alarms: alarmStore.alarms, expectedOwnerUserId: expectedOwnerUserId)
         let targets = selection.toLock
+        let releaseMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        for record in selection.toRelease {
+            if Task.isCancelled { return 0 }
+            let released = FreePlanLockSelection.released(record, nowMillis: releaseMillis)
+            _ = alarmStore.upsert(released)
+            await Self.rescheduleIfEnabled(released, replacing: record, alarmKit: alarmKit, store: alarmStore)
+        }
         for record in selection.toUnlock {
             // ⚠ **밀려났으면 즉시 멈춘다**(2026-09-01 리뷰 — 아래 잠금 루프의 주석과 같은 이유).
             if Task.isCancelled { return 0 }
@@ -732,6 +739,11 @@ struct FreePlanLockSelection {
     let toLock: [LocalAlarmRecord]
     /// 자격을 잃은 옛 잠금 — 재생 방식만 되돌린다.
     let toUnlock: [LocalAlarmRecord]
+    /// 보관본을 되돌리면 **지금 규칙으로 무료**인 잠금(기본 목소리로 만든 직접 입력 등) — 푼다(`released`).
+    /// 1.2.16 은 기본 목소리 직접 입력을 유료로 읽어 잠갔는데, 무료로 남는 동안은 복원(유료일 때만)이 없어 영영
+    /// 인사말로 울렸다(2026-11-09 iOS 출시 검토). **일회성 이전이 아니라 매 회차** 본다 — 기기는 어느 판에서든 올라온다.
+    /// 안드로이드 `lockPaidAlarmTalks` 의 같은 갈래와 짝이다.
+    let toRelease: [LocalAlarmRecord]
 
     init(alarms: [LocalAlarmRecord], expectedOwnerUserId: String?) {
         toLock = LocalAlarmStore.paidAlarmTalks(in: alarms).filter { record in
@@ -756,6 +768,26 @@ struct FreePlanLockSelection {
                 && (expectedOwnerUserId == nil || record.ownerUserId == nil
                     || record.ownerUserId == expectedOwnerUserId)
         }
+        toRelease = alarms.filter { record in
+            record.hasLockedPaidVoice
+                && PaidVoiceGate.usesFreeSystemVoice(DefaultVoiceSubstitute.restored(record, nowMillis: 0))
+                && (expectedOwnerUserId == nil || record.ownerUserId == nil
+                    || record.ownerUserId == expectedOwnerUserId)
+        }
+    }
+
+    /// 지금 규칙으로 무료인 잠금을 푼다(순수). 잠긴 뒤 사용자가 직접 입력을 **새로 만들어** 저장했으면(테마 없이 자기
+    /// 오디오가 있다) 그 편집이 이긴다 — 보관본만 버린다. 아니면 보관본을 되돌린다(원래 문구·음원).
+    static func released(_ record: LocalAlarmRecord, nowMillis: Int64) -> LocalAlarmRecord {
+        let editedSinceLock = record.bucketId?.nilIfBlank == nil
+            && record.audioCacheKey?.nilIfBlank != nil
+            && record.audioCacheKey != record.preLockVoice?.audioCacheKey
+        guard editedSinceLock else { return DefaultVoiceSubstitute.restored(record, nowMillis: nowMillis) }
+        var next = record
+        next.preLockVoice = nil
+        next.preLockPlayMode = nil
+        next.updatedAtMillis = nowMillis
+        return next
     }
 
     /// 자격을 잃은 옛 잠금을 푼 행 — 재생 방식만 되돌린다(옛 모양에는 보관본이 없다).

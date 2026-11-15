@@ -39,6 +39,9 @@ class AlarmTalkApplication : Application() {
             .onFailure { AlarmTalkLog.reportError("VisibleActivityTracker install failed", it) }
         runCatching { NotificationChannels.install(this) }
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
+        // 카카오 로그인 SDK. 키는 플레이버별 네이티브 앱 키(build.gradle.kts). 네트워크를 쓰지 않는 설정 저장뿐이다.
+        runCatching { com.kakao.sdk.common.KakaoSdk.init(this, BuildConfig.KAKAO_NATIVE_APP_KEY) }
+            .onFailure { AlarmTalkLog.reportError("KakaoSdk init failed", it) }
         // ⚠ **우리가 올려 둔 기기 알람 볼륨을 여기서도 되돌린다.** 울림은 서비스가 끝내면서
         //   되돌리고 그 서비스가 다시 뜰 때 한 번 더 본다. 그런데 **미리듣기**도 같은 크기로
         //   들려주려고 스트림을 올리므로(2026-09-09), 미리듣기 도중 프로세스가 죽으면

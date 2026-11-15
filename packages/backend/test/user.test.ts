@@ -59,19 +59,17 @@ describe('PATCH /user/me', () => {
     expect(mockDB.calls).toHaveLength(0);
   });
 
-  it('이름과 가족 알람 키가 함께 오면 이름만 저장한다 — 이상한 값이어도 400 이 아니고 응답에도 없다', async () => {
-    mockDB.pushResult([], 1);
+  // 닉네임은 2026-10-29 에 칸째 없앴다(#146). 옛 앱(1.2.16)의 닉네임 수정이 이름을 보내면 성공으로 답하고 아무것도 쓰지 않는다 —
+  // 거절하면 그 앱이 "바꾸지 못했어요" 를 띄운다.
+  it('이름만 오면 아무것도 쓰지 않고 성공으로 답한다 — 이름은 빈 문자열', async () => {
     const res = await buildApp().request(
       jsonReq('PATCH', '/user/me', { name: '새 이름', allow_family_alarms: 'garbage' }),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ success: true, name: '새 이름', dynamic_prompt_settings: null });
+    expect(body).toEqual({ success: true, name: '', dynamic_prompt_settings: null });
     for (const key of FAMILY_KEYS) expect(body, key).not.toHaveProperty(key);
-    expect(mockDB.calls).toHaveLength(1);
-    expect(mockDB.calls[0]!.sql).toContain('UPDATE users SET name = ?');
-    expect(mockDB.calls[0]!.sql).not.toMatch(/allow_family|family_alarm/);
-    expect(mockDB.calls[0]!.args).toEqual(['새 이름', 'user-1']);
+    expect(mockDB.calls).toHaveLength(0);
   });
 
   it('필드 누락 → 400 NO_FIELDS_TO_UPDATE', async () => {
@@ -85,7 +83,7 @@ describe('PATCH /user/me', () => {
   it('존재하지 않는 사용자 → 404 USER_NOT_FOUND', async () => {
     mockDB.pushResult([], 0);
     const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/me', { name: '새 이름' }));
+    const res = await app.request(jsonReq('PATCH', '/user/me', { dynamic_prompt_settings: {} }));
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
   });

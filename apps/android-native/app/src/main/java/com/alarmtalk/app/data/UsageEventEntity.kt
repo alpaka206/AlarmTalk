@@ -1,5 +1,6 @@
 package com.alarmtalk.app.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Insert
@@ -39,6 +40,22 @@ data class UsageEventEntity(
      * A 가 만든 사건이 B 의 기록에 들어가면 되돌릴 방법이 없다.
      */
     val userId: String? = null,
+    /**
+     * 스키마 판(`docs/spec/usage-events.md` §7). 2026-10-26 전에 적힌 행은 1(마이그레이션 28→29 기본값)이고 공통 필드가
+     * 비어 있다 — 그대로 1판으로 보낸다. 지금 기록기는 1판 종류도 2 로 적는다(앱 버전을 싣는다).
+     */
+    @ColumnInfo(defaultValue = "1") val schemaVersion: Int = 1,
+    /** **적는 순간의** versionCode. 업데이트를 건너 남은 행이 보내는 앱의 버전으로 둔갑하지 않게 여기 적는다. */
+    val appVersion: String? = null,
+    /** 그 기록을 만든 흐름의 판(예: `prep-1`). */
+    val featureVersion: String? = null,
+    /** 한 시도(준비·저장·제작·광고 보상)를 묶는 UUID. 시작·완료·실패가 같은 값을 쓴다. */
+    val attemptId: String? = null,
+    /**
+     * 정해진 칸([UsageEventProps])을 Gson 으로 적은 JSON. **로컬 저장 형식일 뿐**이고 전송은 `props` 객체다.
+     * ⚠ 문구 원문·이름·이메일을 넣을 칸은 없다 — [UsageEventProps] 에 없는 것은 적히지 않는다.
+     */
+    val propsJson: String? = null,
 )
 
 @Dao

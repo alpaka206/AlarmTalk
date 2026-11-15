@@ -17,6 +17,16 @@ import {
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
+import { renderStamp, serverRenderSettings } from './render-fingerprint';
+import { measureSynthesis, speechCharacters } from './tts-usage';
+import { holdDevBudget, releaseDevBudget } from './tts-budget';
+import {
+  STOCK_CONTENT_BASELINE_SET_IDS,
+  STOCK_CONTENT_SETS,
+  stockContentSet,
+  stockContentSetForCategory,
+  type StockContentSet,
+} from '@alarmtalk/shared';
 
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
@@ -26,6 +36,26 @@ export const STOCK_CLIP_LANGUAGES = ['ko', 'en', 'ja'] as const;
 
 /** 목소리 미리듣기(샘플 인사말) 카테고리 — 알람 클립과 구분해 앱에서 따로 쓴다. */
 export const STOCK_GREETING_CATEGORY = 'greeting';
+
+/** 스톡 프리셋 한 카테고리 — 언어별 확정 리터럴(자리 = variant). */
+export interface StockClipPreset {
+  readonly category: string;
+  readonly texts: Readonly<Record<(typeof STOCK_CLIP_LANGUAGES)[number], readonly string[]>>;
+}
+
+/** 문구 원본(`stock-content.json`)의 한 묶음을 스톡 프리셋으로. 묶음이 없으면 시작할 때 멈춘다(원본과 코드가 갈라졌다). */
+function presetFromContentSet(setId: string): StockClipPreset {
+  const set = stockContentSet(setId);
+  if (!set) throw new Error(`stock-content.json 에 묶음 ${setId} 가 없다`);
+  return {
+    category: set.category,
+    texts: {
+      ko: set.items.map((item) => item.texts.ko),
+      en: set.items.map((item) => item.texts.en),
+      ja: set.items.map((item) => item.texts.ja),
+    },
+  };
+}
 
 /**
  * 스톡 클립 프리셋 — 2026-07-19 확정 대사(voice-preview/대사.md)의 3개 언어 '리터럴'
@@ -45,7 +75,7 @@ export const STOCK_GREETING_CATEGORY = 'greeting';
  * 카테고리를 늘리려면 여기에 추가하면 findMissingStockTargets 가 자동으로
  * (보이스 × 언어 × variant) 매트릭스를 채운다.
  */
-export const STOCK_CLIP_PRESETS = [
+export const STOCK_CLIP_PRESETS: readonly StockClipPreset[] = [
   // 무료 플랜 알람 "버킷". 카테고리당 여러 variants(문구)를 시스템 보이스마다 3개 언어로
   // 미리 합성해 둔다. 앱은 한 버킷의 변형들을 전부 로컬 캐시한 뒤 완전 오프라인으로 재생한다.
   //  - 무료 버킷 = 날씨(weather) 9문구(조건 매칭) + 약(medication) 2문구(순차 회전).
@@ -140,31 +170,18 @@ export const STOCK_CLIP_PRESETS = [
       ],
     },
   },
-  // 응원 3문구.
+  // 응원 — **문구는 `@alarmtalk/shared` 의 `stock-content.json` 이 원본이다**(스펙 §5-4).
   // ⚠ **id 는 `cheer` 이고 예전 이름은 `love` 였다**(2026-09-02). 대사가 응원·자기돌봄으로
   //   확정되면서 개념 자체를 바꿨다 — 연애 문구가 아니다. 옛 값 `'love'` 는 이미 저장된
   //   행·구버전 앱이 보내오므로 **읽을 때 접어 준다**(`normalizeRandomContext`,
   //   `randomPromptContextForBucket`, iOS `RandomPromptContext.normalized`).
-  {
-    category: 'cheer',
-    texts: {
-      ko: [
-        '해야 할 일이 많으면 시작하기도 전에 마음부터 바빠지잖아요. 그렇다고 처음부터 전부 잘할 필요는 없어요. 지금 할 수 있는 것부터 하나씩 해봐요. 하다 보면 생각보다 잘 풀릴지도 모르니까요.',
-        '이것저것 신경 쓰다 보면 정작 스스로를 챙기는 건 자꾸 뒤로 미루게 되죠. 바쁘더라도 밥은 꼭 챙겨 먹고, 지치면 잠깐이라도 쉬어요. 그래야 하고 싶은 일도 오래 할 수 있잖아요.',
-        '힘든 일이 생겨도 혼자 괜찮은 척할 필요는 없어요. 믿을 만한 사람에게 슬쩍 털어놓으면 생각보다 마음이 가벼워질 때도 있거든요. 너무 혼자 버티려고만 하지는 말아요.',
-      ],
-      en: [
-        "When you have a lot to do, your mind can start racing before you even begin. But you don't have to do everything perfectly from the start. Just take one thing at a time, starting with what you can do now. It may go better than you think.",
-        "When you're busy taking care of everything else, it's easy to keep putting yourself last. Even on busy days, make sure you eat, and take a short break when you're tired. Taking care of yourself is what lets you keep doing the things you enjoy.",
-        "When things get hard, you don't have to pretend you're okay. Talking it through with someone you trust can make things feel lighter than you expect. So please don't try to carry everything on your own.",
-      ],
-      ja: [
-        'やることが多いと、始める前から気持ちばかり焦ってしまいますよね。 でも、最初から全部うまくやろうとしなくても大丈夫です。 今できることから、一つずつやってみましょう。始めてみたら、思ったよりうまく進むかもしれませんよ。',
-        'あれこれ気にかけていると、自分のことはつい後回しになりますよね。 忙しくても食事はきちんととって、疲れたら少しでも休んでください。 そうすれば、やりたいことも無理なく長く続けられますから。',
-        'つらいことがあっても、一人で平気なふりをしなくていいんですよ。 信頼できる人に少し話してみるだけで、思ったより気持ちが軽くなることもあります。 何でも一人で抱え込もうとしないでくださいね。',
-      ],
-    },
-  },
+  // ⚠ `cheer` 카테고리는 **옛 응원 3개(`cheer_v1`)로 고정**이다 — 새 응원은 뒤에 이어 붙이지 않고 따로
+  //   `cheer_v2` 카테고리로 둔다(이유는 스펙 §5-4 「새 응원을 이어 붙이지 않은 이유」).
+  presetFromContentSet('cheer_v1'),
+  // 새 응원 14개(테마 `cheer`)와 기본 목소리의 기상 인사 3개(테마 `wake`). **공개 표식이 있어야**
+  // 매니페스트·`expected_variants` 에 나온다(`releasedStockContentSets`).
+  presetFromContentSet('cheer_v2'),
+  presetFromContentSet('wake_v1'),
   {
     // 목소리 창에서 "이 목소리는 이런 느낌" 을 들려주는 인사 샘플(미리듣기). 같은 문장을
     // 4개 목소리로 들려줘야 음색 비교가 되므로 보이스별 개별 멘트 없이 공통 문구 하나다.
@@ -181,7 +198,7 @@ export const STOCK_CLIP_PRESETS = [
       ],
     },
   },
-] as const;
+];
 
 
 /**
@@ -220,10 +237,18 @@ export function normalizeStockCategory(category: string): string {
 /**
  * 무료 플랜이 알람 버킷으로 고를 수 있는 카테고리(greeting 제외). 스톡 프리셋이 단일
  * 출처이므로, STOCK_CLIP_PRESETS 에 카테고리를 추가하면 자동으로 버킷 후보가 된다.
+ *
+ * ⚠ **버킷은 테마다 — 저장 카테고리가 아니다**(2026-10-26, 스펙 §5-4). `cheer_v2` 는 테마 `cheer` 의 묶음이라
+ *   버킷이 될 수 없다(앱은 `bucket_id = 'cheer'` 로 저장하고 매니페스트의 `theme` 으로 모은다). 테마가 따로인
+ *   카테고리를 버킷으로 받으면 같은 테마가 두 이름을 갖는다.
  */
 export const FREE_BUCKET_CATEGORIES: readonly string[] = STOCK_CLIP_PRESETS.map(
   (preset) => preset.category,
-).filter((category) => category !== STOCK_GREETING_CATEGORY);
+).filter(
+  (category) =>
+    category !== STOCK_GREETING_CATEGORY &&
+    (stockContentSetForCategory(category)?.theme ?? category) === category,
+);
 
 /**
  * 유료 클론 목소리에 사전렌더할 알람 버킷 카테고리(greeting 미리듣기는 별도로 항상 포함).
@@ -274,6 +299,15 @@ export const CLONE_FORTUNE_THEMES = [
  * greeting=기상 인사(미리듣기 겸용). weather=CLONE_WEATHER_CONDITIONS 순서(0..7) + 미해결 안내 1(마지막),
  * fortune=CLONE_FORTUNE_THEMES 순서(기기 결정적이라 미해결 없음).
  */
+function cloneSeedsOf(setId: string): readonly string[] {
+  const set = stockContentSet(setId);
+  if (!set) throw new Error(`stock-content.json 에 묶음 ${setId} 가 없다`);
+  return set.items.map((item) => {
+    if (!item.clone_seed) throw new Error(`${item.id} 에 clone_seed 가 없다`);
+    return item.clone_seed;
+  });
+}
+
 export const CLONE_CLIP_SEEDS: {
   category: string;
   seeds: readonly string[];
@@ -318,12 +352,9 @@ export const CLONE_CLIP_SEEDS: {
   {
     // 응원(옛 이름 `love`). 시드도 응원·자기돌봄으로 맞췄다 — 라벨이 '응원' 인데
     // 시드만 "사랑하는 마음을 담아" 로 두면 클론이 라벨과 다른 말을 한다.
+    // 시드 원본은 `stock-content.json` 의 `cheer_v1`(옛 응원과 같은 의도)이다.
     category: 'cheer',
-    seeds: [
-      '할 일이 많으면 시작 전부터 마음이 바빠진다고 공감한 뒤, 처음부터 다 잘할 필요는 없다고 하고, 지금 할 수 있는 것부터 하나씩 해보자고 응원한다.',
-      '이것저것 신경 쓰다 정작 자기를 챙기는 건 뒤로 미루게 된다고 공감한 뒤, 바빠도 끼니는 챙기고 지치면 잠깐이라도 쉬라고 하며, 그래야 하고 싶은 일도 오래 할 수 있다고 다독인다.',
-      '힘든 일이 있어도 혼자 괜찮은 척하지 않아도 된다고 하고, 믿을 만한 사람에게 털어놓으면 마음이 가벼워질 때가 있다고 하며, 혼자 버티려 하지 말라고 따뜻하게 응원한다.',
-    ],
+    seeds: cloneSeedsOf('cheer_v1'),
   },
   {
     category: 'medication',
@@ -334,6 +365,69 @@ export const CLONE_CLIP_SEEDS: {
     ],
   },
 ];
+
+/**
+ * 등록(클론) 목소리의 **보충** 묶음 — 기본 세트(`CLONE_CLIP_SEEDS`)와 달리 모든 클론에 굽지 않는다(스펙 §5-4
+ * 「클론은 고른 것만 보충한다」). 사용자가 그 클론으로 그 테마 알람을 저장할 때 큐에 요청한다
+ * (`requestCloneContentSupplement`). 저장 카테고리가 기본 세트와 따로라(`cheer_v2`) 옛 앱의 완전성 판정
+ * (`0..N-1` 이 정확히 있는가)을 건드리지 않는다.
+ *
+ * 원본은 `stock-content.json` — 클론 시드가 있고 `baseline` 이 아닌 묶음이 전부 여기 온다.
+ */
+export interface CloneContentSupplement {
+  readonly setId: string;
+  readonly theme: string;
+  readonly category: string;
+  readonly seeds: readonly string[];
+}
+
+export const CLONE_CONTENT_SUPPLEMENTS: readonly CloneContentSupplement[] = STOCK_CONTENT_SETS.filter(
+  (set) => !set.baseline && set.items.every((item) => !!item.clone_seed),
+).map((set) => ({
+  setId: set.id,
+  theme: set.theme,
+  category: set.category,
+  seeds: set.items.map((item) => item.clone_seed!),
+}));
+
+/** 보충 묶음의 저장 카테고리 — 기본 세트 개수(`prerender-status`·`advance`)에서 뺀다. */
+export const CLONE_SUPPLEMENT_CATEGORIES: readonly string[] = CLONE_CONTENT_SUPPLEMENTS.map((s) => s.category);
+
+/**
+ * 기본 세트 개수에서 보충 카테고리를 빼는 SQL 조각. 개발자 고정 조각이다(카테고리는 코드 상수 — 사용자 값이 아니다).
+ * ⚠ 보충 클립까지 세면 `generated` 가 `total` 을 넘고, 두 앱의 등록 진행률이 100% 를 넘거나 다 됐다고 먼저 읽는다.
+ */
+export function excludeSupplementCategoriesSql(alias = 'm'): string {
+  if (CLONE_SUPPLEMENT_CATEGORIES.length === 0) return '';
+  const list = CLONE_SUPPLEMENT_CATEGORIES.map((category) => `'${category.replace(/'/g, "''")}'`).join(', ');
+  return `AND ${alias}.category NOT IN (${list})`;
+}
+
+/**
+ * **이 환경에 공개된 묶음**(`stock_content_releases`, 마이그레이션 #143) + 공개 표식 없이 살아 있는 묶음(`baseline`).
+ *
+ * 매니페스트(`GET /tts/stock-clips`)는 한 요청에서 이걸 **한 번** 읽어 클립 목록·`expected_variants`·표지를 같이 정한다
+ * (스펙 §5-4 「공개 순서」). 사전렌더 대상 계산도 이걸 본다 — 공개 전 묶음은 굽지 않는다.
+ *
+ * ⚠ **표가 없으면(배포 창, #143 전) 공개된 것이 없는 것으로 답한다.** 그 창에는 표식을 적는 경로(게시 스크립트)도
+ *   아직 돌 수 없으므로 '아무것도 공개 안 됨' 이 사실이다 — 결과는 #143 전과 글자 그대로 같다. 다른 오류는 던진다.
+ */
+export async function releasedStockContentSets(db: Pick<DbExecutor, 'execute'>): Promise<ReadonlySet<string>> {
+  const released = new Set(STOCK_CONTENT_BASELINE_SET_IDS);
+  try {
+    const res = await db.execute({ sql: 'SELECT content_set FROM stock_content_releases', args: [] });
+    for (const row of res.rows) released.add(String(row.content_set));
+  } catch (error) {
+    if (!/no such table/i.test(String(error))) throw error;
+  }
+  return released;
+}
+
+/** 이 카테고리가 지금 살아 있는가 — 묶음이 없는 카테고리(날씨·약·운세·greeting)는 언제나 그렇다. */
+export function stockCategoryReleased(category: string, released: ReadonlySet<string>): boolean {
+  const set: StockContentSet | undefined = stockContentSetForCategory(category);
+  return !set || released.has(set.id);
+}
 
 interface SystemVoiceRow {
   id: string;
@@ -409,6 +503,24 @@ export interface PrerenderVoice {
   /** 등록 미리듣기에서 고른 목소리 높이(클론만) — 모든 클립에 굽는다(스펙 §4-3). */
   pitch?: VoicePitch | null;
   claimToken?: string;
+  /**
+   * 이 클론에 요청된 **보충 묶음**(`voice_prerender_queue.content_sets`, 스펙 §5-4). 공개된 것만 굽는다.
+   * 한 번 요청되면 남는다 — 다시 굽는 회차(교체)가 보충 클립까지 새 목소리로 굽게 하려는 것이다.
+   */
+  contentSets?: readonly string[];
+}
+
+/** 큐의 `content_sets`(JSON 배열) → 아는 보충 묶음 ID 만. 깨졌거나 비었으면 빈 배열. */
+export function parseContentSets(raw: unknown): string[] {
+  if (typeof raw !== 'string' || raw.trim() === '') return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const known = new Set(CLONE_CONTENT_SUPPLEMENTS.map((s) => s.setId));
+    return [...new Set(parsed.filter((v): v is string => typeof v === 'string' && known.has(v)))];
+  } catch {
+    return [];
+  }
 }
 
 export interface GeneratedStockClip {
@@ -480,8 +592,12 @@ export async function listReadyCloneVoices(
     //   경로). 그 창에는 높이를 가진 목소리가 아직 있을 수 없어 잃는 것은 그동안의 사전렌더 진행뿐이다 — 크론·전진이
     //   다음 차례에 다시 잡는다. 이 목록에서 높이를 빼 '견디게' 만들지 말 것: 마이그레이션 뒤 높이를 굽지 않은 클립이
     //   영구히 게시된다(클립은 한 번 게시되면 다시 굽지 않는다).
+    // ⚠ `content_sets` 도 마이그레이션 #143 의 새 컬럼이라 같은 규칙으로 fail-closed 다 — 그 창에는 보충을 요청하는
+    //   경로도 아직 없다. 빼서 '견디게' 만들면 보충을 요청한 클론의 교체 회차가 보충 클립을 옛 목소리로 남긴다.
     sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style, voice_energy,
-                 pitch_semitones, pitch_model_id
+                 pitch_semitones, pitch_model_id,
+                 (SELECT q.content_sets FROM voice_prerender_queue q WHERE q.voice_profile_id = voice_profiles.id)
+                   AS content_sets
           FROM voice_profiles
           WHERE COALESCE(is_system, 0) = 0
             AND deleted_at IS NULL
@@ -501,12 +617,17 @@ export async function listReadyCloneVoices(
     const listenerTitle = ((row.listener_title as string | null) ?? '').trim() || null;
     const styleReference = ((row.preview_text as string | null) ?? '').trim() || null;
     const speechStyle = withVoiceEnergy(parseSpeechStyle(row.speech_style), row.voice_energy);
+    const contentSets = parseContentSets(row.content_sets);
     out.push({
       id,
       name: String(row.name),
       elevenlabsVoiceId,
       ownerUserId: req.ownerUserId,
-      categories: CLONE_PRERENDER_CATEGORIES,
+      categories: [
+        ...CLONE_PRERENDER_CATEGORIES,
+        ...CLONE_CONTENT_SUPPLEMENTS.filter((s) => contentSets.includes(s.setId)).map((s) => s.category),
+      ],
+      contentSets,
       languageOverride: normalizeSynthesisLanguage(req.language),
       isClone: true,
       relationshipLabel,
@@ -539,6 +660,10 @@ export async function findMissingStockTargets(
 ): Promise<StockClipTarget[]> {
   const prerenderVoices = voices ?? systemPrerenderVoices(await listSystemVoices(db));
   if (prerenderVoices.length === 0) return [];
+  // ⚠ **공개 전 묶음은 굽지 않는다**(스펙 §5-4). 기본 목소리 스톡은 시청본을 들어 보고 게시 스크립트로 올리고,
+  //   클론 보충은 공개 뒤에만 요청된다 — 그래도 여기서 한 번 더 막아 수동 도구(`seed-stock-clips`)가 들어 보지도
+  //   않은 문구를 굽지 않게 한다.
+  const released = await releasedStockContentSets(db);
 
   const voiceIds = prerenderVoices.map((voice) => voice.id);
   const ph = voiceIds.map(() => '?').join(',');
@@ -598,11 +723,20 @@ export async function findMissingStockTargets(
     // 클론=CLONE_CLIP_SEEDS(의미 seed → 관계/호칭 톤 적응 생성, 언어는 확정 시점 앱 언어 1개),
     // 시스템=STOCK_CLIP_PRESETS(언어별 확정 리터럴 — 번역 없이 그대로 합성).
     const sources = voice.isClone
-      ? CLONE_CLIP_SEEDS.map((s) => ({
-          category: s.category,
-          perLanguage: [{ language: voice.languageOverride ?? 'ko', entries: s.seeds }],
-        }))
-      : STOCK_CLIP_PRESETS.map((p) => {
+      ? [
+          ...CLONE_CLIP_SEEDS.map((s) => ({
+            category: s.category,
+            perLanguage: [{ language: voice.languageOverride ?? 'ko', entries: s.seeds }],
+          })),
+          // 보충 — 요청된 묶음 중 공개된 것만(스펙 §5-4 「클론은 고른 것만 보충한다」).
+          ...CLONE_CONTENT_SUPPLEMENTS.filter(
+            (s) => (voice.contentSets ?? []).includes(s.setId) && released.has(s.setId),
+          ).map((s) => ({
+            category: s.category,
+            perLanguage: [{ language: voice.languageOverride ?? 'ko', entries: s.seeds }],
+          })),
+        ]
+      : STOCK_CLIP_PRESETS.filter((p) => stockCategoryReleased(p.category, released)).map((p) => {
           const texts = p.texts as Record<string, readonly string[]>;
           const languages = voice.languageOverride ? [voice.languageOverride] : Object.keys(texts);
           return {
@@ -663,10 +797,14 @@ export async function findMissingStockTargets(
  */
 const FIRST_USE_CATEGORY_ORDER: readonly string[] = [
   STOCK_GREETING_CATEGORY,
+  // 기본 목소리의 기상 인사(스펙 §5-4) — 공개 뒤 기본 목소리의 '처음 폴백' 테마다.
+  'wake',
   'medication',
   'weather',
   'cheer',
   'fortune',
+  // 클론 보충(스펙 §5-4) — 기본 세트 뒤에 조용히 채운다.
+  ...CLONE_SUPPLEMENT_CATEGORIES,
 ];
 
 function sortTargetsByFirstUse(targets: StockClipTarget[]): StockClipTarget[] {
@@ -697,6 +835,84 @@ export async function enqueuePrerender(
           ON CONFLICT(voice_profile_id) DO NOTHING`,
     args: [voiceProfileId, ownerUserId, normalizeSynthesisLanguage(language)],
   });
+}
+
+export type CloneSupplementRequestResult =
+  | 'queued'
+  | 'requested'
+  | 'already_complete'
+  | 'not_released'
+  | 'no_supplement'
+  | 'no_queue';
+
+/**
+ * **클론 보충을 요청한다**(스펙 §5-4 「클론은 고른 것만 보충한다」). 사용자가 그 클론으로 그 테마 알람을 저장한 뒤
+ * 앱이 알린다(`POST /voice/:id/content-supplement` — `routes/voice-profile.ts`). 기존 프로필 전체를 한꺼번에 다시 굽지 않는 것이
+ * 이 함수의 존재 이유다.
+ *
+ * - 그 테마의 보충 묶음이 공개됐을 때만 한다(`not_released`).
+ * - 그 언어로 이미 다 있으면 아무것도 하지 않는다(`already_complete`).
+ * - 끝난 큐(`done`)는 **보충 회차**(`supplement = 1`)로 다시 연다(`queued`). 진행 중·실패한 큐는 묶음만 적는다
+ *   (`requested`) — 진행 중이면 그 회차가 함께 굽고, 실패면 사용자가 다시 시도할 때 함께 굽는다.
+ * - 직접 입력 장부는 건드리지 않는다 — 사전렌더는 횟수를 차감하지 않는다.
+ *
+ * ⚠ 큐의 새 컬럼(#143)을 쓰는 경로다. 배포 창에는 던진다 — 라우트가 500 으로 답하고, 앱은 알람 저장을 이미 끝냈으므로 이
+ *   실패를 기다리지 않는다. 다음 응원 저장이 다시 요청한다(잃는 것은 보충이 한 번 늦는 것뿐이다).
+ */
+export async function requestCloneContentSupplement(
+  db: Pick<DbExecutor, 'execute'>,
+  params: { voiceProfileId: string; ownerUserId: string; theme: string },
+): Promise<CloneSupplementRequestResult> {
+  const supplements = CLONE_CONTENT_SUPPLEMENTS.filter((s) => s.theme === params.theme);
+  if (supplements.length === 0) return 'no_supplement';
+  const released = await releasedStockContentSets(db);
+  const live = supplements.filter((s) => released.has(s.setId));
+  if (live.length === 0) return 'not_released';
+
+  const queueRes = await db.execute({
+    sql: `SELECT status, language, content_sets FROM voice_prerender_queue
+          WHERE voice_profile_id = ? AND owner_user_id = ?`,
+    args: [params.voiceProfileId, params.ownerUserId],
+  });
+  const queue = queueRes.rows[0];
+  if (!queue) return 'no_queue';
+  const status = String(queue.status ?? '');
+  const language = normalizeSynthesisLanguage(String(queue.language ?? 'ko'));
+  const requested = parseContentSets(queue.content_sets);
+
+  // 그 언어로 이미 다 있는 묶음은 빼고 본다.
+  const incomplete: CloneContentSupplement[] = [];
+  for (const supplement of live) {
+    const countRes = await db.execute({
+      sql: `SELECT COUNT(DISTINCT variant) AS count FROM messages
+            WHERE voice_profile_id = ? AND category = ? AND language = ?
+              AND COALESCE(is_preset, 0) = 1 AND retired_at IS NULL AND audio_url IS NOT NULL
+              AND variant >= 0 AND variant < ?`,
+      args: [params.voiceProfileId, supplement.category, language, supplement.seeds.length],
+    });
+    if (Number(countRes.rows[0]?.count ?? 0) < supplement.seeds.length) incomplete.push(supplement);
+  }
+  if (incomplete.length === 0) return 'already_complete';
+
+  const merged = JSON.stringify([...new Set([...requested, ...incomplete.map((s) => s.setId)])]);
+  if (status === 'done') {
+    // 비교 후 교체 — 읽은 뒤 다른 회차가 큐를 바꿨으면(교체·재시도) 이 요청은 묶음만 적는 갈래로 다시 온다.
+    const reopened = await db.execute({
+      sql: `UPDATE voice_prerender_queue
+            SET content_sets = ?, status = 'pending', supplement = 1, refresh_existing = 0, attempts = 0,
+                claimed_at = NULL, claim_token = NULL,
+                requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now'), updated_at = datetime('now')
+            WHERE voice_profile_id = ? AND owner_user_id = ? AND status = 'done'`,
+      args: [merged, params.voiceProfileId, params.ownerUserId],
+    });
+    if ((reopened.rowsAffected ?? 0) > 0) return 'queued';
+  }
+  await db.execute({
+    sql: `UPDATE voice_prerender_queue SET content_sets = ?, updated_at = datetime('now')
+          WHERE voice_profile_id = ? AND owner_user_id = ?`,
+    args: [merged, params.voiceProfileId, params.ownerUserId],
+  });
+  return 'requested';
 }
 
 /**
@@ -781,12 +997,14 @@ export async function claimPendingPrerenderVoices(
                   AND spv.speech_style_status = 'pending'
                   AND datetime(spv.updated_at) > datetime('now', ?)
               )
-            ORDER BY refresh_existing ASC, requested_at ASC
+            -- 보충 회차(supplement = 1, 스펙 §5-4)는 맨 뒤다 — 이미 울릴 클립이 다 있고 더할 뿐이라, 새 등록과
+            -- 다시 굽는 회차가 남긴 몫만 쓴다.
+            ORDER BY supplement ASC, refresh_existing ASC, requested_at ASC
             LIMIT ?
           )
             AND status = 'pending'
             AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
-          RETURNING voice_profile_id, owner_user_id, language, claim_token, refresh_existing,
+          RETURNING voice_profile_id, owner_user_id, language, claim_token, refresh_existing, supplement,
                     julianday(requested_at) AS requested_order`,
     args: [claimToken, SPEECH_STYLE_ANALYSIS_WAIT_SQL, Math.max(1, Math.min(Math.trunc(limit), 50))],
   });
@@ -795,13 +1013,17 @@ export async function claimPendingPrerenderVoices(
   //   몫을 다 쓰고 새 등록은 진전 없이 반납된다.
   const order = (row: (typeof res.rows)[number]) => {
     const requested = Number(row.requested_order);
-    return [Number(row.refresh_existing ?? 0), Number.isFinite(requested) ? requested : Number.MAX_VALUE] as const;
+    return [
+      Number(row.supplement ?? 0),
+      Number(row.refresh_existing ?? 0),
+      Number.isFinite(requested) ? requested : Number.MAX_VALUE,
+    ] as const;
   };
   return [...res.rows]
     .sort((a, b) => {
-      const [refreshA, requestedA] = order(a);
-      const [refreshB, requestedB] = order(b);
-      return refreshA - refreshB || requestedA - requestedB;
+      const [supplementA, refreshA, requestedA] = order(a);
+      const [supplementB, refreshB, requestedB] = order(b);
+      return supplementA - supplementB || refreshA - refreshB || requestedA - requestedB;
     })
     .map((row) => ({
       voiceProfileId: String(row.voice_profile_id),
@@ -809,6 +1031,7 @@ export async function claimPendingPrerenderVoices(
       language: String(row.language),
       claimToken: String(row.claim_token),
       refreshExisting: Number(row.refresh_existing ?? 0) === 1,
+      supplement: Number(row.supplement ?? 0) === 1,
     }));
 }
 
@@ -819,6 +1042,8 @@ export type PrerenderClaim = {
   readonly claimToken: string;
   /** 목소리 교체 회차 — 기존 preset 을 건너뛰지 않고 덮어쓴다. */
   readonly refreshExisting: boolean;
+  /** 보충 회차(스펙 §5-4) — 기본 세트는 이미 다 있다. 끝나면 기기를 깨워 새 클립을 받게 한다. */
+  readonly supplement?: boolean;
 };
 
 export async function releasePrerenderClaim(
@@ -841,8 +1066,9 @@ export async function markPrerenderDone(
   claimToken: string,
 ): Promise<void> {
   await db.execute({
+    // 보충 표시(#143)도 함께 내린다 — 다음 회차가 보충이 아니면(교체·재시도) 그 회차는 보통 우선순위로 선다.
     sql: `UPDATE voice_prerender_queue
-          SET status = 'done', claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
+          SET status = 'done', supplement = 0, claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
           WHERE voice_profile_id = ? AND status = 'pending' AND claim_token = ?`,
     args: [voiceProfileId, claimToken],
   });
@@ -857,7 +1083,13 @@ export async function notifyVoicePrerenderComplete(
   await sendVoiceShareChangedPush(db, env, [ownerUserId]);
 }
 
-/** 사전렌더 실패 1회 기록. attempts 상한(5) 초과 시 failed 로 내려 무한 재시도를 막는다. */
+/**
+ * 사전렌더 실패 1회 기록. attempts 상한(5) 초과 시 failed 로 내려 무한 재시도를 막는다.
+ *
+ * ⚠ **보충 회차는 `failed` 로 내리지 않는다**(스펙 §5-4). 기본 세트는 이미 다 있는데 `failed` 로 두면 두 앱이 그 목소리를
+ *   '만들다 실패' 로 보고 다시 시도를 띄운다. 상한에 닿으면 `done` 으로 접고 보충 표시를 내린다 — 다음 응원 저장이
+ *   다시 요청한다(`requestCloneContentSupplement`). SQLite 의 SET 은 모두 갱신 전 값을 읽는다.
+ */
 export async function markPrerenderFailed(
   db: Client,
   voiceProfileId: string,
@@ -865,8 +1097,12 @@ export async function markPrerenderFailed(
 ): Promise<void> {
   await db.execute({
     sql: `UPDATE voice_prerender_queue
-          SET attempts = attempts + 1,
-              status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'pending' END,
+          SET attempts = CASE WHEN attempts + 1 >= 5 AND supplement = 1 THEN 0 ELSE attempts + 1 END,
+              status = CASE
+                WHEN attempts + 1 >= 5 THEN CASE WHEN supplement = 1 THEN 'done' ELSE 'failed' END
+                ELSE 'pending'
+              END,
+              supplement = CASE WHEN attempts + 1 >= 5 THEN 0 ELSE supplement END,
               claimed_at = NULL,
               claim_token = NULL,
               updated_at = datetime('now')
@@ -952,11 +1188,13 @@ export async function runPrerenderBatch(
   /** 이번 틱에 쓴 몫 — 클립 수와 같되, 높이를 굽는 클립은 둘로 센다(아래 `clipCost`). */
   let budgetUsed = 0;
   let subrequestExhausted = false;
+  /** dev 월 예산이 모자라 이 틱을 멈췄다(`PrerenderBudgetDeferredError`) — 남은 목소리의 임대는 만료가 회수한다. */
+  let budgetDeferred = false;
   // ⚠ **잡은 순서로** 돈다(`claimPendingPrerenderVoices` — 새 등록 먼저). `cloneVoices` 는 조회 순서(id 순)라 그대로
   //   돌면 다시 굽는 회차가 새 등록보다 먼저 몫을 쓴다.
   const voiceById = new Map(cloneVoices.map((voice) => [voice.id, voice]));
   for (const claim of claimed) {
-    if (subrequestExhausted) break;
+    if (subrequestExhausted || budgetDeferred) break;
     const voice = voiceById.get(claim.voiceProfileId);
     if (!voice) continue;
     if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
@@ -972,7 +1210,7 @@ export async function runPrerenderBatch(
     const targets = await findMissingStockTargets(db, [voice], claim.refreshExisting);
     if (targets.length === 0) {
       await markPrerenderDone(db, voice.id, claim.claimToken);
-      if (claim.refreshExisting) {
+      if (claim.refreshExisting || claim.supplement) {
         await notifyVoicePrerenderComplete(db, env, claim.ownerUserId);
       }
       continue;
@@ -998,6 +1236,13 @@ export async function runPrerenderBatch(
           // 더 새 교체가 이미 이겼다 — 이 목소리의 남은 대상도 전부 옛 목소리로 만들 것이라
           // 통째로 버린다. **실패가 아니므로** attempts 를 올리지 않고 관측자에게도 안 보낸다.
           superseded = true;
+          break;
+        }
+        if (genErr instanceof PrerenderBudgetDeferredError) {
+          // dev 월 예산이 모자라다 — 실패가 아니라 미룬 것이다. 임대만 반납하고(아래 superseded 갈래와 같이) 이 틱을 끝낸다.
+          // 다음 목소리도 같은 장부를 보므로 더 돌지 않는다.
+          superseded = true;
+          budgetDeferred = true;
           break;
         }
         options.onClipError?.(genErr, {
@@ -1026,7 +1271,7 @@ export async function runPrerenderBatch(
     // 재조회 없이 판정: 이번 배치에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.
     if (voiceRendered === targets.length && !voiceError) {
       await markPrerenderDone(db, voice.id, claim.claimToken);
-      if (claim.refreshExisting) {
+      if (claim.refreshExisting || claim.supplement) {
         await notifyVoicePrerenderComplete(db, env, claim.ownerUserId);
       }
     } else if (voiceError && voiceRendered === 0) {
@@ -1100,14 +1345,7 @@ export async function deleteStockClips(
   }
 
   const ph = ids.map(() => '?').join(',');
-  // 이 클립을 쓰던 알람은 음성 떼고 sound-only 로 (FK·런타임 안전).
-  await db.execute({
-    sql: `UPDATE alarms
-          SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-              message_id = NULL, voice_profile_id = NULL
-          WHERE message_id IN (${ph})`,
-    args: ids,
-  });
+  // 서버에는 알람 행이 없다(#147) — 이 클립을 물던 기기의 알람은 매니페스트에서 빠진 것을 보고 다시 묶는다.
   await db.execute({ sql: `DELETE FROM message_library WHERE message_id IN (${ph})`, args: ids });
   await db.execute({
     sql: `DELETE FROM generated_audio_assets WHERE message_id IN (${ph})`,
@@ -1145,6 +1383,20 @@ export function systemStockTexts(baseText: string): {
  * 내려앉지만, 이건 "그 사이 더 새 교체가 큐를 가져갔다" 는 뜻이라 이 회차만 버리면 된다.
  * 큐는 새 주인의 것이므로 done/failed 로 끝내지 말고 **아무것도 하지 않고 물러난다.**
  */
+/**
+ * **dev 월 합성 예산이 이 클립의 글자를 못 받는다 — 굽지 않고 남겼다**(`docs/spec/tts-render-and-budget.md` §3).
+ *
+ * 실패가 아니다 — attempts 를 올리지 않고 큐에 그대로 둔다(예산을 올리거나 다음 달에 이어 굽는다). 같은 회차의 남은 클립도
+ * 같은 장부를 보므로 거기서 멈춘다. 예산은 **실제로 보낼 글자**로 본다 — 회차 앞에서 '한 글자라도 남았나' 만 보면 열 클립이
+ * 통째로 들어가 상한을 크게 넘겼다(코덱스 #954). 운영이거나 예산을 정하지 않았으면 DB 를 부르지 않고 통과한다.
+ */
+export class PrerenderBudgetDeferredError extends Error {
+  constructor(message = 'Voice prerender deferred: the dev synthesis budget cannot cover this clip.') {
+    super(message);
+    this.name = 'PrerenderBudgetDeferredError';
+  }
+}
+
 export class PrerenderSupersededError extends Error {
   constructor(message = 'Voice prerender render was superseded by a newer replacement.') {
     super(message);
@@ -1169,19 +1421,16 @@ export interface LegacyBucketHint {
  * 무엇으로 갈아탈지는 **서버가 이미 안다** — 그 알람이 문 message 의 `category` 다.
  * 앱에 다시 물을 필요가 없어서 매니페스트에 실어 보낸다.
  *
- * ⚠ **서버 알람 행만 보면 부족하다**(2026-09-03 리뷰 15차). 아직 서버에 올라가지 않은
- *   알람(`LOCAL_ONLY`·`FAILED`)은 조인에 걸리지 않아 힌트를 못 받고, 그 알람은 **영영**
- *   옛 목소리로 운다. 그래서 **은퇴한 시스템 스톡 프리셋**도 함께 준다 — 힌트가 필요한
- *   알람이 가리키는 것이 정확히 그 집합이다.
- *   시스템 스톡은 전역 카탈로그(소유자가 `SYSTEM_VOICE_LIBRARY_USER_ID`)라 남의 개인정보가
- *   아니고, 은퇴한 것만 담으므로 무한정 늘지 않는다(상한도 둔다).
- * ⚠ **호출자 알람 갈래는 그대로 본인 것만**이다(IDOR). id 를 받지 않으므로 남의 알람을
- *   지목할 방법 자체가 없다.
- * ⚠ **`greeting` 은 버킷이 아니다** — 목소리 미리듣기용 자기소개라 알람 테마가 될 수 없고,
- *   서버도 시스템 보이스+greeting 을 `INVALID_BUCKET_ID` 로 거절한다. 힌트로 주면 앱이
- *   그 값을 `bucketId` 에 적고, 그 알람은 저장할 때마다 400 을 맞는다.
- * ⚠ **은퇴 여부를 보지 않는다.** 힌트가 필요한 알람은 정확히 '은퇴한 클립을 물고 있는'
- *   알람이므로, 여기서 `retired_at IS NULL` 을 걸면 아무것도 안 나온다.
+ * **기본 목소리의 무료 테마 프리셋을 준다 — 지금 것(①)과 은퇴한 것(②)**(2026-10-29 — 서버 알람 사본을 지웠다, #147).
+ *   예전 ①은 그 사용자의 서버 알람이 문 클립이었다. 사본이 없으니 누가 무엇을 무는지 모른다 — 그래서 ①이 고를 수 있던 전부를
+ *   준다. ⚠ **① 을 빼지 말 것 — 옛 앱(1.2.16)은 힌트를 이 칸에서만 읽는다**(코덱스 #977). 1.3 앱은 매니페스트의 클립 목록에서
+ *   스스로 만들어 합치므로(안드로이드 `legacyBucketHintsOf`, iOS `VoiceStudioViewModel.legacyBucketHints(from:)`) ①은 1.3 강제
+ *   업데이트(`lib/app-version.ts` 의 `minSupported`) 뒤에 지운다. 서버에서만 올 수 있는 것은 목록에서 빠진 ②뿐이다.
+ *   시스템 스톡은 전역 카탈로그(소유자가 `SYSTEM_VOICE_LIBRARY_USER_ID`)라 남의 개인정보가 아니다. ①은 목록 크기를 넘지
+ *   않고, ②는 상한을 둔다.
+ * ⚠ **`greeting` 은 버킷이 아니다** — 목소리 미리듣기용 자기소개라 알람 테마가 될 수 없다
+ *   (`FREE_BUCKET_CATEGORIES` 로 거른다). 힌트로 주면 앱이 그 값을 `bucketId` 에 적고 그 알람이 소개 문구로 운다.
+ *   앱이 목록에서 만드는 힌트도 같은 이유로 무료 테마만 담는다(`FreeBucketOrder` / `FreeBucket.order`).
  */
 /**
  * `messages.retired_at`(#110)이 이미 있는가. **읽기 경로의 배포 창 방어에만 쓴다.**
@@ -1236,10 +1485,20 @@ export async function prerenderRefreshColumnReady(db: DbExecutor): Promise<boole
   return prerenderRefreshColumnReadyFlag;
 }
 
-export async function findLegacyBucketHints(
-  db: Client,
-  userPk: string,
-): Promise<LegacyBucketHint[]> {
+/**
+ * `voice_prerender_queue.supplement`(#143)이 이미 있는가. 규약은 위 `prerenderRefreshColumnReady` 와 같다 —
+ * **읽기 경로의 배포 창 방어에만 쓴다**(`GET /voice/:id/prerender-status`). 컬럼이 없으면 보충 회차 자체가 존재할 수
+ * 없으므로(그 값을 1 로 적는 경로가 아직 마이그레이션 전이다) '보충이면 done 으로 답한다' 를 빼도 결과가 같다.
+ */
+let prerenderSupplementColumnReadyFlag = false;
+export async function prerenderSupplementColumnReady(db: DbExecutor): Promise<boolean> {
+  if (prerenderSupplementColumnReadyFlag) return true;
+  const columns = await db.execute({ sql: "PRAGMA table_info('voice_prerender_queue')", args: [] });
+  prerenderSupplementColumnReadyFlag = columns.rows.some((row) => String(row.name) === 'supplement');
+  return prerenderSupplementColumnReadyFlag;
+}
+
+export async function findLegacyBucketHints(db: Client): Promise<LegacyBucketHint[]> {
   const categories = [...FREE_BUCKET_CATEGORIES];
   const placeholders = categories.map(() => '?').join(', ');
   // 은퇴 프리셋 갈래의 상한. 교체 회차 하나가 (버킷 4종 × 목소리 4 × 언어 3) ≈ 228개다.
@@ -1248,46 +1507,33 @@ export async function findLegacyBucketHints(
   const RETIRED_HINT_LIMIT = 400;
   // ⚠ **배포 창에는 `retired_at` 이 없다**(#110, CLAUDE.md 「배포가 마이그레이션보다 먼저」).
   //   그냥 참조하면 매니페스트 응답이 통째로 500 이 된다 — 읽기 경로라 그럴 이유가 없다.
-  //   컬럼이 없으면 ② 갈래를 통째로 뺀다.
+  //   컬럼이 없으면 줄 힌트가 없다(은퇴한 행도 없다).
   //   ⚠ 프로브와 아래 조회는 **각각 왕복**이라, 그 사이에 마이그레이션이 끝나면 이미
   //   은퇴한 클립이 한 번 더 목록에 실릴 수 있다. 받아들이는 이유는 그 응답이 같은 창에서
   //   조금 전에 보낸 것과 **글자 그대로 같기** 때문이다(#110 은 행을 표시만 하고 새로 만들지
   //   않는다). 재바인더가 다음 회차의 `liveKeys` 로 갈아탄다 — 그게 원래 설계다.
   //   이 동등성을 **쓰기 경로나 과다 목록에 안전하지 않은 소비자에 기대지 말 것.**
-  const retiredReady = await messagesRetiredColumnReady(db);
-  const retiredArm = retiredReady
-    ? `UNION
-            -- ② 은퇴한 시스템 스톡 전부(아직 서버에 안 올라간 로컬 알람이 이걸 가리킨다)
-            SELECT m.id, m.category, m.language, 1 AS ord, m.retired_at
-              FROM messages m
-              JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-             WHERE m.retired_at IS NOT NULL
-               AND COALESCE(m.is_preset, 0) = 1
-               AND COALESCE(vp.is_system, 0) = 1
-               AND m.category IN (${placeholders})`
-    : '';
-  const result = await db.execute({
-    sql: `SELECT message_id, category, language FROM (
-            -- ① 이 사용자의 서버 알람이 가리키는 것(버킷이 비어 있는 옛 행)
-            SELECT a.message_id AS message_id, m.category AS category, m.language AS language,
-                   0 AS ord, NULL AS retired_at
-              FROM alarms a
-              JOIN messages m ON m.id = a.message_id
-              JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-             WHERE a.user_id = ?
-               AND (a.bucket_id IS NULL OR TRIM(a.bucket_id) = '')
-               AND COALESCE(m.is_preset, 0) = 1
-               AND COALESCE(vp.is_system, 0) = 1
-               AND m.category IN (${placeholders})
-            ${retiredArm}
-          )
-          ORDER BY ord ASC, retired_at DESC
-          LIMIT ?`,
-    args: retiredReady
-      ? [userPk, ...categories, ...categories, RETIRED_HINT_LIMIT]
-      : [userPk, ...categories, RETIRED_HINT_LIMIT],
+  const systemPresets = `SELECT m.id AS message_id, m.category AS category, m.language AS language
+            FROM messages m
+            JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+           WHERE COALESCE(m.is_preset, 0) = 1
+             AND COALESCE(vp.is_system, 0) = 1
+             AND m.category IN (${placeholders})`;
+  // ① 지금 쓰는 것(옛 앱용 — 위 머리말). 컬럼이 없으면(배포 창) 전부가 지금 것이다.
+  const active = await db.execute({
+    sql: `${systemPresets} ${await retiredIsNullClause(db)} ORDER BY m.category, m.language, m.id`,
+    args: categories,
   });
-  return result.rows.map((row) => ({
+  // ② 은퇴한 것 — 최근 것부터 상한까지. 컬럼이 없으면(배포 창) 은퇴한 행도 없다.
+  const retired = (await messagesRetiredColumnReady(db))
+    ? (
+        await db.execute({
+          sql: `${systemPresets} AND m.retired_at IS NOT NULL ORDER BY m.retired_at DESC LIMIT ?`,
+          args: [...categories, RETIRED_HINT_LIMIT],
+        })
+      ).rows
+    : [];
+  return [...active.rows, ...retired].map((row) => ({
     messageId: String(row.message_id),
     category: String(row.category),
     language: String(row.language ?? 'ko'),
@@ -1387,7 +1633,17 @@ export async function generateStockClip(
     loudnessBoostDb: attempt.loudnessBoostDb,
   });
 
-  const generated = await attempt.synthesize();
+  // dev 월 예산은 **이 클립이 보낼 글자**로 본다 — 모자라면 굽지 않고 남긴다(`PrerenderBudgetDeferredError`). 회차 앞의
+  // 확인만으로는 한 회차가 통째로 들어가고, 요청이 부르는 사전렌더(`routes/voice-profile.ts`)는 그 확인을 거치지 않았다.
+  //   몫은 **먼저 잡는다** — 겹치는 회차·요청이 같은 남은 몫을 함께 쓰지 않게(`holdDevBudget`). 합성이 끝나면 놓는다.
+  const budget = await holdDevBudget(db, env, speechCharacters(synthesisText));
+  if (!budget.ok) throw new PrerenderBudgetDeferredError();
+
+  // 합성 한 번을 장부에 적는다(성공·실패·글자·지연 — `lib/tts-usage.ts`). 원장에는 이 렌더의 지문을 함께 적는다.
+  const generated = await measureSynthesis(db, { kind: 'stock_prerender', text: synthesisText }, () =>
+    attempt.synthesize(),
+  ).finally(() => releaseDevBudget(db, budget.holdId));
+  const stamp = await renderStamp(serverRenderSettings({ ...attempt, language }));
   const bytes = generated.bytes;
   await assertCloneAuthorization();
 
@@ -1589,13 +1845,15 @@ export async function generateStockClip(
         // ⚠ **같은 해시면 게시 시각만 올린다**(Codex #802). 말투 재렌더는 보이스가 같아, 모델이 우연히 같은
         // 문장을 내면 해시가 같다 — 무시하면 대장의 게시 시각이 요청 전 그대로라 이 클립이 영영 '빠진 것'
         // 으로 세어지고 매 회차 다시 합성된다(큐가 끝나지 않는다). 연결(`message_id`)은 건드리지 않는다.
+        // 렌더 지문(#139)도 함께 — 같은 해시면 지문도 이번 렌더 것으로 올린다(바이트가 이번 렌더다).
         await tx.execute({
           sql: `INSERT INTO generated_audio_assets
                 (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                  model_id, language, request_hash, text,
-                 audio_url, audio_object_key, audio_format, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))
-                ON CONFLICT(request_hash) DO UPDATE SET created_at = excluded.created_at`,
+                 audio_url, audio_object_key, audio_format, render_fingerprint, render_revision, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))
+                ON CONFLICT(request_hash) DO UPDATE SET created_at = excluded.created_at,
+                  render_fingerprint = excluded.render_fingerprint, render_revision = excluded.render_revision`,
           args: [
             crypto.randomUUID(),
             target.ownerUserId,
@@ -1610,6 +1868,8 @@ export async function generateStockClip(
             audioUrl,
             audioObjectKey,
             generated.outputFormat,
+            stamp.fingerprint,
+            stamp.revision,
           ],
         });
         await claimKeyFromDeletionQueue(tx);
@@ -1643,8 +1903,8 @@ export async function generateStockClip(
       sql: `INSERT OR IGNORE INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
-             audio_url, audio_object_key, audio_format, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
+             audio_url, audio_object_key, audio_format, render_fingerprint, render_revision, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
       args: [
         crypto.randomUUID(),
         target.ownerUserId,
@@ -1659,6 +1919,8 @@ export async function generateStockClip(
         audioUrl,
         audioObjectKey,
         generated.outputFormat,
+        stamp.fingerprint,
+        stamp.revision,
       ],
     });
     await claimKeyFromDeletionQueue(tx);

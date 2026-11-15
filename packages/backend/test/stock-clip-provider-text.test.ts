@@ -77,7 +77,7 @@ describe('generateStockClip — 합성 글자와 바이트를 가공하지 않�
           id TEXT PRIMARY KEY, user_id TEXT, voice_profile_id TEXT, message_id TEXT,
           provider TEXT, provider_voice_id TEXT, model_id TEXT, language TEXT,
           request_hash TEXT UNIQUE, text TEXT, audio_url TEXT, audio_object_key TEXT,
-          audio_format TEXT, created_at TEXT
+          render_fingerprint TEXT, render_revision TEXT, logical_key TEXT, audio_format TEXT, created_at TEXT
         );
         CREATE TABLE pending_external_deletions (
           id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL, created_at TEXT,
@@ -109,8 +109,24 @@ describe('generateStockClip — 합성 글자와 바이트를 가공하지 않�
       const row = (await db.execute('SELECT text, synthesis_text, audio_url FROM messages')).rows[0]!;
       expect(clip.text).toBe(text);
       expect(row.synthesis_text).toBe(text);
-      const ledger = (await db.execute('SELECT request_hash, model_id FROM generated_audio_assets')).rows[0]!;
+      const ledger = (
+        await db.execute('SELECT request_hash, model_id, render_fingerprint, render_revision FROM generated_audio_assets')
+      ).rows[0]!;
       expect(ledger.model_id).toBe('eleven_v4_turbo');
+      // 원장에 이 렌더의 지문과 지금 세대가 적힌다(#139 — `docs/spec/tts-render-and-budget.md` §1).
+      const { currentRenderRevision, renderFingerprint, serverRenderSettings } = await import('../src/lib/render-fingerprint');
+      expect(ledger.render_revision).toBe(await currentRenderRevision());
+      expect(ledger.render_fingerprint).toBe(
+        await renderFingerprint(
+          serverRenderSettings({
+            provider: 'elevenlabs',
+            providerVoiceId: 'el-mina',
+            language: 'ko',
+            pitchSemitones: 0,
+            loudnessBoostDb: TTS_LOUDNESS_BOOST_DB,
+          }),
+        ),
+      );
       // 키는 합성한 그 글자와 합성 갈래가 올린 음량으로 — 게시 스크립트가 같은 식으로 계산한다.
       const keyInput = {
         provider: 'elevenlabs',

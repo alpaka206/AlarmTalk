@@ -1,16 +1,15 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { DELETION_GRACE_DAYS, requestAccountDeletion } from '../lib/account-deletion';
 import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
 import {
   notifyDowngradedAlarms,
   sendAccountDeletionRequestedPush,
-  type DeletedPushTarget,
 } from '../lib/fcm';
-import { withWriteTransaction, withRetryableWriteTransaction } from '../lib/transactions';
+import { withWriteTransaction } from '../lib/transactions';
 import { validateDynamicPromptSettings } from '../lib/dynamic-prompt-settings';
-import { DISPLAY_NAME_MAX_LENGTH, normalizeDisplayName } from '@alarmtalk/shared';
 import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
@@ -28,8 +27,8 @@ const user = new Hono<AppEnv>();
 
 /**
  * PATCH /user/me
- * 본인 프로필(닉네임·문구 설정)을 업데이트한다. 옛 앱이 보내던 가족 알람 설정 키(허용·방해금지 시간)는
- * 받아도 읽지 않는다 — 그 키만 오면 빈 본문과 같다(`NO_FIELDS_TO_UPDATE`).
+ * 본인 문구 설정을 업데이트한다. 옛 앱이 보내던 가족 알람 설정 키(허용·방해금지 시간)는
+ * 받아도 읽지 않는다 — 그 키만 오면 빈 본문과 같다(`NO_FIELDS_TO_UPDATE`). 닉네임(`name`)은 받고 버린다(아래).
  */
 user.patch('/me', async (c) => {
   const userId = c.get('userId');
@@ -47,26 +46,11 @@ user.patch('/me', async (c) => {
 
   const updates: string[] = [];
   const args: (string | number)[] = [];
-  let resolvedName: string | null = null;
   let resolvedDynamicPromptSettings: ReturnType<typeof validateDynamicPromptSettings> = null;
 
-  if ('name' in body && body.name !== undefined) {
-    if (typeof body.name !== 'string') {
-      return c.json({ error: 'name 은 문자열이어야 합니다', error_code: 'INVALID_NAME' }, 400);
-    }
-    // trim 만으로는 부족하다 — 제로폭·양방향 문자는 공백이 아니라서 살아남고, 그대로
-    // 화면·알림에 노출된다. 규칙은 shared 한 곳에서만 정의한다.
-    const trimmed = normalizeDisplayName(body.name);
-    if (trimmed.length === 0 || trimmed.length > DISPLAY_NAME_MAX_LENGTH) {
-      return c.json(
-        { error: '닉네임은 1~30자여야 합니다', error_code: 'INVALID_NAME_LENGTH' },
-        400,
-      );
-    }
-    updates.push('name = ?');
-    args.push(trimmed);
-    resolvedName = trimmed;
-  }
+  // ⚠ **`name` 은 받기만 하고 버린다**(2026-10-29 닉네임 삭제 — `users.name` 칸째 없다). 옛 앱(1.2.16)의 닉네임 수정이 보낸다 —
+  //   거절하면 그 앱이 "바꾸지 못했어요" 를 띄우므로 성공으로 답하고 빈 이름을 돌려준다(그 앱은 이름이 비면 이메일을 보인다).
+  const sentNameOnly = 'name' in body && body.name !== undefined && !('dynamic_prompt_settings' in body && body.dynamic_prompt_settings !== undefined);
 
   if ('dynamic_prompt_settings' in body && body.dynamic_prompt_settings !== undefined) {
     const settings = validateDynamicPromptSettings(body.dynamic_prompt_settings);
@@ -85,6 +69,7 @@ user.patch('/me', async (c) => {
   }
 
   if (updates.length === 0) {
+    if (sentNameOnly) return c.json({ success: true, name: '', dynamic_prompt_settings: null });
     return c.json({ error: '변경할 필드가 없습니다', error_code: 'NO_FIELDS_TO_UPDATE' }, 400);
   }
 
@@ -100,7 +85,8 @@ user.patch('/me', async (c) => {
 
   return c.json({
     success: true,
-    name: resolvedName,
+    // 옛 앱이 읽는 칸 — 이름은 더 저장하지 않는다(위).
+    name: '',
     dynamic_prompt_settings: resolvedDynamicPromptSettings,
   });
 });
@@ -111,7 +97,6 @@ user.patch('/me', async (c) => {
 
 // 동의 설정(ALLOWED/REQUIRED/CURRENT_POLICY_VERSION)과 충족 판정 헬퍼(needsConsent)는
 // lib/consent.ts 로 일원화됐다(라우트 게이트 미들웨어와 공유). 여기서는 import 해 사용한다.
-const DELETION_GRACE_DAYS = 30;
 
 user.post('/consents', async (c) => {
   const userPk = c.get('userIdPK');
@@ -235,9 +220,8 @@ user.post('/consents', async (c) => {
         voiceAccessRevokedUserIds = revocation.voiceAccessRevokedUserIds;
       }
     });
-    // 철회했으면 알람 행을 못 찾았어도 이 계정에 목소리 접근권 상실을 알린다 — 서버에 아직
-    // 동기화되지 않은 로컬 알람은 여기서 안 잡히는데, 발사는 로컬이고 울림 시점 동의 게이트도
-    // 없어 그 기기는 지워진 녹음으로 계속 울린다.
+    // 철회했으면 이 계정에 목소리 접근권 상실을 알린다 — 알람은 기기에만 있고(#147) 발사는 로컬이며 울림 시점 동의
+    // 게이트도 없어, 알리지 않으면 그 기기는 지워진 녹음으로 계속 울린다.
     await notifyDowngradedAlarms(db, c.env, downgradedAlarms, voiceAccessRevokedUserIds);
     return c.json({ success: true, recorded: rows.length });
   } catch (err) {
@@ -379,51 +363,19 @@ user.get('/consents/status', async (c) => {
 user.post('/me/deletion', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
-  const now = new Date();
-  const purgeAt = new Date(now.getTime() + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
   try {
-    // 지우기 전에 읽어 둔 그 계정의 푸시 토큰 — 커밋 뒤 다른 기기에 '탈퇴 신청됨' 신호를 보낸다
-    // (`sendAccountDeletionRequestedPush`). 트랜잭션이 다시 돌면 다시 채운다.
-    let deletedTargets: DeletedPushTarget[] = [];
-    const res = await withRetryableWriteTransaction(db, async (tx) => {
-      deletedTargets = [];
-      const updated = await tx.execute({
-        sql: `UPDATE users
-              SET deletion_status = 'pending_deletion',
-                  deletion_requested_at = ?,
-                  deletion_purge_at = ?,
-                  token_epoch = token_epoch + 1,
-                  updated_at = datetime('now')
-              WHERE google_id = ? OR id = ?`,
-        args: [now.toISOString(), purgeAt.toISOString(), userId, userId],
-      });
-      if (updated.rowsAffected > 0) {
-        const tokens = await tx.execute({
-          sql: `SELECT token, platform FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
-          args: [userId, userId],
-        });
-        deletedTargets = tokens.rows.map((r) => ({
-          token: String(r.token),
-          platform: String(r.platform),
-        }));
-        await tx.execute({
-          sql: `DELETE FROM push_tokens WHERE user_id IN (SELECT id FROM users WHERE google_id = ? OR id = ?)`,
-          args: [userId, userId],
-        });
-      }
-      return updated;
-    });
-    if (res.rowsAffected > 0 && deletedTargets.length > 0) {
+    // 신청 규칙은 `requestAccountDeletion` 한 곳이다 — 카카오 연결 해제 웹훅도 같은 함수를 부른다.
+    const { requested, purgeAt, pushTargets } = await requestAccountDeletion(db, userId, new Date());
+    if (requested && pushTargets.length > 0) {
       // 논블로킹(waitUntil). executionCtx 가 없는 컨텍스트(테스트)에선 접근이 던지므로 생략한다 — 놓쳐도 그 기기의
       // 다음 요청이 403 `ACCOUNT_PENDING_DELETION` 을 받아 같은 정리를 한다.
-      const targets = deletedTargets;
       try {
-        c.executionCtx.waitUntil(sendAccountDeletionRequestedPush(c.env, targets).catch(() => {}));
+        c.executionCtx.waitUntil(sendAccountDeletionRequestedPush(c.env, pushTargets).catch(() => {}));
       } catch {
         // executionCtx 없음
       }
     }
-    if (res.rowsAffected === 0) {
+    if (!requested) {
       return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
     }
     return c.json({

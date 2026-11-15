@@ -62,7 +62,7 @@ enum AlarmTalkLog {
     /// 맡는다 — 401 은 [isHandledAuthFailure], 사용자가 고칠 예상된 거절 목록은 [isExpectedRefusal], 탈퇴 유예 403 은
     /// [isAccountPendingDeletion], 동의 필요 403 은 [isConsentRequired]. 넷 다 기기 사정으로 곧 나아질 실패가 아니라
     /// 뜻이 달라서, 한 판정에 합치면 브레드크럼 category 가 섞인다. 그 밖의 4xx 는 호출부가 `error_code` 를 보고
-    /// 결정한다(`RemoteAlarmSyncViewModel` 의 `CONSENT_REQUIRED` — 워커는 실패가 아니라 동의 대기로 접는다).
+    /// 결정한다(예: `CONSENT_REQUIRED` — 동의 전 자동 요청은 실패가 아니라 동의 대기로 접는다).
     static func isExpectedTransientFailure(_ error: Error) -> Bool {
         if error is CancellationError { return true }
         return errorChainContains(error) { candidate in
@@ -134,7 +134,7 @@ enum AlarmTalkLog {
     /// ⚠ **`AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED`·`VOICE_MONTHLY_CHANGE_LIMIT_REACHED` 를 넣지 말 것.** 1.2.10 의 두
     /// 묶음(같은 코드 다섯 번 제출, 낡은 등록 횟수)은 그 둘이 이슈로 올라와 드러났다 — 시도 상한·월 한도에 닿는 것은
     /// 화면이 사람을 막다른 길로 보냈다는 신호일 수 있다.
-    static let expectedRefusalCodes: Set<String> = ["AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL","CODE_NOT_FOUND"]
+    static let expectedRefusalCodes: Set<String> = ["AUTH_EMAIL_CODE_INVALID","AUTH_EMAIL_CODE_EXPIRED","AUTH_EMAIL_TAKEN","AUTH_EMAIL_SOCIAL"]
 
     /// [expectedRefusalCodes] 의 거절인가 — 원인 사슬의 첫 HTTP 응답이 **4xx** 이고 그 코드가 목록에 있을 때만.
     ///
@@ -257,6 +257,16 @@ enum AlarmTalkLog {
         }
         let status = "HTTP_\(failure.status)"
         return failure.status >= 500 ? ["api_error", status] : ["api_error", status, logKey(of: message)]
+    }
+
+    /// 수치만 싣는 진단 브레드크럼(녹음 품질 판정 등). ⚠ `data` 에 오디오·받아쓰기 원문·경로를 넣지 말 것 — 숫자와
+    /// 판정 코드만이다(스펙 voice-and-message §4-1 「녹음 품질 판정」). 안드로이드 `AlarmTalkLog.breadcrumb` 짝.
+    static func breadcrumb(category: String, event: String, data: [String: Any]) {
+        logger.info("\(event, privacy: .public)")
+        let crumb = Breadcrumb(level: .info, category: category)
+        crumb.message = event
+        crumb.data = data
+        SentrySDK.addBreadcrumb(crumb)
     }
 
     /// 잡아서 처리한 오류를 알린다. 크래시는 SDK 가 알아서 잡는다.

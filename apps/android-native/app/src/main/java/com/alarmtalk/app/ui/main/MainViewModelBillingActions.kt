@@ -188,24 +188,37 @@ internal fun MainViewModel.preloadBilling() {
 // read-only 새로고침은 billingRefreshing 만 올린다 — billingBusy 를 쓰면 패널 진입
 // 직후 구매 버튼이 네트워크 호출이 끝날 때까지 비활성화되는 문제가 있었다.
 private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
-    if (billingRefreshing || billingBusy) return
+    // ⚠ **도는 조회가 있으면 버리지 않고 끝난 뒤 한 번 더 받는다**(2026-10-29 두 앱 비교). 서버가 플랜을 바꾸고 보낸
+    //   `plan_changed` 가 바꾸기 전에 떠난 조회와 겹치면, 예전에는 이 요청이 버려지고 그 조회의 옛 답이 남았다(만료된 구독이
+    //   화면에 유료로 남는다). 결제가 도는 동안(`billingBusy`)은 예전처럼 버린다 — 결제 확인·해지는 끝나며 구독을 다시
+    //   받는다(`refreshBillingAfterMutation`).
+    if (billingRefreshing) {
+        billingRefreshQueued = true
+        return
+    }
+    if (billingBusy) return
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_billing_info)) ?: return
     // ⚠ **표는 요청 전에**(2026-09-02). 예전에는 이 경로에 소유자 가드가 아예 없어,
     // 조회 중 계정이 바뀌면 A 의 구독이 B 의 화면·스냅샷에 실렸다.
     val ticket = accessTicket() ?: return
     billingRefreshing = true
+    val answerSeq = billingAnswers.begin()
     viewModelScope.launch {
         try {
             runCatching {
                 api.getSubscription(authorization)
             }.onSuccess { subscription ->
-                applySubscriptionResponse(ticket, subscription)
+                applySubscriptionResponse(ticket, subscription, answerSeq)
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to load billing", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_billing_info_load_failed))
             }
         } finally {
             billingRefreshing = false
+            if (billingRefreshQueued) {
+                billingRefreshQueued = false
+                refreshBillingData(showMessage = false)
+            }
         }
     }
 }
@@ -215,8 +228,16 @@ private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
  * 조회 중 A→B 전환이면 **A 의 구독이 B 의 스냅샷과 화면에** 실렸다.
  * 문이 거절하면 화면 상태도 건드리지 않는다.
  */
-private fun MainViewModel.applySubscriptionResponse(ticket: AccessTicket, subscription: BillingSubscriptionResponse) {
+private fun MainViewModel.applySubscriptionResponse(
+    ticket: AccessTicket,
+    subscription: BillingSubscriptionResponse,
+    answerSeq: Int,
+) {
+    // ⚠ **앞서 떠난 조회의 답이 늦게 와 새 상태를 덮지 않게 한다**(2026-10-29). 결제 탭 진입 조회가 느린 사이 해지하면, 해지 뒤
+    //   재조회('언제 끝나요')가 먼저 실리고 늦게 온 진입 조회가 '이용 중'·해지 버튼으로 되돌렸다. 더 나중에 떠난 답이 실렸으면 버린다.
+    if (!billingAnswers.isCurrent(answerSeq)) return
     if (saveSubscriptionSnapshot(ticket, subscription) != EntitlementWrite.Applied) return
+    billingAnswers.markApplied(answerSeq)
     subscriptionResponse = subscription
     subscriptionAnsweredThisRun = true
     // 받았던 알람의 2단계는 이용권 답을 기다린다 — 목록·매니페스트보다 늦게 오면 여기서 다시 본다.
@@ -237,6 +258,7 @@ private suspend fun MainViewModel.refreshBillingAfterMutation(
     /** 뮤테이션을 **시작할 때** 뜬 표. 문이 계정·세대를 함께 본다. */
     ticket: AccessTicket?,
 ) {
+    val answerSeq = billingAnswers.begin()
     runCatching {
         api.getSubscription(authorization)
     }.onSuccess { subscription ->
@@ -244,7 +266,7 @@ private suspend fun MainViewModel.refreshBillingAfterMutation(
             Log.i(TAG, "Dropping billing snapshot after $reason: no session ticket")
             return@onSuccess
         }
-        applySubscriptionResponse(ticket, subscription)
+        applySubscriptionResponse(ticket, subscription, answerSeq)
     }.onFailure { error ->
         Log.w(TAG, "Failed to refresh billing after $reason", error)
     }
@@ -466,6 +488,16 @@ internal fun MainViewModel.confirmGooglePurchase(
                 android.util.Log.i("MainViewModel", "Dropping Play confirm result: account changed")
                 return@onSuccess
             }
+            recordStorePurchaseVerified(
+                origin = origin,
+                productId = productId,
+                outcome = if (response.success) {
+                    com.alarmtalk.app.data.UsageEventProps.OUTCOME_SUCCESS
+                } else {
+                    com.alarmtalk.app.data.UsageEventProps.OUTCOME_FAILURE
+                },
+                errorCode = null,
+            )
             if (response.success) {
                 if (showsResult) {
                     message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
@@ -477,6 +509,14 @@ internal fun MainViewModel.confirmGooglePurchase(
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to confirm Play purchase productId=$productId", error)
+            if (error !is kotlinx.coroutines.CancellationException && authSession?.user?.id == ownerUserId) {
+                recordStorePurchaseVerified(
+                    origin = origin,
+                    productId = productId,
+                    outcome = com.alarmtalk.app.data.UsageEventProps.OUTCOME_FAILURE,
+                    errorCode = com.alarmtalk.app.data.UsageEventProps.code(apiErrorCode(error)) ?: "unexpected",
+                )
+            }
             if (showsResult && authSession?.user?.id == ownerUserId) {
                 message = billingFailureMessage(
                     getApplication<android.app.Application>(),
@@ -487,6 +527,33 @@ internal fun MainViewModel.confirmGooglePurchase(
         }
         if (ownsBusy) billingBusy = false
     }
+}
+
+/**
+ * 스토어 구매를 서버가 확인했다(`store_purchase_verified`, `docs/spec/usage-events.md` §7.1). 사용자가 누른 구매·복원만
+ * 적는다 — 앱 시작마다 도는 자동 정합화([PurchaseConfirmOrigin.AutoReconcile])는 구매가 아니다. 조건(`store_offer`)은 이번에
+ * 연 결제 시트의 오퍼로 가르고, 복원은 모른다(`unknown`) — 지어내지 않는다.
+ */
+private fun MainViewModel.recordStorePurchaseVerified(
+    origin: PurchaseConfirmOrigin,
+    productId: String,
+    outcome: String,
+    errorCode: String?,
+) {
+    if (origin == PurchaseConfirmOrigin.AutoReconcile) return
+    val offer = playBilling.lastLaunchedOffer?.takeIf { origin == PurchaseConfirmOrigin.UserPurchase && it.first == productId }?.second
+        ?: com.alarmtalk.app.data.UsageEventProps.OFFER_UNKNOWN
+    com.alarmtalk.app.data.UsageSignals.record(
+        getApplication(),
+        com.alarmtalk.app.data.UsageEvents.STORE_PURCHASE_VERIFIED,
+        props = com.alarmtalk.app.data.UsageEventProps(
+            outcome = outcome,
+            productId = productId,
+            storeOffer = offer,
+            errorCode = errorCode,
+            surface = if (origin == PurchaseConfirmOrigin.UserRestore) "restore" else "purchase",
+        ),
+    )
 }
 
 // 서버가 스토어 구독을 직접 해지하지 못해 사용자를 스토어 구독 관리로 보내야 하는 에러 코드.

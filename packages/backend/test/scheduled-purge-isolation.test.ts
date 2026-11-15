@@ -47,6 +47,8 @@ vi.mock('../src/lib/apple-revoke', () => ({
   appleSignInConfig: () => ({ teamId: 't', keyId: 'k', privateKey: 'p', clientId: 'c' }),
   revokeAppleToken,
 }));
+const unlinkKakaoUser = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('../src/lib/kakao-oauth', () => ({ unlinkKakaoUser }));
 vi.mock('../src/lib/fcm', () => ({
   sendAlarmPush: vi.fn().mockResolvedValue(undefined),
   notifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
@@ -125,6 +127,46 @@ describe('scheduled() — 계정 파기 격리', () => {
     // 애플 연결은 파기가 커밋된 계정만 끊는다(코덱스 #904).
     expect(revokeAppleToken.mock.calls.map((call) => call[1])).toEqual(['apple-rt-2']);
     executeMock.mockImplementation(original);
+  });
+
+  // 카카오 정책: 탈퇴 과정에 연결 해제를 반드시 넣는다(2026-11-14). 애플과 같은 자리 — 파기가 커밋된 계정만.
+  it('카카오 연결은 파기가 커밋된 계정만 끊고, 어드민 키가 없으면 끊지 못한 것을 경보로 올린다', async () => {
+    const original = executeMock.getMockImplementation()!;
+    executeMock.mockImplementation((arg: { sql?: string } | string) => {
+      const sql = typeof arg === 'string' ? arg : (arg.sql ?? '');
+      if (sql.includes("deletion_status = 'pending_deletion'")) {
+        expect(sql).toContain('kakao_id');
+        return Promise.resolve({
+          rows: [
+            { id: 'renewed', google_id: null, apple_refresh_token: null, kakao_id: '111' },
+            { id: 'due', google_id: null, apple_refresh_token: null, kakao_id: '222' },
+          ],
+        });
+      }
+      return original(arg);
+    });
+    const tx = {
+      execute: vi.fn().mockImplementation((arg: { args?: unknown[] }) =>
+        Promise.resolve({ rows: arg.args?.[0] === 'renewed' ? [] : [{ 1: 1 }] }),
+      ),
+    };
+    withWriteTransaction.mockImplementation((_db: unknown, fn: (t: typeof tx) => unknown) => fn(tx));
+    const env = { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' };
+    const at = { scheduledTime: new Date('2026-09-20T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never;
+    try {
+      await worker.scheduled(at, { ...env, KAKAO_ADMIN_KEY: 'admin-key' } as never);
+      expect(unlinkKakaoUser.mock.calls).toEqual([['admin-key', '222']]);
+
+      unlinkKakaoUser.mockClear();
+      captureException.mockClear();
+      await worker.scheduled(at, { ...env, SENTRY_DSN: 'https://k@o.ingest.sentry.io/1' } as never);
+      expect(unlinkKakaoUser).not.toHaveBeenCalled();
+      // 같은 틱의 다른 일도 가짜 DB 위에서 경보를 낼 수 있어 카카오 경보만 고른다.
+      const kakaoAlerts = captureException.mock.calls.filter(([err]) => String(err).includes('KAKAO_ADMIN_KEY unset'));
+      expect(kakaoAlerts).toHaveLength(1);
+    } finally {
+      executeMock.mockImplementation(original);
+    }
   });
 
   it('트랜잭션 안에서 다시 봐서 그 사이 로그인으로 철회된 계정은 지우지 않는다(2026-10-15)', async () => {

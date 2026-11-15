@@ -2,10 +2,11 @@ package com.alarmtalk.app.network
 
 interface AlarmTalkApi :
     AuthApi,
-    RemoteAlarmApi,
     VoiceProfileApi,
     TtsApi,
     BillingApi,
     HolidayApi,
     PushApi,
-    UsageEventApi
+    UsageEventApi,
+    VoicePackApi,
+    AdRewardApi

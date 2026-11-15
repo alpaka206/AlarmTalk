@@ -7,7 +7,6 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.normalizePersonalPromo
 
 internal data class AccessSnapshot(
     val subscriptionResponse: BillingSubscriptionResponse? = null,
@@ -81,8 +80,8 @@ internal data class AccessSnapshot(
     fun withServerUser(user: AuthUser, receivedAtMillis: Long): AccessSnapshot =
         withUserPlan(
             user.plan,
-            normalizePersonalPromo(user.personalPromo)?.endsAt,
-            planAnswerStampMillis(user.personalPromo, receivedAtMillis),
+            limitedPlanEndsAt(user.personalPromo, user.planGrant),
+            planAnswerStampMillis(user.personalPromo, receivedAtMillis, user.planGrant),
         )
 
     /** 캐시된 plan 답의 프로모 표지(`resolvePaidVoiceAccess` 의 `userPlanPromo`). */
@@ -118,12 +117,12 @@ internal data class AccessSnapshot(
             subscriptionResponse = response,
             userPlan = freshPlan ?: userPlan,
             userPlanPromoEndsAt = if (freshPlan != null) {
-                normalizePersonalPromo(response?.personalPromo)?.endsAt
+                limitedPlanEndsAt(response?.personalPromo, response?.planGrant)
             } else {
                 userPlanPromoEndsAt
             },
             userPlanFetchedAtMillis = if (freshPlan != null) {
-                planAnswerStampMillis(response?.personalPromo, receivedAtMillis)
+                planAnswerStampMillis(response?.personalPromo, receivedAtMillis, response?.planGrant)
             } else {
                 userPlanFetchedAtMillis
             },

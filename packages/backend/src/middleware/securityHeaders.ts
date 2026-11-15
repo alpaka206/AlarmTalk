@@ -5,7 +5,11 @@ export async function securityHeadersMiddleware(c: Context, next: Next) {
 
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('X-Frame-Options', 'DENY');
-  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // 관리자 콘솔 화면은 자기 정책(nonce 스크립트·connect-src 'self'·same-origin)을 직접 싣는다
+  // (`lib/admin/ui.ts` 의 `securityHeaders`). 덮어쓰면 화면 안의 fetch 가 전부 막힌다 — 이미 있으면 둔다.
+  const isAdminConsole = c.req.path.startsWith('/admin');
+  const keepRoutePolicy = isAdminConsole && c.res.headers.has('Content-Security-Policy');
+  if (!keepRoutePolicy) c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('X-DNS-Prefetch-Control', 'off');
   c.header('X-Download-Options', 'noopen');
   c.header('X-Permitted-Cross-Domain-Policies', 'none');
@@ -13,14 +17,7 @@ export async function securityHeadersMiddleware(c: Context, next: Next) {
   c.header('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
   // API 는 검색 결과에 나오지 않는다 — 공개 페이지는 랜딩(alarm-talk.com)이다(2026-10-16, Search Console 이 API 루트를 크롤링).
   c.header('X-Robots-Tag', 'noindex, nofollow');
-  // 관리자 콘솔(/admin)은 폼 유효기간 변환용 인라인 script 와 페이지 style 을 쓴다.
-  // Basic 인증으로 보호되고 렌더링 데이터는 escapeHtml 로 이스케이프하므로, 이 경로에만
-  // inline script/style 을 허용한다(그 외 API 응답은 default-src 'none' 유지).
-  const isAdminConsole = c.req.path.startsWith('/admin');
-  c.header(
-    'Content-Security-Policy',
-    isAdminConsole
-      ? "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'none'"
-      : "default-src 'none'; frame-ancestors 'none'",
-  );
+  if (keepRoutePolicy) return;
+  // 그 밖의 /admin 응답(리다이렉트·JSON 오류)과 API 는 스크립트가 없다.
+  c.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
 }

@@ -2,8 +2,9 @@
 // 요청이 실제 워커(인증·동의 미들웨어 포함)와 실제 libSQL 위에서 기대하던 모양의 답을 받는지 본다. 옛 앱은 실패한
 // 응답을 재시도·경고·디코더 실패로 다루므로, 기능을 없앤 자리도 응답의 모양은 지킨다(강제 업데이트가 끝나면 지운다).
 //
-// 라우트 단위 확인(목 DB)은 `alarm-query`·`code`·`billing-query`·`voice-profile` 테스트에 있다. 여기서는 그것들이
+// 라우트 단위 확인(목 DB)은 `alarm-compat`·`code`·`billing-query`·`voice-profile` 테스트에 있다. 여기서는 그것들이
 // 실제 체인에서도 같은지, 그리고 옛 앱이 함께 싣는 옛 칸(`target_user_id`·`is_shared`)이 아무것도 바꾸지 않는지 본다.
+// 서버 알람 사본은 #147 에서 지웠다 — 옛 앱의 알람 올리기는 저장 없이 되돌려 받는다.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient, type Client, type InStatement } from '@libsql/client';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -20,6 +21,8 @@ const db: Client = createClient({ url: `file:${join(directory, 'test.db')}` });
 
 /** 워커가 DB 에 보낸 SQL(트랜잭션 안 포함) — 응답이 DB 를 어디까지 보는지 확인한다. */
 const statements: string[] = [];
+/** 지운 알람 표(#147)를 부른 SQL — 운영에서는 'no such table' 로 500 이다. */
+const alarmTableSql = () => statements.filter((sql) => /\balarms\b/i.test(sql));
 function sqlOf(stmt: InStatement | string): string {
   return typeof stmt === 'string' ? stmt : stmt.sql;
 }
@@ -75,8 +78,6 @@ const V_REP = crypto.randomUUID();
 const V_REP_DRAFT = crypto.randomUUID();
 const M_REP_CUSTOM = crypto.randomUUID();
 const M_REP_PRESET = crypto.randomUUID();
-const A_REP_CUSTOM = crypto.randomUUID();
-const A_REP_PRESET = crypto.randomUUID();
 
 /** 실제로 나간 FCM 메시지(토큰·데이터). 그 밖의 바깥 호출은 실패시켜 드러낸다. */
 const fcmSent: Array<{ token: string; data: Record<string, string> }> = [];
@@ -116,13 +117,13 @@ async function scalar(sql: string, args: Array<string | number> = []): Promise<u
 
 beforeAll(async () => {
   await runMigrations(db);
-  await db.execute(`INSERT INTO users (id, email, name, plan, deletion_status) VALUES
-    ('me','me@t.test','나','plus','active'),
-    ('other','other@t.test','남','plus','active'),
-    ('leaving','leaving@t.test','떠나는 사람','plus','pending_deletion'),
-    ('p1','p1@t.test','등록1','plus','active'),
-    ('p2','p2@t.test','등록2','plus','active'),
-    ('rep','rep@t.test','교체','plus','active')`);
+  await db.execute(`INSERT INTO users (id, email, plan, deletion_status) VALUES
+    ('me','me@t.test','plus','active'),
+    ('other','other@t.test','plus','active'),
+    ('leaving','leaving@t.test','plus','pending_deletion'),
+    ('p1','p1@t.test','plus','active'),
+    ('p2','p2@t.test','plus','active'),
+    ('rep','rep@t.test','plus','active')`);
   for (const user of ['me', 'other', 'leaving', 'p1', 'p2', 'rep']) {
     for (const type of ['terms', 'privacy', 'age14', 'overseas_transfer', 'voice_biometric']) {
       await db.execute({
@@ -146,16 +147,20 @@ beforeAll(async () => {
     args: [V_ME, P1_DRAFT, P2_DRAFT, V_REP, V_REP_DRAFT],
   });
   await db.execute({
-    sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category, is_preset) VALUES
-      (?, 'rep', ?, '내가 쓴 문구', 'custom', 0),
-      (?, 'rep', ?, '기본 인사', 'greeting', 1)`,
+    sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category, is_preset, audio_url) VALUES
+      (?, 'rep', ?, '내가 쓴 문구', 'custom', 0, 'r2://generated-tts/rep/custom.mp3'),
+      (?, 'rep', ?, '기본 인사', 'greeting', 1, 'r2://generated-tts/rep/preset.mp3')`,
     args: [M_REP_CUSTOM, V_REP, M_REP_PRESET, V_REP],
   });
   await db.execute({
-    sql: `INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time, mode) VALUES
-      (?, 'rep', ?, ?, '07:00', 'tts'),
-      (?, 'rep', ?, ?, '07:30', 'tts')`,
-    args: [A_REP_CUSTOM, M_REP_CUSTOM, V_REP, A_REP_PRESET, M_REP_PRESET, V_REP],
+    sql: `INSERT INTO generated_audio_assets
+            (id, user_id, voice_profile_id, message_id, provider, provider_voice_id, model_id,
+             language, request_hash, text, audio_url, audio_object_key) VALUES
+      ('ga-rep-custom', 'rep', ?, ?, 'elevenlabs', 'el-rep-old', 'm', 'ko', 'h-rep-custom', '내가 쓴 문구',
+       'r2://generated-tts/rep/custom.mp3', 'generated-tts/rep/custom.mp3'),
+      ('ga-rep-preset', 'rep', ?, ?, 'elevenlabs', 'el-rep-old', 'm', 'ko', 'h-rep-preset', '기본 인사',
+       'r2://generated-tts/rep/preset.mp3', 'generated-tts/rep/preset.mp3')`,
+    args: [V_REP, M_REP_CUSTOM, V_REP, M_REP_PRESET],
   });
   await db.execute(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES
     ('pt-rep','rep','tok-rep','android'), ('pt-other','other','tok-other','android')`);
@@ -184,65 +189,37 @@ afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-describe('없앤 기능 자리의 호환 응답 — 실제 체인에서도 같은 모양이고 DB 는 인증·동의만 읽는다', () => {
+// 강제 업데이트(안드로이드 36·iOS 14 — `lib/app-version.ts`)로 그 화면이 있는 옛 앱을 막은 뒤 지운 호환 응답(2026-10-26).
+// 이제 다른 없는 경로와 똑같이 코드가 있는 404 다 — 지금 두 앱은 이 경로를 부르지 않는다.
+describe('강제 업데이트 뒤 지운 호환 응답 — 이제 코드가 있는 404', () => {
   const ALARM_ID = '11111111-1111-4111-8111-111111111111';
   it.each([
-    ['GET', '/api/family/groups/current', undefined, 200, { group: null, role: null, members: [] }],
-    ['GET', '/api/billing/vouchers', undefined, 200, { vouchers: [] }],
-    ['GET', '/api/voice/family', undefined, 200, { profiles: [] }],
-    [
-      'GET',
-      '/api/alarm?pagination=cursor&limit=50',
-      undefined,
-      200,
-      { alarms: [], has_more: false, next_cursor: null },
-    ],
-    [
-      'GET',
-      '/api/alarm/declined?since=2026-10-01T00:00:00Z',
-      undefined,
-      200,
-      { alarm_ids: [], revoked_alarm_ids: [], has_more: false },
-    ],
-    ['POST', `/api/alarm/${ALARM_ID}/decline`, undefined, 200, { success: true, declined: true }],
-    [
-      'POST',
-      '/api/code/register',
-      { code: 'INV-AAAA-BBBB-CCCC' },
-      404,
-      { error: 'Code not found', error_code: 'CODE_NOT_FOUND' },
-    ],
-  ] as const)('%s %s', async (method, path, body, status, expected) => {
+    ['GET', '/api/family/groups/current', undefined],
+    ['GET', '/api/billing/vouchers', undefined],
+    ['GET', '/api/voice/family', undefined],
+    ['GET', '/api/alarm?pagination=cursor&limit=50', undefined],
+    ['GET', '/api/alarm/declined?since=2026-10-01T00:00:00Z', undefined],
+    ['POST', `/api/alarm/${ALARM_ID}/decline`, undefined],
+    ['POST', '/api/code/register', { code: 'INV-AAAA-BBBB-CCCC' }],
+  ] as const)('%s %s', async (method, path, body) => {
     const res = await call(method, path, 'me', body);
-    expect(res).toEqual({ status, json: expected });
-    // 인증(users)과 동의(user_consents) 확인 말고는 DB 에 아무것도 묻지 않는다.
-    expect(statements.map((sql) => /\bFROM\s+(\w+)/i.exec(sql)?.[1])).toEqual([
-      'users',
-      'user_consents',
-    ]);
+    expect(res.status).toBe(404);
+    expect(typeof (res.json as { error_code?: unknown }).error_code).toBe('string');
   });
 
-  it('탈퇴 신청 계정은 빈 알람 목록이 아니라 인증 단계의 403 ACCOUNT_PENDING_DELETION 을 받는다', async () => {
-    const res = await call('GET', '/api/alarm?pagination=cursor&limit=50', 'leaving');
-    expect(res).toEqual({
-      status: 403,
-      json: { error: 'Account is scheduled for deletion', error_code: 'ACCOUNT_PENDING_DELETION' },
-    });
-  });
-
-  it('GET /billing/subscription 은 plan.max_members 를 1 로 싣는다 — 옛 iOS 디코더가 요구하는 키', async () => {
+  it('GET /billing/subscription 은 plan.max_members 를 싣지 않는다 — 정원 칸은 DB 에서도 없다', async () => {
     const res = await call('GET', '/api/billing/subscription', 'me');
     expect(res.status).toBe(200);
     expect(res.json.subscription).toMatchObject({ id: 'sub-me', status: 'active' });
-    expect(res.json.plan).toMatchObject({ key: 'personal', plan_type: 'personal', max_members: 1 });
+    expect(res.json.plan).toMatchObject({ key: 'personal', plan_type: 'personal' });
+    expect(res.json.plan).not.toHaveProperty('max_members');
   });
 });
 
 describe('옛 앱이 싣는 가족 알람 칸(target_user_id)', () => {
   it.each(['other', 'no-such-account'])(
-    'POST /alarm 이 남(%s)을 가리키면 403 NOT_CONNECTED — 알람 행이 생기지 않는다',
+    'POST /alarm 이 남(%s)을 가리키면 403 NOT_CONNECTED — 알람 표를 부르지 않는다',
     async (target) => {
-      const before = await scalar('SELECT COUNT(*) FROM alarms');
       const res = await call('POST', '/api/alarm', 'me', {
         time: '07:00',
         repeat_days: [],
@@ -251,11 +228,11 @@ describe('옛 앱이 싣는 가족 알람 칸(target_user_id)', () => {
       });
       expect(res.status).toBe(403);
       expect(res.json.error_code).toBe('NOT_CONNECTED');
-      expect(await scalar('SELECT COUNT(*) FROM alarms')).toBe(before);
+      expect(alarmTableSql()).toEqual([]);
     },
   );
 
-  it('자기 자신을 가리키면 내 알람으로 만들고 응답에 그 칸을 싣지 않는다', async () => {
+  it('자기 자신을 가리키면 받아 되돌려 주고 응답에 그 칸을 싣지 않는다 — 저장하지 않는다', async () => {
     const res = await call('POST', '/api/alarm', 'me', {
       time: '07:10',
       repeat_days: [],
@@ -263,8 +240,10 @@ describe('옛 앱이 싣는 가족 알람 칸(target_user_id)', () => {
       timezone: 'Asia/Seoul',
     });
     expect(res.status).toBe(201);
+    expect(res.json.alarm).toMatchObject({ time: '07:10', timezone: 'Asia/Seoul' });
+    expect(res.json.alarm.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(res.json.alarm).not.toHaveProperty('target_user_id');
-    expect(await scalar('SELECT user_id FROM alarms WHERE id = ?', [res.json.alarm.id])).toBe('me');
+    expect(alarmTableSql()).toEqual([]);
   });
 });
 
@@ -312,7 +291,7 @@ describe('옛 앱이 싣는 목소리 공유 칸(is_shared)은 읽지 않는다'
 });
 
 describe('제자리 교체 — 옛 앱처럼 is_shared 를 실어도 알림은 목소리 주인에게만 간다', () => {
-  it('직접 입력 알람을 내리고 voice_access_revoked(custom_messages)를, 클립 게시가 끝나면 voice_share_changed 를 주인 기기에만 보낸다', async () => {
+  it('직접 입력 음원을 지우고 voice_access_revoked(custom_messages)를, 클립 게시가 끝나면 voice_share_changed 를 주인 기기에만 보낸다', async () => {
     const res = await call('PATCH', `/api/voice/${V_REP_DRAFT}`, 'rep', {
       is_draft: false,
       replace_existing: true,
@@ -327,15 +306,19 @@ describe('제자리 교체 — 옛 앱처럼 is_shared 를 실어도 알림은 �
     const generation = res.json.profile.custom_audio_invalidated_at;
     expect(generation).toEqual(expect.any(String));
 
-    // 직접 입력 알람만 기본 알람음으로 내리고, 프리셋 알람은 새 목소리로 다시 굽힐 때까지 그대로 둔다.
-    const alarms = await db.execute({
-      sql: 'SELECT id, mode, message_id FROM alarms WHERE id IN (?, ?) ORDER BY time',
-      args: [A_REP_CUSTOM, A_REP_PRESET],
-    });
-    expect(alarms.rows.map((row) => [row.id, row.mode, row.message_id])).toEqual([
-      [A_REP_CUSTOM, 'sound-only', null],
-      [A_REP_PRESET, 'tts', M_REP_PRESET],
-    ]);
+    // 서버에는 알람 행이 없다(#147) — 직접 입력 알람은 주인 기기가 이 푸시를 받고 내린다. 서버는 옛 목소리의 직접 입력
+    // 음원을 지우고(키는 삭제 큐로, 원장 행은 삭제) 문구의 참조를 끊는다. 프리셋 음원은 새 목소리로 다시 굽힐 때까지 둔다.
+    expect(alarmTableSql()).toEqual([]);
+    expect(await scalar('SELECT audio_url FROM messages WHERE id = ?', [M_REP_CUSTOM])).toBeNull();
+    expect(await scalar('SELECT audio_url FROM messages WHERE id = ?', [M_REP_PRESET])).toBe(
+      'r2://generated-tts/rep/preset.mp3',
+    );
+    const assets = await db.execute(`SELECT id FROM generated_audio_assets WHERE user_id = 'rep' ORDER BY id`);
+    expect(assets.rows.map((row) => row.id)).toEqual(['ga-rep-preset']);
+    const queued = await db.execute(
+      `SELECT ref FROM pending_external_deletions WHERE kind = 'r2_object' AND ref LIKE 'generated-tts/rep/%'`,
+    );
+    expect(queued.rows.map((row) => row.ref)).toEqual(['generated-tts/rep/custom.mp3']);
     expect(fcmSent).toEqual([
       {
         token: 'tok-rep',

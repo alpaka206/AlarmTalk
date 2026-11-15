@@ -63,6 +63,27 @@ class RemainingDurationLabelTest {
         assertEquals("2일 5시간", remainingDurationLabel(twoDaysFive))
     }
 
+    /**
+     * en·ja 는 ICU `MeasureFormat` 의 SHORT 꼴 그대로다(이 값은 Robolectric SDK 34 의 ICU 자료다). 홈 헤드라인과 알람을 켠
+     * 순간의 하단 안내(`docs/spec/alarm-editor.md` §7)가 같이 쓰는 표기라, 두 앱의 기간 표기를 맞출 때 어느 쪽이
+     * 움직였는지 보이도록 안드로이드 값을 고정해 둔다 — 2026-11-09 리뷰 때 iOS 는 en "9 hours 21 minutes"·ja "9時間21分" 이었다.
+     */
+    @Test
+    @Config(qualifiers = "en")
+    fun 영어는_ICU_짧은_꼴이다() {
+        assertEquals("1 min", remainingDurationLabel(30_000L))
+        assertEquals("9 hr, 21 min", remainingDurationLabel(9 * 60 * 60_000L + 21 * 60_000L))
+        assertEquals("2 days, 3 hr", remainingDurationLabel(2 * 24 * 60 * 60_000L + 3 * 60 * 60_000L))
+    }
+
+    @Test
+    @Config(qualifiers = "ja")
+    fun 일본어는_ICU_짧은_꼴이다() {
+        assertEquals("1 分", remainingDurationLabel(30_000L))
+        assertEquals("9 時間 21 分", remainingDurationLabel(9 * 60 * 60_000L + 21 * 60_000L))
+        assertEquals("2 日 3 時間", remainingDurationLabel(2 * 24 * 60 * 60_000L + 3 * 60 * 60_000L))
+    }
+
     @Test
     fun 초가_붙은_알람은_한_칸_커진다() {
         // ⚠ 다시 울림은 "지금부터 5분" 이라 초가 0이 아니다(`AlarmRepository.snooze`).

@@ -8,7 +8,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * 이용권 화면 **개인 카드의 기능 문구**를 지킨다(2026-09-30).
+ * 이용권 화면 **카드의 기능 문구**를 지킨다(2026-09-30, 직접 입력 횟수 줄은 2026-10-26).
  *
  * 개인 카드는 "날씨·운세 등 매일 다른 문구" 라고 적었는데 둘 다 사실이 아니었다:
  *  - 날씨·운세·응원·약 문구는 **기본 목소리로 무료**다 — 문구 목록은 등급으로 자르지 않는다
@@ -71,6 +71,21 @@ class PlanCardCopyTest {
                     assertFalse("$dir/$name 가 '$claim' 이라고 한다: $text", text.contains(claim, ignoreCase = true))
                 }
             }
+        }
+    }
+
+    /**
+     * 직접 입력은 유료 전용이 아니다(2026-10-26 — `docs/spec/voice-and-message.md` §8). 무료는 기본 목소리로 월 3회,
+     * 플러스는 월 30회다. 카드가 무료 줄을 빼면 무료 사용자는 없는 기능으로 알고, 세 언어의 숫자가 다르면 같은 상품을
+     * 언어마다 다르게 판다.
+     */
+    @Test
+    fun `두 카드가 직접 입력 횟수를 세 언어에서 같은 숫자로 말한다`() {
+        for (dir in dirs) {
+            val free = value(dir, "billing_plan_free_feature_manual")
+            val personal = value(dir, "billing_plan_personal_feature_manual")
+            assertTrue("$dir 무료 카드에 직접 입력 3회가 없다: $free", free != null && Regex("""(^|\D)3(\D|$)""").containsMatchIn(free))
+            assertTrue("$dir 플러스 카드에 직접 입력 30회가 없다: $personal", personal != null && personal.contains("30"))
         }
     }
 

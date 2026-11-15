@@ -72,7 +72,7 @@ event.post('/:eventId/likes/:subjectId', async (c) => {
   const r = await db.execute({
     sql: `INSERT INTO event_likes (event_id, subject_id, count) VALUES (?, ?, 1)
           ON CONFLICT(event_id, subject_id)
-          DO UPDATE SET count = count + 1, updated_at = datetime('now') RETURNING count`,
+          DO UPDATE SET count = count + 1 RETURNING count`,
     args: [eventId, subjectId],
   });
   return c.json({ count: Number(r.rows[0]?.count ?? 1) });

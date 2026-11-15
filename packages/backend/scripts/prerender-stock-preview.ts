@@ -20,7 +20,15 @@
  *   npm run preview:stock                  # 빠진 것 전부 굽는다
  *   npm run preview:stock -- --lang ja --voice 미나
  *   npm run preview:stock -- --category greeting   # 인사말만(앱·랜딩 번들 인사말을 새로 만들 때)
+ *   npm run preview:stock -- --category cheer_v2   # 새 응원만(스펙 §5-4 — 먼저 `npm run cost:stock` 으로 양을 본다)
+ *   ⚠ 새 묶음(`cheer_v2`·`wake`)도 `STOCK_CLIP_PRESETS` 에 들어 있어 `--category` 없이 돌리면 같이 굽는다(합성 비용).
  *   옵션: --force  이미 있어도 다시 굽는다 / --dry-run  무엇을 구울지만 출력
+ *
+ * ⚠ **예산을 정하지 않으면 굽지 않는다 — 기본이 dry-run 이다**(2026-10-26, `docs/spec/tts-render-and-budget.md` §3).
+ *   ElevenLabs 키는 dev·prod 공용이고 한도가 있다. 한 회차의 글자 상한과 동시 합성 수를 운영자가 정해야 굽는다:
+ *     TTS_RERENDER_BATCH_MAX_CHARS=<글자> TTS_RERENDER_CONCURRENCY=<수> npm run preview:stock
+ *     (또는 --max-chars <글자> --concurrency <수>)
+ *   상한을 넘는 나머지는 남겨 둔다 — 다시 돌리면 이어서 굽는다(멱등). 회차마다 예상 글자를 먼저 찍는다.
  *
  * ⚠ **`node --experimental-strip-types` 로는 못 돌린다.** 이 스크립트가 가져다 쓰는
  *   서버 소스(`stock-clips.ts`)가 확장자 없는 import 를 쓰는데(워커 번들러 기준),
@@ -34,6 +42,8 @@ import { resolve, dirname } from 'node:path';
 import { STOCK_CLIP_PRESETS, systemStockTexts } from '../src/lib/stock-clips.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
 import { TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
+import { planBulkRerender, readTtsBudgetConfig, runWithConcurrency } from '../src/lib/tts-budget.ts';
+import { speechCharacters } from '../src/lib/tts-usage.ts';
 import {
   computeFingerprint,
   fingerprintKey,
@@ -254,19 +264,42 @@ async function main(): Promise<void> {
   }
   console.log(`전체 ${targets.length}개 중 만들 것 ${pending.length}개`);
   for (const [key, count] of [...bySet].sort()) console.log(`  ${key}\t${count}개`);
-  if (dryRun || pending.length === 0) {
-    if (pending.length === 0) console.log('빠진 것이 없다.');
+  if (pending.length === 0) {
+    console.log('빠진 것이 없다.');
+    return;
+  }
+  // 예산 — 플래그가 환경 변수보다 앞선다. 값은 찍지 않는다(이름과 정했는지만).
+  const budget = readTtsBudgetConfig(
+    {
+      TTS_RERENDER_BATCH_MAX_CHARS: argValue('--max-chars') ?? process.env.TTS_RERENDER_BATCH_MAX_CHARS,
+      TTS_RERENDER_CONCURRENCY: argValue('--concurrency') ?? process.env.TTS_RERENDER_CONCURRENCY,
+    },
+    'script',
+  );
+  const plan = planBulkRerender(
+    pending.map((t) => ({ target: t, characters: speechCharacters(providerTextFor(t.text)) })),
+    budget,
+  );
+  console.log(
+    `예상 글자: 전체 ${plan.totalCharacters}자 · 이번 회차 ${plan.selected.length}개 ${plan.selectedCharacters}자` +
+      (plan.deferred > 0 ? ` · 다음 회차로 ${plan.deferred}개 ${plan.deferredCharacters}자` : ''),
+  );
+  if (dryRun || plan.mode === 'dry-run') {
+    if (plan.mode === 'dry-run') {
+      console.log(`dry-run — 정하지 않은 예산: ${plan.missing.join(', ')}. 정하면 굽는다.`);
+    }
     return;
   }
 
   const apiKey = loadApiKey();
-  for (const dir of new Set(pending.map((t) => dirname(t.filePath)))) {
+  const batch = plan.selected.map((item) => item.target);
+  for (const dir of new Set(batch.map((t) => dirname(t.filePath)))) {
     mkdirSync(dir, { recursive: true });
   }
 
   let done = 0;
   let failed = 0;
-  for (const target of pending) {
+  await runWithConcurrency(batch, plan.concurrency, async (target) => {
     const label = `${target.language}/${target.voiceName}/${target.fileName}`;
     try {
       const bytes = await synthesize(apiKey, target);
@@ -275,7 +308,7 @@ async function main(): Promise<void> {
       fingerprints[target.fingerprintKey] = target.fingerprint;
       saveFingerprints(OUT_ROOT, fingerprints);
       done += 1;
-      console.log(`[${done}/${pending.length}] ${label}  ${(bytes.length / 1024).toFixed(0)}KB`);
+      console.log(`[${done}/${batch.length}] ${label}  ${(bytes.length / 1024).toFixed(0)}KB`);
     } catch (error) {
       failed += 1;
       // 실패했으면 그 자리의 옛 지문을 **지운다** — 남겨 두면 디스크의 낡은 파일이
@@ -284,7 +317,7 @@ async function main(): Promise<void> {
       saveFingerprints(OUT_ROOT, fingerprints);
       console.error(`[실패] ${label}  ${(error as Error).message}`);
     }
-  }
+  });
 
   // 문구 대조표는 그 세트가 온전할 때만 새로 쓴다(부분 실패 상태를 완성본처럼 남기지 않는다).
   // 카테고리를 골라 구웠으면 쓰지 않는다 — 그 카테고리만 적힌 대조표가 전체 대조표를 덮는다.
@@ -296,7 +329,10 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log(`\n완료 ${done}개${failed ? ` · 실패 ${failed}개(다시 돌리면 그것만 재시도한다)` : ''}`);
+  console.log(
+    `\n완료 ${done}개${failed ? ` · 실패 ${failed}개(다시 돌리면 그것만 재시도한다)` : ''}` +
+      (plan.deferred > 0 ? ` · 남은 ${plan.deferred}개는 다음 회차(다시 돌리면 이어서 굽는다)` : ''),
+  );
   // ⚠ **하나라도 실패했으면 명령도 실패한다**(2026-09-03 리뷰 18차).
   //   이 명령은 롤아웃의 **선행 단계**다(굽기 → 듣기 → 스토어 → 머지 → 게시). 0으로
   //   끝나면 사람도 스크립트도 "다 됐다" 로 읽고 다음 단계로 넘어가는데, 그러면 프리셋을

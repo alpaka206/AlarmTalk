@@ -146,6 +146,11 @@ internal fun VoicePreviewButtonIcon(
     }
 }
 
+/**
+ * 목소리 만들기의 입력 방식(녹음 / 파일). 날씨 지역 시트의 나라 고르기와 **같은 세그먼트**다
+ * (`EditorSegmentedSelector`, 2026-11-15 오너 — "대한민국, 일본, 미국처럼"). 예전에는 캡슐 버튼 두 개였다.
+ * iOS 짝은 `VoiceCloneUploadFlow` 의 `captureModePicker`.
+ */
 @Composable
 internal fun VoiceCaptureModeSelector(
     selected: VoiceCaptureMode,
@@ -153,58 +158,15 @@ internal fun VoiceCaptureModeSelector(
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        VoiceInputModeButton(
-            label = stringResource(R.string.common_voice_capture_mode_record),
-            selected = selected == VoiceCaptureMode.Record,
-            enabled = enabled,
-            onClick = { onSelect(VoiceCaptureMode.Record) },
-            modifier = Modifier.weight(1f),
-        )
-        VoiceInputModeButton(
-            label = stringResource(R.string.common_voice_capture_mode_file),
-            selected = selected == VoiceCaptureMode.File,
-            enabled = enabled,
-            onClick = { onSelect(VoiceCaptureMode.File) },
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-internal fun VoiceInputModeButton(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) {
-    if (selected) {
-        Button(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier,
-            shape = WakerPillShape,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
-            ),
-        ) {
-            Text(label)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier,
-            shape = WakerPillShape,
-        ) {
-            Text(label)
-        }
-    }
+    val record = stringResource(R.string.common_voice_capture_mode_record)
+    val file = stringResource(R.string.common_voice_capture_mode_file)
+    EditorSegmentedSelector(
+        options = listOf(VoiceCaptureMode.Record.name to record, VoiceCaptureMode.File.name to file),
+        selected = selected.name,
+        onSelect = { value -> VoiceCaptureMode.entries.firstOrNull { it.name == value }?.let(onSelect) },
+        modifier = modifier,
+        enabled = enabled,
+    )
 }
 
 /**

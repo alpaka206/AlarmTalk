@@ -252,6 +252,42 @@ class HolidayCountryRescheduleTest {
         assertEquals(null, rolled.contextResolvedAtMillis)
     }
 
+    /**
+     * 복구가 **취소되면** 알람을 끄지 않는다(Codex #984 P2). 취소 예외가 안쪽 `runCatching` 에 잡혀 실패 갈래로 가면, 예약은
+     * 실패하지 않았는데 옛 등록을 걷고 행을 꺼 버린다. 취소는 다시 던지고 행은 켠 채 둔다 — 다음 복구가 다시 건다.
+     *
+     * 취소는 '등록 직전 확인'(울리는 중인 알람 묻기의 **세 번째** 호출 — 앞의 둘은 `runCatching` 밖이다)에서 낸다. 그 호출까지
+     * 닿았는지도 본다 — 밖에서 던져지면 고치기 전에도 통과해 버린다.
+     */
+    @Test
+    fun 복구가_취소되면_알람을_끄지_않는다() = runBlocking {
+        seed(id = "pending", fireAtMillis = nextWithoutHolidays, holidayOff = false)
+        var ringingAsks = 0
+        val cancelling = AlarmRepository(
+            alarmDao = dao,
+            holidayCalendarStore = HolidayCalendarStore(db.holidayDao()),
+            holidayCountryPreferenceStore = holidayCountry,
+            alarmScheduler = AlarmScheduler(context),
+            alarmAudioStore = AlarmAudioStore(context),
+            context = context,
+            holidayApiProvider = { fakeHolidayApi },
+            currentUserIdProvider = { OWNER },
+            ringingAlarmIdsProvider = {
+                ringingAsks += 1
+                if (ringingAsks >= 3) throw kotlinx.coroutines.CancellationException("recovery cancelled")
+                emptySet()
+            },
+        )
+
+        val thrown = runCatching { cancelling.reschedulePendingAlarms() }.exceptionOrNull()
+
+        assertEquals(3, ringingAsks)
+        assertEquals(true, thrown is kotlinx.coroutines.CancellationException)
+        val row = requireNotNull(dao.getById("pending"))
+        assertEquals(true, row.enabled)
+        assertEquals(AlarmStates.SCHEDULED, row.state)
+    }
+
     private suspend fun withWeatherVariant(id: String) {
         val row = requireNotNull(dao.getById(id))
         dao.upsert(

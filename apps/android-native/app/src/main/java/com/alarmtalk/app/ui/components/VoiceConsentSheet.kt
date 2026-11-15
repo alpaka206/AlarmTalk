@@ -43,6 +43,8 @@ internal fun VoiceConsentSheet(
     registeringVoice: Boolean,
     onAgree: () -> Unit,
     onDismiss: () -> Unit,
+    // 기록이 안 됐다는 이유 — 버튼 바로 위에 빨간 글자로 그린다. 이 시트는 자기 창이라 스낵바는 그 아래에 깔린다(2026-10-29).
+    errorText: String? = null,
 ) {
     val asksBiometric = "voice_biometric" in types
     val asksOverseas = "overseas_transfer" in types
@@ -106,6 +108,13 @@ internal fun VoiceConsentSheet(
                             label = stringResource(R.string.voice_consent_check_overseas),
                         )
                     }
+                }
+                errorText?.let { text ->
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

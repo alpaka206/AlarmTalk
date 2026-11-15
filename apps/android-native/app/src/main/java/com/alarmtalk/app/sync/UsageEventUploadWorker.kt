@@ -16,6 +16,7 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmDatabase
 import com.alarmtalk.app.data.UsageEventEntity
+import com.alarmtalk.app.data.UsageEventProps
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.UsageEventBatchRequest
@@ -60,7 +61,7 @@ class UsageEventUploadWorker(
                     Log.i(TAG, "Usage event upload stopped: session changed")
                     return@runCatching Result.success()
                 }
-                api.uploadUsageEvents(authorization, UsageEventBatchRequest(batch.map(::toPayload)))
+                api.uploadUsageEvents(authorization, UsageEventBatchRequest(batch.map { toPayload(it) }))
                 dao.deleteByIds(batch.map { it.id })
                 sent += batch.size
             }
@@ -98,17 +99,28 @@ class UsageEventUploadWorker(
         }
     }
 
-    private fun toPayload(event: UsageEventEntity) = UsageEventPayload(
-        id = event.id,
-        type = event.type,
-        occurredAt = iso8601(event.occurredAtMillis),
-        alarmId = event.alarmId,
-        voiceProfileId = event.voiceProfileId,
-        messageId = event.messageId,
-        detail = event.detail,
-    )
-
     companion object {
+        /**
+         * 큐 행 → 전송 모양. 1판 행(마이그레이션 전에 적힌 것)은 공통 필드가 비어 있어 1판 그대로 간다 — 서버가
+         * 플랫폼만 요청 헤더로 채운다. 칸은 로컬 JSON 을 객체로 풀어 `props` 로 싣는다(못 읽으면 칸 없이 보낸다 —
+         * 배치를 막지 않는다).
+         */
+        internal fun toPayload(event: UsageEventEntity) = UsageEventPayload(
+            id = event.id,
+            type = event.type,
+            occurredAt = iso8601(event.occurredAtMillis),
+            alarmId = event.alarmId,
+            voiceProfileId = event.voiceProfileId,
+            messageId = event.messageId,
+            detail = event.detail,
+            schemaVersion = event.schemaVersion,
+            platform = if (event.schemaVersion >= 2) "android" else null,
+            appVersion = event.appVersion,
+            featureVersion = event.featureVersion,
+            attemptId = event.attemptId,
+            props = UsageEventProps.fromJson(event.propsJson)?.sanitized()?.takeUnless { it.isEmpty() },
+        )
+
         private const val BATCH_SIZE = 100
         private const val MAX_BATCHES_PER_RUN = 5
         private const val PERIODIC_WORK_NAME = "usage_event_periodic_upload"

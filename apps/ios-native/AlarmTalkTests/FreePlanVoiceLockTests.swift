@@ -299,4 +299,61 @@ final class FreePlanVoiceLockTests: XCTestCase {
         XCTAssertEqual(second.newLocks, 0)
         XCTAssertEqual(second.alarms, first.alarms)
     }
+
+    // ── 2026-11-09 iOS 출시 검토: 지금 규칙으로 무료인 옛 잠금은 푼다 ───────────────────────────
+
+    /// 1.2.16 이 옛 규칙으로 잠근 '기본 목소리 + 직접 입력' 알람 — 원래 목소리·문구·음원이 보관본에 있다.
+    private func manualOnSystemVoiceLockedBy1216() -> LocalAlarmRecord {
+        var original = LocalAlarmRecord(label: "약", hour: 8, minute: 0, fireAtMillis: 0, playMode: AlarmPlayMode.voiceOnly.rawValue)
+        original.voiceSource = VoiceSource.ttsProfile.rawValue
+        original.voiceProfileId = systemVoice
+        original.voiceText = "약 먹어"
+        original.audioCacheKey = "manual-hash-1"
+        original.localAudioUri = "manual-hash-1.mp3"
+        original.ttsMessageId = "msg-1"
+        return DefaultVoiceSubstitute.locked(original, voiceID: systemVoice, binding: nil, nowMillis: 1)
+    }
+
+    func test_지금_규칙으로_무료인_잠금은_풀어_원래_문구와_음원으로_되돌린다() {
+        let locked = manualOnSystemVoiceLockedBy1216()
+        XCTAssertTrue(locked.hasLockedPaidVoice)
+        let selection = FreePlanLockSelection(alarms: [locked], expectedOwnerUserId: nil)
+        XCTAssertEqual(selection.toRelease.map(\.id), [locked.id])
+        XCTAssertTrue(selection.toLock.isEmpty)
+        let released = FreePlanLockSelection.released(locked, nowMillis: 2)
+        XCTAssertFalse(released.hasLockedPaidVoice)
+        XCTAssertEqual(released.voiceText, "약 먹어")
+        XCTAssertEqual(released.audioCacheKey, "manual-hash-1")
+        XCTAssertEqual(released.localAudioUri, "manual-hash-1.mp3")
+    }
+
+    func test_잠긴_뒤_직접_입력을_새로_만들었으면_그_편집이_이긴다() {
+        var locked = manualOnSystemVoiceLockedBy1216()
+        locked.voiceText = "약 먹고 물 마셔"
+        locked.audioCacheKey = "manual-hash-2"
+        locked.localAudioUri = "manual-hash-2.mp3"
+        let released = FreePlanLockSelection.released(locked, nowMillis: 2)
+        XCTAssertFalse(released.hasLockedPaidVoice, "보관본은 버린다")
+        XCTAssertEqual(released.voiceText, "약 먹고 물 마셔", "옛 문구로 되돌리지 않는다")
+        XCTAssertEqual(released.audioCacheKey, "manual-hash-2")
+    }
+
+    func test_클론_목소리_잠금은_무료로_남는_동안_풀지_않는다() {
+        let locked = DefaultVoiceSubstitute.locked(cloneAlarm(), voiceID: systemVoice, binding: nil, nowMillis: 1)
+        let selection = FreePlanLockSelection(alarms: [locked], expectedOwnerUserId: nil)
+        XCTAssertTrue(selection.toRelease.isEmpty)
+    }
+
+    func test_테마_없이_잠긴_행에_직접_입력을_새로_만든_저장은_잠금을_비운다() {
+        let locked = manualOnSystemVoiceLockedBy1216()
+        var saved = locked
+        saved.voiceText = "약 먹고 물 마셔"
+        saved.audioCacheKey = "manual-hash-2"
+        saved.localAudioUri = "manual-hash-2.mp3"
+        XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: saved, editing: locked))
+        // 시각만 고친 저장은 그대로 잇는다.
+        var timeOnly = locked
+        timeOnly.hour = 9
+        XCTAssertTrue(DefaultVoiceSubstitute.saveKeepsLock(saved: timeOnly, editing: locked))
+    }
 }

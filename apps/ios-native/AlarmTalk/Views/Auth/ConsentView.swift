@@ -42,6 +42,8 @@ struct ConsentView: View {
     let isReconsent: Bool
     /// **이미 동의해 둔** 유형 — 초기 체크 상태로 쓴다(서버 `prechecked`).
     var prechecked: [String] = []
+    /// 직전 제출이 실패한 이유 — 버튼 바로 위에 빨간 글자로 그린다(`AuthViewModel.actionErrorMessage`).
+    var errorMessage: String? = nil
     /// 사용자가 실제로 체크한 **선택** 유형만 넘긴다.
     let onAgree: (_ agreedOptional: Set<String>) -> Void
     let onOpenTerms: () -> Void
@@ -116,7 +118,7 @@ struct ConsentView: View {
 
             // ⚠ `\n` 으로 줄을 **강제하지 않는다**(2026-08-18). 두 줄로 못 박으면 글자 크기
             // 설정·기기 폭과 무관하게 항상 두 줄을 차지해 목록이 그만큼 밀린다.
-            Text(isReconsent ? String(localized: "약관이 개정되어 다시 동의가 필요해요") : String(localized: "서비스 이용을 위해 약관에 동의해 주세요"))
+            Text(isReconsent ? String(localized: "약관이 업데이트되었어요") : String(localized: "서비스 이용을 위해\n약관에 동의해 주세요"))
                 .font(.title2.weight(.bold))
                 .foregroundStyle(AlarmTalkTheme.text)
 
@@ -158,6 +160,12 @@ struct ConsentView: View {
                 }
             }
 
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(AlarmTalkTheme.error)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Button {
                 // 화면에서 실제로 체크한 '선택' 유형만 넘긴다.
                 onAgree(checked.intersection(optionalTypes))

@@ -64,16 +64,15 @@ internal fun VoiceAudioCard(
     onOpenClipPreparation: (String) -> Unit = {},
     voiceProfiles: List<VoiceProfile>,
     /**
-     * 교체 정리가 끝나지 않아 **아직 고를 수 없는** 목소리들.
-     * 목록에는 그대로 두고 흐리게 그린다 — 감추면 사라진 것으로 보여 고장으로 읽힌다.
+     * 교체 정리가 끝나지 않아 **아직 고를 수 없는** 목소리들 — 고르기 시트에 **보이지 않는다**
+     * (2026-11-15 오너 "정리중이면 안뜨게". 2026-08-25 의 '흐리게 두고 이유를 말한다' 를 뒤집었다).
+     * 이미 그 목소리를 고른 알람은 저장에서 `SaveBlockReason.VOICE_SETTLING` 이 막는다.
      */
     settlingVoiceProfileIds: Set<String> = emptySet(),
     voiceProfileBusy: Boolean,
     voiceProfileLoadFinished: Boolean,
     /** 선택 시트에서 목소리를 들어볼 때 — 목소리 선택 화면과 같은 미리듣기를 쓴다. */
     onPreviewVoice: (String) -> Unit = {},
-    /** 아직 고를 수 없는 목소리를 눌렀을 때 이유를 알린다(교체 정리 중 등). */
-    onVoiceUnavailable: (String) -> Unit = {},
     previewPlayingVoiceId: String? = null,
     previewPreparingVoiceId: String? = null,
     audioMessage: String?,
@@ -124,7 +123,13 @@ internal fun VoiceAudioCard(
         // **그 목소리만** 막고 준비 화면으로 보낸다 —
         // 알람 만들기 자체는 막지 않는다(다른 목소리로는 지금 만들 수 있어야 한다).
         // iOS `AlarmEditorSheet.needsPreparation` 과 같은 판정이다.
-        if (option.id != VoiceSources.LOCAL_AUDIO && onNeedsClipPreparation(option.id)) {
+        val needsPreparation = option.id != VoiceSources.LOCAL_AUDIO && onNeedsClipPreparation(option.id)
+        // 목소리를 **골랐다**(`voice_selected`, `docs/spec/usage-events.md` §7.1) — 준비 화면으로 가는 갈래도 고른 것이다
+        // (`prepared = false`). 직접 녹음은 목소리 선택이 아니라 적지 않는다.
+        if (option.id != VoiceSources.LOCAL_AUDIO) {
+            com.alarmtalk.app.data.UsageSignals.voiceSelected(context, option.id, prepared = !needsPreparation)
+        }
+        if (needsPreparation) {
             onOpenClipPreparation(option.id)
         } else {
         if (option.id == VoiceSources.LOCAL_AUDIO) {
@@ -146,8 +151,9 @@ internal fun VoiceAudioCard(
         }
         }
     }
+    // 정리 중인 목소리는 빼 둔다(위 `settlingVoiceProfileIds` 주석).
     val readyOwnProfiles = voiceProfiles.filter {
-        (it.status == null || it.status == "ready") && it.isSystem != true
+        (it.status == null || it.status == "ready") && it.isSystem != true && it.id !in settlingVoiceProfileIds
     }
     val readySystemProfiles = voiceProfiles.filter {
         (it.status == null || it.status == "ready") && it.isSystem == true
@@ -156,14 +162,11 @@ internal fun VoiceAudioCard(
     // 이제 4개를 모두 미리 받아 두므로 알람마다 자유롭게 고를 수 있어야 한다.
     // 목록이 길어져도 선택 시트가 내부 스크롤을 갖고 있다(WakerSelectionSheet).
     val visibleSystemProfiles = readySystemProfiles
-    val settlingReason = stringResource(R.string.editor_voice_replacement_settling)
-    val settlingMessage = stringResource(R.string.msg_voice_replacement_settling)
     val profileOptions = readyOwnProfiles.map {
         VoiceProfileOption(
             id = it.id,
             name = systemVoiceDisplayName(context, it.id, it.name),
             detail = ownedVoiceDetail(context, it),
-            unavailableReason = settlingReason.takeIf { _ -> it.id in settlingVoiceProfileIds },
         )
     } +
         visibleSystemProfiles.map {
@@ -189,7 +192,8 @@ internal fun VoiceAudioCard(
         val recordingOption = VoiceProfileOption(
             id = VoiceSources.LOCAL_AUDIO,
             name = stringResource(R.string.editor_voice_source_local),
-            detail = stringResource(R.string.editor_voice_local_detail),
+            // 설명 줄은 없다(2026-11-09 오너 — '이 알람에만 쓸 소리를 직접 녹음하기' 삭제). 이름이 이미 말한다.
+            detail = null,
         )
         val selectorSelectedId = if (visibleVoiceSource == VoiceSources.LOCAL_AUDIO) {
             VoiceSources.LOCAL_AUDIO
@@ -205,7 +209,6 @@ internal fun VoiceAudioCard(
             VoiceProfileSelector(
                 options = profileOptions + recordingOption,
                 selectedId = selectorSelectedId,
-                onUnavailableSelect = { onVoiceUnavailable(settlingMessage) },
                 onSelect = { option ->
                     // 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를
                     // 비운다. 조용히 지우면 '문구가 사라졌다'가 되므로 한 번 확인받는다.
@@ -327,9 +330,15 @@ internal fun VoiceAudioCard(
         }
         }
     pendingVoiceSwitch?.let { pending ->
+        // 추가 팩은 기본 목소리가 아니다 — 같은 이유(준비된 문구로만 말한다)를 팩의 이름으로 말한다(`docs/spec/voice-packs.md` §7).
+        val toPack = com.alarmtalk.app.data.isVoicePackVoiceId(pending.id)
         IosAlertDialog(
-            title = stringResource(R.string.editor_voice_switch_drops_text_title),
-            message = stringResource(R.string.editor_voice_switch_drops_text_message),
+            title = stringResource(
+                if (toPack) R.string.voice_pack_switch_drops_text_title else R.string.editor_voice_switch_drops_text_title,
+            ),
+            message = stringResource(
+                if (toPack) R.string.voice_pack_switch_drops_text_message else R.string.editor_voice_switch_drops_text_message,
+            ),
             onDismiss = { pendingVoiceSwitch = null },
             actions = listOf(
                 IosAlertAction(
@@ -417,14 +426,7 @@ internal fun VoiceOutputSettingsPane(
 private data class VoiceProfileOption(
     val id: String,
     val name: String,
-    val detail: String,
-    /**
-     * **지금은 고를 수 없는 이유.** `null` 이면 고를 수 있다.
-     *
-     * ⚠ 목록에서 빼지 말고 이걸 쓴다 — 감추면 사라진 것으로 보여 고장으로 읽힌다.
-     * iOS `VoiceSelectionSheet.Option.unavailableReason` 과 같은 규칙이다.
-     */
-    val unavailableReason: String? = null,
+    val detail: String?,
 )
 
 @Composable
@@ -465,8 +467,6 @@ private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
     selectedId: String,
     onSelect: (VoiceProfileOption) -> Unit,
-    /** 지금 고를 수 없는 행을 눌렀을 때 — 이유를 말한다(시트는 닫지 않는다). */
-    onUnavailableSelect: () -> Unit,
     /** 행의 재생 버튼 — 고르기 전에 목소리를 들어볼 수 있게 한다(목소리 선택 화면과 동일). */
     onPreview: (VoiceProfileOption) -> Unit,
     playingVoiceId: String?,
@@ -498,17 +498,9 @@ private fun VoiceProfileSelector(
             options.forEachIndexed { index, option ->
                 WakerSheetOptionRow(
                     title = option.name,
-                    // 이유가 있으면 그것을 말한다 — 원래 설명보다 지금 중요한 정보다.
-                    description = option.unavailableReason ?: option.detail,
+                    description = option.detail,
                     selected = option.id == selectedOption?.id,
-                    dimmed = option.unavailableReason != null,
                     onClick = {
-                        // 정리 중인 목소리는 고르지 않고 이유만 말한다(시트도 닫지 않는다) —
-                        // 지금 고르면 뒤이은 정리가 그 알람까지 되돌릴 수 없이 벗긴다.
-                        if (option.unavailableReason != null) {
-                            onUnavailableSelect()
-                            return@WakerSheetOptionRow
-                        }
                         onSelect(option)
                         dismiss()
                     },
@@ -720,7 +712,10 @@ private fun voiceOptionLabelRes(options: List<Pair<String, Int>>, value: String)
     options.firstOrNull { it.first == value }?.second ?: options.firstOrNull()?.second
 
 private fun ownedVoiceDetail(context: android.content.Context, profile: VoiceProfile): String =
-    if (profile.isSystem == true) {
+    if (com.alarmtalk.app.data.isVoicePackVoiceId(profile.id)) {
+        // 추가 팩은 기본 목소리처럼(`isSystem`) 테마로 울지만 기본 4종이 아니다(`docs/spec/voice-packs.md` §7).
+        context.getString(R.string.voice_pack_editor_detail)
+    } else if (profile.isSystem == true) {
         context.getString(R.string.editor2_voice_detail_default)
     } else {
         context.getString(R.string.editor2_voice_detail_mine)

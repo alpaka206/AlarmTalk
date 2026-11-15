@@ -19,7 +19,7 @@ import java.util.Locale
  * 분류:
  * - 성공: 사용자가 한 일이 끝났다(저장·등록·발송·해지) 또는 기다리던 것이 도착했다.
  * - 오류: 하려던 일이 실패했거나 거절됐다. 실패 갈래에서 나오는 문구는 이유를 말해도 오류다.
- * - 안내: 그 밖 — 하기 전에 필요한 것(입력·로그인·권한·이용권·동의), 진행 중, 결과 없음.
+ * - 안내: 그 밖 — 하기 전에 필요한 것(입력·로그인·권한·이용권·동의), 진행 중, 결과 없음, 켠 알람이 언제 우는지.
  *
  * ⚠ **스낵바로 가는 문구를 새로 만들면 셋 중 하나에 넣는다.** `SnackbarSeverityTest` 가 뷰모델
  * 소스(`ui/main/MainViewModel*.kt`)와 공용 오류 표가 쓰는 문구를 전부 훑어 빠진 것을 잡는다.
@@ -51,13 +51,16 @@ internal object SnackbarSeverities {
         R.string.msg_verification_code_send_failed,
         R.string.msg_register_email_taken,
         R.string.msg_register_email_social_google,
+        R.string.msg_register_email_social_apple,
+        R.string.msg_register_email_social_kakao,
+        R.string.msg_try_again_shortly,
         R.string.msg_verification_code_mismatch,
         R.string.msg_register_failed,
         R.string.msg_password_reset_failed,
         R.string.msg_google_login_not_confirmed,
         R.string.msg_google_login_failed,
+        R.string.msg_kakao_login_failed,
         R.string.msg_account_deletion_request_failed,
-        R.string.msg_nickname_change_failed,
         R.string.msg_consent_record_failed,
         R.string.msg_marketing_consent_update_failed,
         R.string.msg_voice_consent_withdraw_failed,
@@ -96,8 +99,6 @@ internal object SnackbarSeverities {
         R.string.msg_voice_monthly_change_limit,
         R.string.msg_voice_delete_failed,
         R.string.msg_voice_info_update_failed,
-        R.string.msg_voice_prerender_retry_failed,
-        R.string.msg_voice_speech_style_retry_failed,
         R.string.rd_audio_duration_unreadable,
         R.string.rd_audio_extract_failed,
         R.string.rd_audio_mp3_trim_failed,
@@ -117,12 +118,19 @@ internal object SnackbarSeverities {
         R.string.api_error_email_code_attempts,
         R.string.api_error_account_pending_deletion,
         R.string.editor_error_manual_tts_quota,
+        R.string.editor_error_tts_request_in_progress,
+        R.string.api_error_ad_reward_monthly_limit,
+        R.string.api_error_ad_reward_session_open,
+        R.string.api_error_ad_reward_session_invalid,
+        R.string.api_error_ad_reward_unavailable,
         R.string.api_error_voice_limit_reached,
         R.string.api_error_voice_not_ready,
+        // 추가 음성팩 — 받지 못했다·지금 받을 수 없다(`docs/spec/voice-packs.md`).
+        R.string.voice_pack_download_failed,
+        R.string.voice_pack_not_available,
         R.string.api_error_voice_cloning_failed,
         R.string.api_error_invalid_voice_pitch,
         R.string.api_error_voice_pitch_locked,
-        R.string.api_error_alarm_not_found,
         R.string.api_error_tts_generation_failed,
     )
 
@@ -152,7 +160,6 @@ internal object SnackbarSeverities {
         R.string.msg_verification_code_six_digits_required,
         R.string.msg_register_all_fields_required,
         R.string.msg_register_verify_email_first,
-        R.string.msg_nickname_length_invalid,
         R.string.msg_voice_name_required,
         // 하기 전에 필요한 것 — 권한·이용권·동의
         R.string.msg_permission_notifications_required,
@@ -173,6 +180,9 @@ internal object SnackbarSeverities {
         R.string.msg_voice_replacement_settling,
         R.string.msg_verification_code_debug,
         R.string.r3app_update_downloaded,
+        // 알려 주는 것 — 방금 켠 알람이 언제 우는지(`docs/spec/alarm-editor.md` §7, 화면 아래 호스트). 저장이 끝났다는
+        // 성공 표시가 아니라 정보다.
+        R.string.hs_status_ring_in,
     )
 
     @Volatile

@@ -39,6 +39,26 @@ final class RememberChoicesGuardTests: XCTestCase {
         )
     }
 
+    /// 기본 목소리로 테마를 저장하면 테마와 **그 종류**를 함께 적고, 직접 입력 기록은 지운다 — 마지막 선택은 하나다
+    /// (2026-10-29 — 예전에는 테마만 적어, 직접 입력을 한 번 저장한 뒤로 새 알람이 매번 그 옛 문구로 열렸다).
+    func test_기본_목소리_테마_저장은_종류도_적고_직접입력을_지운다() {
+        store.saveLastManualText(userID: userID, text: "옛 문구")
+        store.saveBucketChoice(userID: userID, bucket: "medication", voiceProfileID: systemVoiceIDPrefix + "000000000102", randomContext: nil)
+
+        XCTAssertEqual(store.lastFreeBucket(userID: userID), "medication")
+        XCTAssertEqual(store.lastMessageContext(userID: userID), RandomPromptContext.medication.rawValue)
+        XCTAssertNil(store.lastManualText(userID: userID))
+    }
+
+    /// 클론의 사전렌더 테마는 **문구 종류**로 적는다 — 고른 것은 종류이고 테마는 그 결과다. 테마 키는 건드리지 않는다.
+    func test_클론_테마_저장은_문구_종류로_적는다() {
+        store.saveLastFreeBucket(userID: userID, bucket: "weather")
+        store.saveBucketChoice(userID: userID, bucket: "cheer", voiceProfileID: "clone-1", randomContext: nil)
+
+        XCTAssertEqual(store.lastMessageContext(userID: userID), RandomPromptContext.cheer.rawValue)
+        XCTAssertEqual(store.lastFreeBucket(userID: userID), "weather", "클론 저장이 기본 목소리의 테마 기록을 바꾸면 안 된다")
+    }
+
     /// 빈 문구로는 기록을 지우지 않는다 — 저장소 자체가 빈 값을 무시해야 한다.
     func test_빈_문구는_기록을_지운다는_계약() {
         store.saveLastManualText(userID: userID, text: "기억할 문구")

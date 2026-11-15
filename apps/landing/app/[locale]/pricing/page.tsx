@@ -69,6 +69,7 @@ export default async function PricingPage({
         <section className="relative">
           <div className="mx-auto max-w-site px-5 pb-24 md:px-8 lg:pb-32">
             <PricingTable />
+            <PricingNotes />
           </div>
         </section>
         <PricingCta />
@@ -93,6 +94,23 @@ function PricingHero() {
         </RevealGroup>
       </div>
     </section>
+  );
+}
+
+/**
+ * 표 아래 두 줄 — 체험 조건과 직접 입력의 재사용 규칙. 체험 뒤 자동 결제는 숨기지 않는다(스토어 정책 —
+ * `docs/spec/plan-gates.md` 「신규 1개월 무료 — 스토어 무료 체험」). 서버가 주는 무료 기간이 아니므로 '가입일부터' 라고 쓰지 않는다.
+ */
+function PricingNotes() {
+  const t = useTranslations("pricing.notes");
+  return (
+    <Reveal as="ul" variant="caption" className="mx-auto mt-8 flex max-w-3xl flex-col gap-2">
+      {(["trial", "reuse"] as const).map((key) => (
+        <li key={key} className="t-caption text-text-muted">
+          {t(key)}
+        </li>
+      ))}
+    </Reveal>
   );
 }
 

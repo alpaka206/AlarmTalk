@@ -89,3 +89,40 @@ class PersonalPromoJsonAdapter : TypeAdapter<PersonalPromo>() {
         const val KEY_COMPUTED_AT = "computed_at"
     }
 }
+
+/**
+ * `plan_grant` 를 **관대하게** 읽는 어댑터 — [PersonalPromoJsonAdapter] 와 같은 규칙(객체가 아니면 null, 모양이 틀린 필드만
+ * null, 모르는 키는 건너뛴다).
+ */
+class PlanGrantJsonAdapter : TypeAdapter<PlanGrant>() {
+
+    override fun read(reader: JsonReader): PlanGrant? {
+        if (reader.peek() != JsonToken.BEGIN_OBJECT) {
+            reader.skipValue()
+            return null
+        }
+        var endsAt: String? = null
+        var computedAt: String? = null
+        reader.beginObject()
+        while (reader.hasNext()) {
+            when (reader.nextName()) {
+                "ends_at" -> endsAt = if (reader.peek() == JsonToken.STRING) reader.nextString() else null.also { reader.skipValue() }
+                "computed_at" -> computedAt = if (reader.peek() == JsonToken.STRING) reader.nextString() else null.also { reader.skipValue() }
+                else -> reader.skipValue()
+            }
+        }
+        reader.endObject()
+        return PlanGrant(endsAt = endsAt, computedAt = computedAt)
+    }
+
+    override fun write(out: JsonWriter, value: PlanGrant?) {
+        if (value == null) {
+            out.nullValue()
+            return
+        }
+        out.beginObject()
+        value.endsAt?.let { out.name("ends_at").value(it) }
+        value.computedAt?.let { out.name("computed_at").value(it) }
+        out.endObject()
+    }
+}

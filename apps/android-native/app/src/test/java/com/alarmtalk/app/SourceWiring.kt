@@ -45,6 +45,28 @@ internal fun functionBody(source: String, signature: String): String {
     return source.substring(start)
 }
 
+/**
+ * [marker] 뒤의 첫 여는 중괄호부터 짝이 맞는 닫는 중괄호까지 — `.onSuccess { saved ->` 나 `LaunchedEffect(a, b)` 같은 블록 하나.
+ * [functionBody] 는 시그니처의 `)` 뒤를 보므로, 괄호가 없거나 블록 안에 괄호가 먼저 나오는 람다에는 이걸 쓴다.
+ */
+internal fun blockAfter(source: String, marker: String): String {
+    val start = source.indexOf(marker)
+    assertTrue("`$marker` 를 못 찾았다.", start >= 0)
+    val open = source.indexOf('{', start)
+    assertTrue("`$marker` 뒤에 블록이 없다.", open >= 0)
+    var depth = 0
+    for (i in open until source.length) {
+        when (source[i]) {
+            '{' -> depth += 1
+            '}' -> {
+                depth -= 1
+                if (depth == 0) return source.substring(start, i + 1)
+            }
+        }
+    }
+    return source.substring(start)
+}
+
 /** 주석에 적힌 옛 모양이 걸리지 않게 줄 주석을 걷는다. */
 internal fun withoutLineComments(source: String): String =
     source.lineSequence().joinToString("\n") { line -> line.substringBefore("//") }

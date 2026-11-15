@@ -59,6 +59,8 @@ beforeAll(async () => {
   await runMigrationsRange(db, 1, 122);
   // 사전렌더 조회(`listReadyCloneVoices`)가 읽는 목소리 높이 칸(#128).
   await runMigrationsRange(db, 128, 128);
+  // 같은 조회가 읽는 클론 보충 묶음 칸(#143 — 스펙 voice-and-message §5-4).
+  await runMigrationsRange(db, 143, 143);
   await db.execute({
     sql: `INSERT OR IGNORE INTO users (id, google_id, email) VALUES (?, ?, 'v4t@test')`,
     args: [USER, USER],

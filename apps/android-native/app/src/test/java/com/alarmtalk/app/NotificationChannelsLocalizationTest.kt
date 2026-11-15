@@ -32,6 +32,7 @@ class NotificationChannelsLocalizationTest {
             Triple(NotificationChannels.RINGING_FALLBACK_CHANNEL_ID, R.string.notification_ringing_fallback_name, R.string.notification_ringing_fallback_description),
             Triple(NotificationChannels.SOCIAL_CHANNEL_ID, R.string.notification_social_name, R.string.notification_social_description),
             Triple(NotificationChannels.CLIP_PREFETCH_CHANNEL_ID, R.string.notification_download_name, R.string.notification_download_description),
+            Triple(NotificationChannels.ALARM_STATUS_CHANNEL_ID, R.string.notification_alarm_status_name, R.string.notification_alarm_status_description),
         )
         val manager = context("ko").getSystemService(NotificationManager::class.java)
         NotificationChannels.ensure(context("ko"))
@@ -52,7 +53,7 @@ class NotificationChannelsLocalizationTest {
         }
         assertNull(manager.getNotificationChannel(NotificationChannels.RINGING_CHANNEL_ID).sound)
         assertNull(manager.getNotificationChannel(NotificationChannels.RINGING_QUIET_CHANNEL_ID).sound)
-        assertEquals(5, manager.notificationChannels.size)
+        assertEquals(6, manager.notificationChannels.size)
     }
 
     @Test
@@ -72,13 +73,14 @@ class NotificationChannelsLocalizationTest {
                 Triple(NotificationChannels.RINGING_FALLBACK_CHANNEL_ID, R.string.notification_ringing_fallback_name, R.string.notification_ringing_fallback_description),
                 Triple(NotificationChannels.SOCIAL_CHANNEL_ID, R.string.notification_social_name, R.string.notification_social_description),
                 Triple(NotificationChannels.CLIP_PREFETCH_CHANNEL_ID, R.string.notification_download_name, R.string.notification_download_description),
+                Triple(NotificationChannels.ALARM_STATUS_CHANNEL_ID, R.string.notification_alarm_status_name, R.string.notification_alarm_status_description),
             )) {
                 val channel = manager.getNotificationChannel(id)
                 assertEquals(localized.getString(name), channel.name.toString())
                 assertEquals(localized.getString(description), channel.description)
                 assertEquals(settings[id], Triple(channel.importance, channel.sound, channel.shouldVibrate()))
             }
-            assertEquals(5, manager.notificationChannels.size)
+            assertEquals(6, manager.notificationChannels.size)
         }
     }
 

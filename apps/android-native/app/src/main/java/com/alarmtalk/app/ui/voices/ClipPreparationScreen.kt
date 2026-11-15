@@ -15,6 +15,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
 import androidx.compose.ui.text.style.TextAlign
@@ -26,8 +27,8 @@ import com.alarmtalk.app.data.ClipReadiness
  *
  * iOS `ClipPreparationView.swift` 와 같은 화면이고 같은 문구를 쓴다.
  *
- * ⚠ **이 화면이 알람 만들기를 막지 않는다.** (알람 설정 관문은 따로 있다 — 기본 목소리를 다
- * 받기 전에는 `AlarmTalkApp.whenDefaultVoicesReady` 가 막는다, 2026-09-17.) 여기서 나가도 알람은 만들 수 있어야 한다 —
+ * ⚠ **이 화면이 알람 만들기를 막지 않는다.** (알람 설정 관문은 따로 있다 — 그 알람의 목소리를 다
+ * 받기 전에는 `AlarmTalkApp.whenAlarmVoiceReady` 가 막는다, 2026-10-26.) 여기서 나가도 알람은 만들 수 있어야 한다 —
  * 새벽에 전파가 나빠 내일 알람을 못 맞추는 일이 있어서는 안 된다. 못 받은 목소리만
  * 고를 수 없을 뿐이다.
  */
@@ -54,9 +55,15 @@ fun ClipPreparationScreen(
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.padding(top = 16.dp))
+        // ⚠ **막대 끝의 점(머티리얼 기본 stop indicator)과 틈을 끈다**(2026-11-15 오너 "끝에 표시는 왜 있는거야").
+        // 목소리 만들기의 진행 막대(`VoiceProfileManagementPanel`)와 같은 모양이다 — iOS `ProgressView` 에도 점이 없다.
         LinearProgressIndicator(
             progress = { percent / 100f },
             modifier = Modifier.fillMaxWidth().widthIn(max = 280.dp),
+            strokeCap = StrokeCap.Round,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
         )
         Spacer(Modifier.padding(top = 16.dp))
         Text(

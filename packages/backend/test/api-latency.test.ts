@@ -11,7 +11,6 @@ vi.mock('../src/lib/db', () => ({
 }));
 
 import alarmRoutes from '../src/routes/alarm';
-import codeRoutes from '../src/routes/code';
 import ttsRoutes from '../src/routes/tts';
 import userRoutes from '../src/routes/user';
 
@@ -105,18 +104,6 @@ describe('API latency baselines', () => {
       );
       expect(res.status).toBe(201);
       expect(ms).toBeLessThan(WRITE_LATENCY_THRESHOLD_MS);
-    });
-  });
-
-  describe('POST /code/register', () => {
-    it('resolves any code within threshold', async () => {
-      const app = buildApp('/code', codeRoutes);
-      const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('POST', '/code/register', { code: 'INVALID' })),
-      );
-      // 옛 앱 호환 — 받는 코드가 없어 DB 없이 404 CODE_NOT_FOUND 로 끝난다.
-      expect(res.status).toBe(404);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
   });
 

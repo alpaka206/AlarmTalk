@@ -126,6 +126,42 @@ final class PersonalPromoTests: XCTestCase {
         XCTAssertFalse(late.isStale(at: end.addingTimeInterval(120)))
     }
 
+    // MARK: - 관리자 기간 지급(`plan_grant`) — 같은 기한 계약
+
+    /// 관리자 기간 지급은 프로모와 **같은 자리**로 읽힌다(`AuthUser.decodePlanGrant`) — 끝 전에 계산된 `plus` 는 끝 뒤에
+    /// 무료로 읽혀, 오프라인 기기가 지급이 끝난 뒤에도 등록 목소리를 쓰지 않는다(Codex #941 P2).
+    func test_planGrant_isReadAsTheSameDeadline_andCutsTheCachedPlusAfterTheEnd() throws {
+        let json = """
+        {
+          "id": "user-1", "email": "a@example.com", "plan": "plus",
+          "plan_grant": { "ends_at": "\(endsAt)", "computed_at": "2026-10-31T14:00:00Z" }
+        }
+        """.data(using: .utf8)!
+        let user = try apiDecoder().decode(AuthUser.self, from: json)
+        let grant = try XCTUnwrap(user.personalPromo, "지급의 끝이 기한으로 읽힌다")
+        XCTAssertEqual(grant.endsAt, endsAt)
+        XCTAssertNil(grant.noticeFrom, "지급에는 종료 안내 창이 없다")
+        XCTAssertEqual(grant.fetchedAt, PaidVoiceGate.parseTimestamp("2026-10-31T14:00:00Z"))
+
+        let cached = snapshot(noSubscription, promo: grant)
+        XCTAssertNotEqual(PaidVoiceGate.resolve(snapshot: cached, now: end.addingTimeInterval(-1)), .notEntitled)
+        XCTAssertEqual(PaidVoiceGate.resolve(snapshot: cached, now: end), .notEntitled)
+
+        // 모양이 틀린 지급은 없는 것으로 친다 — 로그인은 깨지지 않는다.
+        let broken = #"{ "id": "user-1", "email": "a@example.com", "plan": "plus", "plan_grant": "oops" }"#
+        let brokenUser = try apiDecoder().decode(AuthUser.self, from: broken.data(using: .utf8)!)
+        XCTAssertNil(brokenUser.personalPromo)
+        XCTAssertEqual(brokenUser.plan, "plus")
+    }
+
+    /// 구독 조회 응답의 `plan_grant` 도 `user_plan` 과 짝인 기한으로 읽힌다(`limitedPlan`).
+    func test_billingResponse_planGrant_isTheLimitedPlanStamp() throws {
+        let json = #"{ "subscription": null, "plan": null, "user_plan": "plus", "plan_grant": { "ends_at": "\#(endsAt)" } }"#
+        let decoded = try apiDecoder().decode(BillingSubscriptionResponse.self, from: json.data(using: .utf8)!)
+        XCTAssertEqual(decoded.limitedPlan?.endsAt, endsAt)
+        XCTAssertNil(decoded.personalPromo)
+    }
+
     /// `computed_at` 을 못 읽으면(구버전 서버·모양 어긋남) 받은 순간으로 돌아간다 — 로그인은 깨지지 않는다.
     func test_computedAt_missingOrMalformed_fallsBackToReceipt() throws {
         for extra in ["", #", "computed_at": "soon""#, #", "computed_at": 42"#, #", "computed_at": null"#] {

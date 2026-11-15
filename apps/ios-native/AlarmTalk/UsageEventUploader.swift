@@ -64,8 +64,7 @@ final class UsageEventUploader {
                 // 로 돌아온다(`UserFacingError.swift` 의 `isCancellation` 주석). 그 코드는
                 // `AlarmTalkLog.isExpectedTransientFailure` 의 일시적 네트워크 목록에 **없어서**,
                 // `reportError` 에 그대로 넘기면 브레드크럼이 아니라 **이슈**가 된다 — 큐는
-                // 그대로라 잃는 것이 없는 허위 경보다. 형제 `RemoteAlarmPushSync` 와 같은
-                // 방식으로 여기서 거른다: 취소 오류 자체(`isCancellation`)와, 다른 오류에
+                // 그대로라 잃는 것이 없는 허위 경보다. 그래서 여기서 거른다: 취소 오류 자체(`isCancellation`)와, 다른 오류에
                 // 감싸여 온 경우(`Task.isCancelled`) 둘 다 본다. 다음 배치로 넘어가지 않고
                 // 회차를 끝낸다 — 취소된 회차가 계속 보내면 「끝났다」 고 통보한 뒤에도 요청이
                 // 나간다.

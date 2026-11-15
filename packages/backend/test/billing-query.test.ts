@@ -25,21 +25,6 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /billing/vouchers — 옛 앱 호환(초대 코드는 커플·가족 이용권과 함께 없앴다)
-//
-// ⚠ 옛 앱 둘은 이 목록을 구독 조회와 **함께** 받는다 — 한쪽이 실패하면 구독 답까지 버려 권한이 낡는다.
-//   그래서 라우트를 지우지 않고 빈 배열로 답한다.
-// ---------------------------------------------------------------------------
-describe('GET /billing/vouchers — 옛 앱 호환', () => {
-  it('200 { vouchers: [] } — DB 를 보지 않는다', async () => {
-    const res = await buildApp('google-1').request(jsonReq('GET', '/billing/vouchers'));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ vouchers: [] });
-    expect(mockDB.calls).toHaveLength(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // GET /billing/subscription — split module direct import
 // ---------------------------------------------------------------------------
 describe('GET /billing/subscription (billingQuery)', () => {
@@ -407,7 +392,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     expect(mockDB.calls[2]!.sql).toContain('subscription_id IN');
   });
 
-  it('plan 필드 전체 정확성 — 정원 칸은 옛 iOS 디코더를 위해 언제나 1, 그룹 id 는 없다', async () => {
+  it('plan 필드 전체 정확성 — 정원 칸도 그룹 id 도 없다', async () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
@@ -434,15 +419,13 @@ describe('GET /billing/subscription (billingQuery)', () => {
       status: 'active',
     });
     expect(body.subscription).not.toHaveProperty('plan_group_id');
-    // 옛 앱 호환 — 옛 iOS `BillingPlan` 은 max_members 를 필수로 읽는다(빠지면 구독 답 전체가 디코딩에 실패한다).
-    // DB 칸은 #131 이 지웠으므로 리터럴이다.
+    // 정원 칸(max_members)은 DB 에서도(#131) 응답에서도(2026-10-26 강제 업데이트 뒤) 없다.
     expect(body.plan).toEqual({
       id: PLAN_PLUS_ID,
       key: 'personal',
       name: '개인',
       plan_type: 'personal',
       period_days: 30,
-      max_members: 1,
       price_krw: 4900,
     });
   });

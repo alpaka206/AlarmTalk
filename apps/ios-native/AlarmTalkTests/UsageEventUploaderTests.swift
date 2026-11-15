@@ -34,6 +34,63 @@ final class UsageEventUploaderTests: XCTestCase {
         return (session, queue, api)
     }
 
+    /// 2판 기록은 공통 필드·정해진 칸을 snake_case 로 싣고, 옛 큐의 1판 기록은 그 키를 아예 싣지 않는다
+    /// (`docs/spec/usage-events.md` §7.2 — 1판의 플랫폼은 서버가 헤더로 채운다).
+    func testPayloadCarriesV2FieldsAndLegacyEventsStayV1() async throws {
+        let session = AuthSession(token: "usage-test-token", user: AuthUser(id: "usage-test-owner", email: "test@example.test"))
+        let previous = KeychainStore.readSession()
+        try KeychainStore.saveSession(session)
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock {
+            if let previous { try KeychainStore.saveSession(previous) }
+            else { KeychainStore.deleteSession() }
+            try? FileManager.default.removeItem(at: fileURL)
+            UsageUploadURLProtocol.configure(behavior: .respond(status: 200))
+        }
+        // 옛 빌드가 남긴 1판 기록(새 키 없음).
+        let legacy = """
+        [{"id":"11111111-1111-4111-8111-111111111111","type":"alarm_rang","occurredAt":"2026-09-07T06:00:00Z",\
+        "alarmID":"22222222-2222-4222-8222-222222222222","userID":"usage-test-owner"}]
+        """
+        try Data(legacy.utf8).write(to: fileURL)
+        let queue = UsageEventQueue(fileURL: fileURL, currentUserID: { "usage-test-owner" })
+        let attempt = UUID().uuidString
+        queue.record(
+            .voicePreparationStarted,
+            attemptID: attempt,
+            props: UsageEventProps(scope: .allVoices, language: "ko", cacheState: .cold, targetCount: 4)
+        )
+        XCTAssertEqual(queue.count, 2)
+        UsageUploadURLProtocol.configure(behavior: .respond(status: 200))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UsageUploadURLProtocol.self]
+        let api = AlarmTalkAPI(baseURL: URL(string: "https://usage-upload.example.test/api/")!,
+                               session: URLSession(configuration: configuration))
+
+        await UsageEventUploader.shared.flush(session: session, api: api, queue: queue)
+
+        let body = try XCTUnwrap(UsageUploadURLProtocol.lastBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let events = try XCTUnwrap(json["events"] as? [[String: Any]])
+        let v1 = try XCTUnwrap(events.first { $0["type"] as? String == "alarm_rang" })
+        XCTAssertNil(v1["schema_version"])
+        XCTAssertNil(v1["platform"])
+        XCTAssertNil(v1["app_version"])
+        XCTAssertNil(v1["props"])
+        let v2 = try XCTUnwrap(events.first { $0["type"] as? String == "voice_preparation_started" })
+        XCTAssertEqual(v2["schema_version"] as? Int, 2)
+        XCTAssertEqual(v2["platform"] as? String, "ios")
+        XCTAssertEqual(v2["app_version"] as? String, UsageEventContract.appVersion)
+        XCTAssertEqual(v2["attempt_id"] as? String, attempt)
+        let props = try XCTUnwrap(v2["props"] as? [String: Any])
+        XCTAssertEqual(props["scope"] as? String, "all_voices")
+        XCTAssertEqual(props["cache_state"] as? String, "cold")
+        XCTAssertEqual(props["target_count"] as? Int, 4)
+        XCTAssertEqual(props["language"] as? String, "ko")
+        XCTAssertNil(props["bytes"], "빈 칸은 키째 빠진다")
+        XCTAssertEqual(queue.count, 0)
+    }
+
     func testBackgroundBudgetSendsOnlyOneBatch() async throws {
         let (session, queue, api) = try fixture()
         await UsageEventUploader.shared.flush(session: session, api: api, queue: queue, maxBatches: 1)
@@ -171,6 +228,14 @@ private final class UsageUploadURLProtocol: URLProtocol, @unchecked Sendable {
     private nonisolated(unsafe) static var behavior: Behavior = .respond(status: 200)
     private nonisolated(unsafe) static var requests = 0
     private nonisolated(unsafe) static var onRequestStart: (@Sendable () -> Void)?
+    private nonisolated(unsafe) static var body: Data?
+
+    /// 마지막 요청의 본문. URLSession 은 본문을 스트림으로 넘기므로 읽어 둔다.
+    static var lastBody: Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return body
+    }
 
     static var requestCount: Int {
         lock.lock()
@@ -184,14 +249,17 @@ private final class UsageUploadURLProtocol: URLProtocol, @unchecked Sendable {
         self.behavior = behavior
         self.onRequestStart = onRequestStart
         requests = 0
+        body = nil
     }
 
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "usage-upload.example.test" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        let captured = request.httpBody ?? request.httpBodyStream.map(Self.read)
         Self.lock.lock()
         Self.requests += 1
+        Self.body = captured
         let behavior = Self.behavior
         let onRequestStart = Self.onRequestStart
         Self.lock.unlock()
@@ -211,4 +279,17 @@ private final class UsageUploadURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+
+    private static func read(_ stream: InputStream) -> Data {
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count <= 0 { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
 }

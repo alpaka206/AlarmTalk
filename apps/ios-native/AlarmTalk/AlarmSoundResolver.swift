@@ -82,6 +82,12 @@ enum AlarmSoundResolver {
         for record: LocalAlarmRecord,
         audioCache: AudioCacheStore
     ) -> String? {
+        // 응원 — 준비해 둔 이 회차의 문구가 있고 그 파일이 있으면 그것(스펙 voice-and-message §5-4). 없으면 아래
+        // 묶어 둔 회전(옛 응원 = 안전 응원)으로 떨어진다. 여기서는 읽기만 한다 — 고르는 것은 저장·해제·앱 복귀다.
+        // 안드로이드 `AlarmRepository.resolveBucketClipSelection` 의 같은 갈래.
+        if let selection = CheerVariety.activeSelection(record), audioCache.cachedURL(for: selection.cacheKey) != nil {
+            return selection.cacheKey
+        }
         guard record.bucketId != nil,
               let keys = record.bucketClipKeys, !keys.isEmpty,
               // ⚠ **회전 인덱스를 직접 읽지 말 것.** 날씨는 실제 예보로 확정한 자리,

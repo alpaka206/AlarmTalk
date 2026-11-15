@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  UsageEventSchema,
+  USAGE_EVENT_TYPES,
+  USAGE_EVENT_V1_TYPES,
+  USAGE_EVENT_V2_TYPES,
   EMAIL_PATTERN,
   EmailSchema,
   EmailVerificationCodeSchema,
@@ -387,5 +391,38 @@ describe('VoicePitchSemitonesSchema', () => {
     for (const value of ['-1.5', null, undefined, {}]) {
       expect(VoicePitchSemitonesSchema.safeParse(value).success, String(value)).toBe(false);
     }
+  });
+});
+
+describe('UsageEventSchema — 2판(usage-events §7)', () => {
+  const base = {
+    id: '11111111-1111-4111-8111-111111111111',
+    occurred_at: '2026-10-26T00:00:00.000Z',
+  };
+  it('1판 기록(공통 필드·칸 없음)을 그대로 받는다', () => {
+    expect(UsageEventSchema.safeParse({ ...base, type: 'alarm_rang' }).success).toBe(true);
+  });
+  it('2판 종류와 정해진 칸을 받는다', () => {
+    const parsed = UsageEventSchema.safeParse({
+      ...base,
+      type: 'generation_outcome',
+      schema_version: 2,
+      platform: 'ios',
+      app_version: '12',
+      feature_version: 'manual-1',
+      attempt_id: '22222222-2222-4222-8222-222222222222',
+      props: { outcome: 'success', charged_source: 'base', usage_month: '2026-10', char_count: 12 },
+    });
+    expect(parsed.success).toBe(true);
+  });
+  it('모르는 칸·문장·권한 출처(서버가 찍는다)는 거절한다', () => {
+    for (const props of [{ text: '안녕' }, { reason: '긴 문장 사유' }, { entitlement_source: 'paid' }, { usage_month: '2026-13' }]) {
+      expect(UsageEventSchema.safeParse({ ...base, type: 'reward_spent', props }).success).toBe(false);
+    }
+  });
+  it('1판·2판 종류는 겹치지 않는다', () => {
+    const v1 = new Set<string>(USAGE_EVENT_V1_TYPES);
+    expect(USAGE_EVENT_V2_TYPES.filter((t) => v1.has(t))).toEqual([]);
+    expect(USAGE_EVENT_TYPES).toHaveLength(USAGE_EVENT_V1_TYPES.length + USAGE_EVENT_V2_TYPES.length);
   });
 });

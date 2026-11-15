@@ -55,7 +55,7 @@ final class AppVersionGateTests: XCTestCase {
         XCTAssertFalse(WeatherAttribution.showsLine(gate.weatherAttribution))
     }
 
-    /// 서버가 준 토큰을 그대로 들고, 지역 시트는 그 값으로 줄을 그린다.
+    /// 서버가 준 토큰을 그대로 들고, 법적 정보 화면(약관 및 개인정보 처리 동의)은 그 값으로 줄을 그린다.
     func test_weatherAttribution_keepsTheServerToken() async {
         let api = MockAppVersionAPI()
         api.result = .success(AppVersionResponse(minSupportedVersion: 7, weatherAttribution: "kma_jma_nws"))

@@ -35,6 +35,14 @@
  *   npm run publish:stock -- --env dev --dry-run   # 무엇을 올릴지·바꿀지만 본다([예정]·[교체])
  *   npm run publish:stock -- --env dev
  *   npm run publish:stock -- --env prod
+ *   npm run publish:stock -- --env dev --category cheer_v2      # 새 묶음은 이름을 대야 올린다(스펙 §5-4)
+ *   npm run publish:stock -- --env prod --all                   # 공개 뒤 전 카테고리를 다시 게시할 때
+ *   npm run publish:stock -- --env dev --release cheer_v2 --dry-run   # 다 올라갔는지 보고 공개할 것을 보여 준다
+ *   npm run publish:stock -- --env dev --release cheer_v2       # 공개 표식(`stock_content_releases`)을 적는다
+ *
+ * ⚠ **기본은 옛 묶음과 묶음이 없는 카테고리만 다룬다.** 새 묶음(`cheer_v2`·`wake`)은 `--category`(또는 `--all`)로만 올린다 —
+ *   새 문구를 굽지 않은 채 돌린 게시(모델 교체 등)가 그 시청본이 없다는 이유로 멈추지 않게. 올린 행은 공개 전까지
+ *   매니페스트에 안 나온다. 문구 원본·검수표·비용 dry-run 은 스펙 §5-4 「원본은 JSON 하나다」.
  *
  * ⚠ **R2 버킷과 DB 는 환경별로 따로다**(dev `voice-alarm-voices` / prod
  *   `voice-alarm-voices-prod`). 합성은 한 번이지만 **게시는 두 번** 해야 한다.
@@ -57,6 +65,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { resolve, dirname } from 'node:path';
 
 import { createClient, type Client } from '@libsql/client';
+import { stockContentSet, stockContentSetForCategory } from '@alarmtalk/shared';
 
 import {
   STOCK_CLIP_PRESETS,
@@ -64,6 +73,7 @@ import {
   systemStockTexts,
 } from '../src/lib/stock-clips.ts';
 import { computeTtsCacheKey, generatedTtsObjectKey, STOCK_TTS_CACHE_SCOPE } from '../src/lib/audio-cache.ts';
+import { renderStamp, stockPublishRenderSettings, type RenderStamp } from '../src/lib/render-fingerprint.ts';
 import { ledgerAudioUrlFor, replaceStockClipInPlace } from '../src/lib/stock-clip-replace.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
 import { TTS_LOUDNESS_BOOST_DB, TTS_MODEL_ID, TTS_VOICE_SETTINGS } from '../src/lib/tts-model.ts';
@@ -174,6 +184,23 @@ interface Target {
   stagedPath: string;
 }
 
+/**
+ * `--category weather,cheer_v2` — 고른 카테고리만. `--all` — 전부. 둘 다 없으면 **옛 묶음(`baseline`)과 묶음이 없는
+ * 카테고리만** 다룬다(스펙 §5-4).
+ *
+ * ⚠ 새 묶음(`cheer_v2`·`wake`)을 기본으로 넣지 않는 이유: 모델을 바꾼 회차처럼 다른 이유로 돌린 게시가, 아직
+ *   굽지도 않은 새 문구의 시청본이 없다는 이유로 통째로 멈추면 안 된다. 새 묶음은 이름을 대서(`--category`) 올리고,
+ *   다 올렸으면 `--release <묶음>` 으로 공개한다. 공개한 뒤 모든 카테고리를 다시 게시할 때는 `--all`.
+ * ⚠ 고르는 데 DB 를 보지 않는다 — 게시본 사본 만들기는 DB 에 손대기 전에 끝나야 한다(회귀
+ *   `mp3-loudness-boost-script.test.ts`).
+ */
+function categoryIncluded(category: string): boolean {
+  if (hasFlag('--all')) return true;
+  const raw = argValue('--category');
+  if (raw) return raw.split(',').map((value) => value.trim()).includes(category);
+  return stockContentSetForCategory(category)?.baseline ?? true;
+}
+
 function collectTargets(): Target[] {
   const onlyLang = argValue('--lang');
   const onlyVoice = argValue('--voice');
@@ -183,6 +210,7 @@ function collectTargets(): Target[] {
     for (const voice of VOICES) {
       if (onlyVoice && onlyVoice !== voice.name) continue;
       for (const preset of STOCK_CLIP_PRESETS) {
+        if (!categoryIncluded(preset.category)) continue;
         const texts = preset.texts[language] as readonly string[] | undefined;
         if (!texts) continue;
         texts.forEach((baseText, variant) => {
@@ -209,7 +237,7 @@ function collectTargets(): Target[] {
 /** 이 자리에 이미 살아 있는 프리셋이 있으면 그 id 와 지금 가리키는 소리, 없으면 null. */
 async function publishedMessage(
   db: Client,
-  target: Target,
+  target: Pick<Target, 'profileId' | 'category' | 'language' | 'variant'>,
 ): Promise<{ id: string; audioUrl: string | null } | null> {
   const rows = await db.execute({
     sql: `SELECT id, audio_url FROM messages
@@ -245,6 +273,7 @@ async function repairLedgerIfMissing(
   cacheKey: string,
   objectKey: string,
   synthesisText: string,
+  stamp: RenderStamp,
 ): Promise<'present' | 'repaired' | 'hash-taken'> {
   const existing = await db.execute({
     sql: 'SELECT 1 FROM generated_audio_assets WHERE audio_url = ? LIMIT 1',
@@ -256,12 +285,13 @@ async function repairLedgerIfMissing(
     sql: `INSERT INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
-             audio_url, audio_object_key, audio_format)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             audio_url, audio_object_key, audio_format, render_fingerprint, render_revision)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
       PROVIDER, target.providerVoiceId, TTS_MODEL_ID, target.language,
       cacheKey, synthesisText, `r2://${objectKey}`, objectKey, OUTPUT_FORMAT,
+      stamp.fingerprint, stamp.revision,
     ],
   });
   return 'repaired';
@@ -349,6 +379,48 @@ function netChangeSummary(netDbs: number[]): string {
   return ` · 다시 묶은 ${sorted.length}개의 순 변화 ${signed(sorted[0]!)}~${signed(sorted[sorted.length - 1]!)} dB(중앙 ${signed(median)})`;
 }
 
+/**
+ * **묶음을 공개한다**(`--release cheer_v2`, 스펙 §5-4 「공개 순서」 ⑥).
+ *
+ * 4목소리 × 3언어 × 전 항목이 이 환경에 **살아 있는 행으로 다 게시됐는지** 확인한 뒤에만 `stock_content_releases` 에 표식을
+ * 적는다. 하나라도 빠졌으면 적지 않고 1 로 끝난다 — 부분 묶음을 공개하면 앱이 받다 만 문구를 '쓸 수 있음' 으로 본다.
+ * 공개는 되돌리지 않는다(표식을 지우는 경로를 두지 않는다). 다시 돌려도 같다(`INSERT OR IGNORE`).
+ */
+async function releaseContentSet(db: Client, envName: string, setId: string, dryRun: boolean): Promise<void> {
+  const set = stockContentSet(setId);
+  if (!set) throw new Error(`stock-content.json 에 묶음 ${setId} 가 없다.`);
+  if (set.baseline) {
+    console.log(`${setId} 는 공개 표식 없이도 살아 있는 묶음이다 — 할 일이 없다.`);
+    return;
+  }
+  const missing: string[] = [];
+  for (const language of LANGUAGES) {
+    for (const voice of VOICES) {
+      for (let variant = 0; variant < set.items.length; variant += 1) {
+        const target = { profileId: voice.profileId, category: set.category, language, variant };
+        const row = await publishedMessage(db, target);
+        if (!row?.audioUrl) missing.push(`${language}/${voice.name}/${set.category}_${String(variant).padStart(2, '0')}`);
+      }
+    }
+  }
+  if (missing.length > 0) {
+    console.error(`⚠ ${envName} 에 아직 게시되지 않은 자리 ${missing.length}개 — 공개하지 않는다. 먼저 --category ${set.category} 로 게시할 것.`);
+    for (const label of missing.slice(0, 5)) console.error(`  ${label}`);
+    if (missing.length > 5) console.error(`  … 외 ${missing.length - 5}개`);
+    process.exitCode = 1;
+    return;
+  }
+  if (dryRun) {
+    console.log(`[공개 예정] ${envName} · ${setId} (${set.items.length}개 × ${VOICES.length}목소리 × ${LANGUAGES.length}언어)`);
+    return;
+  }
+  await db.execute({
+    sql: 'INSERT OR IGNORE INTO stock_content_releases (content_set) VALUES (?)',
+    args: [setId],
+  });
+  console.log(`[공개] ${envName} · ${setId} — 이제 매니페스트·expected_variants·클론 보충에 나온다.`);
+}
+
 async function main(): Promise<void> {
   const envName = argValue('--env') ?? 'dev';
   const bucket = BUCKETS[envName];
@@ -357,6 +429,14 @@ async function main(): Promise<void> {
   const dryRun = hasFlag('--dry-run');
 
   const env = loadEnvFile(resolve(BACKEND_DIR, envFile));
+
+  // 공개(`--release`)는 게시와 따로 돈다 — 올리는 것이 없고, 다 올라갔는지 보고 표식만 적는다.
+  const releaseSetId = argValue('--release');
+  if (releaseSetId) {
+    await releaseContentSet(openDb(env), envName, releaseSetId, dryRun);
+    return;
+  }
+
   const targets = collectTargets();
 
   // ⚠ **지문을 먼저 본다**(리뷰 15차). 파일이 있다는 것만으로 올리면, 옛 대사·옛 설정으로
@@ -402,7 +482,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const db = createClient({ url: env.TURSO_DATABASE_URL!, authToken: env.TURSO_AUTH_TOKEN });
+  const db = openDb(env);
 
   // ⚠ **`retired_at` 이 없으면 아직 #110 이 안 돌았다.** 그 상태로 진행하면 같은 자리에
   //   살아 있는 옛 행이 있어 전부 건너뛰고, 사용자는 "왜 아무것도 안 올라가지" 로 읽는다.
@@ -413,6 +493,16 @@ async function main(): Promise<void> {
       `⚠ ${envName} DB 에 messages.retired_at 이 없다 — 마이그레이션 #110 이 아직 안 돌았다.\n` +
         '  배포(=마이그레이션) 뒤에 다시 돌릴 것. 그전에는 옛 프리셋이 같은 자리에 살아 있어\n' +
         '  이 스크립트가 전부 건너뛴다.',
+    );
+    process.exitCode = 1;
+    return;
+  }
+  // 원장의 렌더 지문 칸(#139)이 없으면 원장 INSERT 가 던져 행마다 실패한다 — 올린 뒤에 알게 되지 않게 먼저 본다.
+  const ledgerColumns = await db.execute('PRAGMA table_info(generated_audio_assets)');
+  if (!ledgerColumns.rows.some((row) => String(row.name) === 'render_fingerprint')) {
+    console.error(
+      `⚠ ${envName} DB 에 generated_audio_assets.render_fingerprint 가 없다 — 마이그레이션 #139 가 아직 안 돌았다.\n` +
+        '  배포(=마이그레이션) 뒤에 다시 돌릴 것.',
     );
     process.exitCode = 1;
     return;
@@ -445,6 +535,10 @@ async function main(): Promise<void> {
       });
       const objectKey = generatedTtsObjectKey(SYSTEM_VOICE_LIBRARY_USER_ID, cacheKey, OUTPUT_FORMAT);
       const audioUrl = `r2://${objectKey}`;
+      // 이 게시본의 렌더 지문(#139) — 시청본 MP3 를 음량만 올린 사본이라 굽는 길이 서버 합성과 다르다.
+      const stamp = await renderStamp(
+        stockPublishRenderSettings({ provider: PROVIDER, providerVoiceId: target.providerVoiceId, language: target.language }),
+      );
       const size = statSync(target.stagedPath).size;
 
       const existing = await publishedMessage(db, target);
@@ -457,7 +551,7 @@ async function main(): Promise<void> {
           continue;
         }
         const ledger = await repairLedgerIfMissing(
-          db, target, existing.id, cacheKey, objectKey, synthesisText,
+          db, target, existing.id, cacheKey, objectKey, synthesisText, stamp,
         );
         if (ledger === 'hash-taken') {
           failed += 1;
@@ -504,6 +598,8 @@ async function main(): Promise<void> {
           displayText,
           synthesisText,
           deliveryTagsJson,
+          renderFingerprint: stamp.fingerprint,
+          renderRevision: stamp.revision,
         });
         if (outcome === 'replaced') {
           replaced += 1;
@@ -566,12 +662,13 @@ async function main(): Promise<void> {
             sql: `INSERT INTO generated_audio_assets
                     (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                      model_id, language, request_hash, text,
-                     audio_url, audio_object_key, audio_format)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                     audio_url, audio_object_key, audio_format, render_fingerprint, render_revision)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             args: [
               crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
               PROVIDER, target.providerVoiceId, TTS_MODEL_ID, target.language,
               cacheKey, synthesisText, audioUrl, objectKey, OUTPUT_FORMAT,
+              stamp.fingerprint, stamp.revision,
             ],
           });
         }
@@ -606,6 +703,11 @@ async function main(): Promise<void> {
     `\n게시 ${published}개 · 교체 ${replaced}개 · 이미 있음 ${skipped}개${failed ? ` · 실패 ${failed}개(다시 돌리면 그것만 재시도한다)` : ''}`,
   );
   if (failed > 0) process.exitCode = 1;
+}
+
+/** 환경의 DB. 게시 갈래는 게시본 사본을 다 만든 **뒤에** 연다(위 `categoryIncluded` 주석). */
+function openDb(env: Record<string, string>): Client {
+  return createClient({ url: env.TURSO_DATABASE_URL!, authToken: env.TURSO_AUTH_TOKEN });
 }
 
 await main();

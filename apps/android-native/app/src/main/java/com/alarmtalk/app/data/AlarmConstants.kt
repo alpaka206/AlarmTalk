@@ -13,6 +13,11 @@ object AlarmStates {
     const val FAILED = "failed"
 }
 
+/**
+ * 알람 행의 '서버에 올렸는가' 표시. ⚠ **2026-10-29 부터 아무도 읽지 않는다** — 서버 알람 사본을 없앴다(서버 마이그레이션
+ * #147, `docs/spec/alarm-lifecycle.md`). 알람은 기기에만 있고 올리는 코드도 지웠다. 칸(`AlarmEntity.syncState`)은 Room
+ * 마이그레이션 없이 그대로 두려고 남긴다 — 저장 경로가 적는 값은 의미가 없다.
+ */
 object AlarmSyncStates {
     const val LOCAL_ONLY = "local_only"
     const val SYNCED = "synced"

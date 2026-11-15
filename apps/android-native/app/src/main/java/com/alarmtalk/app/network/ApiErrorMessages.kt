@@ -55,6 +55,13 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "FREE_PLAN_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "BASIC_VOICE_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "MANUAL_TTS_QUOTA_EXCEEDED" to R.string.editor_error_manual_tts_quota,
+    // 광고 시청 승인 세션(`docs/spec/ad-rewards.md` §3). iOS `APIErrorMessages.swift` 와 같은 네 문장이다.
+    "AD_REWARD_MONTHLY_LIMIT" to R.string.api_error_ad_reward_monthly_limit,
+    "AD_REWARD_SESSION_OPEN" to R.string.api_error_ad_reward_session_open,
+    "AD_REWARD_SESSION_INVALID" to R.string.api_error_ad_reward_session_invalid,
+    "AD_REWARD_UNAVAILABLE" to R.string.api_error_ad_reward_unavailable,
+    // 같은 '음성 만들기' 가 아직 합성 중이다(`ManualRequestIds` — 같은 입력은 같은 id) — 잠시 뒤 다시 누르면 그 결과를 받는다.
+    "TTS_REQUEST_IN_PROGRESS" to R.string.editor_error_tts_request_in_progress,
     // ⚠ **막는 쪽은 언제나 '다른 스토어' 다**(코덱스 #733 8차). 서버의 배타성 판정은
     //   `applyStoreEntitlement` 하나이고 `provider <> ?` 로 자기 스토어를 뺀다 — 그래서
     //   안드로이드가 이 코드를 받았다면 걸린 것은 **애플**이다. 문구도 그렇게 말해야 한다.
@@ -75,6 +82,9 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "VOICE_CAPACITY_EXHAUSTED" to R.string.msg_voice_slot_exhausted,
     "VOICE_LIMIT_REACHED" to R.string.api_error_voice_limit_reached,
     "VOICE_NOT_READY" to R.string.api_error_voice_not_ready,
+    // 추가 음성팩 — 받을 수 없는 팩(게시 끝·지역·빌드)은 있다는 것도 드러내지 않는다(`docs/spec/voice-packs.md` §3).
+    "VOICE_PACK_NOT_FOUND" to R.string.voice_pack_not_available,
+    "VOICE_PACK_CLIP_NOT_FOUND" to R.string.voice_pack_not_available,
     "VOICE_CLONING_FAILED" to R.string.api_error_voice_cloning_failed,
     "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" to R.string.msg_voice_monthly_change_limit,
     "VOICE_PREVIEW_REQUIRED" to R.string.msg_voice_preview_required,
@@ -87,7 +97,6 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     // '목소리 느낌' 선택 제거) 그 코드를 받을 길이 없다. 서버는 1.2.10 앱 때문에 아직 낸다.
 
     // ── 알람·문구 ─────────────────────────────────────────────────────────
-    "ALARM_NOT_FOUND" to R.string.api_error_alarm_not_found,
     "TTS_GENERATION_FAILED" to R.string.api_error_tts_generation_failed,
 )
 

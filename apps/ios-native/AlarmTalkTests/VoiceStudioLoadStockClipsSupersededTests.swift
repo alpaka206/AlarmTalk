@@ -155,3 +155,42 @@ private final class VMSupersededManifestURLProtocol: URLProtocol, @unchecked Sen
 
     override func stopLoading() {}
 }
+
+/// **옛 알람 테마 힌트는 무료 테마만 담는다**(2026-10-29, 서버 알람 사본 삭제 #147). 안드로이드 `ServerCopyRemovalTest` 짝.
+@MainActor
+final class LegacyBucketHintsTests: XCTestCase {
+    private let systemVoice = systemVoiceIDPrefix + "000000000001"
+
+    private func clip(_ id: String, voice: String, category: String?, theme: String? = nil) -> StockClip {
+        StockClip(
+            messageId: id, voiceProfileId: voice, voiceName: nil, category: category, language: "ko",
+            text: "", audioUrl: nil, variant: nil, renderedForCurrentVoice: nil, theme: theme
+        )
+    }
+
+    func test_서버의_은퇴_힌트에_지금_목록의_기본_목소리_테마를_더한다() {
+        let manifest = StockClipListResponse(
+            clips: [
+                clip("m-live", voice: systemVoice, category: "weather"),
+                clip("m-clone", voice: "11111111-1111-4111-8111-111111111111", category: "cheer"),
+                clip("m-none", voice: systemVoice, category: nil),
+            ],
+            expectedVariants: nil,
+            legacyBucketHints: [LegacyBucketHint(messageId: "m-retired", category: "medication", language: "ko")]
+        )
+        XCTAssertEqual(VoiceStudioViewModel.legacyBucketHints(from: manifest), ["m-live": "weather", "m-retired": "medication"])
+    }
+
+    func test_기본_목소리의_소개는_테마가_아니고_묶음_카테고리는_테마로_접는다() {
+        let manifest = StockClipListResponse(
+            clips: [
+                clip("m-greeting", voice: systemVoice, category: "greeting"),
+                clip("m-cheer-v2", voice: systemVoice, category: "cheer_v2", theme: "cheer"),
+                clip("m-unknown", voice: systemVoice, category: "someday"),
+            ],
+            expectedVariants: nil,
+            legacyBucketHints: nil
+        )
+        XCTAssertEqual(VoiceStudioViewModel.legacyBucketHints(from: manifest), ["m-cheer-v2": "cheer"])
+    }
+}

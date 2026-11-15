@@ -74,7 +74,8 @@ class AlarmEditorStateTest {
         //   넣으려면 **기상 인사 스톡 클립을 따로 구워야** 한다.
         assertFalse("greeting" in FreeBucketOrder)
         assertEquals(
-            listOf("weather", "fortune", "cheer", "medication"),
+            // 기상 인사(`wake`)는 따로 구운 기본 목소리 클립이다(스펙 voice-and-message §5-4) — greeting 이 아니다.
+            listOf("wake", "weather", "fortune", "cheer", "medication"),
             FreeBucketOrder,
         )
     }
@@ -235,6 +236,29 @@ class AlarmEditorStateTest {
         assertFalse(draft.voiceRandomPrompt)
         assertEquals("cheer", draft.bucketId)
         assertEquals("cheer", draft.voiceRandomContext)
+        // 새 알람의 응원은 다양하게로 연다(스펙 voice-and-message §5-4).
+        assertEquals(com.alarmtalk.app.data.CheerModes.VARY, draft.cheerMode)
+        assertNull(draft.cheerPinnedContentId)
+
+        editor.cheerMode = com.alarmtalk.app.data.CheerModes.PINNED
+        editor.cheerPinnedContentId = "cheer_v2_05"
+        val pinned = editor.toDraft()
+        assertEquals(com.alarmtalk.app.data.CheerModes.PINNED, pinned.cheerMode)
+        assertEquals("cheer_v2_05", pinned.cheerPinnedContentId)
+
+        // 응원이 아닌 테마로 바꾸면 응원 값은 저장하지 않는다 — 서버 사본에 뜻 없는 값이 남지 않게.
+        editor.selectedBucket = "medication"
+        val medication = editor.toDraft()
+        assertNull(medication.cheerMode)
+        assertNull(medication.cheerPinnedContentId)
+    }
+
+    @Test
+    fun wakeIsAStockOnlyThemeThatMapsBothWays() {
+        assertEquals("wake", clonePrerenderBucketCategoryFor("wake"))
+        assertEquals("wake", randomPromptContextForBucket("wake"))
+        assertEquals("wake", normalizedRandomPromptContext("wake"))
+        assertTrue(EditorMessageContexts.any { it.first == WakeMessageContext })
     }
 
     /**

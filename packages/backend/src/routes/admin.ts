@@ -1,7 +1,60 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { authRateLimitMiddleware } from '../middleware/rateLimit';
+import {
+  ADMIN_PASSWORD_RETRY_AFTER_SECONDS,
+  chargeAdminPasswordAttempt,
+  clearAdminPasswordAttempts,
+} from '../lib/admin/password-attempts';
+import { jsonError } from '../lib/api-error';
+import { countAudience, parseAudience } from '../lib/admin/audience';
+import { listPushJobs, loadOverview, parseRange, searchUsers } from '../lib/admin/metrics';
+import { loadStoreDownloads } from '../lib/admin/store-downloads';
+import { renderLogin, renderOverview, renderPush, renderUsers } from '../lib/admin/pages';
+import {
+  AdminPushError,
+  adPushEnabled,
+  cancelPushJob,
+  createPushJob,
+  effectiveAudience,
+  parseCopy,
+  runJobStep,
+  sendTestPush,
+} from '../lib/admin/push-jobs';
+import { emptyState, newNonce, page, securityHeaders } from '../lib/admin/ui';
+import { renderGrantConfirm, renderUserDetail } from '../lib/admin/grant-pages';
+import { loadUserDetail } from '../lib/admin/user-detail';
+import { loadRenderBacklog, loadTtsUsage } from '../lib/admin/tts-ops';
+import { isRerenderKind } from '../lib/render-backlog';
+import { loadAdRewardReconciliation, loadUserAdRewards } from '../lib/admin/ad-rewards';
+import { loadUsageMetrics, parseUsageFilter } from '../lib/admin/usage-metrics';
+import { renderUsage } from '../lib/admin/usage-pages';
+import {
+  createPlanGrant,
+  grantEndFor,
+  isPlanGrantReason,
+  PLAN_GRANT_MAX_DAYS,
+  PlanGrantError,
+  revokePlanGrant,
+  type PlanGrantLength,
+} from '../lib/plan-grants';
+import { renderVoicePackDetail, renderVoicePackList } from '../lib/admin/voice-pack-pages';
+import {
+  deleteVoicePackClip,
+  importVoicePackClip,
+  isVoicePackTransition,
+  listVoicePackClipsFor,
+  listVoicePackEvents,
+  listVoicePacks,
+  loadVoicePack,
+  loadVoicePackClips,
+  transitionVoicePack,
+  updateVoicePackRights,
+  upsertDraftVoicePack,
+  VoicePackAdminError,
+  VOICE_PACK_AUDIO_MIME,
+} from '../lib/voice-packs';
+import { R2VoiceStorage } from '../lib/r2-storage';
 
 // MARK: - 관리자 전용 페이지 (/admin/*)
 //
@@ -11,9 +64,11 @@ import { authRateLimitMiddleware } from '../middleware/rateLimit';
 // curl/스크립트용으로 HTTP Basic(비밀번호=ADMIN_SECRET, 아이디 무시)도 그대로 허용한다.
 // ADMIN_SECRET 미설정 시 503. 접속: https://<host>/admin/login
 //
-// 프로모 코드 **이력**(발급했던 코드와 사용 수)을 읽기 전용으로 보여 준다. 발급·켜기는 없다 —
-// 프로모 코드는 2026-10-12 에 없앴다(App Store 3.1.1 반려, `routes/code.ts` 머리말). 서버가 더는
-// 받지 않으므로 여기서 새 코드를 만들어도 아무도 쓸 수 없다 — 발급 폼을 되살리지 말 것.
+// 사용자 상세에서 **플러스 기간 지급·회수**를 한다(2026-10-26 오너 승인 — 스토어 밖 유일한 운영 예외, 코드 입력 없음).
+//
+// 화면은 개요 · 사용자 · 알림 보내기 · 음성팩 넷이다(`docs/spec/admin-console.md`, 음성팩은 `docs/spec/voice-packs.md`). 2026-10-23 에 다시 만들면서 프로모 코드
+// 이력 화면은 지웠다 — 프로모 코드는 2026-10-12 에 없앴고(App Store 3.1.1), 코드를 쳐서 유료 기능을 여는 길을
+// 되살리지 않는다(CLAUDE.md 「유료 기능은 스토어 결제로만 연다」). 발급 화면을 다시 만들지 말 것.
 
 const admin = new Hono<AppEnv>();
 
@@ -25,23 +80,6 @@ function safeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
-}
-
-/**
- * 배포→마이그레이션 사이 창에서 아직 없는 컬럼을 참조했는지 판별.
- * SELECT 는 "no such column: X", INSERT 컬럼 목록은 "table T has no column named X" 로 온다.
- */
-function isMissingColumnError(err: unknown): boolean {
-  return /no such column|has no column named/i.test(String(err));
-}
-
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 function refererOrigin(referer: string | undefined): string | null {
@@ -100,6 +138,11 @@ async function isValidSessionToken(token: string, secret: string, nowMs: number)
   return safeEqual(sig, await hmacSign(`${ver}.${expStr}`, secret));
 }
 
+// 비밀번호를 맞춰 보는 IP 의 통 — IP 를 그대로 적지 않는다. 위조할 수 없는 `cf-connecting-ip` 만 믿는다(`middleware/rateLimit.ts`).
+function adminPasswordKey(c: Context<AppEnv>, secret: string): Promise<string> {
+  return hmacSign(`admin-password:${c.req.header('cf-connecting-ip') || 'unknown'}`, secret);
+}
+
 function sessionCookieHeader(token: string): string {
   const maxAge = Math.floor(SESSION_TTL_MS / 1000);
   return `${SESSION_COOKIE}=${token}; Max-Age=${maxAge}; Path=/admin; HttpOnly; Secure; SameSite=Strict`;
@@ -107,24 +150,6 @@ function sessionCookieHeader(token: string): string {
 
 function clearedCookieHeader(): string {
   return `${SESSION_COOKIE}=; Max-Age=0; Path=/admin; HttpOnly; Secure; SameSite=Strict`;
-}
-
-function renderLoginPage(errorMsg: string | null): string {
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AlarmTalk 관리자 · 로그인</title><style>${PAGE_STYLE}
-  form.login { max-width: 320px; margin: 40px auto 0; display: flex; flex-direction: column; gap: 12px; }
-  form.login input { padding: 10px; font-size: 15px; }
-</style></head><body>
-<h1>관리자 로그인</h1>
-${errorMsg ? `<div class="msg err">${escapeHtml(errorMsg)}</div>` : ''}
-<form class="login" method="post" action="/admin/login">
-  <label>비밀번호
-    <input name="password" type="password" required autocomplete="current-password" autofocus>
-  </label>
-  <button type="submit">로그인</button>
-</form>
-</body></html>`;
 }
 
 // 1) 설정 게이트 — ADMIN_SECRET 미설정이면 로그인 포함 모든 /admin/* 이 503.
@@ -154,23 +179,36 @@ admin.get('/login', async (c) => {
   const secret = c.env.ADMIN_SECRET!;
   const cookie = readCookie(c.req.header('Cookie'), SESSION_COOKIE);
   if (cookie && (await isValidSessionToken(cookie, secret, Date.now()))) {
-    return c.redirect('/admin/promo', 302);
+    return c.redirect('/admin', 302);
   }
-  return c.html(renderLoginPage(c.req.query('err') || null));
+  // 오류 문구는 쿼리 값을 그대로 비추지 않는다 — 고정 문구 하나만(남의 링크로 엉뚱한 글을 띄우지 못하게).
+  const nonce = newNonce();
+  const html = renderLogin(nonce, c.req.query('err') ? '비밀번호가 맞지 않아요. 다시 입력해 주세요.' : null);
+  return c.html(html, 200, securityHeaders(nonce));
 });
 
-// 비밀번호만 검증(아이디/이메일 없음). 무차별 대입은 authRateLimitMiddleware(IP당 15/분)로 좁힌다.
-admin.post('/login', authRateLimitMiddleware, async (c) => {
+// 비밀번호만 검증(아이디/이메일 없음). 시도 횟수는 Basic 과 한 통으로 센다(`lib/admin/password-attempts.ts`).
+admin.post('/login', async (c) => {
   const secret = c.env.ADMIN_SECRET!;
+  const db = getDB(c.env);
+  const attemptKey = await adminPasswordKey(c, secret);
+  if (!(await chargeAdminPasswordAttempt(db, attemptKey))) {
+    const nonce = newNonce();
+    return c.html(renderLogin(nonce, '비밀번호를 너무 많이 틀렸어요. 잠시 뒤에 다시 해 주세요.'), 429, {
+      ...securityHeaders(nonce),
+      'Retry-After': String(ADMIN_PASSWORD_RETRY_AFTER_SECONDS),
+    });
+  }
   const form = await c.req.parseBody();
   const password = String(form.password ?? '');
   if (!safeEqual(password, secret)) {
-    return c.redirect('/admin/login?err=' + encodeURIComponent('비밀번호가 올바르지 않습니다'), 303);
+    return c.redirect('/admin/login?err=1', 303);
   }
+  await clearAdminPasswordAttempts(db, attemptKey);
   const token = await makeSessionToken(secret, Date.now());
   return new Response(null, {
     status: 303,
-    headers: { Location: '/admin/promo', 'Set-Cookie': sessionCookieHeader(token) },
+    headers: { Location: '/admin', 'Set-Cookie': sessionCookieHeader(token) },
   });
 });
 
@@ -192,97 +230,571 @@ admin.use('*', async (c, next) => {
   }
   const header = c.req.header('Authorization') || '';
   if (header.startsWith('Basic ')) {
+    const db = getDB(c.env);
+    const attemptKey = await adminPasswordKey(c, secret);
+    if (!(await chargeAdminPasswordAttempt(db, attemptKey))) {
+      c.header('Retry-After', String(ADMIN_PASSWORD_RETRY_AFTER_SECONDS));
+      return jsonError(c, 429, 'RATE_LIMITED', '비밀번호를 너무 많이 틀렸어요. 잠시 뒤에 다시 해 주세요.', {
+        retryAfter: ADMIN_PASSWORD_RETRY_AFTER_SECONDS,
+      });
+    }
+    let passwordMatches = false;
     try {
       const decoded = atob(header.slice(6));
-      const pass = decoded.slice(decoded.indexOf(':') + 1);
-      if (safeEqual(pass, secret)) return next();
+      passwordMatches = safeEqual(decoded.slice(decoded.indexOf(':') + 1), secret);
     } catch {
       /* 잘못된 Basic 헤더 → 아래 로그인 리다이렉트로 폴백 */
     }
+    if (passwordMatches) {
+      await clearAdminPasswordAttempts(db, attemptKey);
+      return next();
+    }
+  }
+  // 화면 안에서 부르는 JSON 요청(세션이 만료된 뒤)은 리다이렉트 대신 401 로 — 스크립트가 문구를 띄운다.
+  if (c.req.method === 'POST') {
+    return jsonError(c, 401, 'ADMIN_UNAUTHORIZED', '로그인이 끝났어요. 새로고침해 다시 로그인해 주세요.');
   }
   return c.redirect('/admin/login', 302);
 });
 
-const PAGE_STYLE = `
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; max-width: 960px; margin: 24px auto; padding: 0 16px; }
-  h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 28px; }
-  button { padding: 8px 14px; font-size: 14px; cursor: pointer; }
-  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
-  th, td { border: 1px solid #8883; padding: 6px 8px; text-align: left; }
-  code { background: #8882; padding: 1px 5px; border-radius: 4px; }
-  .msg { padding: 10px 12px; border-radius: 6px; margin: 12px 0; }
-  .msg.err { background: #e74c3c33; }
-  .muted { opacity: 0.6; } .off { opacity: 0.45; }
-`;
+// --- 화면 ---
 
-admin.get('/promo', async (c) => {
-  const db = getDB(c.env);
-  // deploy-backend.yml 이 배포 '후' 마이그레이션을 돌리므로, redemption_group(#72) 컬럼이
-  // 아직 없는 창에서도 콘솔이 500 나지 않게 레거시 스키마로 폴백한다.
-  // NULL AS redemption_group 으로 렌더러는 그대로 쓴다.
-  let codesRes;
+/** 콘솔 화면 응답 — 매번 새 nonce·보안 헤더. */
+function html(c: Context<AppEnv>, render: (nonce: string) => string, status: 200 | 500 = 200) {
+  const nonce = newNonce();
+  return c.html(render(nonce), status, securityHeaders(nonce));
+}
+
+/** 표가 아직 없는 창(배포 → 마이그레이션, 1분 남짓)과 DB 오류를 같은 화면으로 말한다. */
+function unavailable(nonce: string, err: unknown, active: 'overview' | 'usage' | 'users' | 'push' | 'packs'): string {
+  const missing = /no such table|no such column/i.test(String(err));
+  return page({
+    title: '잠시 뒤 다시',
+    active,
+    nonce,
+    body: `<section class="panel">${emptyState(
+      missing ? '데이터베이스를 갱신하는 중이에요' : '숫자를 불러오지 못했어요',
+      missing ? '배포 직후에는 1분쯤 걸려요. 잠시 뒤 새로고침해 주세요.' : '잠시 뒤 새로고침해 주세요. 계속되면 워커 로그를 확인해 주세요.',
+      '<a class="btn btn-secondary btn-sm" href="">새로고침</a>',
+    )}</section>`,
+  });
+}
+
+admin.get('/', async (c) => {
+  const nowMs = Date.now();
   try {
-    codesRes = await db.execute({
-      sql: `SELECT p.id, p.code, p.duration_days, p.valid_from, p.valid_until,
-                   p.max_redemptions, p.is_active, p.note, p.created_at, p.redemption_group,
-                   pl.key AS plan_key, pl.name AS plan_name,
-                   (SELECT COUNT(*) FROM promo_code_redemptions r WHERE r.promo_code_id = p.id) AS used
-            FROM promo_codes p
-            LEFT JOIN plans pl ON pl.id = p.plan_id
-            ORDER BY p.created_at DESC`,
-    });
+    const db = getDB(c.env);
+    // 스토어 숫자는 따로 읽는다 — 그 표가 아직 없는 창(마이그레이션 #138 전)이어도 개요의 나머지는 그린다.
+    const [overview, store] = await Promise.all([
+      loadOverview(db, parseRange(c.req.query('range')), nowMs),
+      loadStoreDownloads(db, c.env).catch((err: unknown) => {
+        console.error('[admin] store downloads failed', err);
+        return null;
+      }),
+    ]);
+    return html(c, (nonce) => renderOverview(nonce, overview, nowMs, store));
   } catch (err) {
-    if (!isMissingColumnError(err)) throw err;
-    codesRes = await db.execute({
-      sql: `SELECT p.id, p.code, p.duration_days, p.valid_from, p.valid_until,
-                   p.max_redemptions, p.is_active, p.note, p.created_at, NULL AS redemption_group,
-                   pl.key AS plan_key, pl.name AS plan_name,
-                   (SELECT COUNT(*) FROM promo_code_redemptions r WHERE r.promo_code_id = p.id) AS used
-            FROM promo_codes p
-            LEFT JOIN plans pl ON pl.id = p.plan_id
-            ORDER BY p.created_at DESC`,
-    });
+    console.error('[admin] overview failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'overview'), 500);
   }
+});
 
-  // `promo_codes.plan_id` 는 NOT NULL 이라 상품 이름이 비는 것은 그 플랜 행이 지워졌을 때뿐이다(#131 이 커플·가족을 지웠다).
-  const rows = codesRes.rows
-    .map((r) => {
-      const active = Number(r.is_active) === 1;
-      const max = r.max_redemptions == null ? '∞' : escapeHtml(r.max_redemptions);
-      const from = r.valid_from ? escapeHtml(r.valid_from) : '—';
-      const until = r.valid_until ? escapeHtml(r.valid_until) : '—';
-      return `<tr class="${active ? '' : 'off'}">
-        <td><code>${escapeHtml(r.code)}</code></td>
-        <td>${escapeHtml(r.plan_name ?? r.plan_key ?? '판매 종료 상품')}</td>
-        <td>${escapeHtml(r.duration_days)}일</td>
-        <td>${escapeHtml(r.used)} / ${max}</td>
-        <td>${from}<br>~ ${until}</td>
-        <td>${r.redemption_group ? `<code>${escapeHtml(r.redemption_group)}</code>` : '—'}</td>
-        <td>${active ? '✅' : '⛔'}</td>
-        <td class="muted">${escapeHtml(r.note ?? '')}</td>
-      </tr>`;
-    })
-    .join('');
+// --- 합성 운영(JSON — `docs/spec/tts-render-and-budget.md` §4·§5). 읽기만 한다. ---
 
-  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AlarmTalk 관리자 · 프로모 코드 이력</title><style>${PAGE_STYLE}
-  .topbar { display: flex; justify-content: space-between; align-items: center; }
-</style></head><body>
-<div class="topbar">
-  <h1>프로모 코드 이력</h1>
-  <form method="post" action="/admin/logout" style="margin:0"><button type="submit">로그아웃</button></form>
-</div>
-<div class="msg err">프로모 코드는 2026-10-12 에 없앴습니다. 앱과 서버가 더는 받지 않으므로 새로 발급하거나 다시 켤 수 없습니다(App Store 심사 지침 3.1.1). 이벤트 혜택은 스토어의 오퍼 코드로 하세요.</div>
-<h2>발급했던 코드</h2>
-<table>
-  <thead><tr><th>코드</th><th>플랜</th><th>기간</th><th>사용/상한</th><th>유효창</th><th>그룹</th><th>활성</th><th>메모</th></tr></thead>
-  <tbody>${rows || '<tr><td colspan="8" class="muted">발급했던 코드가 없습니다.</td></tr>'}</tbody>
-</table>
-</body></html>`;
+/** 다시 구울 목록과 예상 글자. `?kind=` 를 주면 그 종류의 대상 한 쪽(`limit` ≤100·`offset`), `?legacy=1` 은 지문 이전 행도. */
+admin.get('/tts/render-backlog', async (c) => {
+  const kind = c.req.query('kind');
+  if (kind !== undefined && !isRerenderKind(kind)) {
+    return jsonError(c, 400, 'INVALID_REQUEST', 'kind must be one of system_stock, clone_prerender, manual, other.');
+  }
+  try {
+    const body = await loadRenderBacklog(getDB(c.env), c.env, {
+      kind: kind ?? null,
+      includeLegacy: c.req.query('legacy') === '1',
+      limit: Number(c.req.query('limit') ?? 50),
+      offset: Number(c.req.query('offset') ?? 0),
+    });
+    return c.json(body);
+  } catch (err) {
+    console.error('[admin] render backlog failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', 'Could not read the render backlog.');
+  }
+});
 
-  return c.html(html);
+/** 요청 종류별 합성 사용량·예산 설정·클론 슬롯. `?days=`(1~100, 기본 31), `?provider=1` 이면 공급자 잔여도 조회한다. */
+admin.get('/tts/usage', async (c) => {
+  try {
+    const body = await loadTtsUsage(getDB(c.env), c.env, {
+      days: Number(c.req.query('days') ?? 31),
+      provider: c.req.query('provider') === '1',
+    });
+    return c.json(body);
+  } catch (err) {
+    console.error('[admin] tts usage failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', 'Could not read the synthesis usage.');
+  }
+});
+
+admin.get('/usage', async (c) => {
+  try {
+    const metrics = await loadUsageMetrics(getDB(c.env), parseUsageFilter((key) => c.req.query(key)));
+    return html(c, (nonce) => renderUsage(nonce, metrics));
+  } catch (err) {
+    console.error('[admin] usage failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'usage'), 500);
+  }
+});
+
+admin.get('/users', async (c) => {
+  const nowMs = Date.now();
+  const q = (c.req.query('q') ?? '').slice(0, 100);
+  try {
+    const users = await searchUsers(getDB(c.env), q);
+    return html(c, (nonce) => renderUsers(nonce, q, users, nowMs));
+  } catch (err) {
+    console.error('[admin] users failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'users'), 500);
+  }
+});
+
+// --- 사용자 상세 · 플러스 기간 지급 ---
+
+/** 콘솔은 비밀번호 하나로 들어온다 — 사람을 가를 수 없어 지급자는 '콘솔' 로 적는다. */
+const ADMIN_ACTOR = 'admin-console';
+
+const FLASH: Record<string, { tone: 'good' | 'bad'; text: string }> = {
+  granted: { tone: 'good', text: '플러스를 지급했어요. 앱은 다음 갱신 때 반영해요.' },
+  again: { tone: 'good', text: '이미 처리한 지급이에요. 다시 주지 않았어요.' },
+  revoked: { tone: 'good', text: '지급을 회수했어요. 다른 권한이 없으면 지금부터 3일 뒤 목소리를 지워요.' },
+};
+
+function grantFlash(code: string | undefined, err: string | undefined): { tone: 'good' | 'bad'; text: string } | null {
+  if (err) return { tone: 'bad', text: err.slice(0, 120) };
+  return code ? (FLASH[code] ?? null) : null;
+}
+
+function grantErrorRedirect(c: Context<AppEnv>, userId: string, err: unknown) {
+  const text =
+    err instanceof PlanGrantError ? err.message : '처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+  if (!(err instanceof PlanGrantError)) console.error('[admin] grant failed', err);
+  return c.redirect(`/admin/users/${encodeURIComponent(userId)}?err=${encodeURIComponent(text)}`, 303);
+}
+
+admin.get('/users/:id', async (c) => {
+  const now = new Date();
+  try {
+    const detail = await loadUserDetail(getDB(c.env), c.req.param('id'), now);
+    if (!detail) {
+      return html(c, (nonce) =>
+        page({
+          title: '사용자 없음',
+          active: 'users',
+          nonce,
+          body: `<section class="panel">${emptyState('계정을 찾지 못했어요', '탈퇴했거나 id 가 틀렸어요.', '<a class="btn btn-secondary btn-sm" href="/admin/users">사용자 목록</a>')}</section>`,
+        }),
+      );
+    }
+    const flash = grantFlash(c.req.query('done'), c.req.query('err'));
+    return html(c, (nonce) => renderUserDetail(nonce, detail, now, flash));
+  } catch (err) {
+    console.error('[admin] user detail failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'users'), 500);
+  }
+});
+
+// --- 광고 보상 대조 (읽기 전용 JSON — `docs/spec/ad-rewards.md` §7) ---
+// 장기 미확정 승인 세션·정산 못 한 콜백을 모으고, 한 사람의 승인·콜백·거래·잔액을 나란히 둔다. ⚠ 쓰기(고객 보상 지급·
+// 재정산)는 없다 — 후속이다. 붙일 때는 같은 승인 id 에 묶어 이중 적립을 막고 사유·감사 이력을 남긴다.
+admin.get('/ad-rewards.json', async (c) => {
+  try {
+    return c.json(await loadAdRewardReconciliation(getDB(c.env), new Date()));
+  } catch (err) {
+    console.error('[admin] ad rewards failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', '광고 보상 기록을 읽지 못했어요.');
+  }
+});
+
+admin.get('/users/:id/ad-rewards.json', async (c) => {
+  const userId = c.req.param('id').slice(0, 128);
+  try {
+    return c.json(await loadUserAdRewards(getDB(c.env), userId, new Date()));
+  } catch (err) {
+    console.error('[admin] user ad rewards failed', err);
+    return jsonError(c, 500, 'INTERNAL_ERROR', '광고 보상 기록을 읽지 못했어요.');
+  }
+});
+
+admin.post('/users/:id/grants/preview', async (c) => {
+  const userId = c.req.param('id');
+  const now = new Date();
+  const form = await c.req.parseBody();
+  const lengthKey = String(form.length ?? '');
+  const reason = String(form.reason ?? '');
+  const note = String(form.note ?? '').trim().slice(0, 200);
+  try {
+    if (!isPlanGrantReason(reason)) throw new PlanGrantError('ADMIN_GRANT_INVALID', '지급 사유를 골라 주세요.');
+    const length: PlanGrantLength =
+      lengthKey === '1m'
+        ? { kind: 'months', months: 1 }
+        : lengthKey === 'until'
+          ? { kind: 'until', date: String(form.until ?? '') }
+          : { kind: 'days', days: 7 };
+    const endsAt = grantEndFor(length, now);
+    const detail = await loadUserDetail(getDB(c.env), userId, now);
+    if (!detail || detail.deletionStatus !== 'active' || detail.isSystem) {
+      throw new PlanGrantError('ADMIN_GRANT_USER_NOT_FOUND', '지급할 계정을 찾지 못했어요. 탈퇴 대기 계정에는 줄 수 없어요.');
+    }
+    const lengthLabel =
+      length.kind === 'months' ? '1개월 (한국 달력 기준)' : length.kind === 'days' ? '7일' : `${length.date} 끝까지`;
+    const requestKey = crypto.randomUUID().replace(/-/g, '');
+    return html(c, (nonce) => renderGrantConfirm(nonce, detail, { endsAt, lengthLabel, reason, note, requestKey }, now));
+  } catch (err) {
+    return grantErrorRedirect(c, userId, err);
+  }
+});
+
+admin.post('/users/:id/grants', async (c) => {
+  const userId = c.req.param('id');
+  const now = new Date();
+  const form = await c.req.parseBody();
+  try {
+    const endsAt = new Date(String(form.ends_at ?? ''));
+    if (Number.isNaN(endsAt.getTime()) || endsAt.getTime() - now.getTime() > PLAN_GRANT_MAX_DAYS * 24 * 60 * 60 * 1000) {
+      throw new PlanGrantError('ADMIN_GRANT_INVALID', '확인 화면을 다시 열어 주세요.');
+    }
+    const reason = String(form.reason ?? '');
+    if (!isPlanGrantReason(reason)) throw new PlanGrantError('ADMIN_GRANT_INVALID', '지급 사유를 골라 주세요.');
+    const { created } = await createPlanGrant(
+      getDB(c.env),
+      c.env,
+      {
+        userPk: userId,
+        endsAt,
+        reason,
+        note: String(form.note ?? ''),
+        actor: ADMIN_ACTOR,
+        requestKey: String(form.request_key ?? ''),
+      },
+      now,
+    );
+    return c.redirect(`/admin/users/${encodeURIComponent(userId)}?done=${created ? 'granted' : 'again'}`, 303);
+  } catch (err) {
+    return grantErrorRedirect(c, userId, err);
+  }
+});
+
+admin.post('/grants/:id/revoke', async (c) => {
+  const form = await c.req.parseBody();
+  const userId = String(form.user ?? '');
+  try {
+    if (form.confirm !== '1') throw new PlanGrantError('ADMIN_GRANT_INVALID', '회수 확인을 체크해 주세요.');
+    const grant = await revokePlanGrant(getDB(c.env), c.env, c.req.param('id'), ADMIN_ACTOR, new Date());
+    return c.redirect(`/admin/users/${encodeURIComponent(grant.userId)}?done=revoked`, 303);
+  } catch (err) {
+    return grantErrorRedirect(c, userId, err);
+  }
+});
+
+admin.get('/push', async (c) => {
+  const test = (c.req.query('test') ?? '').trim().slice(0, 254);
+  try {
+    const jobs = await listPushJobs(getDB(c.env));
+    return html(c, (nonce) =>
+      renderPush(nonce, {
+        jobs,
+        testEmail: test || c.env.ADMIN_TEST_PUSH_EMAIL || '',
+        preset: c.req.query('preset') ?? null,
+        adPushEnabled: adPushEnabled(c.env),
+      }),
+    );
+  } catch (err) {
+    console.error('[admin] push page failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'push'), 500);
+  }
+});
+
+// --- 알림 API(같은 출처 fetch, CSRF 검사를 지난다) ---
+
+async function jsonBody(c: Context<AppEnv>): Promise<Record<string, unknown>> {
+  try {
+    const body = await c.req.json();
+    return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function pushError(c: Context<AppEnv>, err: unknown) {
+  if (err instanceof AdminPushError) {
+    const status =
+      err.code === 'ADMIN_PUSH_JOB_NOT_FOUND' || err.code === 'ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND'
+        ? 404
+        : err.code === 'ADMIN_PUSH_COPY_INVALID'
+          ? 400
+          : 409;
+    return jsonError(c, status, err.code, err.message);
+  }
+  console.error('[admin] push failed', err);
+  return jsonError(c, 500, 'ADMIN_PUSH_FAILED', '요청을 처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+}
+
+admin.post('/push/preview', async (c) => {
+  const body = await jsonBody(c);
+  try {
+    const kind = body.kind === 'ad' ? 'ad' : 'notice';
+    const counts = await countAudience(getDB(c.env), effectiveAudience(kind, parseAudience(body)));
+    return c.json(counts);
+  } catch (err) {
+    return pushError(c, err);
+  }
+});
+
+admin.post('/push/test', async (c) => {
+  const body = await jsonBody(c);
+  try {
+    const copy = parseCopy(body);
+    const result = await sendTestPush(getDB(c.env), c.env, String(body.testEmail ?? ''), copy, Date.now());
+    return c.json(result);
+  } catch (err) {
+    return pushError(c, err);
+  }
+});
+
+admin.post('/push/jobs', async (c) => {
+  const body = await jsonBody(c);
+  try {
+    const copy = parseCopy(body);
+    const estimated = Math.min(Math.max(Math.trunc(Number(body.estimatedTotal) || 0), 0), 1_000_000);
+    const id = await createPushJob(getDB(c.env), c.env, copy, parseAudience(body), estimated, Date.now());
+    return c.json({ id });
+  } catch (err) {
+    return pushError(c, err);
+  }
+});
+
+admin.post('/push/jobs/:id/step', async (c) => {
+  try {
+    return c.json(await runJobStep(getDB(c.env), c.env, c.req.param('id'), Date.now()));
+  } catch (err) {
+    return pushError(c, err);
+  }
+});
+
+admin.post('/push/jobs/:id/cancel', async (c) => {
+  const db = getDB(c.env);
+  try {
+    await cancelPushJob(db, c.req.param('id'));
+    return c.json(await runJobStep(db, c.env, c.req.param('id'), Date.now()));
+  } catch (err) {
+    return pushError(c, err);
+  }
+});
+
+// --- 추가 음성팩 검수·게시(`docs/spec/voice-packs.md` §4·§6) ---
+//
+// 화면(폼)은 검수·권리·전이를 하고, 가져오기(JSON)는 스크립트(`scripts/import-voice-pack.ts`, Basic)가 한다. 모든 쓰기는
+// `voice_pack_events` 에 감사 기록을 남긴다(lib/voice-packs.ts 의 쓰기 함수들이 같은 트랜잭션에서 적는다).
+
+/** 스크립트로 부른 쓰기의 행위자. 화면 쓰기는 `ADMIN_ACTOR`. */
+const ADMIN_SCRIPT_ACTOR = 'admin-script';
+
+const PACK_FLASH: Record<string, string> = {
+  rights: '권리를 저장했어요.',
+  submit: '검수를 요청했어요.',
+  reject: '반려했어요. 다시 draft 예요.',
+  publish: '게시했어요. 앱은 다음 목록 조회부터 보여요.',
+  suspend: '게시를 중단했어요. 기존 알람은 허락된 기한까지 울고, 그 뒤 미나로 바뀌어요.',
+  republish: '다시 게시했어요.',
+  revise: 'draft 로 되돌렸어요. 앱에는 계속 게시 끝남으로 보여요.',
+  clip_deleted: '클립을 지웠어요.',
+};
+
+function packRedirect(c: Context<AppEnv>, packId: string, done: string | null, err?: unknown) {
+  const base = `/admin/voice-packs/${encodeURIComponent(packId)}`;
+  if (err !== undefined) {
+    const text = err instanceof VoicePackAdminError ? err.message : '처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+    if (!(err instanceof VoicePackAdminError)) console.error('[admin] voice pack write failed', err);
+    return c.redirect(`${base}?err=${encodeURIComponent(text)}`, 303);
+  }
+  return c.redirect(`${base}${done ? `?done=${encodeURIComponent(done)}` : ''}`, 303);
+}
+
+function packJsonError(c: Context<AppEnv>, err: unknown) {
+  if (err instanceof VoicePackAdminError) {
+    const status = err.code === 'ADMIN_VOICE_PACK_NOT_FOUND' ? 404 : err.code === 'ADMIN_VOICE_PACK_LOCKED' ? 409 : 400;
+    return jsonError(c, status, err.code, err.message);
+  }
+  console.error('[admin] voice pack import failed', err);
+  return jsonError(c, 500, 'INTERNAL_ERROR', '요청을 처리하지 못했어요.');
+}
+
+admin.get('/voice-packs', async (c) => {
+  const now = new Date();
+  try {
+    const db = getDB(c.env);
+    const packs = await listVoicePacks(db);
+    const clips = await listVoicePackClipsFor(
+      db,
+      packs.map((p) => p.id),
+    );
+    const rows = packs.map((pack) => {
+      const list = clips.get(pack.id) ?? [];
+      return { pack, clipCount: list.length, totalBytes: list.reduce((sum, clip) => sum + Number(clip.size_bytes), 0) };
+    });
+    return html(c, (nonce) => renderVoicePackList(nonce, rows, now));
+  } catch (err) {
+    console.error('[admin] voice packs failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'packs'), 500);
+  }
+});
+
+admin.get('/voice-packs/:packId', async (c) => {
+  const now = new Date();
+  try {
+    const db = getDB(c.env);
+    const pack = await loadVoicePack(db, c.req.param('packId'));
+    if (!pack) {
+      return html(c, (nonce) =>
+        page({
+          title: '팩 없음',
+          active: 'packs',
+          nonce,
+          body: `<section class="panel">${emptyState('팩을 찾지 못했어요', 'id 가 틀렸거나 아직 만들지 않았어요.', '<a class="btn btn-secondary btn-sm" href="/admin/voice-packs">팩 목록</a>')}</section>`,
+        }),
+      );
+    }
+    const [clips, events] = await Promise.all([loadVoicePackClips(db, pack.id), listVoicePackEvents(db, pack.id)]);
+    const err = c.req.query('err');
+    const done = c.req.query('done');
+    const flash = err
+      ? { tone: 'bad' as const, text: err.slice(0, 200) }
+      : done && PACK_FLASH[done]
+        ? { tone: 'good' as const, text: PACK_FLASH[done]! }
+        : null;
+    return html(c, (nonce) => renderVoicePackDetail(nonce, pack, clips, events, now, flash));
+  } catch (err) {
+    console.error('[admin] voice pack detail failed', err);
+    return html(c, (nonce) => unavailable(nonce, err, 'packs'), 500);
+  }
+});
+
+/** 검수용 듣기 — 상태와 무관하게 콘솔만 듣는다(앱 API 는 게시된 팩만 준다). */
+admin.get('/voice-packs/:packId/clips/:clipId/audio', async (c) => {
+  const db = getDB(c.env);
+  const res = await db.execute({
+    sql: 'SELECT audio_key, audio_format FROM voice_pack_clips WHERE id = ? AND pack_id = ?',
+    args: [c.req.param('clipId'), c.req.param('packId')],
+  });
+  const row = res.rows[0];
+  const bucket = c.env.VOICE_BUCKET;
+  const stored = row && bucket ? await new R2VoiceStorage(bucket).get(String(row.audio_key)) : null;
+  if (!row || !stored) return c.text('Not found', 404);
+  return new Response(stored.bytes as Uint8Array<ArrayBuffer>, {
+    headers: {
+      'Content-Type': VOICE_PACK_AUDIO_MIME[String(row.audio_format)] ?? 'application/octet-stream',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+});
+
+admin.post('/voice-packs/import', async (c) => {
+  const body = await jsonBody(c);
+  try {
+    const { created, pack } = await upsertDraftVoicePack(
+      getDB(c.env),
+      {
+        packId: String(body.pack_id ?? ''),
+        speakerName: String(body.speaker_name ?? ''),
+        description: typeof body.description === 'string' ? body.description : '',
+        usageNote: typeof body.usage_note === 'string' ? body.usage_note : '',
+        language: String(body.language ?? ''),
+        minAndroidBuild: Number(body.min_android_build ?? 0),
+        minIosBuild: Number(body.min_ios_build ?? 0),
+      },
+      ADMIN_SCRIPT_ACTOR,
+    );
+    return c.json({ created, pack_id: pack.id, voice_id: pack.voice_id, status: pack.status });
+  } catch (err) {
+    return packJsonError(c, err);
+  }
+});
+
+admin.post('/voice-packs/:packId/clips', async (c) => {
+  const body = await jsonBody(c);
+  try {
+    const clip = await importVoicePackClip(
+      getDB(c.env),
+      c.env.VOICE_BUCKET,
+      c.req.param('packId'),
+      {
+        category: String(body.category ?? ''),
+        variant: Number(body.variant),
+        text: String(body.text ?? ''),
+        audioBase64: String(body.audio_base64 ?? ''),
+        audioFormat: String(body.audio_format ?? ''),
+      },
+      ADMIN_SCRIPT_ACTOR,
+    );
+    return c.json({ clip_id: clip.id, sha256: clip.sha256, size_bytes: clip.size_bytes });
+  } catch (err) {
+    return packJsonError(c, err);
+  }
+});
+
+admin.post('/voice-packs/:packId/clips/:clipId/delete', async (c) => {
+  const packId = c.req.param('packId');
+  const form = await c.req.parseBody();
+  try {
+    if (form.confirm !== '1') throw new VoicePackAdminError('ADMIN_VOICE_PACK_INVALID', '삭제 확인을 체크해 주세요.');
+    await deleteVoicePackClip(getDB(c.env), c.env.VOICE_BUCKET, packId, c.req.param('clipId'), ADMIN_ACTOR);
+    return packRedirect(c, packId, 'clip_deleted');
+  } catch (err) {
+    return packRedirect(c, packId, null, err);
+  }
+});
+
+admin.post('/voice-packs/:packId/rights', async (c) => {
+  const packId = c.req.param('packId');
+  const form = await c.req.parseBody();
+  try {
+    await updateVoicePackRights(
+      getDB(c.env),
+      packId,
+      {
+        rightsStatus: String(form.rights_status ?? ''),
+        evidenceRef: String(form.evidence_ref ?? ''),
+        validFrom: String(form.valid_from ?? ''),
+        validUntil: String(form.valid_until ?? ''),
+        allowedText: String(form.allowed_text ?? ''),
+        allowedRegions: String(form.allowed_regions ?? ''),
+        existingFileTerms: String(form.file_terms ?? ''),
+        existingPlaybackUntil: String(form.playback_until ?? ''),
+        note: String(form.note ?? ''),
+      },
+      ADMIN_ACTOR,
+      new Date(),
+    );
+    return packRedirect(c, packId, 'rights');
+  } catch (err) {
+    return packRedirect(c, packId, null, err);
+  }
+});
+
+admin.post('/voice-packs/:packId/transition', async (c) => {
+  const packId = c.req.param('packId');
+  const form = await c.req.parseBody();
+  const action = String(form.action ?? '');
+  try {
+    if (!isVoicePackTransition(action)) throw new VoicePackAdminError('ADMIN_VOICE_PACK_INVALID', '할 일을 골라 주세요.');
+    if ((action === 'publish' || action === 'suspend' || action === 'republish') && form.confirm !== '1') {
+      throw new VoicePackAdminError('ADMIN_VOICE_PACK_INVALID', '확인을 체크해 주세요.');
+    }
+    await transitionVoicePack(getDB(c.env), packId, action, String(form.note ?? ''), ADMIN_ACTOR, new Date());
+    return packRedirect(c, packId, action);
+  } catch (err) {
+    return packRedirect(c, packId, null, err);
+  }
 });
 
 export default admin;

@@ -11,8 +11,9 @@
  *    - voice_uploads(클론 학습용 원본): 확정 목소리는 재생성·말투 분석 재시도용으로
  *      프로필 삭제까지 보관. 미확정 초안·프로필 미연결 원본만 7일 경과 시 삭제.
  *    - generated_audio_assets(TTS 캐시): 기기들이 로컬 캐싱하므로 서버 보관은
- *      전달용 버퍼다 → 30일 경과 시 삭제. 단 알람이 message_id 로 참조 중인
- *      오브젝트와 시스템/클론 프리셋 클립은 건너뛴다.
+ *      전달용 버퍼다 → 30일 경과 시 삭제. 단 시스템/클론 프리셋 클립과 **직접 입력 음성**은 건너뛴다.
+ *      직접 입력 음성(`messages.category = 'custom'`)은 기한 없이 두고 그 목소리를 지울 때(교체·이용권 종료 포함)·
+ *      탈퇴할 때만 지운다(2026-10-29 오너 — 같은 문구를 다시 받을 때 다시 만들지 않는다, 보관이 재합성보다 훨씬 싸다).
  *
  * Workers free plan 의 invocation 당 subrequest 상한(~50)을 고려해 배치 크기를
  * 보수적으로 제한한다 (cron 5분 주기라 누적 처리량은 충분).
@@ -462,9 +463,12 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
     expiredUploads = deleted?.rowsAffected ?? 0;
   }
 
-  // 2) TTS 캐시 — 알람이 message_id → messages.audio_url 로 참조 중인 오브젝트는
-  //    보존한다. 이 가드가 없으면 활성 알람이 쓰는 TTS 오브젝트가 TTL 후 삭제되어
-  //    알람이 무음이 된다.
+  // 2) TTS 캐시 — **직접 입력 음성은 지우지 않는다**(2026-10-29 오너). 살아 있는 직접 입력 문구가 가리키는 오브젝트는
+  //    기한 없이 둔다 — 지우는 것은 그 목소리를 지울 때(`DELETE /voice/:id`·교체·이용권 종료 정리)와 탈퇴뿐이다. 교체는
+  //    옛 목소리의 직접 입력 음원을 그 자리에서 지우고(`routes/voice-profile.ts`), 다른 경로가 참조만 끊은 것(문구의
+  //    `audio_url` 이 비었다)은 여기서 기한이 지나면 지운다.
+  //    ⚠ 예전에는 '서버 알람 사본이 이 음원을 쓰는가' 로 남겼다 — 사본을 지웠다(#147). 날씨·운세처럼 회차마다 새로 만드는
+  //    문구는 그대로 30일 뒤 지운다(지역·생년월일에서 나온 글이 담긴다). 기기는 받은 파일을 로컬에 두고 운다.
   //
   //    시스템 스톡(프리셋) 클립은 무료 버킷 회전·미리듣기용으로 의도적으로 보관한다.
   //    다수 variant 가 alarm.message_id 로 직접 참조되지 않으므로 TTL 정리에서 제외한다
@@ -474,9 +478,8 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
     sql: `g.created_at <= ?
           AND g.audio_object_key IS NOT NULL
           AND NOT EXISTS (
-            SELECT 1 FROM alarms a
-            JOIN messages m ON m.id = a.message_id
-            WHERE m.audio_url = 'r2://' || g.audio_object_key
+            SELECT 1 FROM messages mc
+            WHERE mc.audio_url = 'r2://' || g.audio_object_key AND mc.category = 'custom'
           )
           AND NOT EXISTS (
             SELECT 1 FROM messages mp
@@ -496,7 +499,8 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
   if (generatedIds.length > 0) {
     const ph = generatedIds.map(() => '?').join(', ');
     // 고른 id 중 **지금도** 만료 조건에 맞는 원장 행. 세 문장이 같은 조각을 쓴다 — 포인터를 비워도
-    // 조건의 참·거짓은 바뀌지 않는다(알람 가드는 '그 키를 쓰는 알람이 없다' 이고, 비우면 더 없어질 뿐이다).
+    // 조건의 참·거짓은 바뀌지 않는다(직접 입력 가드는 '그 키를 가리키는 직접 입력 문구가 없다' 이고, 비우는 것은 그 조건에
+    // 맞아 고른 행의 포인터뿐이다).
     const stillExpired = {
       sql: `SELECT g.id, g.audio_object_key FROM generated_audio_assets g
              WHERE g.id IN (${ph}) AND ${expiredGenerated.sql}`,

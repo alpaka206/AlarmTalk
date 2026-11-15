@@ -16,11 +16,6 @@ extension VoiceRecorderError: AppUserFacingError {}
 extension AudioCropper.CropperError: AppUserFacingError {}
 extension LocalAlarmAudioError: AppUserFacingError {}
 extension SubscriptionManager.SubscriptionError: AppUserFacingError {}
-extension RemoteAlarmPushSync.PushError: AppUserFacingError {
-    var userFacingDescription: String? {
-        self == .noSession ? nil : errorDescription
-    }
-}
 
 /// 화면의 코드 매핑을 거친 뒤 쓰는 공통 폴백. 언어가 아니라 문구의 출처로 판단한다.
 func userFacingErrorMessage(_ error: Error, fallback: String) -> String {

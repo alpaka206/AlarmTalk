@@ -37,6 +37,8 @@ data class BillingSubscriptionResponse(
      * (`ui/billing/BillingPanels.kt` 의 `planScreenCurrentOf`, 스펙 billing-lifecycle D4).
      */
     @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
+    /** 관리자 기간 지급([PlanGrant]) — [userPlan] 과 같은 스냅샷의 끝. 구독 행은 만들지 않는다. */
+    @SerializedName("plan_grant") val planGrant: PlanGrant? = null,
 )
 
 data class BillingSubscription(

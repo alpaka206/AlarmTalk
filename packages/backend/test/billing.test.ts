@@ -277,7 +277,7 @@ describe('GET /billing/subscription', () => {
     expect(body.subscription.id).toBe('sub-1');
     expect(body.subscription.status).toBe('active');
     expect(body.plan.key).toBe('personal');
-    expect(body.plan.max_members).toBe(1);
+    expect(body.plan).not.toHaveProperty('max_members');
   });
 
   it('활성 구독 없을 때 { subscription: null, plan: null }', async () => {
@@ -311,13 +311,3 @@ describe('GET /billing/subscription', () => {
   });
 });
 
-// 옛 앱 호환 — 초대 코드는 커플·가족 이용권과 함께 없앴다. 옛 앱은 이 목록을 구독 조회와 함께 받는다.
-describe('GET /billing/vouchers', () => {
-  it('언제나 빈 목록 — DB 를 보지 않는다', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/billing/vouchers'));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ vouchers: [] });
-    expect(mockDB.calls).toHaveLength(0);
-  });
-});

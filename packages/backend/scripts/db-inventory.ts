@@ -189,19 +189,6 @@ async function main() {
         JOIN messages m ON m.id = ml.message_id WHERE m.user_id != ml.user_id`,
     ),
     'generated_audio_assets.total': await tryNum(db, 'SELECT COUNT(*) FROM generated_audio_assets'),
-    'alarms.total': await tryNum(db, 'SELECT COUNT(*) FROM alarms'),
-    'alarms.speaker_id NOT NULL': await tryNum(
-      db,
-      'SELECT COUNT(*) FROM alarms WHERE speaker_id IS NOT NULL',
-    ),
-    'alarms.raw_audio_url NOT NULL': await tryNum(
-      db,
-      'SELECT COUNT(*) FROM alarms WHERE raw_audio_url IS NOT NULL',
-    ),
-    'alarms.bucket_id NOT NULL': await tryNum(
-      db,
-      'SELECT COUNT(*) FROM alarms WHERE bucket_id IS NOT NULL',
-    ),
     'voice_uploads.total': await tryNum(db, 'SELECT COUNT(*) FROM voice_uploads'),
     'voice_profiles.avatar_url NOT NULL': await tryNum(
       db,
@@ -224,14 +211,6 @@ async function main() {
       `SELECT COUNT(*) FROM users WHERE COALESCE(dynamic_prompt_settings_json, '{}') NOT IN ('{}', '')`,
     ),
     // 식별자 혼재 실증: 자식 행의 user_id 가 users.id 에 없는 경우
-    'alarms.user_id ∉ users.id': await tryNum(
-      db,
-      'SELECT COUNT(*) FROM alarms a WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = a.user_id)',
-    ),
-    'alarms.user_id = google_id 인 행': await tryNum(
-      db,
-      'SELECT COUNT(*) FROM alarms a WHERE EXISTS (SELECT 1 FROM users u WHERE u.google_id = a.user_id)',
-    ),
     'messages.user_id ∉ users.id': await tryNum(
       db,
       'SELECT COUNT(*) FROM messages m WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = m.user_id)',
@@ -253,16 +232,6 @@ async function main() {
       'SELECT COUNT(*) FROM generated_audio_assets g WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = g.user_id)',
     ),
     // 고아 참조
-    'alarms.message_id 고아': await tryNum(
-      db,
-      `SELECT COUNT(*) FROM alarms a WHERE a.message_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = a.message_id)`,
-    ),
-    'alarms.voice_profile_id 고아': await tryNum(
-      db,
-      `SELECT COUNT(*) FROM alarms a WHERE a.voice_profile_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM voice_profiles v WHERE v.id = a.voice_profile_id)`,
-    ),
     'generated_audio_assets.message_id 고아': await tryNum(
       db,
       `SELECT COUNT(*) FROM generated_audio_assets g

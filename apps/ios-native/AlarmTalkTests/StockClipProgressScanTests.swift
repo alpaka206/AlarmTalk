@@ -195,7 +195,7 @@ final class StockClipProgressScanTests: XCTestCase {
     }
 
     /// **관문 한 번 = 디렉터리 한 번**(`StockClipPrefetcher.defaultVoiceGate`). 막혔을 때 판정과 알럿 퍼센트를 따로
-    /// 세면 메인 액터에서 디렉터리를 두 번 읽는다(고치기 전 `MainTabsView.openEditorIfVoicesReady` 가 그랬다 — 안드로이드는
+    /// 세면 메인 액터에서 디렉터리를 두 번 읽는다(고치기 전 `MainTabsView` 의 알람 관문이 그랬다 — 안드로이드는
     /// 같은 두 번이 2026-09-29 A32 에서 3.5초였다). 알럿 퍼센트는 그 한 번 센 값이다.
     func test_관문_한_번은_디렉터리를_한_번만_읽고_막힌_퍼센트도_그_값이다() throws {
         let clips = (0..<6).map { defaultVoiceClip("gate-\($0)") }
@@ -231,17 +231,144 @@ final class StockClipProgressScanTests: XCTestCase {
         XCTAssertEqual(unknownScans, 0)
     }
 
+    /// **알람마다 그 목소리 하나만 본다**(v1.3 W05). 다른 기본 목소리를 덜 받았어도 그 알람의 목소리를 다 받았으면 열고,
+    /// 한 번 세는 데 디렉터리는 한 번이다. 내 목소리는 이 관문이 보지 않고(편집기가 본다), 목소리를 모르면 전부를 본다.
+    func test_관문은_그_알람의_목소리만_본다() throws {
+        let mine = (0..<3).map { defaultVoiceClip("mine-\($0)") }
+        let otherVoice = systemVoiceIDPrefix + "000000000102"
+        let others = (0..<3).map { index -> StockClip in
+            StockClip(
+                messageId: "other-\(index)", voiceProfileId: otherVoice, voiceName: nil, category: "weather",
+                language: "ko", text: "오늘은 맑아요", audioUrl: "https://r2.example/other-\(index).mp3",
+                variant: nil, renderedForCurrentVoice: nil
+            )
+        }
+        let manifest = StockClipListResponse(clips: mine + others, expectedVariants: nil, legacyBucketHints: nil)
+        for clip in mine { try putCachedClip(messageId: clip.messageId, rawAudioUri: clip.audioUrl) }
+        let mineID = mine[0].voiceProfileId
+
+        let (open, scans) = AudioCacheScanCounter.measuringScans {
+            StockClipPrefetcher.voiceGate(voiceID: mineID, language: "ko", manifest: manifest)
+        }
+        XCTAssertEqual(scans, 1)
+        XCTAssertTrue(open.ready, "그 알람의 목소리는 다 받았는데 다른 목소리 때문에 막는다")
+        XCTAssertEqual(open.progress?.done, 3)
+        XCTAssertEqual(open.progress?.total, 3)
+
+        let blocked = StockClipPrefetcher.voiceGate(voiceID: otherVoice, language: "ko", manifest: manifest)
+        XCTAssertFalse(blocked.ready)
+        XCTAssertEqual(blocked.progress?.done, 0)
+        XCTAssertTrue(StockClipPrefetcher.isStillDownloading(voiceID: otherVoice, language: "ko", manifest: manifest))
+        XCTAssertFalse(StockClipPrefetcher.isStillDownloading(voiceID: mineID, language: "ko", manifest: manifest))
+        // 모르면 막지 않는다(편집기).
+        XCTAssertFalse(StockClipPrefetcher.isStillDownloading(voiceID: otherVoice, language: "ko", manifest: nil))
+
+        XCTAssertTrue(StockClipPrefetcher.voiceGate(voiceID: "clone-1", language: "ko", manifest: manifest).ready)
+        XCTAssertFalse(StockClipPrefetcher.voiceGate(voiceID: nil, language: "ko", manifest: manifest).ready, "모르면 전부를 본다")
+    }
+
+    /// 받는 순서(안드로이드 `StockClipPrefetchPriorityTest` 와 같은 표) — 저장된 다음 알람 → 고른 목소리·테마 → 고른 목소리의
+    /// 나머지 → 저장된 알람 목소리의 나머지 → 그 밖. 받는 대상은 줄지 않는다.
+    func test_받는_순서는_저장된_다음_알람과_고른_목소리가_먼저다() {
+        func clip(_ id: String, _ voice: String, _ category: String) -> StockClip {
+            StockClip(
+                messageId: id, voiceProfileId: voice, voiceName: nil, category: category, language: "ko",
+                text: "", audioUrl: nil, variant: nil, renderedForCurrentVoice: nil
+            )
+        }
+        let a = systemVoiceIDPrefix + "00000000000a", b = systemVoiceIDPrefix + "00000000000b", c = systemVoiceIDPrefix + "00000000000c"
+        let manifest = [
+            clip("a-weather", a, "weather"), clip("a-cheer", a, "cheer"),
+            clip("b-weather", b, "weather"), clip("b-cheer", b, "cheer"),
+            clip("c-weather", c, "weather"), clip("c-cheer", c, "cheer"),
+        ]
+        typealias Target = StockClipPrefetcher.PrefetchTarget
+        XCTAssertEqual(StockClipPrefetcher.prioritized(manifest, saved: [], requested: nil).map(\.messageId), manifest.map(\.messageId))
+        XCTAssertEqual(
+            StockClipPrefetcher.prioritized(
+                manifest, saved: [Target(voiceID: c, category: "cheer")], requested: Target(voiceID: b, category: "weather")
+            ).map(\.messageId),
+            ["c-cheer", "b-weather", "b-cheer", "c-weather", "a-weather", "a-cheer"]
+        )
+        XCTAssertEqual(
+            StockClipPrefetcher.prioritized(
+                manifest, saved: [Target(voiceID: b, category: "cheer"), Target(voiceID: a, category: "weather")], requested: nil
+            ).map(\.messageId),
+            ["b-cheer", "a-weather", "b-weather", "a-cheer", "c-weather", "c-cheer"]
+        )
+    }
+
+    /// 저장된 알람에서 뽑는 단서 — 이 계정의 켜진 알람만, 다음에 울릴 것부터, 겹치면 한 번.
+    func test_저장된_알람의_단서는_켜진_내_알람을_울릴_순서로_뽑는다() {
+        func alarm(_ id: String, fireAt: Int64, voice: String?, bucket: String?, enabled: Bool = true, owner: String? = "me") -> LocalAlarmRecord {
+            var record = LocalAlarmRecord(id: id, label: "test", hour: 9, minute: 30, fireAtMillis: fireAt)
+            record.fireAtMillis = fireAt
+            record.voiceProfileId = voice
+            record.bucketId = bucket
+            record.enabled = enabled
+            record.ownerUserId = owner
+            return record
+        }
+        let targets = StockClipPrefetcher.savedTargets(
+            from: [
+                alarm("late", fireAt: 300, voice: "v1", bucket: "weather"),
+                alarm("soon", fireAt: 100, voice: "v2", bucket: "cheer"),
+                alarm("off", fireAt: 50, voice: "v3", bucket: "cheer", enabled: false),
+                alarm("someone", fireAt: 60, voice: "v4", bucket: "cheer", owner: "other"),
+                alarm("dup", fireAt: 400, voice: "v1", bucket: "weather"),
+                alarm("legacy", fireAt: 200, voice: "v5", bucket: nil, owner: nil),
+            ],
+            userID: "me"
+        )
+        XCTAssertEqual(targets.map(\.voiceID), ["v2", "v5", "v1"])
+        XCTAssertEqual(targets.map(\.category), ["cheer", nil, "weather"])
+    }
+
+    /// 관문과 편집기는 **같은 첫 목소리**를 본다(`AlarmEditorSheet.resolveInitialVoiceID`, 코덱스 #952). 무료면 못 쓰게 된 클론을
+    /// 직전 선택으로 들고 있어도 기본 목소리가 첫 목소리다 — 관문이 그 클론을 보고 통과시키면 받는 중인 기본 목소리로 열린다.
+    func test_관문과_편집기는_같은_첫_목소리를_본다() {
+        let system = VoiceProfile(id: systemVoiceIDPrefix + "000000000101", name: "미나", status: "ready", isSystem: true)
+        let system2 = VoiceProfile(id: systemVoiceIDPrefix + "000000000102", name: "시우", status: "ready", isSystem: true)
+        let clone = VoiceProfile(id: "clone-1", name: "엄마", status: "ready")
+        let ready = [clone, system, system2]
+        // 무료 — 직전 선택이 클론이어도 기본 목소리.
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: nil, readyOwn: ready, lastUsedID: "clone-1", freeTier: true),
+            system.id
+        )
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: nil, readyOwn: ready, lastUsedID: system2.id, freeTier: true),
+            system2.id
+        )
+        // 유료 — 직전 선택이 그대로.
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: nil, readyOwn: ready, lastUsedID: "clone-1", freeTier: false),
+            "clone-1"
+        )
+        // 직전 선택이 이제 고를 수 없으면(목록에 없다) 첫 목소리.
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: nil, readyOwn: [system, system2], lastUsedID: "gone", freeTier: false),
+            system.id
+        )
+        // 지금 선택이 아직 고를 수 있으면 그대로.
+        XCTAssertEqual(
+            AlarmEditorSheet.resolveInitialVoiceID(selected: system2.id, readyOwn: ready, lastUsedID: "clone-1", freeTier: false),
+            system2.id
+        )
+    }
+
     /// 화면이 그 한 번을 쓰는가 — 뷰의 `private` 함수라 유닛 테스트가 부를 수 없어 소스를 읽는다(`AppSourceText`).
     /// 관문을 한 번 부르고, 막히면 그 값을 알럿 퍼센트에 쓰고, 따로 다시 세지 않는다.
     func test_알람_설정_관문은_탭_하나에_한_번_센다() throws {
         let source = try AppSourceText.read("Views/Root/MainTabsView.swift")
         let gate = try AppSourceText.region(
-            of: source, from: "private func openEditorIfVoicesReady(", to: "private func restartDefaultVoiceDownload("
+            of: source, from: "private func openEditorIfVoiceReady(", to: "private func gateVoiceID("
         )
-        XCTAssertEqual(gate.components(separatedBy: "StockClipPrefetcher.defaultVoiceGate()").count - 1, 1, "관문을 한 번 부르지 않는다")
+        XCTAssertEqual(gate.components(separatedBy: "StockClipPrefetcher.voiceGate(").count - 1, 1, "관문을 한 번 부르지 않는다")
         XCTAssertTrue(gate.contains("voicesNotReadyProgress = gate.progress"), "막힌 퍼센트를 센 값으로 쓰지 않는다")
         XCTAssertFalse(gate.contains("defaultVoicesReady("), "판정을 따로 다시 센다")
         XCTAssertFalse(gate.contains("defaultVoiceProgress("), "퍼센트를 따로 다시 센다")
+        XCTAssertFalse(gate.contains("voiceProgress("), "퍼센트를 따로 다시 센다")
     }
 
     /// ⚠ **관측자는 재는 범위 밖으로 새지 않는다.** 이 줄이 무너지면(=다시 전역 카운터가

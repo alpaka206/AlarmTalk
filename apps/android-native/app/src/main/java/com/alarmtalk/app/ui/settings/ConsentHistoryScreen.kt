@@ -51,6 +51,9 @@ internal fun ConsentHistoryScreen(
     onLoadMarketingConsent: () -> Unit,
     onChangeMarketingConsent: (Boolean) -> Unit,
     onWithdrawVoiceBiometric: suspend () -> Boolean,
+    // 그 동작이 안 됐다는 이유 — 행 바로 아래에 빨간 글자로 그린다(2026-10-29 오너: 알림이 아니라 빨간 글자, iOS 짝).
+    withdrawError: String? = null,
+    marketingError: String? = null,
 ) {
     var records by remember { mutableStateOf<Map<String, ConsentRecord>>(emptyMap()) }
     var loadFailed by remember { mutableStateOf(false) }
@@ -96,6 +99,8 @@ internal fun ConsentHistoryScreen(
             onBack = onBack,
             modifier = Modifier.padding(top = 12.dp),
         )
+    // 날씨 출처 줄을 그릴까(아래 맨 끝 항목) — 컴포지션 지역값은 목록 빌더 밖에서 읽는다.
+    val showsAttribution = showsWeatherAttribution(LocalWeatherAttribution.current)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
@@ -167,6 +172,7 @@ internal fun ConsentHistoryScreen(
                     // 아니라 단방향 '철회' 액션이다(켜지지 않는 스위치는 버그로 보인다).
                     onWithdraw = { withdrawConfirmOpen = true }.takeIf { !withdrawBusy },
                 )
+                withdrawError?.let { ConsentActionErrorText(it) }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 // 읽기전용 이력이 아니라 실제 켜고 끄는 토글 — 설정에 있던 마케팅 카드를 이 법적 정보 화면으로 통합했다.
                 ConsentToggleRow(
@@ -177,6 +183,7 @@ internal fun ConsentHistoryScreen(
                     onRetry = onLoadMarketingConsent,
                     onChange = onChangeMarketingConsent,
                 )
+                marketingError?.let { ConsentActionErrorText(it) }
             }
         }
 
@@ -190,6 +197,23 @@ internal fun ConsentHistoryScreen(
                         onOpen = { context.findHostActivity()?.let { RewardedAds.showPrivacyOptions(it) } },
                     )
                 }
+            }
+        }
+
+        // 날씨 정보 출처 — 화면 **맨 아래 한 줄**(2026-11-09 지역 시트에서 옮겼다 — 오너 "약관 및 개인정보 처리 동의
+        // 이런 데 넣으면 안 되는 거야?"). 원천과 가공해 쓴다는 사실을 적는 것은 기상법(출처 표시)과 気象庁 공공데이터
+        // 이용규약(가공 시 그 사실)이 요구하고, 둘 다 **자리는 정하지 않는다** — 법적 정보 화면이면 찾을 수 있다.
+        // ⚠ **서버가 그 원천을 쓴다고 말할 때만 그린다**([showsWeatherAttribution]). 늘 그리면 서버의 원천 교체가
+        // 늦거나 되돌려진 동안 쓰지 않는 기관을 출처로 적는다(코덱스 #845). 그리는 자리는 앱 전체에 이 하나다.
+        // iOS 짝은 `ConsentHistoryView` 의 같은 자리다.
+        if (showsAttribution) {
+            item {
+                Text(
+                    text = stringResource(R.string.legal_weather_attribution),
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -243,22 +267,26 @@ private fun ConsentToggleRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        // 로드 실패(값 미확보)면 'off'로 오인되지 않게 스위치 대신 다시 시도 행을 보여준다.
-        if (loadFailed && agreed == null) {
+        // 로드 실패(값 미확보)면 'off'로 오인되지 않게 스위치 대신 다시 시도 줄을 보여준다.
+        // ⚠ **그 줄은 이름 아래다**(2026-11-09 — 오른쪽에 두면 이름이 130dp 로 눌려 "광고성 정보 수신 / 동의" 로 감겼다).
+        val showRetry = loadFailed && agreed == null
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = stringResource(R.string.settings_marketing_load_failed),
-                modifier = Modifier.clickable(onClick = onRetry),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-        } else {
+            if (showRetry) {
+                Text(
+                    text = stringResource(R.string.settings_marketing_load_failed),
+                    modifier = Modifier.clickable(onClick = onRetry),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (!showRetry) {
             // ⚠ **쓰기 중이라고 스위치를 끄지 말 것**(2026-08-11 지적 "위치만 옮겨졌다가
             // 색이 나중에 나온다"). 비활성으로 만들면 손잡이는 낙관적으로 옮겨가는데 색이
             // **비활성 회색**으로 바뀌었다가 응답이 와야 제 색이 돌아온다 — 켜고 끌 때마다
@@ -299,19 +327,22 @@ private fun ConsentRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        if (showStatus) {
+        // ⚠ **동의 날짜는 이름 아래 줄이다**(2026-11-09 오너 "두 줄씩 되는 거 적절하게"). 날짜·'동의 철회'·화살표를
+        // 모두 오른쪽에 두면 이름이 130dp 로 눌려 "음성 생체정보 처리 / 동의" 로 감겼다. iOS `ConsentRow` 도 같다.
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
             )
+            if (showStatus) {
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         if (withdrawAction != null) {
             Text(
@@ -349,4 +380,15 @@ private fun formatConsentDate(value: String?): String? {
             kst.dayOfMonth,
         )
     }.getOrNull()
+}
+
+/** 동의 내역의 행 아래에 붙는 실패 이유(빨간 글자). */
+@Composable
+private fun ConsentActionErrorText(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
 }

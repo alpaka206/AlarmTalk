@@ -14,12 +14,15 @@ import {
 import {
   AD_REWARD_MONTHLY_LIMIT,
   consumeAdRewardCredit,
-  grantAdRewardCredit,
   grantMonthFor,
   isConfiguredRewardedAdUnit,
-  readAdRewardStatus,
   refundAdRewardCredit,
 } from '../src/lib/ad-reward-credits';
+import {
+  readAdRewardStatus,
+  recordAdRewardCallback,
+  settleAdRewardCallback,
+} from '../src/lib/ad-reward-sessions';
 
 let db: Client;
 vi.mock('../src/lib/db', () => ({ getDB: () => db }));
@@ -98,7 +101,7 @@ beforeEach(async () => {
   db = createClient({ url: ':memory:' });
   await runMigrations(db);
   await db.execute({
-    sql: `INSERT INTO users (id, email, name, plan) VALUES (?, 'f@example.com', '무료', 'free')`,
+    sql: `INSERT INTO users (id, email, plan) VALUES (?, 'f@example.com', 'free')`,
     args: [USER],
   });
 }, 60_000);
@@ -271,17 +274,23 @@ describe('grantMonthFor', () => {
   });
 });
 
-describe('적립·사용·환불 (실제 SQLite)', () => {
-  const grant = (transactionId: string) =>
-    grantAdRewardCredit(db, { transactionId, userPk: USER, adUnit: '1234567890' });
+describe('적립·사용·환불 (실제 SQLite) — 승인 id 없는 옛 경로', () => {
+  const grant = async (transactionId: string) => {
+    const cb = { transactionId, userId: USER, adUnit: '1234567890', customData: '', rewardedAtMs: null };
+    await recordAdRewardCallback(db, cb);
+    return (await settleAdRewardCallback(db, { ENVIRONMENT: 'test' } as unknown as Env, transactionId)) === 'granted';
+  };
 
   it('같은 거래는 한 번만 적립한다', async () => {
     expect(await grant('tx-1')).toBe(true);
-    expect(await grant('tx-1')).toBe(false);
+    // 같은 콜백이 다시 와도 기록된 첫 결과를 돌려줄 뿐 다시 적립하지 않는다.
+    expect(await grant('tx-1')).toBe(true);
     expect(await readAdRewardStatus(db, USER)).toEqual({
       credits: 1,
       remaining_grants: AD_REWARD_MONTHLY_LIMIT - 1,
       monthly_limit: AD_REWARD_MONTHLY_LIMIT,
+      pending: 0,
+      session_open: false,
     });
   });
 
@@ -355,7 +364,7 @@ describe('GET /api/ads/admob-ssv', () => {
   it('UUID 전환 전의 계정 PK(구글 sub)도 적립한다', async () => {
     const legacy = '108234567890123456789';
     await db.execute({
-      sql: `INSERT INTO users (id, email, name, plan) VALUES (?, 'old@example.com', '옛계정', 'free')`,
+      sql: `INSERT INTO users (id, email, plan) VALUES (?, 'old@example.com', 'free')`,
       args: [legacy],
     });
     const res = await call(

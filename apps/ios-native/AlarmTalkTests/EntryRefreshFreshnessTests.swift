@@ -31,41 +31,6 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         XCTAssertFalse(freshness.isFresh(userID: "u1", entry: 1, now: t0.addingTimeInterval(1)))
     }
 
-    /// 회귀(감사 H3): 키에 토큰이 있으면 `/auth/me` 가 토큰을 굴릴 때마다 스로틀 표가 통째로 무효가 됐다.
-    /// 키를 만드는 함수가 토큰을 받지 않는다 — 계정과 탭만으로 갈린다.
-    func test_탭_스로틀_키는_토큰이_아니라_탭과_계정이다() {
-        let alarmsA = MainTabsView.tabRefreshThrottleKey(tab: .alarms, userID: "u1")
-        XCTAssertEqual(alarmsA, MainTabsView.tabRefreshThrottleKey(tab: .alarms, userID: "u1"))
-        XCTAssertNotEqual(alarmsA, MainTabsView.tabRefreshThrottleKey(tab: .alarms, userID: "u2"))
-        XCTAssertNotEqual(alarmsA, MainTabsView.tabRefreshThrottleKey(tab: .menu, userID: "u1"))
-    }
-
-    /// 회귀(코덱스 #823 7차): 알람 탭 동기화 표는 들여보낼 때 적되(도는 동안의 중복 방지),
-    /// **완결되지 않은 회차는 자기 칸을 지운다** — 오프라인·저장소 로드 전·취소 뒤 60초 동안
-    /// 알람 탭 재진입이 재시도를 건너뛰면 안 된다.
-    func test_알람_탭_스로틀은_완결된_회차만_칸을_남긴다() {
-        var throttle = AlarmTabSyncThrottle()
-        let key = MainTabsView.tabRefreshThrottleKey(tab: .alarms, userID: "u1")
-
-        XCTAssertTrue(throttle.admit(key: key, now: t0))
-        XCTAssertFalse(throttle.admit(key: key, now: t0.addingTimeInterval(1)), "도는 동안 다시 들어와도 두 벌을 내지 않는다")
-        throttle.settle(key: key, admittedAt: t0, completed: false)
-        XCTAssertTrue(throttle.admit(key: key, now: t0.addingTimeInterval(2)), "완결되지 않은 회차 뒤에는 곧바로 다시 돈다")
-
-        let second = t0.addingTimeInterval(2)
-        throttle.settle(key: key, admittedAt: second, completed: true)
-        XCTAssertFalse(throttle.admit(key: key, now: second.addingTimeInterval(59)), "완결된 회차는 60초 창을 연다")
-        XCTAssertTrue(throttle.admit(key: key, now: second.addingTimeInterval(60)), "60초가 지나면 다시 돈다")
-
-        // 앞 회차가 늦게 실패해도 뒤 회차가 적은 칸은 지우지 않는다.
-        let third = second.addingTimeInterval(60)
-        throttle.settle(key: key, admittedAt: second, completed: false)
-        XCTAssertFalse(throttle.admit(key: key, now: third.addingTimeInterval(1)), "남의 칸은 그 회차의 것이다")
-
-        XCTAssertTrue(throttle.admit(key: MainTabsView.tabRefreshThrottleKey(tab: .alarms, userID: "u2"), now: third), "다른 계정은 다른 칸이다")
-        XCTAssertTrue(throttle.admit(key: key, now: third.addingTimeInterval(-1)), "시계가 뒤로 가면 모른다 — 다시 돈다")
-    }
-
     // MARK: - 이용권 새로고침
 
     func test_이용권_진입_갱신은_창_안에서_다시_받지_않고_force_와_실패는_창을_무시한다() async throws {

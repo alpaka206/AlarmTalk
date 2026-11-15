@@ -32,10 +32,8 @@ vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 
 const { default: voiceProfile, replaceVoiceInPlace } = await import('../src/routes/voice-profile');
 const { default: tts } = await import('../src/routes/tts');
-const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
 const { default: billingQuery } = await import('../src/routes/billing-query');
 const { default: billingAll } = await import('../src/routes/billing');
-const { default: codeRoutes } = await import('../src/routes/code');
 const { resolvePersonalPromo, resolvePersonalPromoWindow, personalPromoField, computedUserPlan } =
   await import('../src/lib/personal-promo');
 const { hasPersonalVoiceAccess } = await import('../src/routes/billing-helpers');
@@ -102,9 +100,7 @@ function appFor(user: Caller) {
   });
   app.route('/voice', voiceProfile);
   app.route('/tts', tts);
-  app.route('/alarms', alarmMutation);
   app.route('/billing', billingQuery);
-  app.route('/code', codeRoutes);
   return app;
 }
 
@@ -244,7 +240,7 @@ describe('prod 설정 잠금 — 리허설 끝은 운영에 올라가지 않는�
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 게이트 픽스처 — 한 DB 를 두 시점이 같이 쓴다(열림 시점이 만든 알람은 닫힘 시점과 무관하다).
+// 게이트 픽스처 — 한 DB 를 두 시점이 같이 쓴다(열림 시점에 통과한 요청은 닫힘 시점과 무관하다).
 const FREE = { pk: 'pp-free' };
 /** 공식 목소리가 아직 없는 원시 free — 승격이 한도(1개)에 걸리지 않는다. */
 const FREE_NEW = { pk: 'pp-free-new' };
@@ -264,10 +260,10 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
   beforeAll(async () => {
     db = await freshDb('gates');
     await db.batch([
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-free', NULL, 'free@t.test', '무료', 'free')`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-free-new', NULL, 'new@t.test', '신규', 'free')`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-paid', NULL, 'paid@t.test', '유료', 'plus')`,
-      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-owner', NULL, 'owner@t.test', '보류', 'free')`,
+      `INSERT INTO users (id, google_id, email, plan) VALUES ('pp-free', NULL, 'free@t.test', 'free')`,
+      `INSERT INTO users (id, google_id, email, plan) VALUES ('pp-free-new', NULL, 'new@t.test', 'free')`,
+      `INSERT INTO users (id, google_id, email, plan) VALUES ('pp-paid', NULL, 'paid@t.test', 'plus')`,
+      `INSERT INTO users (id, google_id, email, plan) VALUES ('pp-hold-owner', NULL, 'owner@t.test', 'free')`,
       `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
        VALUES ('sub-paid', 'pp-paid', '${PERSONAL}', 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
       // 결제 보류 — 행(active·suspended)은 남고 users.plan 만 free 로 회수된 상태.
@@ -365,7 +361,7 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
       // free 라 0 이다(행이 남아 있어도 원시 free 다).
       it('직접 입력 한도 — 보류된 구독의 살아 있는 행이 있어도 원시 free 는 개인 플랜 한도·개인 풀', async () => {
         await db.batch([
-          `INSERT OR IGNORE INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-live', NULL, 'hl@t.test', '보류', 'free')`,
+          `INSERT OR IGNORE INTO users (id, google_id, email, plan) VALUES ('pp-hold-live', NULL, 'hl@t.test', 'free')`,
           `INSERT OR IGNORE INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at, entitlement_state)
            VALUES ('sub-hold-live', 'pp-hold-live', '${PERSONAL}', 'active', '2026-08-01T00:00:00Z', '2099-01-01T00:00:00Z', 'suspended')`,
         ]);
@@ -373,16 +369,16 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         const held = await call({ pk: 'pp-hold-live' }, 'GET', '/tts/manual-quota');
         expect(held.status).toBe(200);
         expect(held.body).toMatchObject(
-          moment.open ? { plan_key: 'personal', limit: 30 } : { plan_key: null, limit: 0 },
+          moment.open ? { plan_key: 'personal', limit: 30 } : { plan_key: 'free', limit: 3 },
         );
       });
 
-      it('직접 입력 한도 — 원시 free 는 30 → 0, 원시 유료는 그대로 30', async () => {
+      it('직접 입력 한도 — 원시 free 는 30 → 무료 3, 원시 유료는 그대로 30', async () => {
         atMoment(moment.at);
         const free = await call(FREE, 'GET', '/tts/manual-quota');
         expect(free.status).toBe(200);
         expect(free.body).toMatchObject(
-          moment.open ? { plan_key: 'personal', limit: 30 } : { plan_key: null, limit: 0 },
+          moment.open ? { plan_key: 'personal', limit: 30 } : { plan_key: 'free', limit: 3 },
         );
         const paid = await call(PAID, 'GET', '/tts/manual-quota');
         expect(paid.body).toMatchObject({ plan_key: 'personal', limit: 30 });
@@ -400,41 +396,14 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         }
       });
 
-      it('내 알람 저장·수정 — 계산값', async () => {
-        atMoment(moment.at);
-        const create = await call(FREE, 'POST', '/alarms', {
-          time: '07:00',
-          timezone: 'Asia/Seoul',
-          mode: 'tts',
-          message_id: MSG_FREE,
-          voice_profile_id: VP_FREE,
-        });
-        if (moment.open) expect(create.status).toBe(201);
-        else expectGate(create, false);
-
-        // 목소리 없는 알람은 누구나 만든다 — 그걸 목소리 알람으로 바꾸는 PATCH 가 게이트다.
-        const plain = await call(FREE, 'POST', '/alarms', {
-          time: '08:00',
-          timezone: 'Asia/Seoul',
-        });
-        expect(plain.status).toBe(201);
-        const alarmId = (plain.body.alarm as { id: string }).id;
-        const patch = await call(FREE, 'PATCH', `/alarms/${alarmId}`, {
-          mode: 'tts',
-          message_id: MSG_FREE,
-          voice_profile_id: VP_FREE,
-        });
-        if (moment.open) expect(patch.status).toBe(200);
-        else expectGate(patch, false);
-      });
-
-      it('결제 보류 계정 — 원시 free 라 내 목소리 기능(등록·오디오·알람 저장)이 시점을 따른다', async () => {
+      // 알람 저장은 더 게이트가 아니다 — 서버 알람 사본을 지웠다(#147, `alarm-compat.test.ts`).
+      it('결제 보류 계정 — 원시 free 라 내 목소리 기능(등록·오디오)이 시점을 따른다', async () => {
         atMoment(moment.at);
         const form = new FormData();
         form.set('isDraft', 'true');
         expectGate(await call(HOLD_OWNER, 'POST', '/voice/clone', form), moment.open);
 
-        // 오디오(읽기)와 알람 저장(쓰기)이 같은 답이다 — 둘 다 내 목소리라 계산값으로 본다.
+        // 오디오(읽기)도 내 목소리라 계산값으로 본다.
         const audio = await call(HOLD_OWNER, 'GET', `/tts/messages/${MSG_HOLD_OWN}/audio`);
         if (moment.open) {
           expect(audio.status).toBe(404);
@@ -443,15 +412,6 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
           expect(audio.status).toBe(403);
           expect(audio.body.error_code).toBe('VOICE_LOCKED_FREE_PLAN');
         }
-        const save = await call(HOLD_OWNER, 'POST', '/alarms', {
-          time: '07:30',
-          timezone: 'Asia/Seoul',
-          mode: 'tts',
-          message_id: MSG_HOLD_OWN,
-          voice_profile_id: VP_HOLD,
-        });
-        if (moment.open) expect(save.status).toBe(201);
-        else expectGate(save, false);
       });
 
       it('/billing/subscription — user_plan 계산값, personal_promo, 가짜 구독 없음', async () => {
@@ -497,14 +457,14 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
 
   // 프로모 코드는 2026-10-12 에 없앴다(App Store 3.1.1 — `routes/code.ts` 머리말). 켜진 코드가
   // DB 에 남아 있어도 서버가 받지 않아야 옛 앱('프로모션 코드' 문구가 남은 버전)으로도 못 연다.
-  it('프로모 코드는 받지 않는다 — 켜진 코드가 있어도 CODE_NOT_FOUND, 구독·사용 기록이 안 생긴다', async () => {
+  it('프로모 코드는 받지 않는다 — 켜진 코드가 있어도 404, 구독·사용 기록이 안 생긴다', async () => {
     atMoment(new Date(END.getTime() - 1000));
     const user = { pk: 'pp-free-new' };
     const before = await db.execute(`SELECT COUNT(*) AS n FROM subscriptions WHERE user_id = 'pp-free-new'`);
+    // 코드 등록 라우트 자체가 없다(2026-10-26 강제 업데이트 뒤 옛 앱 호환과 함께 지웠다).
     for (const code of ['PP_PLAIN', 'pp_plain']) {
       const res = await call(user, 'POST', '/code/register', { code });
       expect(res.status).toBe(404);
-      expect(res.body.error_code).toBe('CODE_NOT_FOUND');
     }
     // 옛 경로(`POST /billing/promo/redeem`)도 없다 — 결제 라우터 전체를 올려 확인한다.
     const billingApp = new Hono<AppEnv>();
@@ -556,8 +516,8 @@ async function seedVoice(
 
 async function seedUser(client: Client, id: string, plan: string | null) {
   await client.execute({
-    sql: `INSERT INTO users (id, google_id, email, name, plan) VALUES (?, NULL, ?, ?, ?)`,
-    args: [id, `${id}@t.test`, id, plan],
+    sql: `INSERT INTO users (id, google_id, email, plan) VALUES (?, NULL, ?, ?)`,
+    args: [id, `${id}@t.test`, plan],
   });
 }
 

@@ -57,7 +57,12 @@ describe('INSERT 컬럼이 스키마에 실재한다', () => {
       for (const match of text.matchAll(INSERT_RE)) {
         const table = match[1]!;
         const known = columnsOf.get(table);
-        if (!known) continue; // 임시 테이블·CTE 등은 건너뛴다.
+        // ⚠ 표가 없는 것도 문제다 — 건너뛰면 **지운 표**(#147 `alarms` 처럼)에 쓰는 곳이 남아도 조용히 통과한다.
+        //   src 에는 임시 표·CTE 에 넣는 INSERT 가 없다. 생기면 여기서 그 이름만 따로 허용할 것.
+        if (!known) {
+          problems.push(`${file.split('/packages/')[1]}: ${table} 표가 스키마에 없다`);
+          continue;
+        }
         const cols = match[2]!
           .split(',')
           .map((c) => c.trim().replace(/^["'`\[]|["'`\]]$/g, ''))
@@ -75,6 +80,43 @@ describe('INSERT 컬럼이 스키마에 실재한다', () => {
       '컬럼을 DROP 하면서 **쓰는 곳**을 남겼다. 읽는 곳만 확인하지 말 것 — ' +
         '마이그레이션이 도는 순간 그 INSERT 가 no such column 으로 500 이 된다.',
     ).toEqual([]);
+  });
+
+  // 표를 통째로 지울 때도 같다(2026-10-29 #147 — 서버 알람 사본 `alarms`). 쓰는 곳뿐 아니라 읽고 고치는 곳(FROM·JOIN·
+  // UPDATE)이 하나라도 남으면 마이그레이션이 도는 순간 그 경로가 `no such table` 로 500 이 된다.
+  it('소스의 SQL 이 마이그레이션이 지운 표를 부르지 않는다', async () => {
+    const db = createClient({ url: ':memory:' });
+    await runMigrations(db);
+    const live = new Set(
+      (await db.execute(`SELECT name FROM sqlite_master WHERE type = 'table'`)).rows.map((r) => String(r.name)),
+    );
+    const dropped = new Set<string>();
+    for (const migration of migrations) {
+      for (const statement of migration.statements) {
+        for (const match of statement.matchAll(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([A-Za-z_][A-Za-z0-9_]*)/gi)) {
+          if (!live.has(match[1]!)) dropped.add(match[1]!);
+        }
+      }
+    }
+    expect(dropped, '지운 표 목록을 마이그레이션에서 뽑지 못했다 — 검사가 헛돈다').toContain('alarms');
+
+    const problems: string[] = [];
+    for (const file of sourceFiles(join(__dirname, '../src'))) {
+      // 마이그레이션 본문은 **그 시점의** 스키마를 쓰므로 제외한다(과거는 불변이다).
+      if (file.endsWith('migrations.ts')) continue;
+      // 주석 줄은 뺀다 — 이 저장소는 주석에 옛 SQL 을 인용한다("예전에는 `UPDATE alarms` …"). 블록 주석을 정규식으로
+      // 통째로 걷지 않는 것은 문자열에 `/*` 가 있어서다(라우트 glob·MIME) — 그러면 실제 코드까지 삼킨다.
+      const code = readFileSync(file, 'utf-8')
+        .split('\n')
+        .filter((line) => !/^\s*(?:\/\/|\/\*|\*)/.test(line))
+        .join('\n');
+      for (const table of dropped) {
+        // 표 이름은 위 마이그레이션에서 뽑은 식별자다([A-Za-z0-9_] 뿐 — 정규식 특수문자가 없다).
+        const reference = new RegExp(`\\b(?:FROM|JOIN|INTO|UPDATE)\\s+${table}\\b`);
+        if (reference.test(code)) problems.push(`${file.split('/packages/')[1]}: ${table}`);
+      }
+    }
+    expect(problems, '지운 표를 부르는 SQL 이 남았다').toEqual([]);
   });
 
   it('가장 최근 refresh 마이그레이션의 문장이 최종 스키마에서 실제로 돈다', async () => {

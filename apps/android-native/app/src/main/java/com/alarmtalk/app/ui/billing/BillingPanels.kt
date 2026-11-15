@@ -5,26 +5,18 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,6 +25,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -45,6 +43,8 @@ import com.alarmtalk.app.billing.PlayBillingProducts
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.BillingSubscription
 import com.alarmtalk.app.network.PersonalPromo
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.LineBreak
 
 @Composable
 internal fun SubscriptionPanel(
@@ -54,6 +54,8 @@ internal fun SubscriptionPanel(
     ///
     /// 스토어 값이 권위이며, 아직 못 받았을 때만 백엔드의 한국 가격표와 같은 폴백을 쓴다.
     planPrices: Map<String, String>,
+    /** 플랜 key → 무료 체험 기간(ISO 8601 `P1M`). 있으면 그 카드에 체험 조건을 말한다. */
+    planTrials: Map<String, String> = emptyMap(),
     onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onRestorePurchases: () -> Unit,
@@ -70,6 +72,13 @@ internal fun SubscriptionPanel(
      * 열려 있다(개인 카드의 결제 버튼이 남는다).
      */
     personalPromo: PersonalPromo? = null,
+    /**
+     * 관리자 기간 지급의 끝(`plan_grant.ends_at`, 배타). 지금 지급 중이면 프로모와 같은 자리에 "플러스 이용 중 · …까지" 를
+     * 말한다 — 구독처럼 그리지 않는다(해지 버튼은 산 이용권으로만 가른다). 프로모와 함께 오지 않는다.
+     */
+    planGrantEndsAt: String? = null,
+    /** 탭 화면이 남은 높이를 준다(`weight(1f)`) — 아래 시작 버튼 영역을 화면 바닥에 고정하려면 높이가 정해져야 한다. */
+    modifier: Modifier = Modifier,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -90,150 +99,185 @@ internal fun SubscriptionPanel(
             features = listOf(
                 stringResource(R.string.billing_plan_free_feature_basic_alarm),
                 stringResource(R.string.billing_plan_free_feature_stock_voice),
+                // 직접 입력 횟수(무료 3 · 플러스 30)는 shared `MANUAL_TTS_MONTHLY_LIMIT` 의 값이다(voice-and-message.md §8).
+                // 카드는 등급 비교라 서버 현황(`/tts/manual-quota`)이 아니라 정해진 기본분을 적는다 — 값이 바뀌면 같이 고친다.
+                stringResource(R.string.billing_plan_free_feature_manual),
             ),
         ),
         SubscriptionPlanOption(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
             price = planPriceLabel(context, planPrices, "personal"),
+            trialPeriod = planTrials["personal"]?.let { trialPeriodLabel(context, it) },
+            trialDisclosure = planTrials["personal"]?.let { iso ->
+                trialDisclosureText(context, iso, planRawPrice(context, planPrices, "personal"))
+            },
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
                 stringResource(R.string.billing_plan_personal_feature_messages_in_voice),
+                stringResource(R.string.billing_plan_personal_feature_manual),
+                // 플러스는 광고를 보지 않는다(보상형 광고는 무료 계정에게만 — `docs/spec/ad-rewards.md` §1). 2026-11-15 오너:
+                // 나중에 무료 화면 중간중간에도 광고를 넣을 예정이라 플러스 혜택으로 적는다. iOS `PlanCard.features(for:)` 와 같은 줄이다.
+                stringResource(R.string.billing_plan_personal_feature_no_ads),
             ),
         ),
     )
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        // 기간 한정 플러스 무료 이용 — "플러스 무료 이용 중 · 10월 31일까지". 날짜는 서버 값.
-        val promoLastDay = personalPromoLastDay(personalPromo, java.time.ZoneId.systemDefault())
-        val promoLineText = promoLastDay?.let { lastDay ->
-            val locale = LocalConfiguration.current.locales[0]
-                ?: java.util.Locale.getDefault()
-            stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
-        }
-        // '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 [planScreenCurrentOf] 한 곳이다(스펙 D4).
-        // ⚠ 산 이용권(`currentPlan`·`hasActive`)은 그대로 둔다 — 해지 버튼은 그 값으로만 가른다.
-        //   프로모는 산 이용권이 아니다.
-        val planScreen = planScreenCurrentOf(
-            purchasedPlanKey = currentPlan?.key,
-            promoActive = promoLineText != null,
-            hasHeldSubscriptionRow = personalPromo?.deletesVoicesAtEnd == false,
-        )
-        // 산 이용권·보류 행이 있는 계정은 예전처럼 카드 위 한 줄이다. 프로모만 쓰는
-        // 계정은 이 줄 대신 개인 카드의 상태 문구로 말한다 — 같은 말을 두 번 하지 않는다.
-        // 글자 결은 현재 카드의 상태 문구(`currentStatusText`)와 같다 — 같은 종류의 정보다.
-        if (planScreen.promoLineAboveList && promoLineText != null) {
-            Text(
-                text = promoLineText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        // 별도 '현재 이용권' 요약 카드 대신, 플랜 리스트의 현재 플랜 카드에 만료일 상태를 인라인으로 보여준다.
-        val statusContext = LocalContext.current
-        val currentExpiresAt = formatPass(subscription?.expiresAt, PassDateFormatter)
-        val currentStatusText = when {
-            // 프로모만 쓰는 계정 — 개인 카드가 현재이고, 그 카드의 상태 문구가 프로모 한 줄이다
-            // (카드 위 한 줄은 그리지 않는다). 산 이용권이 있으면 이 갈래에 오지 않는다.
-            planScreen.promoOnPersonalCard -> promoLineText
-            cancelScheduled && nextPlan != null -> {
-                val nextName = passPlanName(statusContext, nextPlan.key, nextPlan.name)
-                if (currentExpiresAt != null) {
-                    stringResource(R.string.billing_status_change_to_next_after_date, currentExpiresAt, nextName)
-                } else {
-                    stringResource(R.string.billing_status_change_to_next_scheduled, nextName)
-                }
-            }
-            cancelScheduled -> {
-                if (currentExpiresAt != null) {
-                    stringResource(R.string.billing_status_end_after_date, currentExpiresAt)
-                } else {
-                    stringResource(R.string.billing_status_end_scheduled)
-                }
-            }
-            hasActive && currentExpiresAt != null -> stringResource(R.string.billing_status_available_until, currentExpiresAt)
-            hasActive -> stringResource(R.string.billing_status_in_use)
-            else -> null
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            options.forEach { option ->
-                val isCurrent = planScreen.isCurrent(option.key)
-                SubscriptionPlanCard(
-                    option = option,
-                    isCurrent = isCurrent,
-                    showsPurchase = planScreen.showsPurchase(option.key),
-                    currentStatusText = currentStatusText.takeIf { isCurrent },
-                    busy = billingBusy,
-                    onPurchase = { purchaseTarget = option },
-                )
+    // ── 요금제 화면 A안(2026-11-15 오너 — 고르기 시안 '플러스 한 장 + 아래 고정 버튼', 캔버스 proposal-10) ──
+    // 위: 플러스를 큰 카드 한 장으로, 무료는 그 아래 한 줄 카드로. 아래(고정): 시작 버튼 · 자동 결제 안내 · 복원 · 해지.
+    // iOS 짝은 `BillingPanel`(같은 배치 — 아래 영역은 `safeAreaInset`).
+    // 기간 한정 플러스 무료 이용 — "플러스 무료 이용 중 · 10월 31일까지". 날짜는 서버 값.
+    val promoLastDay = personalPromoLastDay(personalPromo, java.time.ZoneId.systemDefault())
+    val promoLineText = promoLastDay?.let { lastDay ->
+        val locale = LocalConfiguration.current.locales[0]
+            ?: java.util.Locale.getDefault()
+        stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
+    } ?: planGrantLastDay(planGrantEndsAt, java.time.ZoneId.systemDefault(), System.currentTimeMillis())?.let { lastDay ->
+        val locale = LocalConfiguration.current.locales[0]
+            ?: java.util.Locale.getDefault()
+        // 지급도 같은 문구다 — 결제 없이 쓰는 플러스라 iOS(같은 자리로 읽는다)와 같은 말을 한다.
+        stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
+    }
+    // '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 [planScreenCurrentOf] 한 곳이다(스펙 D4).
+    // ⚠ 산 이용권(`currentPlan`·`hasActive`)은 그대로 둔다 — 해지 버튼은 그 값으로만 가른다.
+    //   프로모는 산 이용권이 아니다.
+    val planScreen = planScreenCurrentOf(
+        purchasedPlanKey = currentPlan?.key,
+        promoActive = promoLineText != null,
+        hasHeldSubscriptionRow = personalPromo?.deletesVoicesAtEnd == false,
+    )
+    val statusContext = LocalContext.current
+    val currentExpiresAt = formatPass(subscription?.expiresAt, PassDateFormatter)
+    val currentStatusText = when {
+        // 프로모만 쓰는 계정 — 플러스 카드가 현재이고, 그 카드의 상태 문구가 프로모 한 줄이다.
+        planScreen.promoOnPersonalCard -> promoLineText
+        cancelScheduled && nextPlan != null -> {
+            val nextName = passPlanName(statusContext, nextPlan.key, nextPlan.name)
+            if (currentExpiresAt != null) {
+                stringResource(R.string.billing_status_change_to_next_after_date, currentExpiresAt, nextName)
+            } else {
+                stringResource(R.string.billing_status_change_to_next_scheduled, nextName)
             }
         }
+        cancelScheduled -> {
+            if (currentExpiresAt != null) {
+                stringResource(R.string.billing_status_end_after_date, currentExpiresAt)
+            } else {
+                stringResource(R.string.billing_status_end_scheduled)
+            }
+        }
+        hasActive && currentExpiresAt != null -> stringResource(R.string.billing_status_available_until, currentExpiresAt)
+        hasActive -> stringResource(R.string.billing_status_in_use)
+        else -> null
+    }
+    val freeOption = options.first { it.key == PlanScreenCurrent.FREE_PLAN_KEY }
+    val plusOption = options.first { it.key == PlanScreenCurrent.PERSONAL_PLAN_KEY }
+    val plusIsCurrent = planScreen.isCurrent(plusOption.key)
+    val plusShowsPurchase = planScreen.showsPurchase(plusOption.key)
+    val trial = plusOption.trialPeriod?.takeIf { plusShowsPurchase }
+    // 카드 위 한 줄은 산 이용권·보류 행이 있는 계정의 프로모 줄뿐이다(예전 자리 그대로). 지금 무료인 것은 무료 카드의
+    // '현재 이용권' 배지가 말한다 — 같은 사실을 두 번 말하지 않는다(iOS UI 테스트 `PersonalPromoNoticeUITests` 가 지킨다).
+    val topLine = promoLineText.takeIf { planScreen.promoLineAboveList }
 
-        // ⚠ 코드를 쳐서 유료 기능을 여는 길(선물·코드 입력·코드 공유)을 되살리지 말 것 — 지침 3.1.1, `docs/spec/plan-gates.md`.
-
-        // **이전 구매 복원 — 항상 보인다.** 이용권이 있든 없든 필요하다: 기기를 바꾸거나
-        // 다른 경로로 로그인해 서버에 결제 기록이 없을 때, 여기가 없으면 사용자가 할 수 있는
-        // 일이 '다시 결제' 뿐이라 **같은 구독을 두 번 사게 된다**(플레이스토어에도 같은 기능이
-        // 있고, 애플은 심사 지침 3.1.1 로 요구한다).
-        // ⚠ 폭은 다른 액션과 같은 `fillMaxWidth` 다 — 글자 폭에 맞춘 작은 버튼으로 두면
-        // 결제 버튼들 사이에서 눌러야 할 것으로 보이지 않는다(2026-08-17 지시).
-        //
-        // ⚠ **해지보다 위다**(2026-08-24 지시). 되돌릴 수 있는 액션(복원)을 위에,
-        // 되돌릴 수 없는 액션(해지)을 맨 아래에 둔다 — 실수로 누를 확률이 낮아지고,
-        // 목록의 마지막이 가장 무거운 액션이라는 순서가 다른 화면과도 맞는다.
-        OutlinedButton(
-            onClick = onRestorePurchases,
-            enabled = !billingBusy,
-            modifier = Modifier.fillMaxWidth(),
-            shape = WakerButtonShape,
-            border = wakerCardBorder(),
-            colors = wakerOutlinedButtonColors(),
+    Column(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // ⚠ **글리프는 머티리얼을 쓴다**(CLAUDE.md 「글리프와 글자 크기 동작은 각 OS 것을
-            // 쓴다」). iOS 는 SF 심볼 `arrow.clockwise.circle` 인데, 통일하는 것은 **뜻과
-            // 자리**(어떤 액션에 어떤 아이콘을 쓰는가)이지 그림 자체가 아니다.
-            Icon(
-                imageVector = Icons.Outlined.Refresh,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(R.string.billing_restore_purchases))
-        }
-        if (hasActive) {
-            OutlinedButton(
-                onClick = { showCancelDialog = true },
-                enabled = !billingBusy,
-                modifier = Modifier.fillMaxWidth(),
-                shape = WakerButtonShape,
-                border = wakerCardBorder(),
-                colors = wakerOutlinedButtonColors(),
-            ) {
-                // '이 이용권에서 빠져나간다' 는 뜻의 글리프(2026-08-24 지시).
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.Logout,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+            if (topLine != null) {
                 Text(
-                    text = stringResource(R.string.billing_cancel_pass),
-                    color = MaterialTheme.colorScheme.error,
+                    text = topLine,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                 )
             }
+            PlusPlanHeroCard(
+                option = plusOption,
+                isCurrent = plusIsCurrent,
+                trial = trial,
+                statusText = currentStatusText.takeIf { plusIsCurrent },
+            )
+            FreePlanSummaryCard(option = freeOption, isCurrent = planScreen.isCurrent(freeOption.key))
+            // ⚠ 코드를 쳐서 유료 기능을 여는 길(선물·코드 입력·코드 공유)을 되살리지 말 것 — 지침 3.1.1, `docs/spec/plan-gates.md`.
         }
-        // 상시 'Google Play 구독 관리' 링크는 제거 — 쿠폰/서버 부여 이용권 사용자에겐 Play 구독이
-        // 없어 빈 화면만 열리는 혼란이 있었다. 스토어 해지가 필요한 경우(PLAY_CANCEL_FAILED 등)는
-        // 해지 실패 다이얼로그가 manage URL 로 안내하는 폴백 경로가 그대로 남아 있다.
-        // 정책 변경: 무료 전환 시 유료 음성 데이터를 삭제하지 않고 보존·잠금하므로
-        // '지금 삭제' 파괴적 액션은 제거했다(다시 이용권을 등록하면 그대로 복구된다).
+
+        // ── 아래 고정 영역 ── 스크롤과 무관하게 늘 보인다(A안). 자동 결제 안내는 **시작 버튼 바로 아래 한 문장**이다
+        // (스토어 정책: 체험 기간, 체험 뒤 가격·주기, 결제 시점, 해지 방법을 결제 전에 보인다).
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // ⚠ **`!isCurrent` 로 되돌리지 말 것**(2026-09-29). 프로모만 쓰는 계정은 플러스가 '현재' 인데 산 이용권이 아니라
+            //   시작 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야 한다([PlanScreenCurrent.showsPurchase]).
+            if (plusShowsPurchase) {
+                Button(
+                    onClick = { purchaseTarget = plusOption },
+                    enabled = !billingBusy,
+                    colors = wakerButtonColors(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp),
+                    shape = WakerButtonShape,
+                ) {
+                    Text(
+                        text = if (trial != null) {
+                            stringResource(R.string.billing_plan_trial_start, trial)
+                        } else {
+                            stringResource(R.string.billing_select_button)
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                if (trial != null && plusOption.trialDisclosure != null) {
+                    Text(
+                        text = plusOption.trialDisclosure,
+                        style = MaterialTheme.typography.bodySmall.copy(lineBreak = LineBreak.Heading),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            // **이전 구매 복원 — 항상 보인다.** 기기를 바꾸거나 다른 경로로 로그인해 서버에 결제 기록이 없을 때, 여기가
+            // 없으면 '다시 결제' 뿐이라 같은 구독을 두 번 사게 된다(애플은 심사 지침 3.1.1 로 요구한다).
+            // A안(2026-11-15)부터 **작은 글자 버튼**이다 — 화면 폭 버튼이던 2026-08-17 지시를 오너가 시안으로 바꿨다.
+            // ⚠ **해지보다 앞이다**(2026-08-24 지시) — 되돌릴 수 있는 액션이 먼저, 되돌릴 수 없는 액션이 마지막.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                TextButton(onClick = onRestorePurchases, enabled = !billingBusy) {
+                    Text(
+                        text = stringResource(R.string.billing_restore_purchases),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                if (hasActive) {
+                    TextButton(onClick = { showCancelDialog = true }, enabled = !billingBusy) {
+                        Text(
+                            text = stringResource(R.string.billing_cancel_pass),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+            // 상시 'Google Play 구독 관리' 링크는 두지 않는다 — 서버 부여 이용권 사용자에겐 Play 구독이 없어 빈 화면만 열린다.
+            // 스토어 해지가 필요한 경우(PLAY_CANCEL_FAILED 등)는 해지 실패 다이얼로그가 manage URL 로 안내한다.
+        }
     }
 
     purchaseTarget?.let { option ->
@@ -281,7 +325,7 @@ private fun PlayPurchaseDialog(
         // 그때 가격 자리에 빈 문자열을 끼우면 "개인 이용권은 이에요." 가 된다 —
         // 숫자를 모를 땐 가격을 말하지 않는 문장을 쓴다. 실제 금액은 Play 결제
         // 시트가 어차피 다시 보여준다.
-        message = if (target.price.isBlank()) {
+        message = target.trialDisclosure ?: if (target.price.isBlank()) {
             stringResource(R.string.billing_play_purchase_description_no_price, target.name)
         } else {
             stringResource(R.string.billing_play_purchase_description, target.name, target.price)
@@ -378,77 +422,146 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
+/** 플러스 혜택 한 줄 — 강조색 체크 + 글자(A안). */
 @Composable
-private fun PlanFeatureRow(text: String) {
+private fun PlanCheckRow(text: String) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .background(MaterialTheme.colorScheme.primary, CircleShape),
+        Icon(
+            imageVector = Icons.Rounded.Check,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
         )
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
 
+/**
+ * 플러스 큰 카드(A안). 배지는 지금 쓰는 중이면 '현재 이용권', 체험을 줄 수 있으면 '1개월 무료'.
+ * 가격 줄은 체험이 있으면 "1개월 무료, 이후 월 ₩3,900", 없으면 "월 ₩3,900". 상태 한 줄(만료·해지 예정·프로모)은 가격 아래다.
+ */
 @Composable
-internal fun SubscriptionPlanCard(
+internal fun PlusPlanHeroCard(
     option: SubscriptionPlanOption,
-    /** '현재 이용권' 뱃지·강조·상태 문구. 결제 버튼과는 **따로** 정한다([showsPurchase]). */
     isCurrent: Boolean,
-    /**
-     * 결제 버튼을 그리는가([PlanScreenCurrent.showsPurchase]). 산 이용권의 현재 카드엔 없고,
-     * 프로모로 현재가 된 개인 카드엔 있다 — [isCurrent] 로 대신하지 말 것.
-     */
-    showsPurchase: Boolean,
-    busy: Boolean,
-    onPurchase: () -> Unit,
-    // 현재 플랜 카드에만 붙는 만료/전환 상태 한 줄 (예: "7월 20일까지 이용할 수 있어요").
-    currentStatusText: String? = null,
+    /** 지금 받을 수 있는 체험 기간("1개월") — 시작 버튼이 있을 때만([PlanScreenCurrent.showsPurchase]). */
+    trial: String?,
+    statusText: String?,
 ) {
     OutlinedCard(
-        shape = WakerCardShape,
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (isCurrent) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)
-            } else {
-                MaterialTheme.colorScheme.outlineVariant
-            },
-        ),
+        shape = WakerHeroShape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)),
         colors = CardDefaults.outlinedCardColors(
-            containerColor = if (isCurrent) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.44f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.44f),
         ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // ⚠ **이름과 요금을 한 덩어리로 묶지 말 것**(2026-08-17 지시 "아이폰처럼").
-                // 예전에는 둘을 간격 4의 안쪽 Column 에 넣어 거의 붙어 있었는데, iOS 는
-                // 요금이 카드 VStack 의 형제라 **다른 줄들과 같은 12** 를 받는다.
-                // 그래서 같은 카드가 안드로이드에서만 위쪽이 빽빽해 보였다.
                 Text(
                     text = option.name,
-                    // iOS `.headline` = 17 semibold. `titleMedium`(16 Bold)이 아니다.
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                val badge = when {
+                    isCurrent -> stringResource(R.string.billing_current_pass_label)
+                    trial != null -> stringResource(R.string.billing_plan_trial_headline, trial)
+                    else -> null
+                }
+                if (badge != null) {
+                    Surface(
+                        shape = WakerPillShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) {
+                        Text(
+                            text = badge,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = stringResource(R.string.billing_plan_personal_headline),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (option.price.isNotBlank()) {
+                    Text(
+                        text = if (trial != null) {
+                            stringResource(R.string.billing_plan_trial_price_line, trial, option.price)
+                        } else {
+                            option.price
+                        },
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                if (statusText != null) {
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f))
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                option.features.forEach { feature -> PlanCheckRow(feature) }
+            }
+        }
+    }
+}
+
+/** 무료 한 줄 카드(A안) — 이름·가격 한 줄(지금 쓰는 중이면 '현재 이용권' 배지), 아래에 혜택을 " · " 로 이은 한 줄. */
+@Composable
+internal fun FreePlanSummaryCard(option: SubscriptionPlanOption, isCurrent: Boolean) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerPanelShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = wakerCardBorder(),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = option.name,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = option.price,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
@@ -460,55 +573,18 @@ internal fun SubscriptionPlanCard(
                     ) {
                         Text(
                             text = stringResource(R.string.billing_current_pass_label),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
             }
-            if (option.price.isNotBlank()) {
-                Text(
-                    text = option.price,
-                    // iOS `.subheadline.weight(.semibold)` = 15 semibold.
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            if (isCurrent && currentStatusText != null) {
-                Text(
-                    text = currentStatusText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Column(
-                modifier = Modifier.padding(bottom = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                option.features.forEach { feature ->
-                    PlanFeatureRow(feature)
-                }
-            }
-            // ⚠ **`BuildConfig.FLAVOR == "dev"` 게이트를 되살리지 말 것**(2026-08-11 제거).
-            // 결제는 **Play 결제 시트**가 처리하므로 운영에서도 동작한다.
-            //
-            // ⚠ **`!isCurrent` 로 되돌리지 말 것**(2026-09-29). 프로모만 쓰는 계정은 개인 카드가
-            //   '현재' 인데 산 이용권이 아니라 결제 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야
-            //   하고, 버튼을 숨기면 살 길이 사라진다([PlanScreenCurrent.showsPurchase]).
-            if (showsPurchase) {
-                Button(
-                    onClick = onPurchase,
-                    enabled = !busy,
-                    colors = wakerButtonColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Text(stringResource(R.string.billing_select_button))
-                }
-            }
+            Text(
+                text = option.features.joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -627,8 +703,49 @@ private val FallbackPlanPriceKrw = mapOf(
 )
 
 /** 스토어 가격이 있으면 그걸, 없으면 현재 언어의 월 가격 문구로 준다. */
-private fun planPriceLabel(context: Context, planPrices: Map<String, String>, key: String): String {
+/**
+ * ISO 8601 기간(`P1M`·`P7D`·`P1W`·`P1Y`) → "1개월"·"7일"·"1주"·"1년". 못 읽으면 null(체험 문구를 그리지 않는다 — 기간을
+ * 지어내지 않는다).
+ */
+internal fun trialPeriodLabel(context: Context, iso: String): String? {
+    val match = Regex("^P(\\d+)([DWMY])$").matchEntire(iso.trim().uppercase()) ?: return null
+    val count = match.groupValues[1].toIntOrNull()?.takeIf { it > 0 } ?: return null
+    val res = when (match.groupValues[2]) {
+        "D" -> R.plurals.billing_trial_days
+        "W" -> R.plurals.billing_trial_weeks
+        "M" -> R.plurals.billing_trial_months
+        else -> R.plurals.billing_trial_years
+    }
+    return context.resources.getQuantityString(res, count, count)
+}
+
+/** 주기를 붙이지 않은 가격("₩3,900") — 체험 안내 문장("…매월 ₩3,900씩…")에 쓴다. 스토어 값이 없으면 폴백. */
+private fun planRawPrice(context: Context, planPrices: Map<String, String>, key: String): String {
     planPrices[key]?.takeIf { it.isNotBlank() }?.let { return it }
+    val krw = FallbackPlanPriceKrw[key] ?: return ""
+    return context.getString(R.string.billing_plan_price_fallback, krw)
+}
+
+/**
+ * 체험 안내 한 문장 — 첫 결제일은 **오늘 + 체험 기간**(스토어가 체험을 지금 시작하므로). ISO 기간을 못 읽으면 null(날짜를
+ * 지어내지 않는다 — 그때는 카드가 문장 없이 그려지고 결제 시트가 날짜를 보여 준다).
+ */
+internal fun trialDisclosureText(context: Context, iso: String, rawPrice: String, today: java.time.LocalDate = java.time.LocalDate.now()): String? {
+    if (rawPrice.isBlank()) return null
+    val period = runCatching { java.time.Period.parse(iso.trim().uppercase()) }.getOrNull() ?: return null
+    if (period.isZero || period.isNegative) return null
+    val firstCharge = today.plus(period)
+    val locale = context.resources.configuration.locales[0]
+    val pattern = android.text.format.DateFormat.getBestDateTimePattern(locale, "MMMMd")
+    val date = java.time.format.DateTimeFormatter.ofPattern(pattern, locale).format(firstCharge)
+    return context.getString(R.string.billing_plan_trial_disclosure, date, rawPrice)
+}
+
+private fun planPriceLabel(context: Context, planPrices: Map<String, String>, key: String): String {
+    // ⚠ **결제 주기를 붙인다**(2026-11-09). Play 의 `formattedPrice` 는 "₩3,900" 뿐이라 그대로 쓰면 카드가
+    // "1개월 무료 체험, 이후 ₩3,900" 이 돼 **얼마마다** 내는지가 빠진다(스토어 정책은 체험 뒤 가격과 주기를 함께
+    // 말하라고 한다). 상품은 월 구독 하나(`PlayBillingProducts.PERSONAL_MONTHLY`)다. iOS 짝은 `"월 \(price)"`.
+    planPrices[key]?.takeIf { it.isNotBlank() }?.let { return context.getString(R.string.billing_plan_monthly_price, it) }
     val krw = FallbackPlanPriceKrw[key] ?: return ""
     return context.getString(R.string.billing_plan_monthly_price_fallback, krw)
 }

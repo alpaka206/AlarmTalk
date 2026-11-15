@@ -33,7 +33,6 @@ internal fun SettingsScreen(
     contentPadding: PaddingValues,
     authSession: AuthSession?,
     onBack: () -> Unit,
-    onEditNickname: () -> Unit,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onOpenConsentHistory: () -> Unit,
     onOpenOssLicenses: () -> Unit,
@@ -130,12 +129,6 @@ internal fun SettingsScreen(
         if (authSession != null) {
             item {
                 SettingsCard(title = stringResource(R.string.hs_settings_section_account)) {
-                    SettingsRow(
-                        label = stringResource(R.string.hs_settings_nickname),
-                        value = authSession.user.name.ifBlank { stringResource(R.string.hs_settings_no_name) },
-                        onClick = onEditNickname,
-                    )
-                    HorizontalDivider()
                     // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시 "굳이 밖에서부터
                     // 강조를 해야 해?"). 이 행은 **문**이다 — 눌러도 아직 아무 일도
                     // 일어나지 않고 확인 모달이 뜬다. 결정하는 자리(모달의 [로그아웃])만

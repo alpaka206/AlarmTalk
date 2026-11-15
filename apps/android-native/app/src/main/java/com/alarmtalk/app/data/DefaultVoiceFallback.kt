@@ -405,7 +405,13 @@ fun lockSurvivesSave(saved: AlarmEntity, editing: AlarmEntity): Boolean {
     if (AlarmPlayModes.normalize(saved.playMode) != AlarmPlayModes.normalize(editing.playMode)) return false
     if (saved.audioCacheKey == editing.audioCacheKey) return true
     if (!editing.audioCacheKey.isNullOrBlank()) return false
-    val theme = editing.bucketId?.takeIf { it.isNotBlank() } ?: return true
+    val theme = editing.bucketId?.takeIf { it.isNotBlank() }
+    if (theme == null) {
+        // ⚠ **테마 없이 새 오디오가 붙은 저장은 사용자의 편집이다**(2026-11-09 출시 검토). 1.3 은 무료도 기본 목소리 직접
+        // 입력을 만든다 — 잠긴 직접 입력 알람에 새 문구를 만들어 저장했는데 잠금을 이으면, 나중에 복원이 그 문구를 옛 문구로
+        // 말없이 되돌린다. 편집기가 스스로 붙이는 첫 테마는 `bucketId` 가 있어 여기 걸리지 않는다. iOS `saveKeepsLock` 짝.
+        return !(saved.bucketId.isNullOrBlank() && !saved.audioCacheKey.isNullOrBlank())
+    }
     return saved.bucketId == theme
 }
 

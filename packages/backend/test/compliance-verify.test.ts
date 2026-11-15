@@ -113,8 +113,8 @@ beforeAll(async () => {
   await db.execute('DELETE FROM voice_profiles');
   await db.execute('DELETE FROM users');
   await db.execute({
-    sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-    args: [PK, SUB, 'compliance@test.com', 'Compliance Tester'],
+    sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+    args: [PK, SUB, 'compliance@test.com'],
   });
 });
 
@@ -225,8 +225,8 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
 
   it('동의 기록이 없는 사용자는 needs_consent=true, 가입 필수 4종 모두 missing', async () => {
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [NEW_PK, NEW_SUB, 'noconsent@test.com', 'No Consent'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [NEW_PK, NEW_SUB, 'noconsent@test.com'],
     });
     const app = buildApp(NEW_SUB, NEW_PK);
     const res = await app.request(req('GET', '/user/consents/status'));
@@ -257,8 +257,8 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
     const SUB2 = 'partial-sub';
     const PK2 = 'partial-pk';
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PK2, SUB2, 'partial@test.com', 'Partial'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PK2, SUB2, 'partial@test.com'],
     });
     const app = buildApp(SUB2, PK2);
     await app.request(
@@ -279,8 +279,8 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
     const SUB4 = 'sensitive-sub';
     const PK4 = 'sensitive-pk';
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PK4, SUB4, 'sensitive@test.com', 'Sensitive'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PK4, SUB4, 'sensitive@test.com'],
     });
     const app = buildApp(SUB4, PK4);
     await app.request(
@@ -308,8 +308,8 @@ describe('탈퇴 30일 유예 / 철회', () => {
   it('탈퇴 쓰기 뒤 520이 나도 롤백 후 재시도하여 세션 세대는 한 번만 오른다', async () => {
     const pk = 'deletion-retry';
     await db.execute({
-      sql: 'INSERT INTO users (id, google_id, email, name, token_epoch) VALUES (?, ?, ?, ?, ?)',
-      args: [pk, pk, 'deletion-retry@example.test', 'Retry', 10],
+      sql: 'INSERT INTO users (id, google_id, email, token_epoch) VALUES (?, ?, ?, ?)',
+      args: [pk, pk, 'deletion-retry@example.test', 10],
     });
     const original = db.transaction.bind(db);
     let failed = false;
@@ -386,8 +386,8 @@ describe('계정 파기 — 결제기록 5년 가명보존', () => {
 
   it('구독이 있으면 retained_billing_records 로 가명보존한 뒤 계정을 파기한다', async () => {
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PK3, SUB3, 'harddel@test.com', 'Hard Delete'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PK3, SUB3, 'harddel@test.com'],
     });
     await db.execute({
       sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
@@ -418,8 +418,8 @@ describe('계정 파기 — 결제기록 5년 가명보존', () => {
     const SUB5 = 'hard-del-sub-3';
     const PK5 = 'hard-del-pk-3';
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PK5, SUB5, 'harddel3@test.com', 'Hard Delete 3'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PK5, SUB5, 'harddel3@test.com'],
     });
     await db.execute({
       sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
@@ -472,8 +472,8 @@ describe('계정 파기 — 결제기록 5년 가명보존', () => {
     const SUB9 = 'hard-del-sub-7';
     const PK9 = 'hard-del-pk-7';
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PK9, SUB9, 'harddel7@test.com', 'Hard Delete 7'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PK9, SUB9, 'harddel7@test.com'],
     });
     await db.execute({
       sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
@@ -500,8 +500,8 @@ describe('계정 파기 — 결제기록 5년 가명보존', () => {
     const SUB6 = 'hard-del-sub-4';
     const PK6 = 'hard-del-pk-4';
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PK6, SUB6, 'harddel4@test.com', 'Hard Delete 4'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PK6, SUB6, 'harddel4@test.com'],
     });
     await db.execute({
       sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
@@ -537,8 +537,8 @@ describe('계정 파기 — 결제기록 5년 가명보존', () => {
     const SUB7 = 'hard-del-sub-5';
     const PK7 = 'hard-del-pk-5';
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PK7, SUB7, 'harddel5@test.com', 'Hard Delete 5'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PK7, SUB7, 'harddel5@test.com'],
     });
     // 2018년부터 갱신해 온 구독 — 지금도 유효하다.
     await db.execute({
@@ -577,8 +577,8 @@ describe('계정 파기 — 결제기록 5년 가명보존', () => {
     const SUBA = 'hard-del-sub-8';
     const PKA = 'hard-del-pk-8';
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PKA, SUBA, 'harddel8@test.com', 'Hard Delete 8'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PKA, SUBA, 'harddel8@test.com'],
     });
     // 2018 에 시작해 지금도 갱신 중 — created_at 과 last_paid_at 이 크게 벌어진 상태.
     await db.execute({
@@ -620,8 +620,8 @@ describe('계정 파기 — 결제기록 5년 가명보존', () => {
       args: [LONG_PLAN],
     });
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PK8, SUB8, 'harddel6@test.com', 'Hard Delete 6'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PK8, SUB8, 'harddel6@test.com'],
     });
     await db.execute({
       sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
@@ -652,8 +652,8 @@ describe('계정 파기 — 결제기록 5년 가명보존', () => {
     const SUB4 = 'hard-del-sub-2';
     const PK4 = 'hard-del-pk-2';
     await db.execute({
-      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
-      args: [PK4, SUB4, 'harddel2@test.com', 'Hard Delete 2'],
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: [PK4, SUB4, 'harddel2@test.com'],
     });
     // `usage_events.user_id` 는 users 의 FK 자식이다 — 파기에서 빼먹으면 여기서
     // FK 로 던져 **탈퇴가 통째로 롤백된다**(1년 보관이 다할 때까지 계정이 안 지워진다).

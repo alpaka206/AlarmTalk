@@ -7,6 +7,7 @@ import { evictLruClonesIfOverCapTx, hasCloneSlotCapacity } from './voice-slots';
 import { withWriteTransaction } from './transactions';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
+import { recordTtsUsage } from './tts-usage';
 
 /**
  * F3: 슬롯 상한(F1)으로 evict된 클론 프로필을 보관된 원본 오디오로 자동 재클론해 복구한다.
@@ -81,6 +82,9 @@ export async function recloneEvictedVoiceProfile(
   });
   let newVoiceId = '';
   let lastError: unknown = new Error('No voice provider is configured.');
+  // 재등록의 실제 지연을 장부에 남긴다(글자 0 — 합성이 아니다). 슬롯을 다시 차지하는 비용이 얼마나 자주·오래 드는지 본다
+  // (`docs/spec/tts-render-and-budget.md` §4). 원본이 없거나 슬롯이 없어 부르지 않은 경우는 세지 않는다.
+  const enrollStarted = Date.now();
   for (const attempt of attempts) {
     try {
       const result = await attempt.enroll();
@@ -92,6 +96,12 @@ export async function recloneEvictedVoiceProfile(
       if (attempt !== attempts[attempts.length - 1]) continue;
     }
   }
+  await recordTtsUsage(db, {
+    kind: 'clone_reregister',
+    outcome: newVoiceId ? 'success' : 'failure',
+    characters: 0,
+    latencyMs: Date.now() - enrollStarted,
+  });
   if (!newVoiceId) throw lastError;
 
   // 동시성/삭제 가드(Codex #599): '살아있고 아직 evicted 인' 행일 때만 in-place 복원하고,

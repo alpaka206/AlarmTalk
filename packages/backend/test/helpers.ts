@@ -38,6 +38,8 @@ function assertBindingCount(query: { sql: string; args: unknown[] }) {
 
 export function createMockDB() {
   const calls: ExecuteCall[] = [];
+  /** 큐를 소비하지 않는 부수 쿼리(#139 장부·논리 결과)의 기록 — `calls` 인덱스를 밀지 않으려고 따로 둔다. */
+  const sideCalls: ExecuteCall[] = [];
   const results: MockQueueEntry[] = [];
   const transactions = {
     commits: 0,
@@ -89,6 +91,7 @@ export function createMockDB() {
 
   function reset() {
     calls.length = 0;
+    sideCalls.length = 0;
     results.length = 0;
     transactions.commits = 0;
     transactions.rollbacks = 0;
@@ -173,6 +176,17 @@ export function createMockDB() {
       if (/PRAGMA table_info\('voice_prerender_queue'\)/i.test(query.sql)) {
         return { rows: [{ name: 'refresh_existing' }], rowsAffected: 0 };
       }
+      // #139 합성 사용량 장부·직접 입력 논리 결과(조회·채우기)도 같은 규약이다 — 합성·캐시 경로마다 도는 부수 쿼리라
+      // 큐를 소비하지 않고 빈 결과를 돌려준다(논리 결과 없음 = 예전처럼 센다). 확인할 테스트는 `sideCalls` 를 보거나,
+      // `pushResultFor` 로 짝을 지어 둔다(짝은 위에서 먼저 쓰인다).
+      if (
+        /tts_synthesis_usage/i.test(query.sql) ||
+        /FROM generated_audio_assets\s+WHERE user_id = \? AND logical_key = \?/i.test(query.sql) ||
+        /SET logical_key = \?/i.test(query.sql)
+      ) {
+        sideCalls.push({ sql: query.sql, args: query.args });
+        return { rows: [], rowsAffected: 0 };
+      }
       calls.push({ sql: query.sql, args: query.args });
       return takeNext();
     },
@@ -217,6 +231,7 @@ export function createMockDB() {
   return {
     client,
     calls,
+    sideCalls,
     pushResult,
     pushResultFor,
     pushErrorFor,

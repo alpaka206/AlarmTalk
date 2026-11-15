@@ -19,6 +19,8 @@ struct VoiceConsentSheet: View {
     let registeringVoice: Bool
     let onAgree: () -> Void
     let onDismiss: () -> Void
+    /// 직전 동의 기록이 실패한 이유 — 버튼 줄 위에 빨간 글자로 그린다(`AuthViewModel.actionErrorMessage`).
+    var errorMessage: String? = nil
 
     @State private var biometric = false
     @State private var overseas = false
@@ -61,6 +63,13 @@ struct VoiceConsentSheet: View {
                 }
             }
             .frame(maxHeight: 320)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(AlarmTalkTheme.error)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             HStack {
                 Spacer()

@@ -273,7 +273,14 @@ enum DefaultVoiceSubstitute {
         }
         if saved.audioCacheKey == editing.audioCacheKey { return true }
         guard editing.audioCacheKey?.nilIfBlank == nil else { return false }
-        guard let theme = editing.bucketId?.nilIfBlank else { return true }
+        guard let theme = editing.bucketId?.nilIfBlank else {
+            // ⚠ **테마 없이 새 오디오가 붙은 저장은 사용자의 편집이다**(2026-11-09 iOS 출시 검토). 1.3 은 무료도 기본 목소리
+            // 직접 입력을 만든다 — 잠긴 직접 입력 알람에 새 문구를 만들어 저장했는데 잠금을 이으면, 나중에 복원이 그 문구를
+            // 옛 문구로 말없이 되돌린다. 편집기가 스스로 붙이는 첫 테마는 `bucketId` 가 있으므로 여기 걸리지 않는다.
+            // 안드로이드 `lockSurvivesSave` 와 같다.
+            if saved.bucketId?.nilIfBlank == nil, saved.audioCacheKey?.nilIfBlank != nil { return false }
+            return true
+        }
         return saved.bucketId == theme
     }
 

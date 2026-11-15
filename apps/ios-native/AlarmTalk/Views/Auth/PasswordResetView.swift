@@ -72,14 +72,7 @@ struct PasswordResetView: View {
                         confirmButton
                     }
 
-                    if let message = auth.statusMessage {
-                        // 코드 발송 안내·오류가 모두 여기로 온다 — 중립색으로 뭉뚱그리지
-                        // 않고 `statusIsError` 로 갈라 그린다.
-                        Text(message)
-                            .font(theme.typography.bodySmall)
-                            .foregroundStyle(auth.statusIsError ? AuthSceneColors.error : AuthSceneColors.notice)
-                            .padding(.top, 4)
-                    }
+                    // 코드 발송 안내·오류는 위쪽 토스트로 뜬다(아래 `.authToast` — 로그인 화면과 같다, 2026-11-15).
                 }
                 .padding(.horizontal, 22)
                 .padding(.vertical, 18)
@@ -89,6 +82,7 @@ struct PasswordResetView: View {
             // (2026-08-10 사용자 보고 — 편집기에는 이미 있었고 나머지 화면만 빠져 있었다).
             .scrollDismissesKeyboard(.interactively)
         }
+        .authToast(message: auth.statusMessage, isError: auth.statusIsError) { auth.statusMessage = nil }
         .navigationTitle("비밀번호 재설정")
         .navigationBarTitleDisplayMode(.inline)
         // ⚠ **화면을 나갈 때 발송 상태를 지운다.** 예전에는 `passwordResetCodeSentTo` 와

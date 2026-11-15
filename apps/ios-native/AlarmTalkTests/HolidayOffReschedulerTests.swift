@@ -191,6 +191,20 @@ final class HolidayOffReschedulerTests: XCTestCase {
         XCTAssertFalse(AlarmKitViewModel.isCalendarOnlyCandidate(oneShot, nowMillis: now))
     }
 
+    /// 복구에서 예약하지 못한 행을 끄고 알리는 것은 **켜진 채 남은 이 계정의 행이고 권한이 있을 때뿐**이다(§1-6). 기다리는 사이
+    /// 사용자가 끈 행에 '예약 실패' 를 새기고 "다시 켜 주세요" 알림을 보내지 않는다(Codex #984 P2).
+    func test_복구_실패는_켜진_이_계정의_행에만_끄고_알린다() {
+        let on = LocalAlarmRecord(label: "a", hour: 7, minute: 0, fireAtMillis: 1_800_000_000_000)
+        var off = on
+        off.enabled = false
+
+        XCTAssertTrue(AlarmKitViewModel.recoveryFailureTurnsOff(live: on, mayScheduleLive: true, alarmKitAuthorized: true))
+        XCTAssertFalse(AlarmKitViewModel.recoveryFailureTurnsOff(live: off, mayScheduleLive: true, alarmKitAuthorized: true), "사용자가 그사이 껐다")
+        XCTAssertFalse(AlarmKitViewModel.recoveryFailureTurnsOff(live: nil, mayScheduleLive: true, alarmKitAuthorized: true), "그사이 지웠다")
+        XCTAssertFalse(AlarmKitViewModel.recoveryFailureTurnsOff(live: on, mayScheduleLive: false, alarmKitAuthorized: true), "남의 계정 행의 거절")
+        XCTAssertFalse(AlarmKitViewModel.recoveryFailureTurnsOff(live: on, mayScheduleLive: true, alarmKitAuthorized: false), "권한이 없다")
+    }
+
     func test_표지가_없으면_지금_달력을_기준으로_삼는다() async {
         // 보통은 `HolidayStore.init` 이 먼저 적는다 — 없을 때 괜히 전부 다시 걸지 않는다.
         let rescheduler = HolidayOffRescheduler(defaults: defaults)

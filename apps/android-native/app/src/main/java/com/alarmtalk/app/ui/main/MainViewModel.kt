@@ -523,14 +523,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     /**
-     * 지금 회차가 도는 동안 sync 요청이 또 들어왔는가. 겹쳐 돌리면 서버에 같은 알람이 두 개
-     * 생기지만(`syncNow` 주석), 그렇다고 버리면 앞 회차가 목록을 스냅샷한 뒤 저장된 알람이
-     * 다음 트리거까지 안 올라간다. 그래서 표시만 남기고 회차가 끝난 뒤 한 번 더 돈다.
+     * **로그인한 동안 실패한 동작** — 그 동작이 있는 자리에 빨간 글자로 이유를 그린다(2026-10-29 오너: 알림이 아니라 빨간 글자).
+     * 예전에는 상단 스낵바(`message`)로만 말해, 탈퇴 확인 창·민감 동의 시트처럼 **자기 창**을 연 채 실패하면 그 창의 어두운
+     * 막 아래에 깔려 보이지 않았다. iOS `AuthViewModel.actionError` 짝. 같은 동작을 다시 시작하거나 그 창을 닫으면 지운다.
      */
-    internal var syncRequestedWhileBusy = false
+    var signedInActionError by mutableStateOf<SignedInActionError?>(null)
+        private set
 
-    var syncBusy by mutableStateOf(false)
-        internal set
+    fun actionErrorFor(action: SignedInAction): String? =
+        signedInActionError?.takeIf { it.action == action }?.message
+
+    fun clearActionError(action: SignedInAction) {
+        if (signedInActionError?.action == action) signedInActionError = null
+    }
+
+    internal fun failAction(action: SignedInAction, text: String) {
+        signedInActionError = SignedInActionError(action, text)
+    }
+
 
     /**
      * 교체 정리(강등·재예약)가 끝나지 않아 **아직 고를 수 없는** 목소리들.
@@ -595,10 +605,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var voiceProfileBusy by mutableStateOf(false)
         internal set
 
+    /**
+     * **목소리 탭에서 한 일이 안 됐다는 이유** — 이름 변경·삭제·다시 시도(사전렌더·말투)의 실패와, 다른 요청이 도는 사이 눌러
+     * 받지 못한 경우. 목소리 탭 맨 위에 빨간 글자로 그린다(2026-10-29 오너: 실패는 알림이 아니라 그 자리 빨간 글자 — iOS
+     * `VoiceStudioViewModel.statusMessage` 짝). 같은 동작을 다시 시작하거나 목소리 탭에 다시 들어오면 지운다.
+     */
+    var voiceTabError by mutableStateOf<String?>(null)
+
     var voiceProfileLoadFinished by mutableStateOf(false)
         internal set
 
     var stockClips by mutableStateOf<List<com.alarmtalk.app.network.StockClip>>(emptyList())
+
+    /**
+     * 이 계정이 **받은 추가 팩**(`docs/spec/voice-packs.md` §7) — 목소리 탭·편집기가 본다. 원본은 `VoicePackStore` 이고
+     * 화면은 그 변화 신호를 보고 [refreshHeldVoicePacks] 로 다시 읽는다. ⚠ [stockClips] 에 섞지 않는다 — 기본 목소리
+     * 관문·선다운로드가 그 목록을 센다. 편집기에 넘길 때만 합친다(`AlarmTalkApp` 의 편집기 라우트).
+     */
+    var heldVoicePacks by mutableStateOf<List<com.alarmtalk.app.data.HeldVoicePack>>(emptyList())
+        internal set
+
+    /** 지금 받을 수 있는 추가 팩(`GET /voice-packs` 의 `packs`). */
+    var voicePackCatalog by mutableStateOf<List<com.alarmtalk.app.network.VoicePackSummary>>(emptyList())
+        internal set
+
+    /** 카탈로그 조회가 한 번이라도 끝났는가 / 마지막 조회가 실패했는가 — 빈 상태와 '못 불러옴' 을 가른다. */
+    var voicePackCatalogLoaded by mutableStateOf(false)
+        internal set
+    var voicePackCatalogFailed by mutableStateOf(false)
+        internal set
+
+    internal val voicePackStore by lazy { com.alarmtalk.app.data.VoicePackStore(getApplication()) }
 
     /**
      * 카테고리별 **완전한 세트의 클립 수**(서버가 내려준다).
@@ -805,6 +842,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // planKey("personal") → Play 실제 표시가격(formattedPrice). preloadProducts
     // 성공 시 채워지며, 비면 UI 가 문자열 리소스로 폴백한다. 하드코딩 대신 청구 통화·금액을 정확히 표기.
     var billingPlanPrices by mutableStateOf<Map<String, String>>(emptyMap())
+    /** 지금 받을 수 있는 무료 체험 기간(플랜 key → ISO 8601 `P1M`) — Play 가 자격 있는 오퍼만 준다. 없으면 빈 표. */
+    var billingPlanTrials by mutableStateOf<Map<String, String>>(emptyMap())
         internal set
 
     // 이용권 패널 진입 시의 read-only 새로고침 플래그. billingBusy(구매·해지 등
@@ -812,6 +851,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 구독 상태는 AccessSnapshotStore 캐시로 이미 알고 있다.
     var billingRefreshing by mutableStateOf(false)
         internal set
+    /** 조회가 도는 사이 들어온 조회 요청 — 끝나면 한 번 더 받는다(`refreshBillingData`). */
+    internal var billingRefreshQueued = false
 
     var subscriptionResponse by mutableStateOf<BillingSubscriptionResponse?>(initialAccessSnapshot.subscriptionResponse)
         internal set
@@ -827,9 +868,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val themePrefs = application.getSharedPreferences("voice_alarm_theme", android.content.Context.MODE_PRIVATE)
     var themeMode by mutableStateOf(loadInitialThemeMode(themePrefs))
-        internal set
-
-    var nicknameEditDialogOpen by mutableStateOf(false)
         internal set
 
     var deleteAccountConfirmOpen by mutableStateOf(false)
@@ -1178,7 +1216,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var updateStoreUrl by mutableStateOf("")
         internal set
     /**
-     * 서버가 알려 준 날씨 원천 토큰 — `GET /api/app/version` 의 `weather_attribution`. 지역 시트가 출처 줄을
+     * 서버가 알려 준 날씨 원천 토큰 — `GET /api/app/version` 의 `weather_attribution`. 법적 정보 화면(약관 및 개인정보 처리 동의)이 출처 줄을
      * 그릴지 이 값으로 정한다(`showsWeatherAttribution`) — 앱이 원천을 스스로 단정하지 않는다.
      * 저장하지 않고 새로 묻지도 않는다: [checkAppVersion] 이 받아 온 값을 이 뷰모델이 사는 동안만 들고,
      * 확인이 실패하면 null(숨김)로 되돌린다. 화면에는 `MainActivity` 가 `LocalWeatherAttribution` 으로 내려 준다.
@@ -1206,6 +1244,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 같은 시각 알람 충돌 시 교체 확인 모달 상태(null 이면 닫힘).
     var duplicateAlarmPrompt by mutableStateOf<DuplicateAlarmPrompt?>(null)
         internal set
+
+    /**
+     * 직접 입력 '음성 만들기' 의 같은 요청 id([ManualRequestIds]). **편집기가 아니라 여기 둔다** — 만드는 중에 편집기를
+     * 나가면 응답을 못 받아도 서버는 끝내고 센다. 편집기마다 새로 만들면 다시 들어와 같은 문구로 저장할 때 새 id 라
+     * 서버의 결과를 다시 받기로 한 번 더 센다(`docs/spec/voice-and-message.md` §8 「같은 요청」). iOS 는 처음부터
+     * `VoiceStudioViewModel` 이 든다.
+     */
+    internal val manualRequestIds = ManualRequestIds()
+
+    /** 구독 조회(`GET /billing/subscription`)의 답 순번 — 앞서 떠난 조회의 늦은 답이 새 상태를 덮지 않게(`applySubscriptionResponse`). */
+    internal val billingAnswers = AnswerSequence()
+
+    /**
+     * 알람을 켠 순간 화면 아래에 잠깐 띄우는 "N 후에 울려요." 의 대상(`docs/spec/alarm-editor.md` §7) — 방금 켠 **그 알람**과
+     * 그 예약 시각이다(전체의 다음 알람이 아니다). 바꾸는 곳은 [applyRingInEvent] 하나다: 저장 성공·목록 스위치가 반영된 행,
+     * 그 알람의 삭제, 화면의 표시 완료. 화면(`AlarmTalkApp`)이 띄우고 나면 — 다 보였든, 하위 화면으로 옮겨 도중에 걷혔든,
+     * 띄우기 전에 낡아 버렸든 — [consumeRingInNotice] 로 비운다. 남기면 화면이 다시 만들어질 때(다크 모드 전환 등)나 탭으로
+     * 돌아올 때 지난 안내가 또 뜬다.
+     */
+    var ringInNotice by mutableStateOf<RingInNotice?>(null)
+        internal set
+
+    /** 안내를 [event] 뒤로 옮긴다 — 규칙은 순수 함수 `after`(`ui/main/RingInNotice.kt`) 한 곳이다. */
+    internal fun applyRingInEvent(event: RingInEvent) {
+        ringInNotice = ringInNotice.after(event)
+    }
+
+    /** 띄운(또는 버린) 안내를 비운다. 그 사이 다른 알람을 켜 안내가 바뀌었으면 새 안내는 그대로 둔다. */
+    fun consumeRingInNotice(shown: RingInNotice) {
+        applyRingInEvent(RingInEvent.Finished(shown))
+    }
 
     fun requestPermissionGate(target: PermissionTarget) {
         permissionGateRequest = target
@@ -1276,7 +1345,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun skipVoiceSetup() {
         defaultVoiceStore.markSkipped(authSession?.user?.id?.takeIf { it.isNotBlank() })
+        if (showVoiceSetup) recordOnboardingStep("voice_setup_skipped")
         showVoiceSetup = false
+    }
+
+    /** 로그인 뒤 첫 경험 단계(`onboarding_step`, `docs/spec/usage-events.md` §7.1) — 지금 실재하는 단계는 기본 목소리 준비 화면뿐이다. */
+    private fun recordOnboardingStep(step: String) {
+        com.alarmtalk.app.data.UsageSignals.record(
+            getApplication(),
+            com.alarmtalk.app.data.UsageEvents.ONBOARDING_STEP,
+            props = com.alarmtalk.app.data.UsageEventProps(step = step),
+        )
     }
 
     /**
@@ -1288,7 +1367,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 파일은 메인 밖에서 센다([voiceSetupProbe]) — 부르는 효과가 화면과 함께 사라지면 답도 버려진다.
      */
     suspend fun completeVoiceSetupIfDownloaded() {
-        if (voiceSetupProbe.anyDownloaded()) showVoiceSetup = false
+        if (voiceSetupProbe.anyDownloaded() && showVoiceSetup) {
+            recordOnboardingStep("voice_setup_completed")
+            showVoiceSetup = false
+        }
     }
 
     /**
@@ -1348,7 +1430,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             //   (`AlarmEditorScreen` 의 `chosen`) **직전에 고른 테마가 밀려난다** —
             //   CLAUDE.md 가 회귀라고 못 박은 「직전 선택 유지」 증상 그대로다.
             //   두 저장소가 어긋날 수 있는 상태 자체를 없앤다.
-            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) -> {
+            // 추가 팩도 같다 — 기본 목소리처럼 테마를 고른다(`docs/spec/voice-packs.md` §7).
+            bucket != null && com.alarmtalk.app.data.isFreeFixedVoiceId(draft.voiceProfileId) -> {
                 dynamicPromptStore.saveLastFreeBucket(userId, bucket)
                 randomPromptContextForBucket(bucket)
                     ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
@@ -1559,7 +1642,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         marketingConsentAgreed = null
         marketingConsentLoadGeneration++
         marketingConsentWriteInFlight = false
+        // 앞 계정에서 쓰는 중에 누른 값이 남으면 다음 계정의 첫 쓰기가 끝날 때 그 계정으로 나간다.
+        pendingMarketingConsent = null
         marketingConsentLoadFailed = false
+        // 앞 계정에서 실패한 동작의 이유를 다음 계정 화면에 남기지 않는다.
+        signedInActionError = null
+        voiceTabError = null
+        manualRequestIds.completed()
+        // 같은 시각 알람 교체 확인도 앞 계정의 것이다. 떠 있는 채로 계정을 떠난 뒤 '교체' 를 누르면 주인 없는 알람이
+        // 로그인 화면 뒤에서 켜진 채 예약된다(`docs/spec/alarm-lifecycle.md` §1-1 — 종료 중에는 아무도 예약하지 못한다).
+        duplicateAlarmPrompt = null
     }
 
     fun setThemeMode(mode: ThemeMode) {
@@ -1567,17 +1659,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         themePrefs.edit().putString("mode", mode.name).apply()
     }
 
-    fun requestEditNickname() {
-        if (authSession == null) {
-            message = getApplication<android.app.Application>().getString(R.string.r3misc_login_required_generic)
-            return
-        }
-        nicknameEditDialogOpen = true
-    }
-
-    fun dismissEditNickname() {
-        nicknameEditDialogOpen = false
-    }
 
     fun requestDeleteAccount() {
         if (authSession == null) {
@@ -1589,6 +1670,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissDeleteAccount() {
         deleteAccountConfirmOpen = false
+        clearActionError(SignedInAction.ACCOUNT_DELETION)
     }
 
     init {
@@ -1660,6 +1742,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     billingPlanPrices = listOf("personal")
                         .mapNotNull { key -> playBilling.formattedPriceForPlan(key)?.let { key to it } }
                         .toMap()
+                    billingPlanTrials = listOf("personal")
+                        .mapNotNull { key -> playBilling.freeTrialPeriodForPlan(key)?.let { key to it } }
+                        .toMap()
                 }
                 .onFailure { error -> Log.w(TAG, "Failed to preload Play products", error) }
         }
@@ -1679,6 +1764,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (entry <= 0L) return@collect
                 refreshAppSession(rollToken = firstEntryRefresh)
                 firstEntryRefresh = false
+            }
+        }
+        // 받은 추가 팩의 재생 기한은 백그라운드에 있는 동안에도 지난다 — **진입마다** 저장된 기한으로 대체한다(네트워크 없이,
+        // `docs/spec/voice-packs.md` §5). 세션·동의를 키로 거는 화면 효과는 일반 복귀에서 다시 돌지 않는다(코덱스 #960).
+        // 위 `/auth/me` 갱신을 기다리지 않도록 따로 구독한다.
+        viewModelScope.launch {
+            AppSignals.appEntries.collect { entry ->
+                if (entry > 0L) retireDueVoicePacksOnEntry()
             }
         }
     }
@@ -1713,3 +1806,8 @@ data class PrerenderDriveState(
         return if (downloading) 0.5f + frac * 0.5f else frac * 0.5f
     }
 }
+
+/** 로그인한 동안 그 자리에서 실패를 말하는 동작들([MainViewModel.signedInActionError]). iOS `AuthViewModel.SignedInAction` 짝. */
+enum class SignedInAction { ACCOUNT_DELETION, CONSENT, SENSITIVE_CONSENT, MARKETING, WITHDRAWAL }
+
+data class SignedInActionError(val action: SignedInAction, val message: String)

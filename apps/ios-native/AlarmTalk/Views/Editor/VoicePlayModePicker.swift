@@ -55,12 +55,15 @@ struct VoicePlayModePicker: View {
         Button {
             commit(option)
         } label: {
-            // ⚠ **아이콘을 넣지 말 것.** 안드로이드 `PlayModeChip` 은 글자만 둔다 —
-            // '목소리'/'알람' 이라는 말이 이미 무엇인지 다 말하고, 아이콘을 붙이면
-            // 좁은 화면에서 글자가 먼저 줄어든다.
-            Text(option.label)
-                .font(theme.typography.labelLarge)
-                .fontWeight(.semibold)
+            // 칸마다 아이콘 + 글자(2026-11-09 오너 — 고르기 시안 A). 목소리는 하단 탭과 같은 사람 + 음파, 알람은 종이다.
+            // 안드로이드 `PlayModeChip` 의 `icon`(`RecordVoiceOver`·`Notifications`)과 같은 자리다.
+            HStack(spacing: 6) {
+                Image(systemName: option == .alarmOnly ? "bell" : "person.wave.2")
+                    .font(.system(size: 15, weight: .semibold))
+                Text(option.label)
+                    .font(theme.typography.labelLarge)
+                    .fontWeight(.semibold)
+            }
                 // 색도 안드로이드와 같은 역할을 쓴다: 선택 `onPrimaryContainer`,
                 // 잠긴 미선택 `onSurfaceVariant`, 그냥 미선택은 **`onSurface`** 다.
                 // (미선택을 흐린 색으로 두면 안 고른 쪽이 비활성처럼 보인다.)

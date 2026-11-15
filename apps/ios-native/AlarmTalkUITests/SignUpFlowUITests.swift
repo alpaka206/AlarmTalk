@@ -34,7 +34,11 @@ final class SignUpFlowUITests: XCTestCase {
             app.staticTexts["회원가입"].waitForExistence(timeout: 20),
             "회원가입 화면에 도달하지 못했다"
         )
-        XCTAssertTrue(app.staticTexts["목소리 알람을 만들 계정을 준비해요."].exists, "부제가 없다")
+        // 제목 아래 부제는 2026-11-09 에 지웠다 — 가입 화면의 고정 요소는 이메일 칸 옆 '인증 받기' 버튼이다
+        // (2026-11-14 — 그전에는 칸 아래 넓은 '이메일 인증' 버튼이었다). 간편 로그인이 맨 위에 있다.
+        XCTAssertTrue(app.buttons["인증 받기"].exists, "'인증 받기' 버튼이 없다")
+        XCTAssertTrue(app.buttons["카카오 로그인"].exists, "가입 화면에 카카오 로그인이 없다")
+        XCTAssertFalse(app.staticTexts["목소리 알람을 만들 계정을 준비해요."].exists, "지운 부제가 다시 나온다")
     }
 
     /// 비밀번호 규칙 3종이 입력에 따라 실제로 켜지는가.
@@ -42,8 +46,9 @@ final class SignUpFlowUITests: XCTestCase {
         let app = launchApp()
         XCTAssertTrue(app.staticTexts["회원가입"].waitForExistence(timeout: 20))
 
+        // 닉네임을 없애(2026-10-29) 이름 칸은 없다 — 글자 칸은 이메일 하나다.
         let fields = app.textFields
-        XCTAssertGreaterThanOrEqual(fields.count, 2, "이름·이메일 필드가 있어야 한다")
+        XCTAssertGreaterThanOrEqual(fields.count, 1, "이메일 필드가 있어야 한다")
 
         let secure = app.secureTextFields
         XCTAssertGreaterThanOrEqual(secure.count, 1, "비밀번호 필드가 있어야 한다")
@@ -68,8 +73,9 @@ final class SignUpFlowUITests: XCTestCase {
             : matches.firstMatch
         if !target.isHittable { app.swipeUp() }
         target.tap()
+        // 로그인 모드에만 있는 행으로 판별한다(제목 아래 부제는 2026-11-09 에 지웠다).
         XCTAssertTrue(
-            app.staticTexts["좋아하는 목소리 알람을 다시 불러올게요."].waitForExistence(timeout: 8),
+            app.staticTexts["비밀번호를 잊으셨나요?"].waitForExistence(timeout: 8),
             "하단 전환 행으로 로그인 모드에 못 갔다"
         )
     }

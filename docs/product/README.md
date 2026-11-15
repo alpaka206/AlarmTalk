@@ -75,6 +75,7 @@ causing bugs); see [`docs/spec/plan-gates.md`](../spec/plan-gates.md). See [`PRI
 ## 관련 문서
 
 - [`voice-prompt-design.ko.md`](voice-prompt-design.ko.md) — 알람 문구 생성(Gemini → ElevenLabs v3) 설계 근거. 백엔드 코드 주석이 `§4.x` 로 이 문서를 참조한다.
+- [`campaigns-v13.md`](campaigns-v13.md) — v1.3 시연 소재 3종(대본·촬영 목록·자막)·캠페인 링크 규칙·설치 뒤 연결 현황·관찰 기록표. **대본만 있다** — 촬영·섭외·게시는 하지 않았다.
 - [`manual-message-reuse-plan.md`](manual-message-reuse-plan.md) — 직접 입력 문구 보관함(재사용·차감·수명) **기획서**. **일부 구현됨** — §3-1(차감 기준: 폰에 없어서 서버를 부를 때)과 §4(사용 기록)는 2026-09-07 에 들어갔고, 보관함 화면·서버 오디오 무기한 보관은 아직이다. 각 절 머리의 상태 표시를 볼 것.
 
 ## Non-negotiable Rules
