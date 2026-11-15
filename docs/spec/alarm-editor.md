@@ -12,6 +12,11 @@
 글자 크기는 선택 57 / 이웃 45 로 다르다 — 알파만으로 초점을 만들면 굴러가는 중에
 어느 숫자가 골라질지 흐릿하다.
 
+색은 두 앱이 같다: 선택 숫자·콜론은 `onSurface` 그대로, 이웃 숫자·고르지 않은 오전/오후는 **알파 0.18**(고쳐 쓰는
+칸이 비었을 때 깔리는 지금 값은 0.28). 칼럼은
+테두리에서 **자르기만** 하고 위아래를 그라데이션으로 지우지 않는다(2026-11-15 오너가 두 앱의 휠 색이 다르다고 짚었다.
+iOS 만 위아래 22% 를 지우는 페이드 마스크를 씌워 같은 이웃 숫자가 더 흐렸다).
+
 ### 1-1. 튕기면 **굴러가서** 멎는다
 
 손을 뗀 뒤 숫자가 **한 칸씩 지나가며** 감속해 멎는다. N칸을 즉시 대입하고 남은
@@ -114,6 +119,10 @@ v1.3 W10(#955)이 요일 칩 아래에 두었던 '날짜 지정' 스위치·날�
 | 입력이 여러 개인 폼 | **바텀시트 + 상단바** — 좌 `취소` · 가운데 제목(17 SemiBold) · 우 확정 | 취소 · 스크림 탭 · 아래로 끌기 |
 | 확인 한 번 | **시스템 알럿**(iOS) / `IosAlertDialog`(안드로이드) | 액션 |
 
+- **주행동의 모양은 두 앱이 같아야 한다.** 안드로이드가 `emphasized = true` 로 파란 채움을 그리는 버튼은 iOS 에서
+  `.keyboardShortcut(.defaultAction)`(시스템이 그 하나만 채운 캡슐로 그린다), `destructive = true` 는 iOS 의
+  `role: .destructive`(빨간 글자)다. 같은 시각 교체 확인의 '교체하기' 는 **강조**다 — 2026-11-15 까지 iOS 만 빨간
+  파괴적 버튼이라 오너가 두 앱이 다르다고 짚었다.
 - ⚠ **선택 시트에 '닫기' 버튼을 두지 말 것.** 고르면 어차피 닫히므로 취소와 같은 일을
   하는 두 번째 액션이 된다. 2026-08-11 에 목소리 고르기 시트만 상단바 + '닫기' 였다.
 - ⚠ **폼을 가운데 카드 + X 로 되돌리지 말 것.** 그건 안드로이드·웹 문법이다. 아이폰의
@@ -289,6 +298,8 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 켜면 "N 후에 울려요" 하단 안내(§7) | 저장 성공·목록 켜기 → 하단 캡슐(`RingInCapsule` — `ringInSnackbarHostState` 에 실어 띄운다, 문장은 `remainingDurationLabel`·`hs_status_ring_in`) | 저장 성공(`runAlarmSaveSteps` 가 `.completed` 일 때만 — `RingInNoticePresenter.present(after:)`)·목록 켜기(`AlarmToggleCoalescer` 의 `settled` → `listToggleSettled`) → 하단 캡슐(`Views/Alarms/RingInNotice.swift`, 문장은 `NextAlarmHeadline.remainingLabel`) · 끄기·삭제는 그 알람 것만 `withdraw` · 하위 화면은 `MainTabsView` 가 `hostHidden`·`hostShown` 으로 알린다 |
 | 교체 중 충돌 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`(`deleteLocal` 하나 — 서버 삭제 단계는 2026-10-29 에 지웠다)·`rollbackAlarmReplacement` — 회귀 `DuplicateAlarmReplacementTests` |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
+| 휠 색(이웃 0.18·자르기만, 페이드 없음) | `DraggableTimeWheelColumn`·`AmPmWheelColumn` 의 `clipToBounds` | `DraggableNumberColumn` 의 `.clipped()`·`textAlpha`, `AmPmWheelColumn` |
+| 같은 시각 교체 확인('교체하기' = 강조) | `ui/components/DuplicateAlarmDialog.kt`(`emphasized = true`) | `Views/Editor/AlarmEditorSheet.swift` 의 `DuplicateAlarmReplaceAlert`(`.keyboardShortcut(.defaultAction)`) |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
 | 한 칸마다 햅틱 | `ui/editor/DraggableTimeWheelColumn.kt` 의 `performWheelTick` | `Views/Editor/TimeWheelPicker.swift` 의 `selectionGenerator` |
 | 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `AmPmWheelColumn` |

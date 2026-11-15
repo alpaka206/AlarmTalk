@@ -539,16 +539,12 @@ struct AlarmEditorSheet: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
         }
-        .alert(item: $duplicateAlarmConfirm) { content in
-            Alert(
-                title: Text(String(localized: "같은 시각 알람이 있어요")),
-                message: Text(duplicateAlarmMessage(content)),
-                primaryButton: .destructive(Text(String(localized: "교체하기"))) {
-                    Task { await confirmReplaceDuplicate(content) }
-                },
-                secondaryButton: .cancel(Text(String(localized: "취소")))
-            )
-        }
+        // 같은 시각 교체 확인 — 모양 규칙은 `DuplicateAlarmReplaceAlert` 주석('교체하기' = 기본 액션).
+        .modifier(DuplicateAlarmReplaceAlert(
+            content: $duplicateAlarmConfirm,
+            message: { duplicateAlarmMessage($0) },
+            onReplace: { content in Task { await confirmReplaceDuplicate(content) } }
+        ))
         .onAppear {
             guard !didLoadInitial else { return }
             didLoadInitial = true
@@ -3380,6 +3376,38 @@ struct AlarmEditorSheet: View {
             return String(localized: "알람 볼륨은 0~100% 사이여야 해요.")
         case .invalidVoiceVolume:
             return String(localized: "목소리 크기는 30~100% 사이여야 해요.")
+        }
+    }
+}
+
+/// 같은 시각 알람 교체 확인 알럿.
+///
+/// ⚠ **'교체하기' 는 빨간 파괴적 버튼이 아니라 기본 액션(채운 캡슐)이다**(2026-11-15 오너: "같은 시각 알람 있어요는 왜
+/// ios랑 안드로이드랑 달라?"). 안드로이드 `DuplicateAlarmDialog` 가 `emphasized = true` 로 파란 채움을 그리는 자리다.
+/// 예전 iOS 는 `.destructive` 라 회색 캡슐에 빨간 글자였고 기본 액션이 없었다. 시스템 알럿은 버튼 색을 직접 못 주므로
+/// `.keyboardShortcut(.defaultAction)` 이 그 강조를 만든다(`VoicePlanGateAlert.swift` 와 같은 방법).
+///
+/// 모디파이어로 떼어 둔 이유: 편집기 `chrome` 의 긴 모디파이어 사슬 안에 액션 빌더 알럿을 바로 쓰면 타입 검사가 시간
+/// 한도를 넘어 컴파일이 실패한다(2026-11-15). 사슬에 새 알럿을 더할 때도 이렇게 뗀다.
+private struct DuplicateAlarmReplaceAlert: ViewModifier {
+    @Binding var content: AlarmEditorSheet.DuplicateAlarmConfirmContent?
+    let message: (AlarmEditorSheet.DuplicateAlarmConfirmContent) -> String
+    let onReplace: (AlarmEditorSheet.DuplicateAlarmConfirmContent) -> Void
+
+    func body(content view: Content) -> some View {
+        view.alert(
+            String(localized: "같은 시각 알람이 있어요"),
+            isPresented: Binding(
+                get: { content != nil },
+                set: { if !$0 { content = nil } }
+            ),
+            presenting: content
+        ) { item in
+            Button(String(localized: "취소"), role: .cancel) {}
+            Button(String(localized: "교체하기")) { onReplace(item) }
+                .keyboardShortcut(.defaultAction)
+        } message: { item in
+            Text(message(item))
         }
     }
 }

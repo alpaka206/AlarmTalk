@@ -201,10 +201,11 @@ struct DraggableNumberColumn: View {
             // 안 그러면 입력창을 누르는 순간 휠이 같이 끌린다.
             .gesture(dragGesture, including: anyEditing ? .subviews : .all)
             .onTapGesture { beginTypeIn() }
-            // 고쳐 쓰는 동안에는 위아래 페이드를 걸지 않는다 — 커서와 글자 윗동이 깎인다.
-            .mask {
-                if anyEditing { Color.white } else { fadeMask }
-            }
+            // ⚠ **위아래를 페이드로 지우지 말 것 — 칼럼 테두리에서 자르기만 한다**(2026-11-15 오너: "고르는 시간 스크롤
+            // 하는쪽도 색상이 다른거 같은데"). 안드로이드는 칼럼을 `clipToBounds()` 로 자르기만 하고 이웃 숫자는 고른 알파
+            // (0.18) 그대로다(`ui/editor/DraggableTimeWheelColumn.kt`). 예전 iOS 는 여기에 위아래 22% 를 지우는 그라데이션
+            // 마스크를 씌워 같은 이웃 숫자가 더 흐리고 끝으로 갈수록 사라졌다. 고쳐 쓰는 동안의 모양(자르기만)과도 같아졌다.
+            .clipped()
         }
         .frame(height: itemHeight * 3)
         // 화면이 사라지면 굴리기를 멈춘다 — 안 그러면 `CADisplayLink` 가 사라진 뷰의
@@ -442,19 +443,6 @@ struct DraggableNumberColumn: View {
         if normalized <= 0.05 { return 1.0 }
         if normalized <= 1.05 { return 0.18 + (1.0 - 0.18) * Double(1.0 - normalized) }
         return 0.08
-    }
-
-    private var fadeMask: some View {
-        LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: .clear, location: 0.0),
-                .init(color: .white, location: 0.22),
-                .init(color: .white, location: 0.78),
-                .init(color: .clear, location: 1.0),
-            ]),
-            startPoint: .top,
-            endPoint: .bottom
-        )
     }
 }
 
