@@ -737,9 +737,18 @@
     <string name="voices_clip_prep_downloading_body">Downloading your voice. The download continues even if you close the app.</string>
     <string name="voices_clip_prep_retry">Try again</string>
     <string name="voices_tuning_title">Tone</string>
-    <string name="voices_tuning_listen_original">Play original</string>
-    <string name="voices_tuning_listen_current">Play current tone</string>
+    <string name="voices_tuning_listen_original">Original voice</string>
+    <string name="voices_tuning_listen_current">Adjusted voice</string>
     <string name="voices_tuning_pitch_value">%1$s semitones</string>
+    <string name="voices_tuning_word_original">Original</string>
+    <string name="voices_tuning_word_slightly_higher">Slightly higher</string>
+    <string name="voices_tuning_word_higher">Higher</string>
+    <string name="voices_tuning_word_much_higher">Much higher</string>
+    <string name="voices_tuning_word_slightly_lower">Slightly lower</string>
+    <string name="voices_tuning_word_lower">Lower</string>
+    <string name="voices_tuning_word_much_lower">Much lower</string>
+    <string name="voices_tuning_origin">Original</string>
+    <string name="voices_tuning_suggested_tag">Suggested</string>
     <!-- 추가 음성팩(docs/spec/voice-packs.md) -->
     <string name="voice_pack_section_title">Extra packs</string>
     <string name="voice_pack_empty">No extra packs are available yet.</string>

@@ -45,6 +45,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -2748,6 +2749,8 @@ internal fun VoiceProfileManagementPanel(
                                     AnimatedVisibility(visible = confirmToneCardShown, enter = fadeIn(), exit = fadeOut()) {
                                         VoiceTuningCard(
                                             tuning = previewTuning,
+                                            // 추천값 그대로면 제목 줄에 `추천` 을 단다(시안 A).
+                                            suggestedPitch = tuningSuggestion?.pitchSemitones,
                                             // 서버에서 받는 동안·청취 확인 중에는 잠그지 않는다 — 받는 동안 누른 버튼이 받은
                                             // 뒤에 튼다. 문구를 고치는 동안과 등록 확정·초안 삭제 중에만 잠근다(잠금표).
                                             enabled = confirmLocks.toneEnabled,
@@ -2811,7 +2814,8 @@ internal fun VoiceProfileManagementPanel(
                                 end = 16.dp,
                                 bottom = actionBottomPadding,
                             ),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        // 두 버튼이 나란할 때(확인 화면) 간격은 편집기 하단(`EditorActionButtons`)과 같은 12 다.
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         when (currentStep) {
@@ -2883,10 +2887,15 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Prerendering -> Unit
 
                             VoiceRegistrationStep.Preview -> {
-                                TextButton(
+                                // 편집기 하단(`EditorActionButtons`)과 같은 한 쌍 — `다시 만들기` 는 외곽선, `저장하기` 는 채움, 같은 폭
+                                // (2026-11-15 오너: "다시 만들기, 저장하기 버튼도 디자인 바꿔도 돼"). 예전에는 빨간 글자 텍스트 버튼과 넓은
+                                // 채움 버튼이라 iOS(같은 폭 두 버튼)와도 달랐다. iOS `VoicePreviewConfirmView.actions` 와 같다.
+                                OutlinedButton(
                                     onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
                                     // 뒤로가기와 같은 일(초안 삭제)이라 같은 잠금을 쓴다(`confirmStepLocks`).
                                     enabled = !confirmLocks.working,
+                                    modifier = Modifier.weight(1f),
+                                    shape = WakerButtonShape,
                                 ) {
                                     // 지우는 동안은 **이 버튼**이 진행을 말한다 — 옆의 저장 버튼이
                                     // 아니라(위 주석 참조).
@@ -2894,13 +2903,10 @@ internal fun VoiceProfileManagementPanel(
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(18.dp),
                                             strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.error,
+                                            color = LocalContentColor.current,
                                         )
                                     } else {
-                                        Text(
-                                            text = stringResource(R.string.voices_confirm_new_delete),
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
+                                        Text(text = stringResource(R.string.voices_confirm_new_delete))
                                     }
                                 }
                                 Button(

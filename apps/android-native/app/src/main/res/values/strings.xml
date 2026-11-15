@@ -762,9 +762,18 @@
     <string name="voices_clip_prep_downloading_body">목소리를 받고 있어요. 앱을 닫아도 계속 받아요.</string>
     <string name="voices_clip_prep_retry">다시 시도하기</string>
     <string name="voices_tuning_title">톤 조절</string>
-    <string name="voices_tuning_listen_original">원본 듣기</string>
-    <string name="voices_tuning_listen_current">현재 톤 듣기</string>
+    <string name="voices_tuning_listen_original">원래 목소리</string>
+    <string name="voices_tuning_listen_current">바꾼 목소리</string>
     <string name="voices_tuning_pitch_value">%1$s 반음</string>
+    <string name="voices_tuning_word_original">원래 높이</string>
+    <string name="voices_tuning_word_slightly_higher">조금 높게</string>
+    <string name="voices_tuning_word_higher">높게</string>
+    <string name="voices_tuning_word_much_higher">많이 높게</string>
+    <string name="voices_tuning_word_slightly_lower">조금 낮게</string>
+    <string name="voices_tuning_word_lower">낮게</string>
+    <string name="voices_tuning_word_much_lower">많이 낮게</string>
+    <string name="voices_tuning_origin">원래</string>
+    <string name="voices_tuning_suggested_tag">추천</string>
     <!-- 추가 음성팩(docs/spec/voice-packs.md) -->
     <string name="voice_pack_section_title">추가 팩</string>
     <string name="voice_pack_empty">준비 중인 추가 팩이 아직 없어요.</string>

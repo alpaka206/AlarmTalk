@@ -1,7 +1,7 @@
 import XCTest
 @testable import AlarmTalk
 
-/// 등록 확정 화면 톤 카드의 두 재생 버튼(`원본 듣기`·`현재 톤 듣기`) 규칙 — 스펙 voice-and-message §4-3
+/// 등록 확정 화면 톤 카드의 두 재생 버튼(`원래 목소리`·`바꾼 목소리` — 2026-11-15 전 `원본 듣기`·`현재 톤 듣기`) 규칙 — 스펙 voice-and-message §4-3
 /// 「누가 어디서 바꾸는가」. 소리는 내지 않는다(순수 셈만 본다).
 final class VoiceTonePreviewTests: XCTestCase {
 
@@ -168,5 +168,25 @@ final class VoiceTonePreviewTests: XCTestCase {
             VoiceTonePreview.sliderReleased(hasClip: true, listenConfirmed: true, audible: false),
             .replayNow
         )
+    }
+
+    // MARK: - 높이를 말로(시안 A)
+
+    /// 0 은 `원래 높이`, ±2 까지 `조금`, ±4 까지 그냥, 그 너머는 `많이` — 안드로이드 `pitchWordRes`(`VoiceTuningWordsTest`)와
+    /// 같은 경계다(2026-11-15). 테스트는 한국어로 돈다(`-testLanguage ko`).
+    func test_pitchWord_경계가_안드로이드와_같다() {
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(0), "원래 높이")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(0.5), "조금 높게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(2), "조금 높게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(2.5), "높게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(4), "높게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(4.5), "많이 높게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(6), "많이 높게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(-0.5), "조금 낮게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(-2), "조금 낮게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(-2.5), "낮게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(-4), "낮게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(-4.5), "많이 낮게")
+        XCTAssertEqual(VoicePreviewConfirmView.pitchWord(-10), "많이 낮게")
     }
 }

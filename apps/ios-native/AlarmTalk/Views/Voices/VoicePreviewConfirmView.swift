@@ -50,6 +50,8 @@ struct VoicePreviewConfirmView: View {
     /// 조절도 완성되었을때 뜨게 해줘"). 받는 동안 그리면 막대가 기본값에 있다가 추천값으로 튄다. 실패로 끝나도 그린다 — 그때는
     /// 톤 카드의 듣기 버튼이 다시 받는 길이다. 한 번 켜면 다시 받는 동안에도 끄지 않는다. 안드로이드 `confirmToneCardShown` 과 같다.
     @State private var tuningCardShown = false
+    /// 잰 추천값 — 지금 값이 이것이면 톤 카드 제목 줄에 `추천` 을 단다(시안 A). 안드로이드 `tuningSuggestion`.
+    @State private var suggestedPitchSt: Double?
     /// 서버가 청취(끝까지 들음)를 기록했는가. 문구를 고치면 `false` 로 되돌린다.
     @State private var listened = false
     @State private var errorMessage: String?
@@ -284,37 +286,47 @@ struct VoicePreviewConfirmView: View {
     /// 2026-10-08 사용자 지시로 뺐다). 범위·눈금은 서버와 같다(`VoiceTuning.pitchRange`). 막대는 추천값에서 시작하고,
     /// 원본과의 비교는 `원본 듣기` 가 한다(0 도 0.5 눈금이라 막대로 맞출 수 있다). 막대에서 손을 떼면 그 높이로 구워
     /// (PSOLA — 몸집은 그대로) 처음부터 한 번 다시 튼다.
+    /// **톤 조절** 카드(시안 A '말로 쓴 막대' — 2026-11-15 오너 "톤 조절은 a로 해도 돼"). 제목 줄은 `톤 조절`(2026-10-08 이름 그대로) · 값을
+    /// **말로**(`pitchWord`) · 추천값 그대로면 작은 `추천`. 막대는 '원래(0)' 에서 손잡이까지만 채우고(`PitchOriginSlider`), 아래 한
+    /// 줄에 `낮게 · 원래 · 높게`. 버튼은 `원래 목소리`·`바꾼 목소리`. 안드로이드 `ui/voices/VoiceTuningCard.kt` 의 `VoiceTuningCard` 와 같다.
+    /// (2026-10-08 에 뺀 '추천값' 줄·'0으로' 버튼은 되살리지 않는다 — 작은 `추천` 표시만 둔다.)
     private var tuningCard: some View {
-        let label = Self.tuningValueText(tuning.pitchSt)
-        // 줄 간격·값 글자 굵기는 안드로이드 `ui/voices/VoiceTuningCard.kt` 의 `VoiceTuningCard` 와 같다.
+        let words = Self.pitchWord(tuning.pitchSt)
+        let spoken = Self.tuningValueText(tuning.pitchSt)
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(String(localized: "톤 조절"))
                     .font(theme.typography.titleSmall)
                     .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.onSurface)
                 Spacer(minLength: 8)
-                Text(verbatim: label)
+                Text(verbatim: words)
                     .font(theme.typography.bodyMedium)
                     .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.primary)
-                    .monospacedDigit()
-            }
-            Slider(
-                value: Binding(
-                    get: { tuning.pitchSt },
-                    set: { tuning = VoiceTuning(pitchSt: $0, source: .user).normalized() }
-                ),
-                in: VoiceTuning.pitchRange,
-                step: VoiceTuning.step,
-                onEditingChanged: { editing in
-                    if !editing { sliderReleased() }
+                if let suggestedPitchSt, suggestedPitchSt == tuning.pitchSt {
+                    Text(String(localized: "추천"))
+                        .font(theme.typography.labelMedium)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
-            )
-            .tint(theme.palette.primary)
-            .disabled(toneCardLocked)
-            .accessibilityLabel(String(localized: "톤 조절"))
-            .accessibilityValue(label)
+            }
+            VStack(spacing: 2) {
+                PitchOriginSlider(
+                    value: Binding(
+                        get: { tuning.pitchSt },
+                        set: { tuning = VoiceTuning(pitchSt: $0, source: .user).normalized() }
+                    ),
+                    range: VoiceTuning.pitchRange,
+                    step: VoiceTuning.step,
+                    origin: 0,
+                    accessibilityLabel: String(localized: "톤 조절"),
+                    // 읽어 주기는 말과 숫자를 함께 — "조금 높게, +1.5 반음".
+                    accessibilityValue: "\(words), \(spoken)",
+                    onEditingEnded: { sliderReleased() }
+                )
+                .disabled(toneCardLocked)
+                tuningScaleLabels
+            }
             // 두 버튼은 번갈아 들으라고 둔 것이다(2026-10-08 사용자) — 같은 폭으로 나란히.
             HStack(alignment: .top, spacing: 8) {
                 previewButton(.original)
@@ -333,12 +345,49 @@ struct VoicePreviewConfirmView: View {
         )
     }
 
+    /// 막대 아래 한 줄 — 왼쪽 끝 `낮게`, '원래(0)' 눈금 바로 아래 `원래`, 오른쪽 끝 `높게`. `원래` 의 가로 자리는 막대가 손잡이
+    /// 반지름(10)만큼 들여 그리는 트랙 위의 같은 비율이다(안드로이드 `TuningScaleLabels`).
+    private var tuningScaleLabels: some View {
+        let range = VoiceTuning.pitchRange
+        let originFraction = (0 - range.lowerBound) / (range.upperBound - range.lowerBound)
+        return GeometryReader { geo in
+            let inset = PitchOriginSlider.thumbSize / 2
+            let track = max(geo.size.width - PitchOriginSlider.thumbSize, 1)
+            ZStack(alignment: .topLeading) {
+                Text(String(localized: "낮게"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(String(localized: "높게"))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                Text(String(localized: "원래"))
+                    .fixedSize()
+                    .position(x: inset + track * originFraction, y: geo.size.height / 2)
+            }
+            .font(theme.typography.labelMedium)
+            .foregroundStyle(theme.palette.onSurfaceVariant)
+        }
+        .frame(height: 16)
+        .accessibilityHidden(true)
+    }
+
+    /// 높이를 **말로** — 0 은 `원래 높이`, ±2 까지 `조금`, ±4 까지 그냥, 그 너머는 `많이`(안드로이드 `pitchWordRes` 와 같은 경계).
+    static func pitchWord(_ value: Double) -> String {
+        switch value {
+        case 0: return String(localized: "원래 높이")
+        case ..<(-4): return String(localized: "많이 낮게")
+        case ..<(-2): return String(localized: "낮게")
+        case ..<0: return String(localized: "조금 낮게")
+        case ...2: return String(localized: "조금 높게")
+        case ...4: return String(localized: "높게")
+        default: return String(localized: "많이 높게")
+        }
+    }
+
     /// 톤 카드 안 하단의 듣기 버튼 하나 — 안드로이드 `ui/voices/VoiceTuningCard.kt` 의 `TuningListenButton` 과 같은 모양이다.
     /// 쉴 때는 채움 없이 카드와 같은 테두리, 트는 쪽은 강조색 테두리·옅은 강조색 채움·강조색 글자에 정지 글리프이고, 받거나
     /// 굽는 동안은 그 자리에 진행 표시다. 다시 누르면 멈춘다. 라벨은 번역이 길면 두 줄로 흐른다 — 줄이지 않는다(CLAUDE.md
     /// 「글자 크기가 자리를 넘칠 때」 — 줄바꿈으로 흐를 수 있는 자리다).
     private func previewButton(_ kind: VoiceTonePreview.Kind) -> some View {
-        let title = kind == .original ? String(localized: "원본 듣기") : String(localized: "현재 톤 듣기")
+        let title = kind == .original ? String(localized: "원래 목소리") : String(localized: "바꾼 목소리")
         let active = activePreviewKind == kind
         let preparing = active && (fetching || renderingTuning)
         let enabled = !toneCardLocked
@@ -545,6 +594,7 @@ struct VoicePreviewConfirmView: View {
             VoiceTuningAnalyzer.measure(url: url, maxSeconds: 30)
         }.value
         let suggestion = VoiceTuningAnalyzer.suggest(preview: preview, source: sourceMeasurement)
+        suggestedPitchSt = suggestion.pitchSt
         if tuning.source == .suggested {
             tuning = suggestion
         }
@@ -618,90 +668,60 @@ struct VoicePreviewConfirmView: View {
     ///   따로 갖고 있어서, 옆의 `.plain` 버튼과 같은 `minHeight` 를 줘도 실제로는 다르게
     ///   그려진다(실기기에서 두 번 어긋났다). 그래서 **둘 다 `.plain`** 으로 두고 배경·
     ///   테두리·높이를 이 파일에서 직접 같은 값으로 그린다 — 다른 것은 **색뿐**이다.
+    /// 편집기 하단(`EditorActionBar` 의 `EditorActionButtonStyle`)과 같은 한 쌍 — `다시 만들기` 는 테두리, `저장하기` 는 채움, 같은 폭·
+    /// 높이 40·간격 12(2026-11-15 오너: "다시 만들기, 저장하기 버튼도 디자인 바꿔도 돼"). 예전에는 빨간 글자 상자와 채움 상자(높이 52)
+    /// 였다. 안드로이드 Preview 단계 하단과 같다.
     private var actions: some View {
-        // ⚠ **폭을 SwiftUI 분배에 맡기지 않는다**(2026-09-19 실기기: 높이도 폭도 어긋났다).
-        //   `maxWidth: .infinity` 는 글자 길이에 따라 두 버튼이 다르게 나뉠 수 있다.
-        //   남은 폭에서 간격을 빼고 **반으로 나눈 값**을 두 버튼에 그대로 준다.
-        GeometryReader { geo in
-            let gap: CGFloat = 10
-            let each = max((geo.size.width - gap) / 2, 0)
-            HStack(spacing: gap) {
-                actionButton(
-                    title: "다시 만들기",
-                    foreground: theme.palette.error,
-                    background: theme.palette.surface,
-                    border: theme.palette.outlineVariant,
-                    width: each,
-                    disabled: working
-                ) { Task { await discard() } }
-
-                // ⚠ **끝까지 듣기 전에는 저장할 수 없다.** 서버도 재생 토큰 없이는 승격을
-                // 거부하므로, 여기서 열어 두면 눌러도 실패하는 버튼이 된다.
-                // ⚠ **지금 톤(막대 값)을 끝까지 들어야** 저장이 열린다 — 바꾼 높이를 굽거나 트는 중에 저장하면 듣지
-                // 않은 값이 등록되어 그 목소리의 모든 알람에 구워진다(Codex #870). 판정은 `VoiceTonePreview.canSave`.
-                // ⚠ **문구 입력칸이 열린 동안·고친 문구를 보내는 동안도 잠근다**(잠금표 — `working`·`editing`). 입력칸이
-                // 열린 채 저장하면 친 문구가 말없이 버려지고, 보내는 중이면 들은 기록이 아직 옛 문구의 것이다.
-                // 교체는 따로 묻지 않는다 — 이미 등록된 목소리가 있으면 저장이 곧 교체다(`replaceNotice`).
-                let saveDisabled = working || editing || !VoiceTonePreview.canSave(
-                    listenConfirmed: listened,
-                    rendering: renderingTuning,
-                    hearing: hearing,
-                    slider: tuning
-                )
-                actionButton(
-                    title: saving ? "저장 중…" : "저장하기",
-                    foreground: theme.palette.onPrimary,
-                    background: saveDisabled
-                        ? theme.palette.primary.opacity(0.4)
-                        : theme.palette.primary,
-                    border: .clear,
-                    width: each,
-                    disabled: saveDisabled
-                ) { Task { await promote() } }
+        // ⚠ **끝까지 듣기 전에는 저장할 수 없다.** 서버도 재생 토큰 없이는 승격을 거부하므로, 여기서 열어 두면 눌러도 실패하는
+        // 버튼이 된다. ⚠ **지금 톤(막대 값)을 끝까지 들어야** 저장이 열린다 — 바꾼 높이를 굽거나 트는 중에 저장하면 듣지 않은
+        // 값이 등록되어 그 목소리의 모든 알람에 구워진다(Codex #870). 판정은 `VoiceTonePreview.canSave`.
+        // ⚠ **문구 입력칸이 열린 동안·고친 문구를 보내는 동안도 잠근다**(잠금표 — `working`·`editing`). 입력칸이 열린 채 저장하면
+        // 친 문구가 말없이 버려지고, 보내는 중이면 들은 기록이 아직 옛 문구의 것이다. 교체는 따로 묻지 않는다 — 이미 등록된
+        // 목소리가 있으면 저장이 곧 교체다(`replaceNotice`).
+        let saveDisabled = working || editing || !VoiceTonePreview.canSave(
+            listenConfirmed: listened,
+            rendering: renderingTuning,
+            hearing: hearing,
+            slider: tuning
+        )
+        return HStack(spacing: 12) {
+            Button {
+                Task { await discard() }
+            } label: {
+                Text(String(localized: "다시 만들기"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
+            .buttonStyle(EditorActionButtonStyle(kind: .outlined))
+            .disabled(working)
+
+            Button {
+                Task { await promote() }
+            } label: {
+                if saving {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(theme.palette.onSurfaceVariant)
+                        Text(String(localized: "저장 중…"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                } else {
+                    Text(String(localized: "저장하기"))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .buttonStyle(EditorActionButtonStyle(kind: .filled))
+            .disabled(saveDisabled)
         }
-        // GeometryReader 는 높이를 스스로 정하지 못한다 — 버튼 높이로 고정한다.
-        .frame(height: Self.actionButtonHeight)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 16)
     }
 
-    /// 하단 버튼 높이. 두 버튼이 **같은 값**을 쓰는 유일한 출처다.
-    private static let actionButtonHeight: CGFloat = 52
-
     /// 두 하단 버튼이 **같은 자로** 그려지도록 모양을 한 곳에 둔다(위 주석 참조).
-    private func actionButton(
-        title: LocalizedStringKey,
-        foreground: Color,
-        background: Color,
-        border: Color,
-        width: CGFloat,
-        disabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(theme.typography.bodyMedium.weight(.semibold))
-                .foregroundStyle(foreground)
-                // 글자가 길어도 상자를 넓히지 않는다 — 두 버튼이 같은 폭이어야 한다.
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(width: width, height: Self.actionButtonHeight)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            background,
-            in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(border, lineWidth: 1)
-        )
-        .disabled(disabled)
-    }
-
     // MARK: - 서버
 
     /// 서버 미리듣기를 받는다(예전 재생 버튼과 같은 요청) — 받으면 재서 추천값을 정하고, `kind` 가 있으면 곧바로 그
@@ -908,5 +928,89 @@ struct VoicePreviewConfirmView: View {
         try? await AlarmTalkAPI.shared.deleteVoiceDraft(id: draft.id, token: token)
         await voice.refresh(session: auth.session, force: true)
         onDiscarded()
+    }
+}
+
+/// 목소리 높이 막대 — '원래(0)' 에서 손잡이까지만 채우고 그 자리에 눈금을 둔다(시안 A, 2026-11-15). 안드로이드 `WakerStepSlider` 의
+/// `fillOrigin` 과 같은 모양이다(트랙 4 · 흰 손잡이 20 · 손잡이 반지름만큼 들여 그린다). 시스템 `Slider` 는 왼쪽 끝부터만 채워서
+/// 직접 그린다. 손을 떼거나(끌기 끝) 읽어 주기로 한 칸 옮기면 `onEditingEnded` 를 부른다 — 그 높이로 굽고 다시 튼다.
+private struct PitchOriginSlider: View {
+    static let thumbSize: CGFloat = 20
+
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let origin: Double
+    let accessibilityLabel: String
+    let accessibilityValue: String
+    let onEditingEnded: () -> Void
+
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        GeometryReader { geo in
+            let inset = Self.thumbSize / 2
+            let track = max(geo.size.width - Self.thumbSize, 1)
+            let valueX = inset + track * fraction(value)
+            let originX = inset + track * fraction(origin)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(theme.palette.surfaceVariant)
+                    .frame(width: track, height: 4)
+                    .offset(x: inset)
+                Capsule()
+                    .fill(theme.palette.primary)
+                    .frame(width: abs(valueX - originX), height: 4)
+                    .offset(x: min(valueX, originX))
+                Capsule()
+                    .fill(theme.palette.onSurfaceVariant)
+                    .frame(width: 2, height: 12)
+                    .offset(x: originX - 1)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: Self.thumbSize, height: Self.thumbSize)
+                    .shadow(color: .black.opacity(0.35), radius: 1.5, y: 1)
+                    .offset(x: valueX - inset)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        guard isEnabled else { return }
+                        let raw = range.lowerBound + Double((drag.location.x - inset) / track) * (range.upperBound - range.lowerBound)
+                        let next = snapped(raw)
+                        if next != value { value = next }
+                    }
+                    .onEnded { _ in
+                        guard isEnabled else { return }
+                        onEditingEnded()
+                    }
+            )
+        }
+        .frame(height: 44)
+        .opacity(isEnabled ? 1 : 0.38)
+        .accessibilityElement()
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(accessibilityValue)
+        .accessibilityAdjustableAction { direction in
+            guard isEnabled else { return }
+            switch direction {
+            case .increment: value = snapped(value + step)
+            case .decrement: value = snapped(value - step)
+            @unknown default: return
+            }
+            onEditingEnded()
+        }
+    }
+
+    private func fraction(_ v: Double) -> CGFloat {
+        CGFloat((v - range.lowerBound) / (range.upperBound - range.lowerBound))
+    }
+
+    private func snapped(_ raw: Double) -> Double {
+        let clamped = min(max(raw, range.lowerBound), range.upperBound)
+        return range.lowerBound + ((clamped - range.lowerBound) / step).rounded() * step
     }
 }

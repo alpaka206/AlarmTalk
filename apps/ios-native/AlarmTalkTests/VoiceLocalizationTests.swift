@@ -52,8 +52,12 @@ struct VoiceLocalizationTests {
         let bundle = try #require(Bundle(path: path))
         let expected: [String: [String: String]] = [
             "톤 조절": ["en": "Tone", "ja": "トーン調整"],
-            "원본 듣기": ["en": "Play original", "ja": "元の声を聞く"],
-            "현재 톤 듣기": ["en": "Play current tone", "ja": "今のトーンで聞く"],
+            // 2026-11-15 시안 A — 버튼은 `원래 목소리`·`바꾼 목소리`, 값은 말로(안드로이드 `voices_tuning_*` 와 같은 번역).
+            "원래 목소리": ["en": "Original voice", "ja": "元の声"],
+            "바꾼 목소리": ["en": "Adjusted voice", "ja": "調整した声"],
+            "조금 높게": ["en": "Slightly higher", "ja": "少し高く"],
+            "원래": ["en": "Original", "ja": "元"],
+            "추천": ["en": "Suggested", "ja": "おすすめ"],
             "이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요.": [
                 "en": "Your saved voice will be deleted and this voice will be registered instead.",
                 "ja": "保存した声は削除して、この声で登録します。",

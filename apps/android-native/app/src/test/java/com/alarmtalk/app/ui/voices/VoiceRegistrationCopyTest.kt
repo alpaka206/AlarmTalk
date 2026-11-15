@@ -130,17 +130,22 @@ class VoiceRegistrationCopyTest {
     }
 
     @Test
-    fun `톤 카드는 제목과 두 듣기 버튼뿐이다`() {
+    fun `톤 카드는 시안 A 문구를 쓴다`() {
+        // 2026-11-15 오너 "톤 조절은 a로 해도 돼" — 값은 말로, 막대 아래 `낮게 · 원래 · 높게`, 버튼은 `원래 목소리`·`바꾼 목소리`.
+        // 제목은 2026-10-08 에 정한 `톤 조절` 그대로다(시안의 '목소리 높이' 는 그전 이름).
         assertEquals("톤 조절", value("values", "voices_tuning_title"))
         assertEquals("Tone", value("values-en", "voices_tuning_title"))
         assertEquals("トーン調整", value("values-ja", "voices_tuning_title"))
-        assertEquals("원본 듣기", value("values", "voices_tuning_listen_original"))
-        assertEquals("Play original", value("values-en", "voices_tuning_listen_original"))
-        assertEquals("元の声を聞く", value("values-ja", "voices_tuning_listen_original"))
-        assertEquals("현재 톤 듣기", value("values", "voices_tuning_listen_current"))
-        assertEquals("Play current tone", value("values-en", "voices_tuning_listen_current"))
-        assertEquals("今のトーンで聞く", value("values-ja", "voices_tuning_listen_current"))
-        // 값 표시("−1.5 반음")는 그대로 둔다.
+        assertEquals("원래 목소리", value("values", "voices_tuning_listen_original"))
+        assertEquals("Original voice", value("values-en", "voices_tuning_listen_original"))
+        assertEquals("元の声", value("values-ja", "voices_tuning_listen_original"))
+        assertEquals("바꾼 목소리", value("values", "voices_tuning_listen_current"))
+        assertEquals("Adjusted voice", value("values-en", "voices_tuning_listen_current"))
+        assertEquals("調整した声", value("values-ja", "voices_tuning_listen_current"))
+        // 값은 말로 보인다 — 숫자("−1.5 반음")는 읽어 주기에만 남는다.
+        assertEquals("조금 높게", value("values", "voices_tuning_word_slightly_higher"))
+        assertEquals("원래", value("values", "voices_tuning_origin"))
+        assertEquals("추천", value("values", "voices_tuning_suggested_tag"))
         assertEquals("%1\$s 반음", value("values", "voices_tuning_pitch_value"))
         for (dir in dirs) {
             for (removed in listOf(

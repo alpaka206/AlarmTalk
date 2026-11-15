@@ -733,9 +733,18 @@
     <string name="voices_clip_prep_downloading_body">声をダウンロードしています。アプリを閉じても続きます。</string>
     <string name="voices_clip_prep_retry">もう一度試す</string>
     <string name="voices_tuning_title">トーン調整</string>
-    <string name="voices_tuning_listen_original">元の声を聞く</string>
-    <string name="voices_tuning_listen_current">今のトーンで聞く</string>
+    <string name="voices_tuning_listen_original">元の声</string>
+    <string name="voices_tuning_listen_current">調整した声</string>
     <string name="voices_tuning_pitch_value">%1$s 半音</string>
+    <string name="voices_tuning_word_original">元の高さ</string>
+    <string name="voices_tuning_word_slightly_higher">少し高く</string>
+    <string name="voices_tuning_word_higher">高く</string>
+    <string name="voices_tuning_word_much_higher">かなり高く</string>
+    <string name="voices_tuning_word_slightly_lower">少し低く</string>
+    <string name="voices_tuning_word_lower">低く</string>
+    <string name="voices_tuning_word_much_lower">かなり低く</string>
+    <string name="voices_tuning_origin">元</string>
+    <string name="voices_tuning_suggested_tag">おすすめ</string>
     <!-- 추가 음성팩(docs/spec/voice-packs.md) -->
     <string name="voice_pack_section_title">追加パック</string>
     <string name="voice_pack_empty">利用できる追加パックはまだありません。</string>

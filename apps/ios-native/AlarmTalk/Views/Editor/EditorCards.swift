@@ -172,8 +172,9 @@ struct EditorActionBar: View {
     }
 }
 
-/// 편집기 하단 버튼 모양 — 안드로이드 Material `OutlinedButton`·`Button`(+ `wakerButtonColors`)과 같은 값.
-private struct EditorActionButtonStyle: ButtonStyle {
+/// 편집기 하단 버튼 모양 — 안드로이드 Material `OutlinedButton`·`Button`(+ `wakerButtonColors`)과 같은 값. 목소리 등록 확인 화면의
+/// `다시 만들기`·`저장하기` 도 이 모양을 쓴다(`VoicePreviewConfirmView.actions`, 2026-11-15).
+struct EditorActionButtonStyle: ButtonStyle {
     enum Kind { case outlined, filled }
     let kind: Kind
 
@@ -182,7 +183,7 @@ private struct EditorActionButtonStyle: ButtonStyle {
     }
 }
 
-private struct EditorActionButtonBody: View {
+struct EditorActionButtonBody: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Environment(\.isEnabled) private var isEnabled
     let label: ButtonStyleConfiguration.Label
