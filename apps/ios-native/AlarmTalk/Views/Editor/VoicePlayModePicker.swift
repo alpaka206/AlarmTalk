@@ -122,6 +122,85 @@ struct VoicePlayModePicker: View {
     }
 }
 
+// MARK: - 공용 세그먼트
+
+/// 글자만 있는 공용 세그먼트 — 안드로이드 `EditorSegmentedSelector` 와 같은 모양이다(트랙 18 · 칸 14 · surfaceVariant 55% ·
+/// 카드 테두리, 고른 칸 primaryContainer + primary 42% 테두리가 미끄러져 옮겨간다). 녹음/파일 · 목소리 언어 · 날씨 나라 고르기가
+/// 쓴다. 위 `VoicePlayModePicker` 와 같은 결이다(그쪽만 아이콘·잠금 배지가 있다).
+///
+/// ⚠ **시스템 `.pickerStyle(.segmented)` 로 돌아가지 말 것.** 회색 시스템 막대라 같은 자리의 안드로이드 세그먼트와도,
+/// 편집기 '재생 방식' 과도 다른 앱처럼 보였다(2026-11-15 오너: "목소리 등록 녹음, 파일 고르는것도 페이지마다 디자인이 다름").
+/// 잠기면(`.disabled`) 안드로이드처럼 통째로 38% 로 흐려진다.
+struct AppSegmentedPicker<Value: Hashable>: View {
+    let options: [(value: Value, label: String)]
+    @Binding var selection: Value
+
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @Namespace private var thumbNamespace
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(options.indices, id: \.self) { index in
+                segment(options[index])
+            }
+        }
+        .padding(4)
+        .background(trackShape.fill(theme.palette.surfaceVariant.opacity(0.55)))
+        .overlay(trackShape.stroke(theme.palette.cardBorder, lineWidth: 1))
+        .opacity(isEnabled ? 1 : 0.38)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var trackShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+    }
+
+    private var segmentShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
+    }
+
+    private func segment(_ option: (value: Value, label: String)) -> some View {
+        let selected = option.value == selection
+        return Button {
+            commit(option.value)
+        } label: {
+            Text(verbatim: option.label)
+                .font(theme.typography.labelLarge)
+                .fontWeight(.semibold)
+                .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 10)
+                .padding(.vertical, theme.spacing.sm)
+                .background {
+                    if selected {
+                        segmentShape
+                            .fill(theme.palette.primaryContainer)
+                            .overlay(segmentShape.stroke(theme.palette.primary.opacity(0.42), lineWidth: 1))
+                            .matchedGeometryEffect(id: "segmentThumb", in: thumbNamespace)
+                    }
+                }
+                .contentShape(segmentShape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: option.label))
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private func commit(_ value: Value) {
+        guard value != selection else { return }
+        if reduceMotion {
+            selection = value
+        } else {
+            withAnimation(.snappy(duration: 0.28)) { selection = value }
+        }
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+}
+
 // MARK: - Preview
 
 #if DEBUG

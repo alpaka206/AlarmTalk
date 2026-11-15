@@ -581,12 +581,12 @@ struct VoiceCloneUploadFlow: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(String(localized: "알람을 읽어줄 언어"))
                 .font(.subheadline.weight(.semibold))
-            Picker(String(localized: "알람을 읽어줄 언어"), selection: $previewLanguage) {
-                Text(verbatim: "한국어").tag("ko")
-                Text("English").tag("en")
-                Text("日本語").tag("ja")
-            }
-            .pickerStyle(.segmented)
+            // 앱 공용 세그먼트다(안드로이드 `EditorSegmentedSelector` 와 같은 모양 — 이유는 AppSegmentedPicker 의 주석).
+            AppSegmentedPicker(
+                options: [("ko", "한국어"), ("en", "English"), ("ja", "日本語")],
+                selection: $previewLanguage
+            )
+            .accessibilityLabel(Text(String(localized: "알람을 읽어줄 언어")))
         }
     }
 
@@ -609,12 +609,12 @@ struct VoiceCloneUploadFlow: View {
     /// 녹음 / 파일 — 날씨 지역 시트의 나라 고르기(`WeatherRegionPickerSheet`)와 **같은 시스템 세그먼트**다
     /// (2026-11-15 오너 "대한민국, 일본, 미국처럼"). 예전에는 캡슐 버튼 두 개였다. 안드로이드 짝은 `VoiceCaptureModeSelector`.
     private var sourceModeSection: some View {
-        Picker(String(localized: "voice.capture.mode", defaultValue: "만드는 방법"), selection: $sourceMode) {
-            ForEach(VoiceCloneSourceMode.allCases) { mode in
-                Text(mode.label).tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
+        // 앱 공용 세그먼트다(안드로이드 `VoiceCaptureModeSelector` → `EditorSegmentedSelector` 와 같은 모양).
+        AppSegmentedPicker(
+            options: VoiceCloneSourceMode.allCases.map { ($0, $0.label) },
+            selection: $sourceMode
+        )
+        .accessibilityLabel(Text(String(localized: "voice.capture.mode", defaultValue: "만드는 방법")))
         .accessibilityIdentifier("voice-capture-mode")
     }
 

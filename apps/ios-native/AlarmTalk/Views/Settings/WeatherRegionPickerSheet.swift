@@ -77,13 +77,13 @@ struct WeatherRegionPickerSheet: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noteHeight = $0 }
             }
 
-            // 나라는 시스템 세그먼트다 — 셋뿐이고, 목록 위에서 한 번에 보여야 한다.
-            Picker(String(localized: "나라"), selection: $country) {
-                ForEach(WeatherCountry.allCases, id: \.self) { item in
-                    Text(verbatim: item.displayName(language: language)).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
+            // 나라는 세그먼트다 — 셋뿐이고, 목록 위에서 한 번에 보여야 한다. 앱 공용 세그먼트를 쓴다(안드로이드
+            // `AlarmRandomPromptSettings` 의 `EditorSegmentedSelector` 와 같은 모양 — 시스템 세그먼트는 회색 막대라 달랐다).
+            AppSegmentedPicker(
+                options: WeatherCountry.allCases.map { ($0, $0.displayName(language: language)) },
+                selection: $country
+            )
+            .accessibilityLabel(Text(String(localized: "나라")))
             .padding(.horizontal, BottomSheetTitle.horizontalPadding)
             .accessibilityIdentifier("weather-region-country")
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { countryBarHeight = $0 }
