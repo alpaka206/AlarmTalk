@@ -45,7 +45,7 @@ struct LandingView: View {
 
                                 Color.clear.frame(height: 10)
 
-                                Text(String(localized: "매일 아침, 그 목소리가 새로운 한마디로 깨워드려요."))
+                                Text(String(localized: "날씨부터 운세까지, 원하는 목소리로 일어나세요."))
                                     .font(theme.typography.bodyMedium)
                                     .foregroundStyle(AuthSceneColors.textDim)
 

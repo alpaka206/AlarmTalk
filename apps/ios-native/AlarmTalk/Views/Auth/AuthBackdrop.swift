@@ -120,7 +120,7 @@ struct AuthBackdrop<Content: View>: View {
             Text("좋아하는 \(Text("목소리").foregroundColor(AuthSceneColors.accent))로\n깨어나는 아침")
                 .font(.system(size: 32, weight: .bold))
                 .foregroundStyle(AuthSceneColors.text)
-            Text("매일 아침, 그 목소리가 새로운 한마디로 깨워드려요.")
+            Text("날씨부터 운세까지, 원하는 목소리로 일어나세요.")
                 .foregroundStyle(AuthSceneColors.textDim)
             Spacer().frame(height: 40)
         }

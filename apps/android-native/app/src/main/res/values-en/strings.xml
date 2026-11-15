@@ -45,7 +45,7 @@
     <string name="auth_landing_headline_pre">"Wake up to\na "</string>
     <string name="auth_landing_headline_keyword">voice</string>
     <string name="auth_landing_headline_post">" you love"</string>
-    <string name="auth_landing_subcopy">Every morning, that voice wakes you with a new message.</string>
+    <string name="auth_landing_subcopy">From weather to fortunes, wake up to the voice you want.</string>
     <string name="auth_landing_voice_play">Preview</string>
     <string name="auth_landing_voice_pause">Pause</string>
     <string name="auth_landing_voice_position">%1$s\'s voice, %2$d of %3$d</string>

@@ -2505,23 +2505,6 @@
         }
       }
     },
-    "매일 아침, 그 목소리가 새로운 한마디로 깨워드려요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Every morning, that voice wakes you with a new message."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "毎朝、その声が新しいひとことで起こしてくれます。"
-          }
-        }
-      }
-    },
     "먼저 목소리를 녹음해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13331,6 +13314,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "認証コードを送りました。"
+          }
+        }
+      }
+    },
+    "날씨부터 운세까지, 원하는 목소리로 일어나세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From weather to fortunes, wake up to the voice you want."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気から運勢まで、好きな声で目覚めましょう。"
           }
         }
       }

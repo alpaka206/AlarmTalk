@@ -47,7 +47,7 @@
     <string name="auth_landing_headline_pre">"좋아하는 "</string>
     <string name="auth_landing_headline_keyword">목소리</string>
     <string name="auth_landing_headline_post">로\n깨어나는 아침</string>
-    <string name="auth_landing_subcopy">매일 아침, 그 목소리가 새로운 한마디로 깨워드려요.</string>
+    <string name="auth_landing_subcopy">날씨부터 운세까지, 원하는 목소리로 일어나세요.</string>
     <string name="auth_landing_voice_play">미리듣기</string>
     <string name="auth_landing_voice_pause">일시정지</string>
     <string name="auth_landing_voice_position">%1$s 목소리, %2$d/%3$d</string>
