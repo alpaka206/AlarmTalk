@@ -22,7 +22,7 @@ enum VoicesRoute: Hashable {
 struct VoicesPanelView: View {
     @State private var route: VoicesRoute = UIPreviewSeed.opensVoicePreparation
         ? .preparation("preview-voice")
-        : .management
+        : (UIPreviewSeed.voiceCloneStep != nil ? .clone : .management)
 
     /// Phase 4-D1: PlanGate 시트에서 "결제 화면으로" 를 누르면 Root 의
     /// BillingPanel(auxiliaryScreen = .billing) 을 열도록 부모(MainTabsView) 가

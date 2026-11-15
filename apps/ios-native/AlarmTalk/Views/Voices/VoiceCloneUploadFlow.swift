@@ -48,7 +48,7 @@ struct VoiceCloneUploadFlow: View {
 
     @Binding var route: VoicesRoute
 
-    @State private var registrationStep: RegistrationStep = .source
+    @State private var registrationStep: RegistrationStep = UIPreviewSeed.voiceCloneStep == "details" ? .details : .source
     @State private var sourceMode: VoiceCloneSourceMode = .record
     @State private var profileName: String = ""
     /// 이름 상한을 넘겨 쳤다(`InputSanitizer.boundedVoiceName`) — 이름 칸 아래에 이유를 띄운다.
@@ -284,52 +284,52 @@ struct VoiceCloneUploadFlow: View {
         voice.recorder.clearLatest()
     }
 
+    /// 이름 · 관계 · 나를 부를 이름 — 묶음마다 라벨 위, 묶음 사이 20(`detailsSection`).
     private var nameSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "목소리 이름"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-            TextField(String(localized: "예: 엄마 목소리"), text: $profileName)
-                .onChange(of: profileName) { _, newValue in
-                    voice.cloneName = newValue
-                    let bounded = InputSanitizer.boundedVoiceName(newValue, wasTooLong: profileNameTooLong)
-                    profileNameTooLong = bounded.tooLong
-                    if bounded.value != newValue {
-                        profileName = bounded.value
-                        voice.cloneName = profileName
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
+                fieldLabel(String(localized: "목소리 이름"))
+                TextField(String(localized: "예: 엄마 목소리"), text: $profileName)
+                    .onChange(of: profileName) { _, newValue in
+                        voice.cloneName = newValue
+                        let bounded = InputSanitizer.boundedVoiceName(newValue, wasTooLong: profileNameTooLong)
+                        profileNameTooLong = bounded.tooLong
+                        if bounded.value != newValue {
+                            profileName = bounded.value
+                            voice.cloneName = profileName
+                        }
                     }
+                    .alarmTalkFieldStyle()
+                if submitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(String(localized: "목소리 이름을 입력해 주세요."))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AlarmTalkTheme.error)
+                } else if profileNameTooLong {
+                    // 상한에서 입력을 막은 이유 — 말없이 자르지 않는다(안드로이드 `voices_name_too_long` 짝).
+                    Text(String(localized: "이름은 \(InputSanitizer.voiceNameMaxLength)자까지 쓸 수 있어요."))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AlarmTalkTheme.error)
                 }
-                .alarmTalkFieldStyle()
-            if submitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(String(localized: "목소리 이름을 입력해 주세요."))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.error)
-            } else if profileNameTooLong {
-                // 상한에서 입력을 막은 이유 — 말없이 자르지 않는다(안드로이드 `voices_name_too_long` 짝).
-                Text(String(localized: "이름은 \(InputSanitizer.voiceNameMaxLength)자까지 쓸 수 있어요."))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.error)
             }
 
+            // 관계 칸은 라벨을 스스로 그린다(위 라벨과 같은 모양 — `VoiceRelationshipInputField`).
             VoiceRelationshipInputField(
                 selection: $relationshipSelection,
                 title: String(localized: "나와의 관계 (선택)"),
                 submitted: submitted,
                 required: false
             )
-            .padding(.top, 4)
 
-            Text(String(localized: "이 목소리가 나를 부를 이름 (선택)"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-                .padding(.top, 4)
-            TextField(String(localized: "예: 엄마, 자기, 김팀장"), text: $listenerTitle)
-                .onChange(of: listenerTitle) { _, newValue in
-                    if newValue.count > 30 {
-                        listenerTitle = InputSanitizer.clampDisplayName(newValue)
+            VStack(alignment: .leading, spacing: 8) {
+                fieldLabel(String(localized: "이 목소리가 나를 부를 이름 (선택)"))
+                TextField(String(localized: "예: 엄마, 자기, 김팀장"), text: $listenerTitle)
+                    .onChange(of: listenerTitle) { _, newValue in
+                        if newValue.count > 30 {
+                            listenerTitle = InputSanitizer.clampDisplayName(newValue)
+                        }
                     }
-                }
-                .alarmTalkFieldStyle()
+                    .alarmTalkFieldStyle()
+            }
         }
     }
 
@@ -538,19 +538,30 @@ struct VoiceCloneUploadFlow: View {
         }
     }
 
-    @ViewBuilder
+    /// 세부 정보 — 칸마다 **위에 라벨**, 라벨과 칸 사이 8, 묶음 사이 20(2026-11-15 오너: "목소리 만들기 입력하는곳 디자인
+    /// 시안 저게 최선일까? / 위에랑 왜이렇게 붙어있어"). 안드로이드 `VoiceRegistrationStep.Details` 와 같은 모양·값이다 — 그쪽은
+    /// 칸 안에 떠 있는 M3 라벨이라 첫 칸 라벨이 상단바에 붙어 보였다.
     private var detailsSection: some View {
-        nameSection
-        // ⚠ '목소리 느낌'(자동·경쾌·차분) 선택을 되살리지 말 것(2026-09-29 사용자 결정으로 뺐다).
-        //   클론 문구의 결은 서버가 등록 녹음 전사로 추정한 말투를 따른다
-        //   (`docs/spec/voice-and-message.md` §4-2). 안드로이드 `VoiceRegistrationStep.Details` 와 같다.
-        languageSection
+        VStack(alignment: .leading, spacing: 20) {
+            nameSection
+            // ⚠ '목소리 느낌'(자동·경쾌·차분) 선택을 되살리지 말 것(2026-09-29 사용자 결정으로 뺐다).
+            //   클론 문구의 결은 서버가 등록 녹음 전사로 추정한 말투를 따른다
+            //   (`docs/spec/voice-and-message.md` §4-2). 안드로이드 `VoiceRegistrationStep.Details` 와 같다.
+            languageSection
+        }
+    }
+
+    /// 세부 정보의 칸 위 라벨 — 안드로이드 `VoiceFieldLabel` 과 같은 결(12 · 굵게 · 흐린 글자)이다.
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(theme.palette.onSurfaceVariant)
     }
 
     private var languageSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "알람을 읽어줄 언어"))
-                .font(.subheadline.weight(.semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            // 위 칸들의 라벨과 같은 모양이다(예전에는 이것만 더 큰 굵은 글자라 다른 묶음처럼 보였다).
+            fieldLabel(String(localized: "알람을 읽어줄 언어"))
             // 앱 공용 세그먼트다(안드로이드 `EditorSegmentedSelector` 와 같은 모양 — 이유는 AppSegmentedPicker 의 주석).
             AppSegmentedPicker(
                 options: [("ko", "한국어"), ("en", "English"), ("ja", "日本語")],

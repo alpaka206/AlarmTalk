@@ -2511,67 +2511,73 @@ internal fun VoiceProfileManagementPanel(
                             }
 
                             VoiceRegistrationStep.Details -> {
-                                OutlinedTextField(
-                                    value = profileName,
-                                    onValueChange = { raw ->
-                                        val (bounded, tooLong) = boundedNameInput(raw, VoiceNameMaxLength, profileNameTooLong)
-                                        profileName = bounded
-                                        profileNameTooLong = tooLong
-                                    },
-                                    label = { Text(stringResource(R.string.voices_name_label)) },
-                                    placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
-                                    singleLine = true,
-                                    isError = nameRequiredError || profileNameTooLong,
-                                    // supportingText 람다를 항상 넘기면 에러가 없어도 그 자리(약 16dp)가
-                                    // 예약돼 이름↔관계 간격만 넓어진다 — 에러일 때만 붙여 3개 필드의
-                                    // 간격(부모 spacedBy 14dp)을 균일하게 유지한다.
-                                    supportingText = when {
-                                        nameRequiredError -> {
-                                            { Text(stringResource(R.string.voices_required_field)) }
-                                        }
-                                        profileNameTooLong -> {
-                                            { Text(stringResource(R.string.voices_name_too_long, VoiceNameMaxLength)) }
-                                        }
-                                        else -> null
-                                    },
-                                    shape = WakerInputShape,
-                                    colors = wakerOutlinedTextFieldColors(),
-                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
-                                )
-                                // 관계·호칭은 선택 입력 — 비워도 다음 단계로 진행할 수 있다.
-                                RelationshipDropdownField(
-                                    selection = relationshipSelection,
-                                    onSelectionChange = { relationshipSelection = it },
-                                )
-                                OutlinedTextField(
-                                    value = profileListenerTitle,
-                                    onValueChange = { profileListenerTitle = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
-                                    label = { Text(stringResource(R.string.voices_listener_title_label)) },
-                                    placeholder = { Text(stringResource(R.string.voices_listener_title_placeholder)) },
-                                    singleLine = true,
-                                    shape = WakerInputShape,
-                                    colors = wakerOutlinedTextFieldColors(),
-                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
-                                )
-                                // ⚠ '목소리 느낌'(자동·경쾌·차분) 선택을 되살리지 말 것(2026-09-29 사용자
-                                // 결정으로 뺐다). 클론 문구의 결은 서버가 등록 녹음 전사로 추정한 말투를
-                                // 따른다(`docs/spec/voice-and-message.md` 4-2).
-                                // 문구 언어 — 미리듣기와 매일 사전렌더 문구가 이 언어로 만들어진다.
-                                Text(
-                                    text = stringResource(R.string.voices_language_label),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
-                                EditorSegmentedSelector(
-                                    options = listOf(
-                                        "ko" to stringResource(R.string.voices_lang_ko),
-                                        "en" to stringResource(R.string.voices_lang_en),
-                                        "ja" to stringResource(R.string.voices_lang_ja),
-                                    ),
-                                    selected = profileVoiceLanguage,
-                                    onSelect = { profileVoiceLanguage = it },
-                                )
+                                // 칸마다 **위에 라벨**을 둔다 — iOS 등록 화면(`VoiceCloneUploadFlow.nameSection`)·가입 화면(`AuthTextField`)과
+                                // 같은 모양이다(2026-11-15 오너: "목소리 만들기 입력하는곳 디자인 시안 저게 최선일까? / 위에랑 왜이렇게
+                                // 붙어있어"). M3 의 떠 있는 라벨은 첫 칸 라벨이 상단바 쪽으로 올라가 붙어 보였고, 빈 칸만 라벨이 칸 안에
+                                // 들어가 칸마다 모양이 달랐다. 라벨과 칸 사이 8, 묶음 사이 20 — iOS 와 같은 값이다.
+                                Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        VoiceFieldLabel(stringResource(R.string.voices_name_label))
+                                        OutlinedTextField(
+                                            value = profileName,
+                                            onValueChange = { raw ->
+                                                val (bounded, tooLong) = boundedNameInput(raw, VoiceNameMaxLength, profileNameTooLong)
+                                                profileName = bounded
+                                                profileNameTooLong = tooLong
+                                            },
+                                            placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
+                                            singleLine = true,
+                                            isError = nameRequiredError || profileNameTooLong,
+                                            // supportingText 람다를 항상 넘기면 에러가 없어도 그 자리(약 16dp)가 예약돼 이 묶음만
+                                            // 길어진다 — 에러일 때만 붙여 묶음 사이 간격(20)을 균일하게 유지한다.
+                                            supportingText = when {
+                                                nameRequiredError -> {
+                                                    { Text(stringResource(R.string.voices_required_field)) }
+                                                }
+                                                profileNameTooLong -> {
+                                                    { Text(stringResource(R.string.voices_name_too_long, VoiceNameMaxLength)) }
+                                                }
+                                                else -> null
+                                            },
+                                            shape = WakerInputShape,
+                                            colors = wakerOutlinedTextFieldColors(),
+                                            modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
+                                        )
+                                    }
+                                    // 관계·호칭은 선택 입력 — 비워도 다음 단계로 진행할 수 있다. 관계 칸은 라벨을 스스로 그린다.
+                                    RelationshipDropdownField(
+                                        selection = relationshipSelection,
+                                        onSelectionChange = { relationshipSelection = it },
+                                    )
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        VoiceFieldLabel(stringResource(R.string.voices_listener_title_label))
+                                        OutlinedTextField(
+                                            value = profileListenerTitle,
+                                            onValueChange = { profileListenerTitle = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
+                                            placeholder = { Text(stringResource(R.string.voices_listener_title_placeholder)) },
+                                            singleLine = true,
+                                            shape = WakerInputShape,
+                                            colors = wakerOutlinedTextFieldColors(),
+                                            modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
+                                        )
+                                    }
+                                    // ⚠ '목소리 느낌'(자동·경쾌·차분) 선택을 되살리지 말 것(2026-09-29 사용자
+                                    // 결정으로 뺐다). 클론 문구의 결은 서버가 등록 녹음 전사로 추정한 말투를
+                                    // 따른다(`docs/spec/voice-and-message.md` 4-2).
+                                    // 문구 언어 — 미리듣기와 매일 사전렌더 문구가 이 언어로 만들어진다. 라벨도 위 칸들과 같은 모양이다.
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        VoiceFieldLabel(stringResource(R.string.voices_language_label))
+                                        EditorSegmentedSelector(
+                                            options = listOf(
+                                                "ko" to stringResource(R.string.voices_lang_ko),
+                                                "en" to stringResource(R.string.voices_lang_en),
+                                                "ja" to stringResource(R.string.voices_lang_ja),
+                                            ),
+                                            selected = profileVoiceLanguage,
+                                            onSelect = { profileVoiceLanguage = it },
+                                        )
+                                    }
+                                }
                             }
 
                             VoiceRegistrationStep.Creating -> {

@@ -64,6 +64,21 @@ internal enum class VoiceRegistrationStep {
     Prerendering,
 }
 
+/**
+ * 목소리 등록 세부 정보의 칸 위 라벨 — 칸 안에 떠 있는 M3 라벨을 쓰지 않는다(2026-11-15). 첫 칸의 떠 있는 라벨이 상단바에
+ * 붙어 보였고, 빈 칸만 라벨이 칸 안에 있어 칸마다 모양이 달랐다. iOS `VoiceCloneUploadFlow.fieldLabel` 과 같은 결이다
+ * (12 · 굵게 · 흐린 글자).
+ */
+@Composable
+internal fun VoiceFieldLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RelationshipDropdownField(
@@ -73,6 +88,8 @@ internal fun RelationshipDropdownField(
     var expanded by remember { mutableStateOf(false) }
     val presetLabel = selection.preset?.let { stringResource(it.labelRes) }.orEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // 라벨은 칸 **위에** 둔다 — 등록 세부 정보의 다른 칸과 같은 모양이다(`VoiceFieldLabel`).
+        VoiceFieldLabel(stringResource(R.string.voicesr_relationship_label_required))
         ExposedDropdownMenuBox(
             expanded = expanded,
             onExpandedChange = { expanded = !expanded },
@@ -83,7 +100,6 @@ internal fun RelationshipDropdownField(
                 onValueChange = {},
                 readOnly = true,
                 // 관계는 선택 입력 — 비워도 등록할 수 있다.
-                label = { Text(stringResource(R.string.voicesr_relationship_label_required)) },
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_placeholder)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 shape = WakerInputShape,
@@ -127,7 +143,7 @@ internal fun RelationshipDropdownField(
                         ),
                     )
                 },
-                label = { Text(stringResource(R.string.voicesr_relationship_custom_label)) },
+                // 직접 입력 칸은 위 드롭다운('직접 입력')이 무엇인지 말하므로 라벨 없이 예시만 둔다(iOS 와 같다).
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_custom_placeholder)) },
                 singleLine = true,
                 shape = WakerInputShape,

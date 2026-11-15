@@ -356,7 +356,11 @@ class VoiceRegistrationFailureWiringTest {
         // 그 줄은 음원 준비 단계의 녹음 카드(파일 경로는 파일 고르기) **바로 아래**다 — 다음에 누를 것이 녹음 버튼이다.
         // 본문의 음원 준비 단계 — 상단바·하단 행에도 같은 단계 이름이 있어 그 단계가 그리는 첫 컨트롤로 집는다.
         val sourceStart = Regex("""VoiceRegistrationStep\.Source -> \{\s*VoiceCaptureModeSelector\(""").find(panel)
-        val detailsStart = Regex("""VoiceRegistrationStep\.Details -> \{\s*OutlinedTextField\(""").find(panel)
+        // 세부 정보 단계는 칸 위 라벨부터 그린다(2026-11-15 — 첫 컨트롤이 이름 라벨). 그 사이에 `}` 가 없으니 상단바·하단 행의
+        // 같은 단계 이름은 걸리지 않는다.
+        val detailsStart = Regex(
+            """VoiceRegistrationStep\.Details -> \{[^}]*?VoiceFieldLabel\(stringResource\(R\.string\.voices_name_label\)\)""",
+        ).find(panel)
         assertTrue("본문의 음원 준비·세부 정보 단계를 못 찾았다.", sourceStart != null && detailsStart != null)
         val sourceStep = panel.substring(sourceStart!!.range.first, detailsStart!!.range.first)
         val recordCard = sourceStep.indexOf("VoiceRecordControls(")

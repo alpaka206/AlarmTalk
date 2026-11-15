@@ -472,7 +472,6 @@
     <string name="voicesr_pause">Pause</string>
     <string name="voicesr_prerender_progress">Preparing alarm voice %1$d%%</string>
     <string name="voicesr_preview">Preview</string>
-    <string name="voicesr_relationship_custom_label">Enter relationship manually</string>
     <string name="voicesr_relationship_custom_placeholder">e.g. granddaughter, partner, coworker</string>
     <string name="voicesr_relationship_label_required">Relationship to you (optional)</string>
     <string name="voicesr_relationship_placeholder">Please select a relationship</string>

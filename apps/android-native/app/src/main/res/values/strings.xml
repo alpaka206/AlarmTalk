@@ -496,7 +496,6 @@
     <string name="voicesr_pause">일시정지</string>
     <string name="voicesr_prerender_progress">알람 음성 준비 중 %1$d%%</string>
     <string name="voicesr_preview">미리듣기</string>
-    <string name="voicesr_relationship_custom_label">관계 직접 입력</string>
     <string name="voicesr_relationship_custom_placeholder">예: 손녀, 연인, 동료</string>
     <string name="voicesr_relationship_label_required">나와의 관계 (선택)</string>
     <string name="voicesr_relationship_placeholder">관계를 선택해 주세요</string>
