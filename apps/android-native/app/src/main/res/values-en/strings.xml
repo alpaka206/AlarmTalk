@@ -644,7 +644,6 @@
     <string name="voice_consent_check_overseas">I consent to my voice and text being transferred and processed overseas (including the United States) for voice AI processing.</string>
     <string name="voices_register_biometric_consent">I agree to voice biometric processing</string>
     <string name="voices_register_biometric_desc">Your voice is used to create voice profiles, clone voices, and read alarms aloud. It is treated as biometric information that can identify or reproduce a person.\nOnly register your own voice or a voice for which you have lawful authority and consent (Terms of Service, Article 7).\nDeleting the voice also deletes this data. You can withdraw consent at any time in More.</string>
-    <string name="voice_consent_agree">Agree and create voice</string>
     <string name="voice_consent_cancel">Cancel</string>
     <string name="auth_consent_expand">Expand item</string>
     <string name="auth_consent_collapse">Collapse item</string>
@@ -654,7 +653,6 @@
     <string name="tts_consent_title">Creating a spoken alarm needs your consent</string>
     <string name="tts_consent_body">When an alarm line is turned into speech, the text and voice are processed by our voice AI provider (ElevenLabs) and by text generation (Google, United States). That means the data is sent overseas. You can keep using alarms without agreeing, but you will not be able to create spoken alarms.</string>
     <string name="auth_consent_continue">Continue</string>
-    <string name="voice_consent_agree_continue">Agree and continue</string>
     <string name="onb_voice_title_failed">We could not get the voices</string>
     <string name="msg_consent_update_required">Update the app to continue with consent.</string>
     <string name="consent_withdraw_action">Withdraw consent</string>

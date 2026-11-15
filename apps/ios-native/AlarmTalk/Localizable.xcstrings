@@ -2199,40 +2199,6 @@
         }
       }
     },
-    "동의하고 계속하기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agree and continue"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "同意して続ける"
-          }
-        }
-      }
-    },
-    "동의하고 목소리 만들기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agree and create voice"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "同意して声を作る"
-          }
-        }
-      }
-    },
     "동의하고 시작하기" : {
       "extractionState" : "manual",
       "localizations" : {

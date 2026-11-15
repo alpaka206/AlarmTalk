@@ -157,31 +157,37 @@ struct VoiceCloneUploadFlow: View {
             )
             .padding(.top, 18)
 
-            ScrollViewReader { scroll in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        switch registrationStep {
-                        case .source:
-                            sourceSection
-                        case .details:
-                            detailsSection
-                        case .creating:
-                            creatingSection
+            if registrationStep == .creating {
+                // '만드는 중' 은 고를 것도 입력할 것도 없는 대기 화면이라 스크롤 본문에 얹지 않고 남은 높이 한가운데에 둔다
+                // (2026-11-15 오너: "목소리 만드는 중이에요 그거 중앙에 배치되는게 맞지않을까?"). 안드로이드 `Creating` 단계와 같다.
+                creatingSection
+            } else {
+                ScrollViewReader { scroll in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            switch registrationStep {
+                            case .source:
+                                sourceSection
+                            case .details:
+                                detailsSection
+                            case .creating:
+                                EmptyView() // 위에서 스크롤 밖에 따로 그린다.
+                            }
+                            statusSection
+                            Spacer(minLength: 4)
                         }
-                        statusSection
-                        Spacer(minLength: 4)
+                        .padding(.horizontal, 20)
+                        .id(Self.contentTopID)
                     }
-                    .padding(.horizontal, 20)
-                    .id(Self.contentTopID)
-                }
-                // 음원 준비로 돌려보낸 이유(`rerecordReason`)는 녹음 카드·파일 고르기 바로 아래 — 본문 **위쪽**이다. 본문을
-                // 맨 위로 올려 그 줄과 녹음 버튼이 함께 보이게 한다. 단계들이 스크롤 하나를 같이 써서 세부 정보 단계에서 내려
-                // 둔 위치가 남을 수 있다(글자를 키운 기기에서는 그 위치가 이 줄을 화면 밖에 둔다). 안드로이드
-                // `VoiceProfileManagementPanel` 의 `LaunchedEffect(rerecordReason)` 과 같다. 걷힐 때(nil)는 움직이지 않는다.
-                .onChange(of: rerecordReason) { _, reason in
-                    guard reason != nil else { return }
-                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
-                        scroll.scrollTo(Self.contentTopID, anchor: .top)
+                    // 음원 준비로 돌려보낸 이유(`rerecordReason`)는 녹음 카드·파일 고르기 바로 아래 — 본문 **위쪽**이다. 본문을
+                    // 맨 위로 올려 그 줄과 녹음 버튼이 함께 보이게 한다. 단계들이 스크롤 하나를 같이 써서 세부 정보 단계에서 내려
+                    // 둔 위치가 남을 수 있다(글자를 키운 기기에서는 그 위치가 이 줄을 화면 밖에 둔다). 안드로이드
+                    // `VoiceProfileManagementPanel` 의 `LaunchedEffect(rerecordReason)` 과 같다. 걷힐 때(nil)는 움직이지 않는다.
+                    .onChange(of: rerecordReason) { _, reason in
+                        guard reason != nil else { return }
+                        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                            scroll.scrollTo(Self.contentTopID, anchor: .top)
+                        }
                     }
                 }
             }
@@ -208,9 +214,9 @@ struct VoiceCloneUploadFlow: View {
                 localError = AudioUserFacingError.message(for: error, fallback: String(localized: "파일을 선택하지 못했어요."))
             }
         }
-        // ⚠ **이 시트에서 동의했으면 등록을 이어서 한다**(Codex #703 P2). 시트의 CTA 는 '동의하고 목소리 만들기' 인데,
-        // 동의만 기록하고 끝나면 사용자가 등록을 다시 눌러야 한다는 걸 스스로 알아내야 한다. 판정은 '이 요청에 동의했는가'
-        // 하나다(`agreedSensitiveConsentRequestID`) — 권리 확인만 받은 경우는 서버 동의 목록이 바뀌지 않아서다(2026-11-15).
+        // ⚠ **이 시트에서 동의했으면 등록을 이어서 한다**(Codex #703 P2). 시트의 '확인' 이 동의만 기록하고 끝나면 사용자가
+        // 등록을 다시 눌러야 한다는 걸 스스로 알아내야 한다. 판정은 '이 요청에 동의했는가' 하나다
+        // (`agreedSensitiveConsentRequestID`) — 시트가 내려간 것만으로는 동의했는지 그냥 닫았는지 모른다.
         // 그냥 닫았으면 이어받기를 취소한다 — 안 그러면 한참 뒤 사용자가 누르지도 않은 등록이 시작된다.
         .onChange(of: auth.pendingSensitiveConsent) { old, new in
             guard new == nil, resumeSubmitAfterConsent, let old else { return }
@@ -565,9 +571,10 @@ struct VoiceCloneUploadFlow: View {
                 .font(theme.typography.bodyMedium)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .multilineTextAlignment(.center)
+            statusSection
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 72)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// 녹음 / 파일 — 날씨 지역 시트의 나라 고르기(`WeatherRegionPickerSheet`)와 **같은 시스템 세그먼트**다

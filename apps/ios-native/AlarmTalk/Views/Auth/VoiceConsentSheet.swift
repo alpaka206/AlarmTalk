@@ -48,8 +48,8 @@ struct VoiceConsentSheet: View {
                 .font(.headline)
                 .foregroundStyle(AlarmTalkTheme.text)
 
-            // ⚠ **높이 상한을 박지 말 것**(2026-11-15). 예전에는 320 이었는데, 등록 자리에서 생체정보(부연 세 줄)와 권리
-            // 확인을 함께 받으면 그 높이를 넘어 맨 아래 권리 확인이 가려진 채 '동의하고 목소리 만들기' 가 꺼져 있었다.
+            // ⚠ **높이 상한을 박지 말 것**(2026-11-15). 예전에는 320 이었는데, 등록 자리에서 생체정보(부연 세 줄)와 다른
+            // 항목을 함께 받으면 그 높이를 넘어 맨 아래 항목이 가려진 채 확인 버튼이 꺼져 있었다.
             // 화면에 들어가면 그대로 그리고, 넘칠 때만 스크롤한다. 안드로이드는 같은 자리에 `weight(1f, fill = false)` 를 쓴다.
             ViewThatFits(in: .vertical) {
                 consentItems
@@ -69,9 +69,9 @@ struct VoiceConsentSheet: View {
                     .disabled(busy)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                 Button(action: onAgree) {
-                    // 동의 뒤에 이어서 만들 등록 요청이 없으면 '목소리 만들기' 라고 하면
-                    // 안 한 일을 했다고 말하는 셈이다. 반대로 등록이 이어지면 그렇게 말해야 한다.
-                    Text(registrationContext ? String(localized: "동의하고 목소리 만들기") : String(localized: "동의하고 계속하기"))
+                    // '확인' 하나다(2026-11-15 오너: "체크하면 동의니깐 확인으로 해도 되지않을까?"). 동의는 체크가 하고 이
+                    // 버튼은 그 체크를 낸다. 무엇이 이어지는지는 제목·본문이 말한다(`registrationContext`). 안드로이드와 같다.
+                    Text(String(localized: "확인"))
                         .fontWeight(.semibold)
                 }
                 .disabled(!allChecked || busy)

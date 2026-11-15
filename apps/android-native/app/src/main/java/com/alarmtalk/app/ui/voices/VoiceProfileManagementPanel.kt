@@ -2375,11 +2375,15 @@ internal fun VoiceProfileManagementPanel(
                     LaunchedEffect(rerecordReason) {
                         if (rerecordReason != null) contentScrollState.animateScrollTo(0)
                     }
+                    // '만드는 중' 은 고를 것도 입력할 것도 없는 대기 화면이라 페이지 스크롤 없이 본문 한가운데에 둔다(아래 Creating).
+                    // 스크롤 본문 맨 위에 두면 블록이 위로 붙어 비어 보였다 — 준비 단계(`VoiceClipPreparationStep`)와 같은 이유다
+                    // (2026-11-15 오너: "목소리 만드는 중이에요 그거 중앙에 배치되는게 맞지않을까?").
+                    val bodyFillsHeight = scriptFillsRemainingHeight || currentStep == VoiceRegistrationStep.Creating
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .then(
-                                if (scriptFillsRemainingHeight) {
+                                if (bodyFillsHeight) {
                                     Modifier
                                 } else {
                                     Modifier.verticalScroll(contentScrollState)
@@ -2571,12 +2575,13 @@ internal fun VoiceProfileManagementPanel(
                             }
 
                             VoiceRegistrationStep.Creating -> {
+                                // 남은 높이를 다 차지하고 그 한가운데에 둔다(위 `bodyFillsHeight` — 이 단계는 스크롤하지 않는다).
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 72.dp),
+                                        .weight(1f),
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
                                 ) {
                                     CircularProgressIndicator()
                                     Text(

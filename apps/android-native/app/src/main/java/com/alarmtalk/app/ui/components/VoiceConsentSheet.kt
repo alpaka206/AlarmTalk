@@ -80,8 +80,8 @@ internal fun VoiceConsentSheet(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                // ⚠ **높이 상한을 박지 말 것**(2026-11-15). 예전에는 320dp 였는데, 등록 자리에서 생체정보(부연 세 줄)와 권리
-                // 확인을 함께 받으면 그 높이를 넘어 맨 아래 권리 확인이 가려진 채 '동의하고 목소리 만들기' 가 꺼져 있었다.
+                // ⚠ **높이 상한을 박지 말 것**(2026-11-15). 예전에는 320dp 였는데, 등록 자리에서 생체정보(부연 세 줄)와 다른
+                // 항목을 함께 받으면 그 높이를 넘어 맨 아래 항목이 가려진 채 확인 버튼이 꺼져 있었다.
                 // 남은 높이만큼 늘고 넘칠 때만 스크롤한다 — M3 `AlertDialog` 본문과 같은 방식이다. iOS 는 `ViewThatFits`.
                 Column(
                     modifier = Modifier
@@ -132,16 +132,10 @@ internal fun VoiceConsentSheet(
                     }
                     TextButton(onClick = onAgree, enabled = allChecked && !busy) {
                         Text(
-                            // 동의 뒤에 이어서 만들 등록 요청이 없으면 '목소리 만들기' 라고
-                            // 하면 안 한 일을 했다고 말하는 셈이다. 반대로 등록이 이어지면
-                            // 반드시 그렇게 말해야 한다.
-                            text = stringResource(
-                                if (registrationContext) {
-                                    R.string.voice_consent_agree
-                                } else {
-                                    R.string.voice_consent_agree_continue
-                                },
-                            ),
+                            // '확인' 하나다(2026-11-15 오너: "체크하면 동의니깐 확인으로 해도 되지않을까?"). 동의는 체크가
+                            // 하고 이 버튼은 그 체크를 낸다. 무엇이 이어지는지(목소리 등록인지 문구 만들기인지)는 제목·본문이
+                            // 말한다(`registrationContext`). iOS `VoiceConsentSheet` 와 같다.
+                            text = stringResource(R.string.auth_confirm),
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
