@@ -58,6 +58,18 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 목소리 등록 동의 시트(`VoiceConsentSheet`)를 바로 띄우는 실행 인자 — `-UIPreviewConsentSheet "voice_biometric,rights"`.
+    /// 쉼표로 물을 항목을 준다(`rights` = 목소리 권리 확인, 나머지는 민감 동의 유형). `-UIPreviewSeed` 와 함께 쓴다.
+    /// 시트는 녹음·파일을 거친 '등록' 에서만 떠서, 높이·문구를 확인하려고 둔다.
+    static var consentSheetItems: [String]? {
+        #if DEBUG
+        guard let raw = argValue("-UIPreviewConsentSheet") else { return nil }
+        return raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        #else
+        return nil
+        #endif
+    }
+
     /// 인증 화면의 위쪽 토스트(`AuthToastModifier`)를 바로 띄우는 실행 인자 — `-UIPreviewAuthToast "<문장>"`.
     /// `-UIPreviewAuthScreen` 과 함께 쓴다. 코드 발송 같은 서버 응답 없이 토스트 모양을 확인하려고 둔다.
     static var authToast: String? {

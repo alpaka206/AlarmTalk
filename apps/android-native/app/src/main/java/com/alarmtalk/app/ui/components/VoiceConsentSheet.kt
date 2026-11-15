@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -85,9 +84,12 @@ internal fun VoiceConsentSheet(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                // ⚠ **높이 상한을 박지 말 것**(2026-11-15). 예전에는 320dp 였는데, 등록 자리에서 생체정보(부연 세 줄)와 권리
+                // 확인을 함께 받으면 그 높이를 넘어 맨 아래 권리 확인이 가려진 채 '동의하고 목소리 만들기' 가 꺼져 있었다.
+                // 남은 높이만큼 늘고 넘칠 때만 스크롤한다 — M3 `AlertDialog` 본문과 같은 방식이다. iOS 는 `ViewThatFits`.
                 Column(
                     modifier = Modifier
-                        .heightIn(max = 320.dp)
+                        .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {

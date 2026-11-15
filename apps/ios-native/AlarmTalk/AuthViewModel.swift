@@ -727,6 +727,13 @@ final class AuthViewModel: ObservableObject {
             // `refreshUserApplyingToken` 의 화면 확인 모드 갈래가 센다.
             accountEntryAnswer = AccountEntryAnswer(entry: 1, outcome: .answered)
             planAnsweredEntry = 1
+            if let items = UIPreviewSeed.consentSheetItems {
+                pendingSensitiveConsent = SensitiveConsentRequest(
+                    types: items.filter { $0 != "rights" },
+                    registeringVoice: true,
+                    asksRights: items.contains("rights")
+                )
+            }
         }
         #endif
 
