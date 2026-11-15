@@ -99,7 +99,8 @@ struct VoiceConsentSheet: View {
                     check(
                         $biometric,
                         String(localized: "음성 생체정보 처리에 동의해요"),
-                        description: String(localized: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요.")
+                        // 쓰이는 곳과 '지우면 함께 삭제' 는 위 본문이 말한다 — 여기서 되풀이하지 않는다(2026-11-15 오너).
+                        description: String(localized: "목소리는 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n더보기에서 언제든 동의를 철회할 수 있어요.")
                     )
                 } else {
                     check($biometric, String(localized: "내 목소리(생체정보)를 음성 프로필 생성·클론·TTS 생성에 사용하는 것에 동의합니다."))
@@ -138,11 +139,13 @@ struct VoiceConsentSheet: View {
         .buttonStyle(.plain)
     }
 
+    /// 문장마다 한 줄이다(2026-11-15 오너). 안드로이드 `voice_consent_body` 와 같은 네 줄.
     private static var voiceBody: String { String(localized: """
-        등록한 목소리는 음성 프로필 생성, 알람 문구 읽어주기, 알람 재생과 기기 캐싱에 쓰여요. \
+        등록한 목소리는 음성 프로필 생성, 알람 문구 읽어주기, 알람 재생과 기기 캐싱에 쓰여요.
         음성 클론과 읽어주기는 음성 AI 제공자 ElevenLabs를 통해 처리되고, 이 과정에서 목소리와 \
-        문구가 국외로 전송돼요. 알람톡은 목소리를 공개 검색·광고·데이터 판매에 쓰지 않고, 자체 \
-        범용 AI 모델 학습에도 쓰지 않아요. 음성 프로필은 언제든 삭제할 수 있어요.
+        문구가 국외로 전송돼요.
+        알람톡은 목소리를 공개 검색·광고·데이터 판매에 쓰지 않고, 자체 범용 AI 모델 학습에도 쓰지 않아요.
+        음성 프로필은 언제든 삭제할 수 있고, 지우면 목소리도 함께 삭제돼요.
         """) }
 
     private static var ttsBody: String { String(localized: """

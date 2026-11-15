@@ -48,7 +48,7 @@ struct VoiceCloneUploadFlow: View {
 
     @Binding var route: VoicesRoute
 
-    @State private var registrationStep: RegistrationStep = UIPreviewSeed.voiceCloneStep == "details" ? .details : .source
+    @State private var registrationStep: RegistrationStep = Self.previewStartStep
     @State private var sourceMode: VoiceCloneSourceMode = .record
     @State private var profileName: String = ""
     /// 이름 상한을 넘겨 쳤다(`InputSanitizer.boundedVoiceName`) — 이름 칸 아래에 이유를 띄운다.
@@ -138,27 +138,35 @@ struct VoiceCloneUploadFlow: View {
             && registrationConsentSatisfied
     }
 
+    /// `-UIPreviewVoiceClone` 이 고른 단계(화면 확인용). 그 밖에는 언제나 음원 준비부터다.
+    private static var previewStartStep: RegistrationStep {
+        switch UIPreviewSeed.voiceCloneStep {
+        case "details": return .details
+        case "creating": return .creating
+        default: return .source
+        }
+    }
+
     private var canAdvanceFromSource: Bool {
         !voice.isBusy && !voice.recorder.isRecording && hasPreparedSource && isInValidRange
             && !(sourceMode == .record && recordingAnalyzing)
     }
 
-    private var topBarBackAction: (() -> Void)? {
-        guard registrationStep != .creating else { return nil }
-        return { goBack() }
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            WakerTopBar(
-                title: "목소리 만들기",
-                onBack: topBarBackAction,
-                backEnabled: !voice.isBusy
-            )
-            .padding(.top, 18)
+            // '만드는 중' 에는 상단바를 그리지 않는다(2026-11-15 오너) — 제목만 떠 있고 누를 것이 없다. 준비 화면
+            // (`ClipPreparationView`)도 그리지 않으니 두 대기 화면이 같은 모양이 된다. 안드로이드 `VoiceProfileManagementPanel` 과 같다.
+            if registrationStep != .creating {
+                WakerTopBar(
+                    title: "목소리 만들기",
+                    onBack: { goBack() },
+                    backEnabled: !voice.isBusy
+                )
+                .padding(.top, 18)
+            }
 
             if registrationStep == .creating {
-                // '만드는 중' 은 고를 것도 입력할 것도 없는 대기 화면이라 스크롤 본문에 얹지 않고 남은 높이 한가운데에 둔다
+                // '만드는 중' 은 고를 것도 입력할 것도 없는 대기 화면이라 스크롤 본문에 얹지 않고 화면 한가운데에 둔다
                 // (2026-11-15 오너: "목소리 만드는 중이에요 그거 중앙에 배치되는게 맞지않을까?"). 안드로이드 `Creating` 단계와 같다.
                 creatingSection
             } else {
@@ -845,7 +853,7 @@ struct VoiceCloneUploadFlow: View {
             submitted = false
             // 이유(뷰모델이 안내 줄에 세운 문장)는 이 창의 거절 줄로 옮긴다 — 녹음 카드·파일 고르기 바로 아래, 오류 색
             // (`rerecordReasonLine`). 안내 줄에 남기면 맨 아래 흐린 힌트처럼 읽히고, 창을 닫은 뒤에도 목소리 탭 맨 위에
-            // 남는다. 이 갈래에 닿을 때 창은 늘 떠 있다 — 만드는 중에는 닫을 수 없다(`topBarBackAction` 이 nil, 창은
+            // 남는다. 이 갈래에 닿을 때 창은 늘 떠 있다 — 만드는 중에는 닫을 수 없다(상단바를 그리지 않고, 창은
             // `interactiveDismissDisabled`).
             rerecordReason = voice.statusMessage
             voice.statusMessage = nil

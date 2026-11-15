@@ -2329,34 +2329,39 @@ internal fun VoiceProfileManagementPanel(
                         .clearFocusOnOutsideTap()
                         .imePadding(),
                 ) {
-                    WakerTopBar(
-                        title = stringResource(R.string.voices_create_dialog_title),
-                        onBack = when (currentStep) {
-                            VoiceRegistrationStep.Source -> ::closeCreateDialog
-                            VoiceRegistrationStep.Details -> {
-                                {
-                                    currentStep = VoiceRegistrationStep.Source
-                                    createSubmitAttempted = false
-                                    localMessage = null
+                    // '만드는 중' 에는 상단바를 그리지 않는다(2026-11-15 오너) — 제목만 떠 있고 누를 것이 없다. 준비 단계
+                    // (`VoiceClipPreparationStep`)도 그리지 않으니 두 대기 화면이 같은 모양이 된다. 본문은 화면 전체의
+                    // 한가운데에 놓인다(아래 `bodyFillsHeight`). iOS `VoiceCloneUploadFlow` 와 같다.
+                    if (currentStep != VoiceRegistrationStep.Creating) {
+                        WakerTopBar(
+                            title = stringResource(R.string.voices_create_dialog_title),
+                            onBack = when (currentStep) {
+                                VoiceRegistrationStep.Source -> ::closeCreateDialog
+                                VoiceRegistrationStep.Details -> {
+                                    {
+                                        currentStep = VoiceRegistrationStep.Source
+                                        createSubmitAttempted = false
+                                        localMessage = null
+                                    }
                                 }
-                            }
-                            VoiceRegistrationStep.Preview -> {
-                                { draftExitWarningOpen = true }
-                            }
-                            // 생성 중에는 이탈 불가. 준비 중에는 이 상단바를 그리지 않는다
-                            // (`VoiceClipPreparationStep` — 맨 아래 '백그라운드에서 계속' 이
-                            // 나가는 행동이다).
-                            VoiceRegistrationStep.Creating,
-                            VoiceRegistrationStep.Prerendering -> null
-                        },
-                        // 확정 화면은 잠금표를 따른다(`confirmStepLocks` — 시스템 뒤로가기도 같다).
-                        backEnabled = if (currentStep == VoiceRegistrationStep.Preview) {
-                            !confirmLocks.working
-                        } else {
-                            !voiceProfileBusy
-                        },
-                        modifier = Modifier.padding(top = 18.dp),
-                    )
+                                VoiceRegistrationStep.Preview -> {
+                                    { draftExitWarningOpen = true }
+                                }
+                                // 두 단계 모두 이 상단바를 그리지 않는다 — 만드는 중은 위의 조건, 준비 중은
+                                // `VoiceClipPreparationStep`(맨 아래 '백그라운드에서 계속' 이 나가는 행동이다).
+                                // 생성 중에는 이탈할 수 없다.
+                                VoiceRegistrationStep.Creating,
+                                VoiceRegistrationStep.Prerendering -> null
+                            },
+                            // 확정 화면은 잠금표를 따른다(`confirmStepLocks` — 시스템 뒤로가기도 같다).
+                            backEnabled = if (currentStep == VoiceRegistrationStep.Preview) {
+                                !confirmLocks.working
+                            } else {
+                                !voiceProfileBusy
+                            },
+                            modifier = Modifier.padding(top = 18.dp),
+                        )
+                    }
 
                     // 녹음 모드(첫 스텝)는 대사 카드가 남은 화면 높이를 채우고 카드 안에서만
                     // 스크롤하므로 페이지 스크롤을 끈다. 파일 모드·다른 스텝은 콘텐츠가
@@ -2593,6 +2598,7 @@ internal fun VoiceProfileManagementPanel(
 
                             VoiceRegistrationStep.Creating -> {
                                 // 남은 높이를 다 차지하고 그 한가운데에 둔다(위 `bodyFillsHeight` — 이 단계는 스크롤하지 않는다).
+                                // 상단바도 하단 버튼도 없어 화면 전체의 한가운데다.
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()

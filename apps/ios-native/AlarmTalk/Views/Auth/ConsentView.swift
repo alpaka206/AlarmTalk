@@ -170,7 +170,9 @@ struct ConsentView: View {
                 // 화면에서 실제로 체크한 '선택' 유형만 넘긴다.
                 onAgree(checked.intersection(optionalTypes))
             } label: {
-                Text(busy ? String(localized: "처리 중…") : String(localized: "동의하고 시작하기"))
+                // '확인' 하나다(2026-11-15 오너: "확인으로 통일해") — 목소리 등록 동의 시트와 같다. 동의는 체크가 하고 이 버튼은
+                // 그 체크를 낸다(선택 항목은 체크 없이 눌러도 거절로 기록되니 '동의하고…' 는 기록과 어긋났다). 안드로이드 `ConsentScreen` 과 같다.
+                Text(busy ? String(localized: "처리 중…") : String(localized: "확인"))
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity, minHeight: 50)
             }

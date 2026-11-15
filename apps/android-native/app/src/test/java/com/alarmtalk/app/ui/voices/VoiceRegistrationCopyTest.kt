@@ -163,4 +163,37 @@ class VoiceRegistrationCopyTest {
             }
         }
     }
+
+    @Test
+    fun `등록 동의 시트 본문은 문장마다 한 줄이고 부연과 겹치지 않는다`() {
+        // 2026-11-15 오너 — 네 문장 한 덩어리를 문장마다 한 줄로 나누고, 체크 부연과 겹치던 두 가지(쓰이는 곳·지우면 함께
+        // 삭제)는 본문 한 곳에만 둔다. 고지 내용은 그대로다(법무 문서 consent-and-permission-copy §2).
+        for (dir in dirs) {
+            val body = value(dir, "voice_consent_body")!!
+            assertFalse("$dir/voice_consent_body", body.contains('\n'))
+            assertEquals("$dir 본문 줄 수", 4, body.split("\\n").size)
+        }
+        assertEquals(
+            "음성 프로필은 언제든 삭제할 수 있고, 지우면 목소리도 함께 삭제돼요.",
+            value("values", "voice_consent_body")!!.split("\\n").last(),
+        )
+        val desc = value("values", "voices_register_biometric_desc")!!
+        assertEquals("목소리는 개인을 식별·재현할 수 있는 생체정보로 처리돼요.", desc.split("\\n").first())
+        assertFalse("부연이 쓰이는 곳을 다시 말한다", desc.contains("음성 프로필 생성"))
+        assertFalse("부연이 삭제를 다시 말한다", desc.contains("삭제"))
+    }
+
+    @Test
+    fun `가입 동의 화면 버튼은 등록 동의 시트와 같은 확인이다`() {
+        // 2026-11-15 오너 "확인으로 통일해" — '동의하고 시작하기'·'계속하기' 두 갈래를 지웠다. 동의는 체크가 한다.
+        for (dir in dirs) {
+            assertNull("$dir 에 auth_consent_agree_and_start 가 되살아났다", value(dir, "auth_consent_agree_and_start"))
+            assertNull("$dir 에 auth_consent_continue 가 되살아났다", value(dir, "auth_consent_continue"))
+        }
+        val screen = File("src/main/java/com/alarmtalk/app/ui/auth/ConsentScreen.kt").readText()
+        assertTrue("가입 동의 화면이 auth_confirm 을 쓰지 않는다", screen.contains("R.string.auth_confirm"))
+        val sheet = File("src/main/java/com/alarmtalk/app/ui/components/VoiceConsentSheet.kt").readText()
+        assertTrue("등록 동의 시트가 auth_confirm 을 쓰지 않는다", sheet.contains("R.string.auth_confirm"))
+        assertEquals("예: 엄마, 친구", value("values", "voicesr_relationship_placeholder"))
+    }
 }

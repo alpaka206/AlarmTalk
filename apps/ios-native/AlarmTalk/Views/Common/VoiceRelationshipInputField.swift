@@ -101,7 +101,7 @@ struct VoiceRelationshipInputField: View {
                 }
             } label: {
                 HStack(spacing: 10) {
-                    Text(selection.preset?.displayLabel ?? String(localized: "관계를 선택해 주세요"))
+                    Text(selection.preset?.displayLabel ?? String(localized: "예: 엄마, 친구"))
                         .font(.subheadline)
                         .foregroundStyle(selection.preset == nil ? AlarmTalkTheme.textSecondary : AlarmTalkTheme.text)
                     Spacer()

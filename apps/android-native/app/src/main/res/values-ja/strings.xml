@@ -7,7 +7,6 @@
     <string name="auth_confirm_password_show">確認用パスワードを表示</string>
     <string name="auth_consent_age14">［必須］満14歳以上です</string>
     <string name="auth_consent_agree_all">すべて同意</string>
-    <string name="auth_consent_agree_and_start">同意して始める</string>
     <string name="auth_consent_marketing">［任意］広告・宣伝情報の受信に同意</string>
     <string name="auth_consent_overseas_transfer">［必須］音声AI処理のための国外移転に同意</string>
     <string name="auth_consent_overseas_transfer_desc">音声AI、翻訳、動的文言処理のため、音声・アラーム文言・占い入力値がElevenLabsやGoogle Vertexなど国外の処理者へ送信される場合があります。</string>
@@ -474,7 +473,7 @@
     <string name="voicesr_preview">プレビュー</string>
     <string name="voicesr_relationship_custom_placeholder">例:孫娘、恋人、同僚</string>
     <string name="voicesr_relationship_label_required">あなたとの関係（任意）</string>
-    <string name="voicesr_relationship_placeholder">関係を選んでください</string>
+    <string name="voicesr_relationship_placeholder">例:お母さん、友だち</string>
     <string name="voicesr_required_field">必ず入力してください。</string>
     <string name="voicesr_save">保存</string>
     <string name="voicesr_status_creating">作成中</string>
@@ -638,11 +637,11 @@
     <string name="voices_system_voices_title">基本の声</string>
     <string name="voicesr_preview_stop">停止</string>
     <string name="voice_consent_title">声の登録には別途同意が必要です</string>
-    <string name="voice_consent_body">登録した声は、音声プロフィールの作成、アラーム文言の読み上げ、アラーム再生と端末へのキャッシュに使われます。音声クローンと読み上げは音声AIプロバイダのElevenLabsを通じて処理され、その過程で声と文言が国外へ送信されます。AlarmTalkは声を公開検索・広告・データ販売に使わず、自社の汎用AIモデルの学習にも使いません。音声プロフィールはいつでも削除できます。</string>
+    <string name="voice_consent_body">登録した声は、音声プロフィールの作成、アラーム文言の読み上げ、アラーム再生と端末へのキャッシュに使われます。\n音声クローンと読み上げは音声AIプロバイダのElevenLabsを通じて処理され、その過程で声と文言が国外へ送信されます。\nAlarmTalkは声を公開検索・広告・データ販売に使わず、自社の汎用AIモデルの学習にも使いません。\n音声プロフィールはいつでも削除でき、削除すると声も一緒に削除されます。</string>
     <string name="voice_consent_check_biometric">自分の声(生体情報)を音声プロフィール作成・クローン・TTS生成に使用することに同意します。</string>
     <string name="voice_consent_check_overseas">音声AI処理のため、声と文言が国外(米国など)へ移転・処理されることに同意します。</string>
     <string name="voices_register_biometric_consent">音声生体情報の処理に同意します</string>
-    <string name="voices_register_biometric_desc">声は音声プロフィールの作成・クローン・読み上げに使われ、個人を識別・再現できる生体情報として扱われます。\n本人の声、または適法な権限と同意を得た人の声のみ登録できます（利用規約第7条）。\n声を削除すると一緒に削除され、「その他」からいつでも同意を撤回できます。</string>
+    <string name="voices_register_biometric_desc">声は個人を識別・再現できる生体情報として扱われます。\n本人の声、または適法な権限と同意を得た人の声のみ登録できます（利用規約第7条）。\n「その他」からいつでも同意を撤回できます。</string>
     <string name="voice_consent_cancel">キャンセル</string>
     <string name="auth_consent_expand">項目を開く</string>
     <string name="auth_consent_collapse">項目を閉じる</string>
@@ -651,7 +650,6 @@
     <string name="auth_consent_subtitle_updated">変更があった項目だけをまとめました。すでに同意済みの項目はそのまま維持されます。</string>
     <string name="tts_consent_title">アラーム文言の作成には同意が必要です</string>
     <string name="tts_consent_body">アラーム文言を音声にする際、文言と声は音声AIプロバイダ(ElevenLabs)と文言生成(Google、米国)を通じて処理されます。この過程でデータが国外へ送信されます。同意しなくてもアラーム自体は使えますが、読み上げアラームは作成できません。</string>
-    <string name="auth_consent_continue">続ける</string>
     <string name="onb_voice_title_failed">声を受け取れませんでした</string>
     <string name="msg_consent_update_required">同意を進めるにはアプリの更新が必要です。</string>
     <string name="consent_withdraw_action">同意を撤回</string>

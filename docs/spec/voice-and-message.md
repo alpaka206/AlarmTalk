@@ -272,7 +272,7 @@
 | --- | --- | --- |
 | 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원. 녹음은 멈추면 기기가 판정해 손상·입력 없음은 버리고, 작음·무음·클리핑은 묻는다(아래 「녹음 품질 판정」). 말소리가 거의 없으면 서버가 등록을 거절해 이 단계로 돌아온다(아래 「말소리가 없으면 등록하지 않는다」) |
 | 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, 알람 문구 언어 | **이름만 필수**. 이름 칸은 비워 시작하며 예시를 실제 이름으로 저장하지 않는다. 관계·호칭은 선택. '등록' 을 누를 때 빠진 법정 동의가 있으면 시트로 받는다 |
-| 생성 중 | 진행 표시와 설명만 — 본문 **한가운데**(가로·세로) | 서버 초안 생성 완료 |
+| 생성 중 | 진행 표시와 설명만 — 상단바 없이 화면 **한가운데**(가로·세로) | 서버 초안 생성 완료 |
 | 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
 | 오프라인 준비 | 서버 생성과 기기 다운로드를 합친 진행률 | 나가도 백그라운드에서 계속 |
 
@@ -475,16 +475,18 @@
   이 값이 미리듣기와 매일 사전렌더 문구의 언어가 된다.
 - 생성 중·미리듣기에서 그냥 나가면 임시 목소리가 남거나 사라진 이유를 알 수 없다.
   생성 중에는 이탈을 막고, 미리듣기에서는 삭제 결과를 명시한 확인을 거친다.
-- 앞의 네 단계는 양쪽 모두 **공용 상단바 + 스크롤 본문 + 고정 하단 행동** 골격을 쓴다. 본문은 상단바 아래
+- 음원 준비·세부 정보·미리듣기 세 단계는 양쪽 모두 **공용 상단바 + 스크롤 본문 + 고정 하단 행동** 골격을 쓴다. 본문은 상단바 아래
   **24** 에서 시작한다 — 앱 전체 상단바가 같은 값을 갖는다(안드로이드 `WakerTopBarBottomGap`, iOS `WakerTopBar`. 2026-11-15
   오너: "상단 간격을 전체로 늘려서 공통으로 같도록 해줘 모든 곳에서" — 16 일 때 첫 칸·세그먼트가 뒤로가기 줄에 붙어 보였다).
   화면마다 본문 위에 여백을 따로 더하지 않는다. 뒤로가기는 동그라미 없는 화살표 하나다(같은 날 — 누르는 범위는 그대로).
   iOS 에서 시스템 내비게이션 바를 쓰는 하위 화면(설정·편집기 하위 화면 등)은 시스템이 그리는 뒤로가기·간격 그대로다.
   상단바는 `목소리 만들기`를 가운데 두고, 음원 준비에서는 목록으로 나가며 세부 정보에서는
-  음원 준비로 돌아간다. 생성 중에는 뒤로가기를 숨기고 진행 블록을 본문 **한가운데**(가로·세로)에 둔다
-  — 고를 것도 입력할 것도 없는 대기 화면이라 스크롤 본문 맨 위에 두면 위로 붙어 비어 보였다(2026-11-15 오너,
-  안드로이드 `bodyFillsHeight`·iOS `creatingSection`). 미리듣기·확정에서는 초안 삭제 경고를
+  음원 준비로 돌아간다. 미리듣기·확정에서는 초안 삭제 경고를
   거친다. 같은 일을 하는 하단 `이전`이나 별도 X를 함께 두지 않는다.
+- **생성 중은 상단바를 그리지 않는다**(2026-11-15 오너 — 뒤로가기가 없는 자리라 제목만 떠 있었다. 아래 오프라인 준비와
+  같은 이유다). 진행 블록을 화면 **한가운데**(가로·세로)에 두고 하단 행동도 없다 — 고를 것도 입력할 것도 없는 대기
+  화면이라 스크롤 본문 맨 위에 두면 위로 붙어 비어 보였다(같은 날, 안드로이드 `bodyFillsHeight`·iOS `creatingSection`).
+  이탈은 그대로 막는다(위).
 - **세부 정보의 칸은 위에 라벨을 둔다**(2026-11-15 오너: "목소리 만들기 입력하는곳 디자인 시안 저게 최선일까? / 위에랑
   왜이렇게 붙어있어"). 칸 안에 떠 있는 M3 라벨을 쓰지 않는다 — 첫 칸 라벨이 상단바 쪽으로 올라가 붙어 보였고, 빈 칸만 라벨이
   칸 안에 들어가 칸마다 모양이 달랐다(안드로이드만 그랬다 — iOS·가입 화면은 처음부터 위 라벨이었다). 라벨은 12 · 굵게 · 흐린
@@ -2983,6 +2985,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
 | 확정 화면 = 제목 아래 말투 안내 한 문장 · 문구 카드에 재생 버튼 없음 · 교체는 체크 없이 제목 크기 한 줄 · 월 한도 경고 없음 | `VoiceProfileManagementPanel` Preview(`replaceTargetVoice` → `voices_confirm_replace_body`, `voices_preview_edit_hint`); `VoiceRegistrationCopyTest` | `VoicePreviewConfirmView`(`registeredVoice`) · `Localizable.xcstrings` | — |
+| 생성 중 배치 — 상단바 없음 · 블록 화면 가운데 · 하단 행동 없음 | `VoiceProfileManagementPanel.kt` 의 `currentStep != VoiceRegistrationStep.Creating` 조건 · `bodyFillsHeight` | `VoiceCloneUploadFlow` 의 `registrationStep != .creating` 조건 · `creatingSection` | — |
 | 오프라인 준비 배치 — 제목 없음 · 블록 가운데 · '백그라운드에서 계속' 맨 아래 | `VoiceProfileManagementPanel.kt` `VoiceClipPreparationStep` | `ClipPreparationView.registrationPreparation`; `AlarmTalkUITests/VoicePreparationScreenshotUITests` | — |
 | 제자리 교체의 갱신 신호는 재렌더가 다 게시된 뒤 · 주인의 기기에만(`voice_share_changed` — 이름은 그대로) | `fcm/AlarmTalkMessagingService.kt` → `StockClipPrefetchWorker.enqueue` · `AppSignals.voiceShareChanged` → `AlarmTalkApp` 의 `loadStockClips(ManifestNeed.LATEST)` | `PushNotificationCoordinator` 의 `.voiceShareChanged` → `onVoiceChanged` | `lib/stock-clips.ts` 의 재렌더 완료 알림 → `lib/fcm.ts` `sendVoiceShareChangedPush`(주인 한 명) |
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |

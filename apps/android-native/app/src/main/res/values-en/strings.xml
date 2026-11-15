@@ -7,7 +7,6 @@
     <string name="auth_confirm_password_show">Show confirm password</string>
     <string name="auth_consent_age14">[Required] I am 14 or older</string>
     <string name="auth_consent_agree_all">Agree to all</string>
-    <string name="auth_consent_agree_and_start">Agree and start</string>
     <string name="auth_consent_marketing">[Optional] Agree to receive marketing messages</string>
     <string name="auth_consent_overseas_transfer">[Required] Agree to overseas transfer for voice AI processing</string>
     <string name="auth_consent_overseas_transfer_desc">Voice, alarm text, and fortune inputs may be sent to overseas processors such as ElevenLabs and Google Vertex for voice AI, translation, and dynamic prompt processing.</string>
@@ -474,7 +473,7 @@
     <string name="voicesr_preview">Preview</string>
     <string name="voicesr_relationship_custom_placeholder">e.g. granddaughter, partner, coworker</string>
     <string name="voicesr_relationship_label_required">Relationship to you (optional)</string>
-    <string name="voicesr_relationship_placeholder">Please select a relationship</string>
+    <string name="voicesr_relationship_placeholder">e.g. Mom, friend</string>
     <string name="voicesr_required_field">This field is required.</string>
     <string name="voicesr_save">Save</string>
     <string name="voicesr_status_creating">Creating</string>
@@ -638,11 +637,11 @@
     <string name="voices_system_voices_title">Default voices</string>
     <string name="voicesr_preview_stop">Stop</string>
     <string name="voice_consent_title">Registering a voice needs a separate consent</string>
-    <string name="voice_consent_body">A registered voice is used to create a voice profile, read alarm lines aloud, play alarms, and cache audio on this device. Voice cloning and text-to-speech run through our voice AI provider ElevenLabs, and your voice and text are sent overseas as part of that. AlarmTalk does not use your voice for public search, advertising, or data sales, and does not train its own general-purpose AI models on it. You can delete a voice profile at any time.</string>
+    <string name="voice_consent_body">A registered voice is used to create a voice profile, read alarm lines aloud, play alarms, and cache audio on this device.\nVoice cloning and text-to-speech run through our voice AI provider ElevenLabs, and your voice and text are sent overseas as part of that.\nAlarmTalk does not use your voice for public search, advertising, or data sales, and does not train its own general-purpose AI models on it.\nYou can delete a voice profile at any time, and deleting it also deletes the voice.</string>
     <string name="voice_consent_check_biometric">I consent to my voice (biometric information) being used to create a voice profile, clone the voice, and generate speech.</string>
     <string name="voice_consent_check_overseas">I consent to my voice and text being transferred and processed overseas (including the United States) for voice AI processing.</string>
     <string name="voices_register_biometric_consent">I agree to voice biometric processing</string>
-    <string name="voices_register_biometric_desc">Your voice is used to create voice profiles, clone voices, and read alarms aloud. It is treated as biometric information that can identify or reproduce a person.\nOnly register your own voice or a voice for which you have lawful authority and consent (Terms of Service, Article 7).\nDeleting the voice also deletes this data. You can withdraw consent at any time in More.</string>
+    <string name="voices_register_biometric_desc">Your voice is treated as biometric information that can identify or reproduce a person.\nOnly register your own voice or a voice for which you have lawful authority and consent (Terms of Service, Article 7).\nYou can withdraw consent at any time in More.</string>
     <string name="voice_consent_cancel">Cancel</string>
     <string name="auth_consent_expand">Expand item</string>
     <string name="auth_consent_collapse">Collapse item</string>
@@ -651,7 +650,6 @@
     <string name="auth_consent_subtitle_updated">Only the items that changed are listed below. Everything you already agreed to stays as it is.</string>
     <string name="tts_consent_title">Creating a spoken alarm needs your consent</string>
     <string name="tts_consent_body">When an alarm line is turned into speech, the text and voice are processed by our voice AI provider (ElevenLabs) and by text generation (Google, United States). That means the data is sent overseas. You can keep using alarms without agreeing, but you will not be able to create spoken alarms.</string>
-    <string name="auth_consent_continue">Continue</string>
     <string name="onb_voice_title_failed">We could not get the voices</string>
     <string name="msg_consent_update_required">Update the app to continue with consent.</string>
     <string name="consent_withdraw_action">Withdraw consent</string>

@@ -136,9 +136,9 @@ enum UIPreviewSeed {
         #endif
     }
 
-    /// 목소리 등록 화면을 그 단계로 바로 연다 — `-UIPreviewVoiceClone source|details`. 화면 확인용.
+    /// 목소리 등록 화면을 그 단계로 바로 연다 — `-UIPreviewVoiceClone source|details|creating`. 화면 확인용.
     /// 세부 정보는 녹음 12초를 마쳐야 넘어가 시뮬레이터에서는 눈으로 볼 길이 없었다(`-UIPreviewVoicePrep` 와 같은 이유).
-    /// 녹음이 없으니 '등록' 은 꺼진 채다(배치만 본다).
+    /// 녹음이 없으니 '등록' 은 꺼진 채다(배치만 본다). `creating` 은 '만드는 중' 화면만 띄우고 아무것도 만들지 않는다.
     static var voiceCloneStep: String? {
         #if DEBUG
         return argValue("-UIPreviewVoiceClone")

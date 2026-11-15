@@ -128,7 +128,6 @@ internal fun ConsentScreen(
     // 유형(서버가 새 유형을 먼저 추가한 구간)은 그려지지 않지만 아래 when 의 else 에서
     // 막혀 CTA 가 켜지지 않아야 한다 — 목록을 좁히면 그 방어가 사라진다.
     val requiredShown = collect.filter { it !in optionalTypes }
-    val shownRequired = requiredShown.isNotEmpty()
     // '전체 동의' 가 실제로 다루는 집합 — **선택까지 포함**한다(2026-08-18 결정).
     // 라벨이 '필수 약관 전체 동의' 라 '전체' 라고 써 놓고 일부만 켜는 화면이었다.
     // 개별 체크박스와 [필수]/[선택] 표기는 그대로라 선택을 따로 끌 수 있다(제22조제5항).
@@ -291,16 +290,15 @@ internal fun ConsentScreen(
             }
             Box(Modifier.padding(vertical = 16.dp)) {
                 GradientCta(
-                    // 받을 게 선택 동의뿐이면 '동의하고 시작하기' 라고 하면 안 된다 —
-                    // 체크를 안 한 채 눌러도 눌리는데(선택이라 통과 조건이 아니다), 그때
-                    // 기록되는 값은 '거절' 이다. 화면은 동의한다고 말하고 기록은 거절이라고
-                    // 남는 어긋남이 생긴다. 필수가 하나도 없으면 중립 문구를 쓴다.
+                    // '확인' 하나다(2026-11-15 오너: "확인으로 통일해") — 목소리 등록 동의 시트(`VoiceConsentSheet`)와 같다.
+                    // 동의는 체크가 하고 이 버튼은 그 체크를 낸다. 예전에는 '동의하고 시작하기'(필수가 있을 때)와
+                    // '계속하기'(선택뿐일 때)로 갈랐다 — 선택은 체크 없이 눌러도 눌리고 그때 기록되는 값은 '거절' 이라,
+                    // 동의한다고 말하면 기록과 어긋났다. '확인' 은 동의도 거절도 말하지 않아 가를 일이 없다.
+                    // iOS `ConsentView` 와 같다.
                     text = if (busy) {
                         stringResource(R.string.auth_consent_processing)
-                    } else if (shownRequired) {
-                        stringResource(R.string.auth_consent_agree_and_start)
                     } else {
-                        stringResource(R.string.auth_consent_continue)
+                        stringResource(R.string.auth_confirm)
                     },
                     onClick = { onAgree(agreedOptional) },
                     // 그릴 항목이 하나도 없으면 동의할 대상도 없다 — 빈 화면에서 버튼이

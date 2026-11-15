@@ -655,7 +655,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 - **화면 확인 모드**: `-UIPreviewSeed`(가짜 세션·알람·목소리) + `-UIPreviewTab
   alarms|voices|menu` + `-UIPreviewEditor` + `-UIPreviewAuthScreen login|register` + `-UIPreviewUpdateRequired`
   + `-UIPreviewConsentSheet voice_biometric`(목소리 등록 동의 시트 — 물을 민감 동의 유형을 쉼표로).
-  + `-UIPreviewVoiceClone details`(목소리 등록 화면을 그 단계로 — `source`·`details`, 함께 `-UIPreviewTab voices`).
+  + `-UIPreviewVoiceClone details`(목소리 등록 화면을 그 단계로 — `source`·`details`·`creating`, 함께 `-UIPreviewTab voices`).
   DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이
   없어서 만든 진입점이다.
 
