@@ -498,6 +498,11 @@ internal fun VoiceProfileManagementPanel(
     // 왔음을 구분해, 플로우를 닫는 대신 '목소리 생성 중' 스텝으로 잇는다.
     var promotedForPrerenderId by remember { mutableStateOf<String?>(null) }
     var confirmPreviewBusy by remember { mutableStateOf(false) }
+    // 톤 카드를 그리는가 — 첫 미리듣기 준비가 **끝난 뒤**에만 그린다(2026-11-15 오너: "목소리 등록 확인 화면 준비중일때는 톤
+    // 조절도 완성되었을때 뜨게 해줘"). 받는 동안 그리면 막대가 기본값에 있다가 추천값으로 튄다. 실패로 끝나도 그린다 — 그때는
+    // 톤 카드의 듣기 버튼이 다시 받는 길이다. 한 번 켜면 문구를 고쳐 다시 받는 동안에도 끄지 않는다(사라졌다 나타나지 않게).
+    // iOS `VoicePreviewConfirmView.tuningCardShown` 과 같다.
+    var confirmToneCardShown by remember { mutableStateOf(false) }
     var confirmPreviewPlaying by remember { mutableStateOf(false) }
     var confirmPreviewCompleted by remember { mutableStateOf(false) }
     // 첫 미리듣기의 세대 — 문구를 고치면 오른다. 확인 요청이 그 사이 늦게 돌아오면 옛 클립의 '들었다' 로 새 클립의
@@ -1198,6 +1203,8 @@ internal fun VoiceProfileManagementPanel(
                 localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
             }.getOrDefault(false)
             confirmPreviewBusy = false
+            // 첫 준비가 끝났다(성공이면 추천값을 잰 뒤다) — 이제 톤 카드를 그린다. 받는 사이 초안이 바뀌었으면 그 초안의 몫이 아니다.
+            if (previewGeneration == confirmPreviewGeneration) confirmToneCardShown = true
             // 받는 사이 누른 버튼(진행 표시가 도는 버튼을 눌러 비웠으면 받기만 한다)의 소리를 처음부터 튼다 — 굽기·재생·
             // 끝까지 들은 뒤의 청취 확인은 기기에서 다시 트는 길과 같다. 실패했으면 아무것도 틀지 않는다 — 누른 버튼이
             // '준비 중' 으로 남지 않게 비운다.
@@ -1483,6 +1490,7 @@ internal fun VoiceProfileManagementPanel(
         confirmPreviewBusy = false
         confirmPreviewPlaying = false
         confirmPreviewText = null
+        confirmToneCardShown = false
         confirmPreviewEditing = false
         confirmPreviewEditText = ""
         confirmPreviewSaving = false
@@ -1562,6 +1570,7 @@ internal fun VoiceProfileManagementPanel(
                     confirmPreviewCompleted = false
                     heardTunings = emptySet()
                     confirmPreviewText = null
+                    confirmToneCardShown = false
                     confirmPreviewEditing = false
                     confirmPreviewEditText = ""
                     confirmPreviewAudioUri = null
@@ -2389,7 +2398,9 @@ internal fun VoiceProfileManagementPanel(
                                     Modifier.verticalScroll(contentScrollState)
                                 },
                             )
-                            .padding(horizontal = 20.dp),
+                            // 상단바 아래 기본 간격(16)에 8 을 더 둔다 — 첫 칸·세그먼트가 뒤로가기 줄에 붙어 보였다(2026-11-15 오너:
+                            // "상단에 뒤오가기 버튼 있는거에도 사이에 공간을 좀 두고"). iOS 등록·확인 화면도 같은 8 이다.
+                            .padding(start = 20.dp, end = 20.dp, top = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         when (currentStep) {
@@ -2734,17 +2745,20 @@ internal fun VoiceProfileManagementPanel(
                                     // 톤 조절 — 손을 떼면 그 높이로 메모리에서 굽고 처음부터 다시 튼다(첫 청취 확인
                                     // 전 재생 도중이면 그게 끝난 뒤 — `replayTunedPreviewIfReady`). 카드 안 하단의
                                     // `원본 듣기`·`현재 톤 듣기` 가 이 화면의 재생 버튼이다(`onTuningListen`).
-                                    VoiceTuningCard(
-                                        tuning = previewTuning,
-                                        // 서버에서 받는 동안·청취 확인 중에는 잠그지 않는다 — 받는 동안 누른 버튼이 받은
-                                        // 뒤에 튼다. 문구를 고치는 동안과 등록 확정·초안 삭제 중에만 잠근다(잠금표).
-                                        enabled = confirmLocks.toneEnabled,
-                                        listenTarget = tuningListenTarget,
-                                        listenPreparing = !confirmPreviewPlaying,
-                                        onTuningChange = { updated -> previewTuning = updated },
-                                        onAdjustFinished = { replayTunedPreviewIfReady() },
-                                        onListen = { target -> onTuningListen(previewVoice, target) },
-                                    )
+                                    // 첫 준비가 끝난 뒤에만 그린다(`confirmToneCardShown`).
+                                    AnimatedVisibility(visible = confirmToneCardShown, enter = fadeIn(), exit = fadeOut()) {
+                                        VoiceTuningCard(
+                                            tuning = previewTuning,
+                                            // 서버에서 받는 동안·청취 확인 중에는 잠그지 않는다 — 받는 동안 누른 버튼이 받은
+                                            // 뒤에 튼다. 문구를 고치는 동안과 등록 확정·초안 삭제 중에만 잠근다(잠금표).
+                                            enabled = confirmLocks.toneEnabled,
+                                            listenTarget = tuningListenTarget,
+                                            listenPreparing = !confirmPreviewPlaying,
+                                            onTuningChange = { updated -> previewTuning = updated },
+                                            onAdjustFinished = { replayTunedPreviewIfReady() },
+                                            onListen = { target -> onTuningListen(previewVoice, target) },
+                                        )
+                                    }
 
                                     // 교체 한 줄 — 톤 카드 바로 아래. **이미 등록된 목소리가 있을 때만** 낸다 — 그때 이
                                     // 화면의 저장은 언제나 교체다(2026-10-08 사용자: 체크 상자·설명 없이 제목 크기의 이

@@ -46,6 +46,10 @@ struct VoicePreviewConfirmView: View {
     @State private var busy = false
     /// 첫 미리듣기 요청이 끝났는지. 빈 문자열을 로딩과 실패로 구분한다.
     @State private var previewAttempted = false
+    /// 톤 카드를 그리는가 — 첫 미리듣기 준비가 **끝난 뒤**에만 그린다(2026-11-15 오너: "목소리 등록 확인 화면 준비중일때는 톤
+    /// 조절도 완성되었을때 뜨게 해줘"). 받는 동안 그리면 막대가 기본값에 있다가 추천값으로 튄다. 실패로 끝나도 그린다 — 그때는
+    /// 톤 카드의 듣기 버튼이 다시 받는 길이다. 한 번 켜면 다시 받는 동안에도 끄지 않는다. 안드로이드 `confirmToneCardShown` 과 같다.
+    @State private var tuningCardShown = false
     /// 서버가 청취(끝까지 들음)를 기록했는가. 문구를 고치면 `false` 로 되돌린다.
     @State private var listened = false
     @State private var errorMessage: String?
@@ -141,7 +145,9 @@ struct VoicePreviewConfirmView: View {
                     }
 
                     previewCard
-                    tuningCard
+                    if tuningCardShown {
+                        tuningCard.transition(.opacity)
+                    }
                     replaceNotice
 
                     // 이 화면의 오류(재생·청취 확인·문구 저장·등록 실패)는 교체 줄 바로 아래에 오류 색으로
@@ -154,6 +160,8 @@ struct VoicePreviewConfirmView: View {
                     Spacer(minLength: 4)
                 }
                 .padding(.horizontal, 20)
+                // 상단바 아래 기본 간격(16)에 8 을 더 둔다(2026-11-15 오너) — 등록 화면(`VoiceCloneUploadFlow`)·안드로이드와 같다.
+                .padding(.top, 8)
             }
             actions
         }
@@ -720,12 +728,16 @@ struct VoicePreviewConfirmView: View {
             fetching = false
             pendingPlayKind = nil
             errorMessage = message
+            // 실패로 끝나도 톤 카드를 그린다 — 그 듣기 버튼이 다시 받는 길이다.
+            withAnimation(.easeOut(duration: 0.2)) { tuningCardShown = true }
         case .ready(let clip):
             // 소리가 날 때 글자도 같이 보인다(2026-09-19 지시) — 재고 굽는 틈은 짧다.
             if !clip.text.isEmpty { previewText = clip.text }
             await prepareTuning(for: clip.url)
             fetching = false
             install(clip)
+            // 추천값을 잰 뒤라 막대가 튀지 않는다 — 이제 톤 카드를 그린다.
+            withAnimation(.easeOut(duration: 0.2)) { tuningCardShown = true }
             let next = pendingPlayKind
             pendingPlayKind = nil
             // 받는 사이 화면을 떠났으면 틀지 않는다 — 화면 밖에서 소리가 난다(Codex #870).
