@@ -32,11 +32,13 @@ struct VoicePlayModePicker: View {
             }
         }
         .padding(4)
+        // 안드로이드 `EditorSegmentedSelector` 와 같은 바탕·테두리다 — surfaceVariant 55% · `wakerCardBorder`(카드와 같은 선).
+        // 2026-11-15 전까지 iOS 만 44% · outlineVariant 62% 라 카드들 사이에서 이 칸만 흐렸다.
         .background(
-            trackShape.fill(theme.palette.surfaceVariant.opacity(0.44))
+            trackShape.fill(theme.palette.surfaceVariant.opacity(0.55))
         )
         .overlay(
-            trackShape.stroke(theme.palette.outlineVariant.opacity(0.62), lineWidth: 1)
+            trackShape.stroke(theme.palette.cardBorder, lineWidth: 1)
         )
     }
 

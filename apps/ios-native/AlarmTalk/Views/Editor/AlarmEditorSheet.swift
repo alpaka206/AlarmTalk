@@ -307,9 +307,11 @@ struct AlarmEditorSheet: View {
                     // ⚠ **`bodySmall` 로 되돌리지 말 것**(2026-08-11 지적 "너무 작아 보인다").
                     // 이 줄은 카드의 **제목 역할**이다 — '매주 : 수' / '내일 - 8월 12일 (수)' 는
                     // 이 카드가 무엇인지 말하는 첫 줄이라, 보조 설명 크기로 두면 읽히지 않는다.
-                    .font(theme.typography.bodyLarge)
+                    // 안드로이드 `ui/editor/AlarmEditorControls.kt` 의 반복 요약과 같다 — titleMedium · SemiBold · onSurface(2026-11-15 전까지
+                    // iOS 만 bodyLarge · 회색이었다).
+                    .font(theme.typography.titleMedium)
                     .fontWeight(.semibold)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .foregroundStyle(theme.palette.onSurface)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 10)
                     .accessibilityLabel(Text(String(localized: "반복 \(String(repeatSummary))")))
@@ -953,8 +955,10 @@ struct AlarmEditorSheet: View {
         let mask = draft.repeatDaysMask
         if mask == 0x7f { return String(localized: "매일") }
         if mask != 0 {
-            let days: String = mask.repeatDays.map(\.shortLabel).joined(separator: " ")
-            return String(localized: "매주: \(days)")
+            // 안드로이드 `editor2_repeat_weekly`('매주 %1$s', 요일은 ', ' 로 잇는다)와 같은 꼴이다 — 2026-11-15 전까지
+            // iOS 만 '매주: 월 수' 였다.
+            let days: String = mask.repeatDays.map(\.shortLabel).joined(separator: ", ")
+            return String(localized: "매주 \(days)")
         }
         // mask == 0 : 한 번만 — 다음 발화 날짜를 보여준다(공휴일 OFF 는 의미 없지만 계산은 동일).
         let fireAt = draftFireAtMillis(now: Int64(Date().timeIntervalSince1970 * 1000))

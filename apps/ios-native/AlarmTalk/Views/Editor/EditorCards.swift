@@ -7,14 +7,15 @@ struct EditorSectionTitle: View {
 
     var body: some View {
         Text(text)
+            // 안드로이드 `EditorSectionTitle` 과 같다 — titleSmall · SemiBold · onSurfaceVariant(2026-11-15 전까지 iOS 만 흰 굵은 글자).
             .font(theme.typography.titleSmall)
-            .fontWeight(.bold)
-            .foregroundStyle(theme.palette.onSurface)
+            .fontWeight(.semibold)
+            .foregroundStyle(theme.palette.onSurfaceVariant)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// 편집기 카드 표면 — `WakerCardShape`(22) + surface + outlineVariant 1pt.
+/// 편집기 카드 표면 — `WakerCardShape`(22) + surface + cardBorder 1pt(안드로이드 `wakerCardBorder` — 다크 #5A6A9C, 홈 카드와 같은 선).
 ///
 /// ⚠ **iOS 기본 `Form`/`Section` 으로 돌아가지 말 것.** `Form` 은 iOS 표준 그룹 목록
 /// 모양을 강제해(회색 배경 위 흰 그룹, 자체 여백·구분선) 안드로이드의 Waker 카드와
@@ -37,7 +38,7 @@ struct EditorCard<Content: View>: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                .stroke(theme.palette.cardBorder, lineWidth: 1)
         )
     }
 }

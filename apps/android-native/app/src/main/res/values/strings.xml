@@ -533,7 +533,7 @@
     <string name="editor2_repeat_weekly">매주 %1$s</string>
     <string name="editor2_repeat_today">오늘 · %1$s</string>
     <string name="editor2_repeat_tomorrow">내일 · %1$s</string>
-    <string name="editor2_date_label">%1$d월 %2$d일(%3$s)</string>
+    <string name="editor2_date_label">%1$d월 %2$d일 (%3$s)</string>
     <string name="editor2_weekday_sun">일</string>
     <string name="editor2_weekday_mon">월</string>
     <string name="editor2_weekday_tue">화</string>

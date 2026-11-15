@@ -11577,19 +11577,19 @@
         }
       }
     },
-    "매주: %@" : {
+    "매주 %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Every week: %@"
+            "value" : "Every %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "毎週：%@"
+            "value" : "毎週 %@"
           }
         }
       }

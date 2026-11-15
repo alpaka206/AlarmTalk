@@ -222,6 +222,14 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   **18**(`WakerButtonShape`). '취소' 는 테두리(`outline`)만 있고 글자는 `primary`, '저장' 은 `primary` 채움에
   `onPrimary` 글자. 저장 중에는 둘 다 잠기고 저장 버튼은 잠긴 색(`surfaceVariant`/`onSurfaceVariant`)이다.
   iOS 는 눌리는 영역만 44 로 둔다(그려지는 버튼은 40).
+- 배경: 두 앱 모두 밤하늘 그라데이션(`homeGradientBrush` / `homeGradientBackground`). 2026-11-15 두 기기 화면 대조 전까지는
+  안드로이드 편집기만 칠하지 않아 단색이었다 — 같은 알파 0.18 의 휠 이웃 숫자가 두 앱에서 다른 색으로 보인 까닭 중 하나다.
+- 카드와 재생 방식 칸의 테두리는 **카드 테두리**(`wakerCardBorder` / `cardBorder`, 다크 #5A6A9C — 홈 카드와 같은 선),
+  재생 방식 칸 바탕은 surfaceVariant 55%. 카드 안 구분선·요일 칩 테두리는 `outlineVariant` 그대로다.
+- 섹션 제목('재생 방식'·'세부 설정')은 titleSmall · SemiBold · `onSurfaceVariant`. 반복 요약(카드 첫 줄)은
+  titleMedium · SemiBold · `onSurface`.
+- 반복 요약 표기: '매일' / '매주 월, 수'(요일은 ', ' 로 잇는다) / '내일 · 11월 16일 (월)'(괄호 앞을 띄운다 — 홈 목록과
+  같은 꼴). 2026-11-15 전까지 iOS 는 '매주: 월 수', 안드로이드 편집기는 '16일(월)' 이었다.
 
 ## 6. 저장 버튼 — 파일을 읽는 확인은 **메인 밖에서, 저장 잠금 안에서** (안드로이드, 2026-10-11)
 

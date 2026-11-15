@@ -20,6 +20,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1811,6 +1812,9 @@ internal fun AlarmEditorScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // 다른 탭·하위 화면과 같은 밤하늘 그라데이션이다(CLAUDE.md 디자인 토큰 — `homeGradientBrush` 는 모든 탭과 하위
+            // 전체화면). 2026-11-15 전까지 편집기만 칠하지 않아 단색 배경이었고, iOS 편집기와 휠 숫자 색이 달라 보였다.
+            .background(homeGradientBrush())
             // ⚠ **입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시).
             // 스크롤 컨테이너가 탭을 소비하므로 **뒤에 깐 레이어로는 닿지 않는다** —
             // 부모에 걸어 Final 패스에서 '아무도 소비하지 않은 탭' 만 받는다
