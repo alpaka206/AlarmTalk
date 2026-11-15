@@ -1,6 +1,9 @@
 import SwiftUI
 
-/// 인증 화면군의 **주 버튼** — 브랜드 가로 그라데이션 알약.
+/// 인증 화면군의 **주 버튼** — 하늘색 바탕(`AuthSceneColors.accent`)에 남색 글씨(`onAccent`).
+///
+/// ⚠ **2026-11-16 에 그라데이션을 걷었다**(오너, 캔버스 '고르기 · 업데이트 버튼' B안). 파랑→하늘 그라데이션에 흰 글씨는
+/// 글자가 놓인 가운데 대비가 3:1 정도였다(오른쪽 끝 2.3:1). 이름은 옛 그대로 둔다.
 ///
 /// 안드로이드 `ui/auth/LandingScreen.kt` 의 `GradientCta`. 랜딩('시작하기')·
 /// 로그인/가입·약관 동의·비밀번호 재설정 네 화면이 같은 버튼을 쓴다.
@@ -27,13 +30,13 @@ struct GradientCta: View {
                 Text(title)
                     .font(theme.typography.titleMedium)
                     .fontWeight(.bold)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AuthSceneColors.onAccent)
                     .opacity(loading ? 0 : 1)
 
                 if loading {
                     ProgressView()
                         .progressViewStyle(.circular)
-                        .tint(.white)
+                        .tint(AuthSceneColors.onAccent)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 56)
@@ -44,12 +47,7 @@ struct GradientCta: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(
-            LinearGradient(
-                colors: [AuthSceneColors.ctaStart, AuthSceneColors.ctaEnd],
-                startPoint: .leading, endPoint: .trailing
-            )
-        )
+        .background(AuthSceneColors.accent)
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
         // 안드로이드와 같은 값으로 버튼 전체를 흐린다 — 회색으로 바꾸지 않는다.
         // ⚠ 0.45 로 되돌리지 말 것(2026-08-17): 채움과 흰 글자가 **같이** 흐려져

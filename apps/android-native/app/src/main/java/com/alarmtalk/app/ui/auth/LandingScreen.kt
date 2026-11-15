@@ -54,7 +54,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -84,8 +83,11 @@ import kotlinx.coroutines.delay
 private val LandingSkyTop = Color(0xFF0A2968)
 private val LandingSeaBottom = Color(0xFF031236)
 
-private val BrandCtaStart = Color(0xFF3D74FF)
-private val BrandCtaEnd = Color(0xFF45B4F5)
+/**
+ * 인증 화면군 주 버튼([GradientCta])의 글자색 — 하늘색 바탕([BrandAccentOnScene]) 위의 남색. 대비 11.6:1.
+ * 동의 화면 체크 칸의 체크 표시와 같은 색이다. iOS `AuthSceneColors.onAccent`.
+ */
+internal val TextOnBrandAccent = Color(0xFF0A1428)
 // 밤하늘 위 유리 면 — 랜딩 미리듣기 상자와 '업데이트가 필요해요' 화면(`UpdateRequiredScreen`)이 같이 쓴다. iOS `AuthSceneColors.glassFill`·`glassBorder`.
 internal val GlassFill = Color(0x21FFFFFF)
 internal val GlassBorder = Color(0x2EFFFFFF)
@@ -476,7 +478,9 @@ internal fun GradientCta(text: String, onClick: () -> Unit, enabled: Boolean = t
                 // 그래서 **최소 높이는 여기서만** 정하고 세로는 내용에 맞춘다 — 한 줄이면
                 // 56dp, 글꼴이 커져 두 줄이 되면 그만큼만 자란다.
                 .heightIn(min = 56.dp)
-                .background(Brush.horizontalGradient(listOf(BrandCtaStart, BrandCtaEnd))),
+                // ⚠ **하늘색 바탕에 남색 글씨다**(2026-11-16 오너, 캔버스 '고르기 · 업데이트 버튼' B안). 예전의 파랑→하늘
+                // 그라데이션에 흰 글씨는 글자가 놓인 가운데 대비가 3:1 정도였다(오른쪽 끝 2.3:1). 이름은 옛 그대로 둔다.
+                .background(BrandAccentOnScene),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -484,7 +488,7 @@ internal fun GradientCta(text: String, onClick: () -> Unit, enabled: Boolean = t
                 // 자랐을 때 글자가 위아래에 닿지 않도록.
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                 style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFFFFFFFF),
+                color = TextOnBrandAccent,
                 fontWeight = FontWeight.Bold,
             )
         }

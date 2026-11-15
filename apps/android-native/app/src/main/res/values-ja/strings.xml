@@ -119,6 +119,7 @@
     <string name="common_google_continue">Googleで続ける</string>
     <string name="common_google_login">Googleでログイン</string>
     <string name="common_permission_gate_allow_action">許可する</string>
+    <string name="common_permission_gate_close_app">閉じる</string>
     <string name="common_permission_gate_exact_alarm_title">正確なアラームの権限を許可するとアラームを設定できます</string>
     <string name="common_permission_gate_full_screen_title">ロック画面の権限を許可するとアラームを設定できます</string>
     <string name="common_permission_gate_mic_title">マイクの権限が必要です</string>
@@ -290,9 +291,6 @@
     <string name="hs_status_inactive">すべてのアラームがオフです。</string>
     <string name="hs_status_no_alarm">アラームがありません。</string>
     <string name="hs_status_ring_in">%1$s後に鳴ります。</string>
-    <string name="hs_perm_banner_notifications">通知の権限を許可しないと、アラームの通知が表示されません</string>
-    <string name="hs_perm_banner_exact_alarm">正確なアラームの権限を許可しないと、時間どおりに鳴らないことがあります</string>
-    <string name="hs_perm_banner_full_screen">ロック画面の権限を許可しないと、ロック画面に表示されません</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$sの声</string>
     <string name="msg_account_deletion_request_failed">退会の申請に失敗しました。</string>
     <string name="msg_account_left_pending_deletion">退会申請中のアカウントのため、この端末でもログアウトしました。もう一度ログインすると退会が取り消されます。</string>

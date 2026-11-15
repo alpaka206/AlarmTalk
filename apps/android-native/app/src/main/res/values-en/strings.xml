@@ -119,6 +119,7 @@
     <string name="common_google_continue">Continue with Google</string>
     <string name="common_google_login">Sign in with Google</string>
     <string name="common_permission_gate_allow_action">Allow</string>
+    <string name="common_permission_gate_close_app">Close</string>
     <string name="common_permission_gate_exact_alarm_title">Allow exact alarm permission to set alarms</string>
     <string name="common_permission_gate_full_screen_title">Allow lock screen permission to set alarms</string>
     <string name="common_permission_gate_mic_title">Microphone permission needed</string>
@@ -290,9 +291,6 @@
     <string name="hs_status_inactive">All alarms are off.</string>
     <string name="hs_status_no_alarm">No alarms yet.</string>
     <string name="hs_status_ring_in">Rings in %1$s.</string>
-    <string name="hs_perm_banner_notifications">Without notification permission, alarm notifications will not appear</string>
-    <string name="hs_perm_banner_exact_alarm">Without exact alarm permission, alarms may not ring on time</string>
-    <string name="hs_perm_banner_full_screen">Without lock screen permission, alarms will not appear on the lock screen</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s</string>
     <string name="msg_account_deletion_request_failed">Couldn\'t submit your account deletion request.</string>
     <string name="msg_account_left_pending_deletion">This account is scheduled for deletion, so you have been signed out on this device too. Sign in again to cancel the deletion.</string>

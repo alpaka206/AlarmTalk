@@ -354,7 +354,7 @@ private fun ConsentRow(
                 onCheckedChange = onCheckedChange,
                 colors = CheckboxDefaults.colors(
                     checkedColor = BrandAccentOnScene,
-                    checkmarkColor = Color(0xFF0A1428),
+                    checkmarkColor = TextOnBrandAccent,
                     uncheckedColor = AuthLine,
                 ),
             )

@@ -66,9 +66,8 @@ enum AuthSceneColors {
     static let glassFill = Color.white.opacity(0x21 / 255.0)
     static let glassBorder = Color.white.opacity(0x2E / 255.0)
 
-    /// `BrandCtaStart` → `BrandCtaEnd` — 인증 4개 화면이 공유하는 주 버튼 그라데이션.
-    static let ctaStart = Color.hex(0x3D74FF)
-    static let ctaEnd = Color.hex(0x45B4F5)
+    /// `TextOnBrandAccent` — 주 버튼(`GradientCta`)의 하늘색 바탕(`accent`) 위 남색 글씨. 대비 11.6:1.
+    static let onAccent = Color.hex(0x0A1428)
 
     fileprivate static let sceneTop = Color.hex(0x1A2A52)
     fileprivate static let sceneMid = Color.hex(0x0E1938)

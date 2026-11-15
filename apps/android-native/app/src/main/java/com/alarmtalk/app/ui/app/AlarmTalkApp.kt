@@ -1021,6 +1021,17 @@ internal fun AlarmTalkApp(
     val blockingGateActive =
         viewModel.updateRequired || viewModel.consentUnsupported || stockReplacementPending
 
+    // ⚠ **알람 권한이 모자라면 앱에 들어가지 못한다**(2026-11-16 오너: "권한 꺼져있으면 권한 게이트를 항상 켜두고 진입 못하게").
+    // 로그인·동의를 지나 본 화면에 들어서는 순간 게이트가 뜨고, 셋이 다 채워질 때까지 닫히지 않는다 — 위의 효과가 다음 권한으로
+    // 넘기고 다 채워지면 닫는다. 게이트의 '닫기' 는 앱을 끈다(`PermissionGateDialog`). 그래서 알람 목록 위 권한 배너는 없앴다.
+    // 차단 게이트(업데이트·교체)와 동의 화면이 먼저다 — 그 위에 겹쳐 뜨지 않는다. 다른 권한 요청(마이크)이 떠 있으면 기다린다.
+    val alarmPermissionGateDue = authSession != null && viewModel.consentChecked && !viewModel.showConsentScreen &&
+        !blockingGateActive && !permissions.alarmReady
+    LaunchedEffect(alarmPermissionGateDue, viewModel.permissionGateRequest) {
+        if (!alarmPermissionGateDue || viewModel.permissionGateRequest != null) return@LaunchedEffect
+        permissions.firstMissingAlarmTarget()?.let(viewModel::requestPermissionGate)
+    }
+
     // 동의 화면이 떠 있는 동안에는 그리지 않는다 — 위 트리거가 막지만, 다른 경로로 요청이
     // 세워졌을 때도 약관 화면 위에 권한 모달이 겹치는 일은 없어야 한다.
     viewModel.permissionGateRequest?.takeIf {
@@ -1641,7 +1652,6 @@ internal fun AlarmTalkApp(
                           onPurchasePlay = viewModel::startPlayPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onRestorePurchases = viewModel::restorePurchases,
-                          permissions = permissions,
                           onCreateAlarm = { requestCreateAlarm() },
                           onCreateAlarmWithVoice = { voiceId -> requestCreateAlarm(voiceId) },
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
@@ -1668,7 +1678,6 @@ internal fun AlarmTalkApp(
                               }
                           },
                           onDeleteAlarm = viewModel::deleteAlarm,
-                          onRequestAlarmPermission = ::requestPermission,
                           storeEntitledNow = viewModel.isStoreEntitledNow(),
                           planScreenPersonalPromo = viewModel.planScreenPersonalPromo(),
                       )
