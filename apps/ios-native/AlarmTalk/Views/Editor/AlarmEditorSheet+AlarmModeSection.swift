@@ -47,6 +47,7 @@ extension AlarmEditorSheet {
                         AlarmSettingRow(
                             title: String(localized: "alarm.editor.voice", defaultValue: "목소리"),
                             subtitle: voiceRowSubtitle,
+                            subtitleMuted: settlingSelectedVoiceName != nil,
                             onTap: { voiceSheetOpen = true }
                         )
                         // 화면 순회 캡처가 하단 탭바의 '목소리' 와 헷갈리지 않게 하는 식별자.

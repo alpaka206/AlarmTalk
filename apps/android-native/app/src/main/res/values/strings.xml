@@ -238,6 +238,7 @@
     <string name="editor_voice_output_title">목소리 크기</string>
     <string name="editor_voice_row_title">목소리</string>
     <string name="editor_voice_select">목소리 선택</string>
+    <string name="editor_voice_preparing_value">%1$s · 준비 중</string>
     <string name="editor_voice_select_title">목소리 고르기</string>
     <string name="editor_block_voice_settling_title">아직 준비 중이에요</string>
     <string name="msg_voice_replacement_settling">바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.</string>

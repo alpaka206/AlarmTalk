@@ -192,6 +192,11 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   수 없어요. 다른 목소리를 골라 주세요." 버튼은 죽이지 않는다(`CLAUDE.md` 「잠그는 것은
   '저장 중' 일 때뿐이다」). 정리 중인 교체 목소리는 이 갈래가 아니라 "아직 준비 중이에요" 로
   따로 말한다.
+  - **정리 중인 교체 목소리는 목소리 줄이 미리 말한다**(2026-11-16 오너: "준비가 안 되었으면 안 보여 주거나 회색 처리해서
+    준비 중을 띄우면 된다"). 그 목소리는 고르기 목록에 없으므로(11-15), 그 목소리를 쓰던 알람을 열면 줄의 값이 **이름 그대로
+    흐린 '○○ · 준비 중'** 이다 — 예전에는 안드로이드가 목록의 첫 목소리를, iOS 가 '고르기' 를 보여 줘서 고른 적 없는 것처럼
+    보였고 저장을 눌러야 알았다. 저장은 그대로 막는다(새 알람이 정리에 휩쓸리지 않게). 안드로이드 `VoiceAudioCard` 의
+    `settlingSelectedName`·`EditorChevronRow.valueMuted`, iOS `AlarmEditorSheet.settlingSelectedVoiceName`·`AlarmSettingRow.subtitleMuted`.
   - **테마를 골랐어도 막는다.** 테마 클립은 그 목소리의 클립이라 목소리가 사라지면 받을 수 없다
     (서버 오디오 라우트가 삭제·접근 불가 목소리를 거절한다). 판정은 테마 갈래보다 **먼저** 한다 —
     안드로이드 `editorSaveBlockReason` 이 `usableTtsProfileIds` 를 테마 갈래 앞에서 보는 것과 같다.

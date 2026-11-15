@@ -3010,7 +3010,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 남은 세대 판정 | — | **세대 값**으로 가른다(`applied` 초과만 남김) — 겹치는 알람 id 로 가르면 뒤 세대 칸을 지운다 | — |
 | 변화 없는 회차도 확인은 잇는다 | — | `applyIfChanged` — 바뀐 게 없어도 남은 칸이 있으면 **확인만** 이어서 한다 | — |
 | 미확인 목록은 세대별로 | — | `pendingApply` 가 세대별 칸에 담고 **확인은 전부·제거는 내 것만** | — |
-| 정리 중인 교체 목소리 | `settlingVoiceProfileIds` — **고르기 시트·목소리 탭 목록에서 뺀다**(2026-11-15 오너. 그전에는 흐리게 두었다 — `VoiceAudioCard` 의 `readyOwnProfiles`·`VoiceProfileManagementPanel` 의 `VoiceCatalogGroup`), **자동 선택·저장 게이트에서 제외** | `isReplacementSettling` — 같은 규칙(편집기 `voiceProfileOptions`·목소리 탭 `visibleOwnVoices` 에서 뺀다, `selectDefaultVoiceProfileIfNeeded`·저장 판정·저장 알럿) | — |
+| 정리 중인 교체 목소리 | `settlingVoiceProfileIds` — **고르기 시트·목소리 탭 목록에서 뺀다**(2026-11-15 오너. 그전에는 흐리게 두었다 — `VoiceAudioCard` 의 `readyOwnProfiles`·`VoiceProfileManagementPanel` 의 `VoiceCatalogGroup`), **자동 선택·저장 게이트에서 제외**, 그 목소리를 쓰던 알람의 편집기 줄은 흐린 '○○ · 준비 중'(2026-11-16, `settlingSelectedName`) | `isReplacementSettling` — 같은 규칙(편집기 `voiceProfileOptions`·목소리 탭 `visibleOwnVoices` 에서 뺀다, `selectDefaultVoiceProfileIfNeeded`·저장 판정·저장 알럿) | — |
 | 표식 확정은 예약까지 | `commitLocked` — 디스크 실패 시 **메모리도 되돌려** 재시도 가능 | `confirmIfReservationsSettled` — 옛 예약 해제 실패면 확정 보류 | — |
 | 푸시를 놓쳐도 수렴 | `VoiceReplacementMarkerStore` + `reconcileInaccessibleVoiceAlarms` | `VoiceReplacementMarkerStore` + `onAuthoritativeRefresh` | `voice_profiles.custom_audio_invalidated_at` (마이그레이션 #106) |
 | 직접 입력 판정(로컬) | `AlarmEntity.usesCustomMessageVoice()` | `LocalAlarmRecord.usesCustomMessageVoice` | `messages.category = 'custom'` |

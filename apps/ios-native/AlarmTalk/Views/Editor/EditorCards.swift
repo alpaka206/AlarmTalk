@@ -52,6 +52,8 @@ struct AlarmSettingRow: View {
 
     let title: String
     let subtitle: String
+    /// 값을 흐리게 — 아직 고를 수 없는 상태(정리 중인 목소리의 '준비 중'). Android `EditorChevronRow.valueMuted`.
+    var subtitleMuted: Bool = false
     let onTap: () -> Void
 
     var body: some View {
@@ -64,7 +66,7 @@ struct AlarmSettingRow: View {
                         .foregroundStyle(theme.palette.onSurface)
                     Text(subtitle)
                         .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .foregroundStyle(theme.palette.onSurfaceVariant.opacity(subtitleMuted ? 0.6 : 1))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }

@@ -1275,7 +1275,18 @@ struct AlarmEditorSheet: View {
     /// 목소리 행이 보여줄 값 — 녹음 갈래면 '직접 녹음', 아니면 고른 목소리 이름.
     var voiceRowSubtitle: String {
         if voiceSourceMode == .localAudio { return String(localized: "직접 녹음") }
+        if let settling = settlingSelectedVoiceName { return String(localized: "\(settling) · 준비 중") }
         return selectedVoiceName ?? String(localized: "고르기")
+    }
+
+    /// 고른 목소리가 교체 정리 중이면 그 이름. 그 목소리는 고르기 목록에 없어(`voiceProfileOptions`) 예전에는 행이 '고르기' 로
+    /// 보였다 — 고른 적 없는 것처럼. 이름 그대로 회색 '준비 중' 으로 말한다(2026-11-16 오너 — 저장을 눌러야 알게 하지 않는다).
+    /// 저장은 그대로 막힌다("아직 준비 중이에요"). Android `VoiceAudioCard` 의 `settlingSelectedName`.
+    var settlingSelectedVoiceName: String? {
+        guard voiceSourceMode != .localAudio,
+              let id = voiceStudio.selectedProfileID.nilIfBlank,
+              voiceStudio.isReplacementSettling(id) else { return nil }
+        return editorProfiles.first { $0.id == id }?.displayName
     }
 
     var selectedVoiceName: String? {

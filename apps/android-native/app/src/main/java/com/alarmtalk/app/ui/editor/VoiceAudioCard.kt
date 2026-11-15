@@ -200,6 +200,14 @@ internal fun VoiceAudioCard(
         } else {
             editor.voiceProfileId ?: ""
         }
+        // 교체 정리 중인 목소리를 쓰던 알람을 열었으면 그 목소리는 고르기 목록에 없다(위 `readyOwnProfiles`). 목록의 첫
+        // 목소리로 보이게 두지 말고 **이름 그대로 회색 '준비 중'** 으로 말한다(2026-11-16 오너 — 저장을 눌러야 알게 하지
+        // 않는다). 저장은 그대로 막힌다("아직 준비 중이에요" — `SaveBlockReason.VOICE_SETTLING`). iOS `AlarmEditorSheet` 의
+        // `settlingSelectedVoiceName` 과 같다.
+        val settlingSelectedName = editor.voiceProfileId
+            ?.takeIf { visibleVoiceSource != VoiceSources.LOCAL_AUDIO && it in settlingVoiceProfileIds }
+            ?.let { id -> voiceProfiles.firstOrNull { it.id == id } }
+            ?.let { systemVoiceDisplayName(context, it.id, it.name) }
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = WakerCardShape,
@@ -209,6 +217,7 @@ internal fun VoiceAudioCard(
             VoiceProfileSelector(
                 options = profileOptions + recordingOption,
                 selectedId = selectorSelectedId,
+                settlingName = settlingSelectedName,
                 onSelect = { option ->
                     // 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를
                     // 비운다. 조용히 지우면 '문구가 사라졌다'가 되므로 한 번 확인받는다.
@@ -469,6 +478,8 @@ private fun NoUsableVoiceProfileCallout(
 private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
     selectedId: String,
+    /** 고른 목소리가 교체 정리 중이면 그 이름 — 목록에 없으므로 행이 회색 '준비 중' 으로 말한다. */
+    settlingName: String? = null,
     onSelect: (VoiceProfileOption) -> Unit,
     /** 행의 재생 버튼 — 고르기 전에 목소리를 들어볼 수 있게 한다(목소리 선택 화면과 동일). */
     onPreview: (VoiceProfileOption) -> Unit,
@@ -476,7 +487,12 @@ private fun VoiceProfileSelector(
     preparingVoiceId: String?,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
-    val selectedOption = options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
+    // 정리 중이면 목록의 어느 것도 고른 것이 아니다 — 첫 목소리로 떨어뜨리지 않는다.
+    val selectedOption = if (settlingName != null) {
+        null
+    } else {
+        options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
+    }
     // 알람음 행과 대칭: 제목 '목소리' + 값(선택된 목소리 / 꺼짐).
     // ⚠ **`editor_voice_output_title` 을 쓰지 말 것**(2026-08-16). 그건 '목소리 크기'
     // 상세 화면의 제목이고, 하나로 묶어 뒀더니 그 화면 이름을 고치는 순간 이 행이
@@ -487,7 +503,10 @@ private fun VoiceProfileSelector(
     // 사라진다**.
     EditorChevronRow(
         title = stringResource(R.string.editor_voice_row_title),
-        value = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
+        value = settlingName?.let { stringResource(R.string.editor_voice_preparing_value, it) }
+            ?: selectedOption?.name
+            ?: stringResource(R.string.editor_voice_select),
+        valueMuted = settlingName != null,
         onClick = { sheetOpen = true },
     )
     if (sheetOpen) {
@@ -624,6 +643,8 @@ private fun EditorChevronRow(
     onClick: () -> Unit,
     /** 값이 길어도 행을 늘리지 않고 한 줄에서 자른다. */
     singleLineValue: Boolean = false,
+    /** 값을 흐리게 — 아직 고를 수 없는 상태(정리 중인 목소리의 '준비 중'). */
+    valueMuted: Boolean = false,
 ) {
     Surface(
         onClick = onClick,
@@ -648,7 +669,7 @@ private fun EditorChevronRow(
                 Text(
                     text = value,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (valueMuted) 0.6f else 1f),
                     maxLines = if (singleLineValue) 1 else Int.MAX_VALUE,
                     overflow = if (singleLineValue) TextOverflow.Ellipsis else TextOverflow.Clip,
                 )

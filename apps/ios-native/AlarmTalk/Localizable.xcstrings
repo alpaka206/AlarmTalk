@@ -13334,6 +13334,23 @@
           }
         }
       }
+    },
+    "%@ · 준비 중" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Preparing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 準備中"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
