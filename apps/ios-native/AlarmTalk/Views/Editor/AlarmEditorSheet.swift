@@ -310,7 +310,8 @@ struct AlarmEditorSheet: View {
     /// 자기가 무엇인지 말하고, 요일 칩이 바로 아래 붙는다.
     @ViewBuilder
     private var repeatCard: some View {
-            EditorCard {
+            // 좌우 18 — 안드로이드 `ScheduleDetailsCard` 와 같다(다른 편집기 카드는 16).
+            EditorCard(horizontalPadding: 18) {
                 Text(repeatSummary)
                     // ⚠ **`bodySmall` 로 되돌리지 말 것**(2026-08-11 지적 "너무 작아 보인다").
                     // 이 줄은 카드의 **제목 역할**이다 — '매주 : 수' / '내일 - 8월 12일 (수)' 는
@@ -321,10 +322,13 @@ struct AlarmEditorSheet: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.onSurface)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 10)
+                    // 위 여백 18(카드 4 + 14) — 안드로이드 `ScheduleDetailsCard` 의 padding(18) 과 같다(2026-11-22. 그전 iOS 는 14).
+                    .padding(.top, 14)
                     .accessibilityLabel(Text(String(localized: "반복 \(String(repeatSummary))")))
                 RepeatWeekdayChips(mask: $draft.repeatDaysMask)
-                    .padding(.vertical, 10)
+                    .padding(.top, 10)
+                    // 아래 여백도 18(14 + 카드 4). 공휴일 줄이 붙으면 칩 → 그 줄 10(안드로이드 spacedBy 10)이고 그 줄이 18 을 맡는다.
+                    .padding(.bottom, draft.repeatDaysMask != 0 ? 10 : 14)
                 // Android `ScheduleDetailsCard` 와 동일: 반복 요일이 하나라도 선택됐을 때만
                 // 공휴일off 토글을 노출한다(미선택 시 dimmed 가 아니라 통째로 숨김).
                 if draft.repeatDaysMask != 0 {
@@ -332,8 +336,8 @@ struct AlarmEditorSheet: View {
                     // ⚠ **아래 여백을 빼지 말 것**(2026-08-15 지적 "여백이 너무 작아 어렵다").
                     // `EditorCard` 의 세로 패딩은 4 뿐이라, 이 행이 카드 바닥에 4pt 로 붙어
                     // 스위치를 누르기가 불편했다. 위쪽(4 + 요약줄 10 = 14)과 맞추고, 요일을
-                    // 안 골라 이 행이 없을 때(4 + 칩 10 = 14)와도 같아진다.
-                    .padding(.bottom, 10)
+                    // 안 골라 이 행이 없을 때(칩 아래 14 + 카드 4 = 18)와도 같아진다 — 둘 다 안드로이드의 18 이다.
+                    .padding(.bottom, 14)
 
                     // ⚠ **공휴일 달력 국가·다가오는 공휴일 목록을 되살리지 말 것**(2026-08-11 요청).
                     // 토글이 하는 말("공휴일에는 끄기")로 충분하다 — 어느 나라 달력인지는 설정에서
@@ -361,6 +365,8 @@ struct AlarmEditorSheet: View {
     @ViewBuilder
     private var detailSettingsSection: some View {
         if draft.showsAlarmSoundControls {
+            // 제목 → 카드 10 — 안드로이드 `AlarmSettingsCard` 의 spacedBy(10) 과 같다(바깥 간격 20 에 맡기지 않는다, 2026-11-22).
+            VStack(alignment: .leading, spacing: 10) {
             EditorSectionTitle(text: "세부 설정")
             EditorCard(verticalPadding: 0) {
                 // ⚠ **이 기능의 이름은 앱 전체에서 '다시 울림' 하나다**(2026-08-16 통일).
@@ -386,6 +392,7 @@ struct AlarmEditorSheet: View {
                 // 안의 '목소리 크기' 행이 여는 상세가 소유한다. 안드로이드도 이 행을
                 // `showVoiceOutput = false` 로 꺼 두었다 — 같은 값을 바꾸는 자리가 둘이면
                 // 어느 쪽이 진짜인지 매번 확인해야 한다.
+            }
             }
         }
     }

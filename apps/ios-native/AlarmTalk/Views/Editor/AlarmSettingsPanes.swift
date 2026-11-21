@@ -231,9 +231,11 @@ struct VoiceOutputSettingsPane: View {
                             .font(theme.typography.bodyLarge)
                             .fontWeight(.semibold)
                         Spacer()
+                        // 값은 회색 굵은 글씨 — 안드로이드 `VoiceVolumeSelector` 와 같다(2026-11-22 전 iOS 만 강조색 보통 글씨).
                         Text("\(volumePercent)%")
                             .font(theme.typography.bodyMedium)
-                            .foregroundStyle(theme.palette.primary)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
                             .monospacedDigit()
                     }
                     // ⚠ **하한은 10% 다.** 30% 로 막아 두면 안드로이드에서 10~29% 로 맞춘
@@ -303,7 +305,10 @@ struct RadioRow: View {
                     .foregroundStyle(theme.palette.onSurface)
                 Spacer(minLength: 8)
             }
-            .padding(.vertical, 14)
+            // 최소 높이 56(위아래 8 포함) — 안드로이드 `SnoozeRadioRow`(heightIn 56 · 세로 8)와 같다. 2026-11-22 전에는 위아래
+            // 14 로 50 이라 같은 '문구' 목록이 iOS 만 촘촘했다(두 앱 대조).
+            .padding(.vertical, 8)
+            .frame(minHeight: 56)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleButtonStyle())

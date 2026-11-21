@@ -23,13 +23,15 @@ struct EditorSectionTitle: View {
 struct EditorCard<Content: View>: View {
     @Environment(\.voiceAlarmTheme) private var theme
     var verticalPadding: CGFloat = 4
+    /// 좌우 여백 — 기본 16. 반복(요일) 카드만 18 이다(안드로이드 `ScheduleDetailsCard` 의 padding 18).
+    var horizontalPadding: CGFloat = 16
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             content()
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(

@@ -2,12 +2,15 @@ import SwiftUI
 
 // AlarmEditorSheet 의 '재생 방식' 섹션 분리(파일 길이 축소).
 extension AlarmEditorSheet {
-    @ViewBuilder
+    /// '재생 방식' 묶음 — 제목 → 세그먼트 **10**, 세그먼트 → 목소리 카드 → 문구 카드 **12**. 안드로이드 `PlayModeCard`
+    /// (spacedBy 10)·`VoiceAudioCard`(위 12, 카드 사이 12)와 같다. ⚠ 조각을 편집기 바깥 `VStack(spacing: 20)` 에 낱개로 흘리지
+    /// 말 것 — 2026-11-22 전에는 그래서 제목·세그먼트·카드 사이가 모두 20 으로 벌어져 안드로이드보다 성겼다(두 앱 대조).
     var alarmModeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
             // 제목은 **'재생 방식'** 이다 — 안드로이드 `editor_play_mode_title` 과 같은
             // 말로 맞춘다('알람 방식' 은 iOS 에만 있던 표현이었다).
             EditorSectionTitle(text: "재생 방식")
-            Group {
                 VoicePlayModePicker(
                     mode: $draft.playMode,
                     voiceLocked: voiceModeBlocked,
@@ -33,6 +36,7 @@ extension AlarmEditorSheet {
                             coerceFreeVoiceTierConstraints()
                         }
                     }
+            }
 
                 if draft.playMode != .alarmOnly {
                     // ⚠ **'목소리 / 녹음·파일' 세그먼트를 되살리지 말 것.** 안드로이드에는
@@ -146,7 +150,7 @@ extension AlarmEditorSheet {
                     // 예전 iOS 는 본문에 인라인으로 두고 **세부 설정에도 '음성 출력' 행**을
                     // 둬서, 같은 값을 바꾸는 자리가 셋이었다.
                 }
-            }
+        }
     }
 
     /// 목소리 크기 요약 행 — 누르면 음량·반복을 함께 다루는 상세로 간다.

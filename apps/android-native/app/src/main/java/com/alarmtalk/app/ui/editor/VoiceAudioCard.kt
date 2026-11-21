@@ -1,6 +1,5 @@
 package com.alarmtalk.app
 
-import com.alarmtalk.app.data.systemVoiceDisplayName
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,31 +12,34 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.systemVoiceDisplayName
 import com.alarmtalk.app.network.VoiceProfile
-import androidx.compose.ui.text.style.TextOverflow
 
 /** 마지막 사용값이 있으면 종류보다 우선하고, 없을 때만 내 것 → 기본 순으로 고른다. */
 internal fun preferredInitialVoiceProfileId(
@@ -517,35 +519,45 @@ private fun VoiceProfileSelector(
             title = stringResource(R.string.editor_voice_select_title),
             onDismiss = { sheetOpen = false },
         ) { dismiss ->
-            options.forEachIndexed { index, option ->
-                WakerSheetOptionRow(
-                    title = option.name,
-                    description = option.detail,
-                    selected = option.id == selectedOption?.id,
-                    onClick = {
-                        onSelect(option)
-                        dismiss()
-                    },
-                    trailing = {
-                        // ⚠ '직접 녹음' 에는 재생 버튼을 달지 않는다. 아직 녹음한 것이 없어
-                        // `previewVoice` 가 조용히 return 하므로, 눌러도 아무 소리가 안 나는
-                        // 버튼이 된다(못 움직이는 컨트롤은 두지 않는다 — CLAUDE.md).
-                        if (option.id != VoiceSources.LOCAL_AUDIO) {
-                            VoicePreviewButton(
-                                playing = playingVoiceId == option.id,
-                                preparing = preparingVoiceId == option.id,
-                                onClick = { onPreview(option) },
-                            )
-                        }
-                    },
-                    divider = index != options.lastIndex,
-                )
+            // ⚠ **행은 `WakerSheetOptionGroup` 안에 둔다**(그 부품의 규칙). 밖에 두면 시트의 간격(14)이 행마다 끼어 구분선 아래가
+            //   비고 한 행이 83 까지 커졌다 — iOS `VoiceSelectionSheet`(행 64, 구분선만)와 달랐다(2026-11-22 두 앱 대조).
+            WakerSheetOptionGroup {
+                options.forEachIndexed { index, option ->
+                    WakerSheetOptionRow(
+                        title = option.name,
+                        description = option.detail,
+                        selected = option.id == selectedOption?.id,
+                        onClick = {
+                            onSelect(option)
+                            dismiss()
+                        },
+                        trailing = {
+                            // ⚠ '직접 녹음' 에는 재생 버튼을 달지 않는다. 아직 녹음한 것이 없어
+                            // `previewVoice` 가 조용히 return 하므로, 눌러도 아무 소리가 안 나는
+                            // 버튼이 된다(못 움직이는 컨트롤은 두지 않는다 — CLAUDE.md).
+                            if (option.id != VoiceSources.LOCAL_AUDIO) {
+                                VoicePreviewButton(
+                                    playing = playingVoiceId == option.id,
+                                    preparing = preparingVoiceId == option.id,
+                                    onClick = { onPreview(option) },
+                                )
+                            }
+                        },
+                        divider = index != options.lastIndex,
+                    )
+                }
             }
         }
     }
 }
 
-/** 선택 시트 행의 재생 버튼. 행 자체를 누르면 '선택', 이 버튼은 '들어보기'로 나눈다. */
+/**
+ * 선택 시트 행의 '들어보기' 버튼. 행 자체를 누르면 '선택', 이 버튼은 '들어보기'로 나눈다.
+ *
+ * 목소리 탭 목록(`ui/voices/VoiceProfileRowComponents.kt`)과 같은 **스피커 ↔ 정지, 주 색**이다 — "이 목소리가 어떤지 들어본다"
+ * 는 뜻이라 재생(▶)보다 스피커가 맞다. 2026-11-22 전에는 이 시트만 검정 재생(▶)이라 목소리 탭·iOS(`speaker.wave.2.fill`,
+ * 주 색)와 달랐다. 준비 중에는 돌아가는 표시다(`VoicePreviewButtonIcon` 의 준비 갈래와 같은 20dp).
+ */
 @Composable
 private fun VoicePreviewButton(
     playing: Boolean,
@@ -553,7 +565,17 @@ private fun VoicePreviewButton(
     onClick: () -> Unit,
 ) {
     IconButton(onClick = onClick) {
-        VoicePreviewButtonIcon(active = playing, preparing = preparing)
+        if (preparing) {
+            VoicePreviewButtonIcon(active = playing, preparing = true)
+        } else {
+            Icon(
+                imageVector = if (playing) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                contentDescription = stringResource(
+                    if (playing) R.string.voicesr_preview_stop else R.string.voicesr_preview_action,
+                ),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 

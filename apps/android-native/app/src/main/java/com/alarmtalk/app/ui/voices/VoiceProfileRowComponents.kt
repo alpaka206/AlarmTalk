@@ -458,36 +458,39 @@ private fun VoiceProfileMenuSheet(
     onDismiss: () -> Unit,
 ) {
     WakerSelectionSheet(title = profileName, onDismiss = onDismiss) { dismiss ->
-        if (onCreateAlarm != null) {
+        // 행은 `WakerSheetOptionGroup` 안에 — 밖에 두면 시트 간격(14)이 행마다 끼어 구분선 아래가 빈다(편집기 목소리 시트와 같은 수정).
+        WakerSheetOptionGroup {
+            if (onCreateAlarm != null) {
+                WakerSheetOptionRow(
+                    title = stringResource(R.string.voicesr_create_alarm_with_voice),
+                    selected = false,
+                    onClick = {
+                        dismiss()
+                        onCreateAlarm()
+                    },
+                    divider = true,
+                )
+            }
             WakerSheetOptionRow(
-                title = stringResource(R.string.voicesr_create_alarm_with_voice),
+                title = stringResource(R.string.voicesr_edit_name),
                 selected = false,
                 onClick = {
                     dismiss()
-                    onCreateAlarm()
+                    onRename()
                 },
                 divider = true,
             )
+            WakerSheetOptionRow(
+                title = stringResource(R.string.voicesr_delete),
+                selected = false,
+                onClick = {
+                    dismiss()
+                    onDelete()
+                },
+                // 파괴적 항목은 색으로만 구분한다 — 아이콘을 붙이면 나머지 행에도 장식용
+                // 아이콘을 달아야 균형이 맞고, 그때부터 시트가 아이콘 목록처럼 보인다.
+                destructive = true,
+            )
         }
-        WakerSheetOptionRow(
-            title = stringResource(R.string.voicesr_edit_name),
-            selected = false,
-            onClick = {
-                dismiss()
-                onRename()
-            },
-            divider = true,
-        )
-        WakerSheetOptionRow(
-            title = stringResource(R.string.voicesr_delete),
-            selected = false,
-            onClick = {
-                dismiss()
-                onDelete()
-            },
-            // 파괴적 항목은 색으로만 구분한다 — 아이콘을 붙이면 나머지 행에도 장식용
-            // 아이콘을 달아야 균형이 맞고, 그때부터 시트가 아이콘 목록처럼 보인다.
-            destructive = true,
-        )
     }
 }
