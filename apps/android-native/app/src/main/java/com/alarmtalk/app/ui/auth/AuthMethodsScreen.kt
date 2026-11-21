@@ -2,14 +2,16 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -83,8 +85,15 @@ internal fun AuthMethodsScreen(
 }
 
 /**
- * '이메일로 계속하기' — 카카오·구글 버튼과 같은 골격(앞 아이콘 + 가운데 글자, 높이·모서리 같음)이라 세 버튼이 한 묶음으로 읽힌다.
- * 바탕은 입력 칸과 같은 옅은 유리다. iOS 짝 `AuthMethodsView` 의 `emailButton`.
+ * 고르기 화면 세 버튼의 아이콘과 글자 사이 — 아이콘은 글자 **바로 앞**에 붙고 둘이 한 덩어리로 가운데 선다(2026-11-22 오너
+ * "애플만 아이콘이 붙어 있는 게 맞아?"). iOS 의 Apple 버튼은 시스템 버튼이라 그 모양만 있어 카카오·구글·이메일을 거기에
+ * 맞췄다. 10 은 구글 가이드의 로고 뒤 여백(Android·Web)이다. iOS 는 Apple 시스템 버튼에 가깝게 8(`AuthSignInIconGap`).
+ */
+internal val AuthSignInIconGap = 10.dp
+
+/**
+ * '이메일로 계속하기' — 카카오·구글 버튼과 같은 골격(아이콘 + 글자를 한 덩어리로 가운데, 높이·모서리 같음)이라 세 버튼이 한
+ * 묶음으로 읽힌다. 바탕은 입력 칸과 같은 옅은 유리다. iOS 짝 `AuthMethodsView` 의 `emailButton`.
  */
 @Composable
 private fun EmailContinueButton(
@@ -102,24 +111,22 @@ private fun EmailContinueButton(
         contentColor = TextOnScene,
         border = BorderStroke(1.dp, AuthLine),
     ) {
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = Icons.Outlined.Email,
                 contentDescription = null,
                 tint = TextOnScene.copy(alpha = contentAlpha),
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(21.dp),
+                modifier = Modifier.size(21.dp),
             )
+            Spacer(Modifier.width(AuthSignInIconGap))
             Text(
                 text = stringResource(R.string.auth_continue_with_email),
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 32.dp),
                 color = TextOnScene.copy(alpha = contentAlpha),
                 // 카카오·구글 버튼과 같은 글꼴·크기·굵기 — 셋이 한 묶음으로 읽힌다.
                 fontFamily = FontFamily.Default,

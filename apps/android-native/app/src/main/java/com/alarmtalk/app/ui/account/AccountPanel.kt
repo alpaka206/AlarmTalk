@@ -2,11 +2,14 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,25 +44,24 @@ internal fun GoogleSignInButton(
         contentColor = Color(0xFF1F1F1F),
         border = BorderStroke(1.dp, Color(0xFFD7D9DE)),
     ) {
-        Box(
+        // G 는 글자 **바로 앞**, 둘을 한 덩어리로 가운데 둔다 — 고르기 화면의 세 버튼이 같은 짜임이다(카카오 버튼 주석). 구글
+        // 가이드의 로고 뒤 여백은 10(Android·Web)이고, Sign in with Google 버튼도 로고 가운데 정렬(`logo_alignment=center`)을 둔다.
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 12.dp),
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_google_g),
                 contentDescription = null,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(21.dp)
-                    .padding(0.dp),
+                modifier = Modifier.size(21.dp),
                 alpha = contentAlpha,
             )
+            Spacer(Modifier.width(AuthSignInIconGap))
             Text(
                 text = label,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 32.dp),
                 color = Color(0xFF1F1F1F).copy(alpha = contentAlpha),
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Medium,

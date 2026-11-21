@@ -80,6 +80,11 @@ enum AuthSceneColors {
 /// 안드로이드 `ui/auth/LandingScreen.kt` 의 `AuthControlHeight` 와 같은 값이다.
 let AuthControlHeight: CGFloat = 52
 
+/// 고르기 화면 버튼의 아이콘과 글자 사이 — 아이콘은 글자 **바로 앞**에 붙고 둘이 한 덩어리로 가운데 선다(2026-11-22 오너).
+/// Apple 버튼은 시스템 버튼이라 그 모양만 있어 카카오·이메일을 거기에 맞췄고, 간격도 시스템 버튼에 가깝게 8 이다.
+/// 안드로이드 `ui/auth/AuthMethodsScreen.kt` 의 `AuthSignInIconGap` 은 구글 가이드의 로고 뒤 여백 10 이다.
+let AuthSignInIconGap: CGFloat = 8
+
 /// 인증 폼 화면(로그인·가입·비밀번호 재설정·약관 동의) 공통 배경 —
 /// 은은한 네이비 그라데이션 + 상단 브랜드 글로우. 안드로이드 `AuthScreen.kt:70-100`.
 struct AuthBackdrop<Content: View>: View {

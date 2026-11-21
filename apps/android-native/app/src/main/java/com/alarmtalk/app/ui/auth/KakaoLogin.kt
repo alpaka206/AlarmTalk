@@ -1,11 +1,14 @@
 package com.alarmtalk.app
 
 import android.content.Context
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -58,24 +61,25 @@ internal fun KakaoLoginButton(
         color = KakaoContainer,
         contentColor = KakaoLabel,
     ) {
-        Box(
+        // 심볼은 글자 **바로 앞**, 둘을 한 덩어리로 가운데 둔다(2026-11-22 오너 "애플만 아이콘이 붙어 있는 게 맞아?"). iOS 의
+        // Apple 버튼은 시스템 버튼이라 로고가 글자 옆에 붙는 모양만 있어 나머지를 그쪽에 맞췄다. 카카오 가이드: "심볼은 좌측
+        // 정렬하거나, 레이블과 함께 가운데 정렬할 수 있습니다." 고르기 화면의 세 버튼이 같은 짜임이다(`AuthSignInIconGap`).
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_kakao_symbol),
                 contentDescription = null,
                 tint = KakaoSymbol.copy(alpha = contentAlpha),
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(21.dp),
+                modifier = Modifier.size(21.dp),
             )
+            Spacer(Modifier.width(AuthSignInIconGap))
             Text(
                 text = stringResource(R.string.auth_kakao_login),
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 32.dp),
                 color = KakaoLabel.copy(alpha = KakaoLabel.alpha * contentAlpha),
                 // 가이드: 글꼴은 OS 기본. 구글 버튼과 같은 크기·굵기라 두 버튼이 한 묶음으로 읽힌다.
                 fontFamily = FontFamily.Default,

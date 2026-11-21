@@ -18,21 +18,20 @@ struct KakaoLoginButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
+            // 심볼은 글자 **바로 앞**, 둘을 한 덩어리로 가운데 둔다(2026-11-22 오너 "애플만 아이콘이 붙어 있는 게 맞아?").
+            // 옆의 Apple 버튼은 시스템 버튼이라 로고가 글자 옆에 붙는 모양만 있어 이쪽을 맞췄다. 카카오 가이드: "심볼은 좌측
+            // 정렬하거나, 레이블과 함께 가운데 정렬할 수 있습니다." 안드로이드 짝 `ui/auth/KakaoLogin.kt` 의 `KakaoLoginButton`.
+            HStack(spacing: AuthSignInIconGap) {
+                KakaoSymbolShape()
+                    .fill(Self.symbol)
+                    .frame(width: 20, height: 20)
                 Text("카카오 로그인")
                     .font(.system(.body, weight: .medium))
                     .foregroundStyle(Self.label)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .padding(.horizontal, 40)
-                HStack {
-                    KakaoSymbolShape()
-                        .fill(Self.symbol)
-                        .frame(width: 20, height: 20)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 16)
             }
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, minHeight: AuthControlHeight)
             .background(Self.container, in: RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
             .contentShape(Rectangle())

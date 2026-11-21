@@ -621,28 +621,24 @@ struct AuthMethodsView: View {
         .disabled(auth.isBusy)
     }
 
-    /// '이메일로 계속하기' — 카카오 버튼과 같은 골격(앞 아이콘 + 가운데 글자, 높이·모서리 같음)이라 세 버튼이 한 묶음으로 읽힌다.
-    /// 바탕은 입력 칸과 같은 옅은 유리다. 안드로이드 짝 `AuthMethodsScreen` 의 `EmailContinueButton`.
+    /// '이메일로 계속하기' — 카카오·Apple 버튼과 같은 골격(아이콘 + 글자를 한 덩어리로 가운데, 높이·모서리 같음)이라 세 버튼이
+    /// 한 묶음으로 읽힌다. 바탕은 입력 칸과 같은 옅은 유리다. 안드로이드 짝 `AuthMethodsScreen` 의 `EmailContinueButton`.
     private var emailButton: some View {
         Button {
             showEmailLogin = true
         } label: {
-            ZStack {
+            HStack(spacing: AuthSignInIconGap) {
+                Image(systemName: "envelope")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(AuthSceneColors.text)
+                    .accessibilityHidden(true)
                 Text("이메일로 계속하기")
                     .font(.system(.body, weight: .medium))
                     .foregroundStyle(AuthSceneColors.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .padding(.horizontal, 40)
-                HStack {
-                    Image(systemName: "envelope")
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(AuthSceneColors.text)
-                        .accessibilityHidden(true)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 16)
             }
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, minHeight: AuthControlHeight)
             .background(
                 AuthSceneColors.fieldGlass,
