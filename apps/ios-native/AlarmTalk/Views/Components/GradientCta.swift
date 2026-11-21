@@ -39,7 +39,7 @@ struct GradientCta: View {
                         .tint(AuthSceneColors.onAccent)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 56)
+            .frame(maxWidth: .infinity, minHeight: AuthControlHeight)
             // ⚠ **없으면 '로그인' 글자만 눌린다**(2026-08-18 실기기 지적). 채움
             // (`.background`)은 **Button 바깥**에 붙어 있어 히트테스트에 안 잡히고,
             // 라벨 안에서 색이 있는 건 `Text` 뿐이라 좌우 여백이 통째로 죽는다.
@@ -75,7 +75,7 @@ struct AuthOutlinedButton: View {
                 // ⚠ 35%(0x59)는 대비 3.15:1 이라 읽기 어려웠다 — 55%(0x8C)로 올린다
                 // (2026-08-17). 안드로이드 `authOutlinedButtonColors` 도 같은 값이다.
                 .foregroundStyle(enabled ? AuthSceneColors.text : Color.white.opacity(0x8C / 255.0))
-                .frame(maxWidth: .infinity, minHeight: 54)
+                .frame(maxWidth: .infinity, minHeight: AuthControlHeight)
                 // 채움이 없고 테두리만 있는 버튼이라 **속이 통째로 비어 있다** — 없으면
                 // 글자만 눌린다(위 `GradientCta` 와 같은 이유).
                 .contentShape(Rectangle())

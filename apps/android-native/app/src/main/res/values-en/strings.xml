@@ -24,12 +24,11 @@
     <string name="auth_email_verify_done">Verified</string>
     <string name="auth_email_verify_resend_short">Resend</string>
     <string name="auth_kakao_login">Login with Kakao</string>
-    <string name="auth_divider_email_login">or with email</string>
-    <string name="auth_divider_email_register">or sign up with email</string>
     <string name="msg_kakao_login_failed">Couldn\'t complete your Kakao login. Please try again.</string>
     <string name="msg_register_email_social_kakao">This email is registered with Kakao. Please use Login with Kakao.</string>
     <string name="auth_find_password">Reset password</string>
-    <string name="auth_forgot_password">Forgot your password?</string>
+    <string name="auth_methods_title">Log in or sign up</string>
+    <string name="auth_continue_with_email">Continue with email</string>
     <string name="auth_label_confirm_password">Confirm password</string>
     <string name="auth_label_email">Email</string>
     <string name="auth_reset_title">Reset password</string>
@@ -40,7 +39,6 @@
     <string name="msg_password_reset_failed">Couldn\'t reset your password.</string>
     <string name="auth_label_password">Password</string>
     <string name="auth_label_verification_code">Verification code</string>
-    <string name="auth_landing_first_time">First time here?</string>
     <string name="auth_landing_get_started">Get started</string>
     <string name="auth_landing_headline_pre">"Wake up to\na "</string>
     <string name="auth_landing_headline_keyword">voice</string>
@@ -117,7 +115,6 @@
     <string name="notification_alarm_status_name">Alarm status</string>
     <string name="notification_alarm_status_description">Tells you when an alarm couldn\'t be scheduled</string>
     <string name="common_google_continue">Continue with Google</string>
-    <string name="common_google_login">Sign in with Google</string>
     <string name="common_permission_gate_allow_action">Allow</string>
     <string name="common_permission_gate_close_app">Close</string>
     <string name="common_permission_gate_exact_alarm_title">Allow exact alarm permission to set alarms</string>

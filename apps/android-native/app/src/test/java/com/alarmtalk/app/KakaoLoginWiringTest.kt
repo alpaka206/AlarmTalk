@@ -7,6 +7,7 @@ import com.alarmtalk.app.network.KakaoLoginRequest
 import com.google.gson.Gson
 import java.util.Locale
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,14 +76,23 @@ class KakaoLoginWiringTest {
     }
 
     @Test
-    fun `로그인과 가입 모두 간편 로그인이 이메일 칸보다 먼저다`() {
-        val screen = withoutLineComments(readSource("ui/auth/AuthScreen.kt"))
-        val kakao = screen.indexOf("KakaoLoginButton(")
-        val google = screen.indexOf("GoogleSignInButton(")
-        val email = screen.indexOf("label = stringResource(R.string.auth_label_email)")
+    fun `간편 로그인은 시작하기 다음 고르기 화면에 있고 카카오가 먼저다`() {
+        // 2026-11-22 오너 — 로그인 수단을 먼저 고르고, 이메일 칸은 '이메일로 계속하기' 다음 화면이다.
+        val methods = withoutLineComments(readSource("ui/auth/AuthMethodsScreen.kt"))
+        val kakao = methods.indexOf("KakaoLoginButton(")
+        val google = methods.indexOf("GoogleSignInButton(")
+        val email = methods.indexOf("EmailContinueButton(")
         assertTrue(kakao in 0 until google)
         assertTrue(google in 0 until email)
-        // 모드로 가르지 않는다 — 두 모드가 같은 자리에 같은 버튼을 그린다.
-        assertEquals(1, Regex("""KakaoLoginButton\(""").findAll(screen).count())
+        // 랜딩의 '시작하기' 는 고르기 화면으로 가고, 이메일만 다음 화면(이메일 로그인)으로 간다.
+        val app = readSource("ui/app/AlarmTalkApp.kt")
+        assertTrue(app.contains("onStart = { authNavigate(AuthRoute.Methods) }"))
+        assertTrue(app.contains("onContinueWithEmail = { authNavigate(AuthRoute.Auth(AuthMode.Login)) }"))
+        // 이메일 로그인·가입 화면에는 간편 로그인 버튼을 또 두지 않는다.
+        val screen = withoutLineComments(readSource("ui/auth/AuthScreen.kt"))
+        assertFalse(screen.contains("KakaoLoginButton("))
+        assertFalse(screen.contains("GoogleSignInButton("))
+        // 이메일 로그인 칸은 칸 안 안내 글자뿐이다(위 이름표 없음) — 이메일·비밀번호 두 칸.
+        assertEquals(2, Regex("""placeholderOnly = mode == AuthMode.Login""").findAll(screen).count())
     }
 }

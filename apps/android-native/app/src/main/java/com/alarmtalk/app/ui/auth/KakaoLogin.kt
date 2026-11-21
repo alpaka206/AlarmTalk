@@ -39,7 +39,8 @@ private val KakaoLabel = Color(0xD9000000)
 /**
  * 카카오 로그인 버튼. 가이드대로 노랑 바탕 + 공식 말풍선 심볼(`ic_kakao_symbol`) + 글자 '카카오 로그인' 하나, 모서리 12(`WakerTileShape`).
  * ⚠ 글자를 바꾸지 말 것 — 가이드가 허용하는 글자는 '카카오 로그인'(축약 '로그인')뿐이다. 가입 화면에서도 같다.
- * ⚠ 다른 로그인 버튼을 이보다 눈에 띄게 두지 않는다(가이드) — 그래서 구글 버튼과 같은 높이·같은 자리다.
+ * ⚠ 다른 로그인 버튼을 이보다 눈에 띄게 두지 않는다(가이드) — 그래서 구글 버튼과 같은 높이·같은 모양이고, 아래
+ *   '이메일로 계속하기' 는 옅은 유리 바탕이다(`AuthMethodsScreen`).
  */
 @Composable
 internal fun KakaoLoginButton(
@@ -51,7 +52,8 @@ internal fun KakaoLoginButton(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(56.dp),
+        // 다른 인증 버튼과 같은 높이([AuthControlHeight]) — 카카오 가이드: 다른 로그인 버튼을 이보다 눈에 띄게 두지 않는다.
+        modifier = modifier.height(AuthControlHeight),
         shape = WakerTileShape,
         color = KakaoContainer,
         contentColor = KakaoLabel,

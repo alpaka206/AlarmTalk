@@ -26,12 +26,11 @@
     <string name="auth_email_verify_done">인증됨</string>
     <string name="auth_email_verify_resend_short">다시 받기</string>
     <string name="auth_kakao_login">카카오 로그인</string>
-    <string name="auth_divider_email_login">또는 이메일로</string>
-    <string name="auth_divider_email_register">또는 이메일로 가입</string>
     <string name="msg_kakao_login_failed">카카오 로그인을 완료하지 못했어요. 다시 시도해 주세요.</string>
     <string name="msg_register_email_social_kakao">카카오로 가입된 이메일이에요. \'카카오 로그인\'으로 로그인해 주세요.</string>
     <string name="auth_find_password">비밀번호 찾기</string>
-    <string name="auth_forgot_password">비밀번호를 잊으셨나요?</string>
+    <string name="auth_methods_title">로그인/회원가입</string>
+    <string name="auth_continue_with_email">이메일로 계속하기</string>
     <string name="auth_label_confirm_password">비밀번호 확인</string>
     <string name="auth_label_email">이메일</string>
     <string name="auth_reset_title">비밀번호 재설정</string>
@@ -42,7 +41,6 @@
     <string name="msg_password_reset_failed">비밀번호 재설정에 실패했어요.</string>
     <string name="auth_label_password">비밀번호</string>
     <string name="auth_label_verification_code">인증 코드</string>
-    <string name="auth_landing_first_time">처음 사용하시나요?</string>
     <string name="auth_landing_get_started">시작하기</string>
     <string name="auth_landing_headline_pre">"좋아하는 "</string>
     <string name="auth_landing_headline_keyword">목소리</string>
@@ -123,7 +121,6 @@
     <string name="notification_alarm_status_name">알람 상태</string>
     <string name="notification_alarm_status_description">예약하지 못한 알람을 알려요</string>
     <string name="common_google_continue">Google로 계속하기</string>
-    <string name="common_google_login">Google로 로그인</string>
     <string name="common_permission_gate_allow_action">허용하기</string>
     <string name="common_permission_gate_close_app">닫기</string>
     <string name="common_permission_gate_exact_alarm_title">정확한 알람 권한을 허용해야 알람을 설정할 수 있어요</string>

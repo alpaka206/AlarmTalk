@@ -57,6 +57,15 @@ struct PasswordResetView: View {
 
     var body: some View {
         AuthBackdrop {
+            VStack(alignment: .leading, spacing: 0) {
+            // 제목 줄은 로그인·가입과 같다(`WakerTopBar` — 원형 뒤로가기 + 위쪽 가운데 제목, 스크롤 밖. 2026-11-22). 예전에는
+            // 이 화면만 시스템 네비게이션 바(작은 제목 + 시스템 화살표)였다. 안드로이드 짝 `PasswordResetScreen` 의 `AuthTopBar`.
+            WakerTopBar(
+                title: "비밀번호 재설정",
+                onBack: { dismiss() },
+                tint: AuthSceneColors.text
+            )
+            .padding(.top, 18)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -97,16 +106,22 @@ struct PasswordResetView: View {
                     // 코드 발송 안내·오류는 위쪽 토스트로 뜬다(아래 `.authToast` — 로그인 화면과 같다, 2026-11-15).
                 }
                 .padding(.horizontal, 22)
-                .padding(.vertical, 18)
+                // 제목 줄(`WakerTopBar`)이 아래 24 를 이미 갖는다 — 여기는 위 8 만 띄운다(안드로이드 `AuthScreen` 과 같은 32).
+                .padding(.top, 8)
+                .padding(.bottom, 18)
             }
             // ⚠ **입력창 밖을 눌러 키보드를 닫을 길을 둔다.** iOS 는 바깥 탭으로 키보드가
             // 자동으로 닫히지 않아서, 없으면 키보드가 화면 절반을 가린 채 버튼에 닿지 못한다
             // (2026-08-10 사용자 보고 — 편집기에는 이미 있었고 나머지 화면만 빠져 있었다).
             .scrollDismissesKeyboard(.interactively)
+            }
         }
         .authToast(message: auth.statusMessage, isError: auth.statusIsError) { auth.statusMessage = nil }
-        .navigationTitle("비밀번호 재설정")
+        // 제목은 화면 **안**(`WakerTopBar`)에 있다 — 네비게이션 바에 또 그리면 같은 말이 두 번 나온다(`LoginView` 와 같다).
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
         // ⚠ **화면을 나갈 때 발송·확인 상태를 지운다.** 예전에는 `passwordResetCodeSentTo` 와
         // `statusMessage` 가 뷰모델에 남아, 뒤로 갔다가 다시 들어오면 아무것도 안 했는데
         // "인증 코드를 보냈어요" 가 떠 있고 코드 단계가 **이미 열린 채**였다. 사용자는 오지도 않은 코드를 기다리게 된다.
@@ -126,11 +141,9 @@ struct PasswordResetView: View {
         #if DEBUG
         .task { applyPreviewStep() }
         #endif
-        // ⚠ **뒤로가기를 직접 그리지 말 것 — 두 개가 된다.**
-        // 이 화면은 `LoginView` 의 `.navigationDestination` 으로 **push** 되므로
-        // NavigationStack 이 이미 시스템 뒤로가기를 그린다. 예전에는 여기에
-        // `ToolbarItem(.topBarLeading)` 로 `chevron.backward` 를 하나 더 얹어서
-        // 왼쪽 위에 화살표가 나란히 두 개 보였다(둘 다 같은 `dismiss()` 를 했다).
+        // ⚠ **뒤로가기는 `WakerTopBar` 하나다 — 시스템 것을 숨긴 채로 둘 것**(`.navigationBarBackButtonHidden`). 예전에는
+        // 시스템 뒤로가기 위에 `ToolbarItem(.topBarLeading)` 로 `chevron.backward` 를 하나 더 얹어서 왼쪽 위에 화살표가
+        // 나란히 두 개 보였다(둘 다 같은 `dismiss()` 를 했다).
     }
 
     // MARK: - Sections

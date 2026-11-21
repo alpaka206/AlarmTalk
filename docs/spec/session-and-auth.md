@@ -365,8 +365,9 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
   오류 -101)는 성공으로 본다. ⚠ 어드민 키가 없으면 끊지 못하고 경보만 남는다 — 그 회원번호는 파기로 사라져 다음 틱이 다시
   끊을 수 없다.
 - **앱의 로그아웃·탈퇴 신청·자동 만료는 기기의 카카오 토큰만 버린다**(연결 끊기가 아니다).
-- 화면: 로그인·가입 모두 **간편 로그인이 맨 위**다(카카오 → 안드로이드는 구글 / iOS 는 Apple). 카카오 버튼은 카카오 디자인
-  가이드대로 노랑 바탕·검정 말풍선·글자 '카카오 로그인' 하나·모서리 12 다. 가입 화면에서도 글자를 바꾸지 않는다.
+- 화면: 간편 로그인은 '시작하기' 다음 **로그인 수단 고르기** 화면의 맨 위다(카카오 → 안드로이드는 구글 / iOS 는 Apple →
+  이메일로 계속하기 — 아래 「로그인 화면」, 2026-11-22). 카카오 버튼은 카카오 디자인 가이드대로 노랑 바탕·검정 말풍선·글자
+  '카카오 로그인' 하나·모서리 12 다. 로그인과 가입을 함께 받는 화면이어도 글자를 바꾸지 않는다.
 - **연결 해제 웹훅**(2026-11-14 — `routes/kakao-webhook.ts` → `lib/kakao-unlink.ts`, `GET`·`POST /api/kakao/unlink`). 카카오는
   우리 서비스 **밖에서** 연결이 끊기면(카카오계정 설정의 '연결된 서비스 관리', 카카오계정 탈퇴, 관리자 처리) 이 주소를 부른다.
   우리가 연결 끊기 API 로 끊은 경우(위 파기)에는 오지 않는다.
@@ -392,6 +393,48 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
     운영 주소(`https://api.alarm-talk.com/api/kakao/unlink`)로 바꾼다.**
 - 말풍선 심볼은 카카오 공식 리소스(디자인 리소스 다운로드의 Kakao Login.zip, 2026-08 판)의 경로를 그대로 쓴다. 색은 디자인
   가이드대로 심볼 #000000 · 글자 #000000 85%(공식 이미지는 둘 다 #191919 지만 직접 만드는 버튼의 기준은 가이드다).
+
+## 로그인 화면 — 수단을 먼저 고르고, 이메일은 다음 화면 (2026-11-22)
+
+오너: "저 디자인이 맞나? 진짜 앱들 로그인 페이지를 찾아와(추론 말고)" → 아래 조사 → "해봐".
+
+- **순서**: 랜딩 '시작하기' → **로그인 수단 고르기**(제목 '로그인/회원가입') — `카카오 로그인` → 안드로이드 `Google로 계속하기` /
+  iOS `Apple로 계속하기` → `이메일로 계속하기`. 이메일을 고르면 **이메일 로그인**으로 가고, 거기 아래 '회원가입'·'비밀번호 찾기' 로 간다.
+  - 카카오·구글·Apple 은 처음이면 곧 가입이라 고르기 화면에 가입 갈래가 따로 없다.
+  - 예전(2026-11-14~22)에는 로그인·가입 화면 맨 위에 간편 로그인을 두고 그 아래 '또는 이메일로' 구분선과 이메일 칸을 한 화면에
+    펼쳤다. 간편 로그인을 고를 사람에게도 이메일 칸이 보였고, 이메일 쪽은 간편 버튼 밑으로 밀려 있었다.
+- **이메일 로그인**: 이메일·비밀번호 두 칸은 **칸 안 안내 글자만** 쓴다(칸 위 이름표 없음). 로그인 버튼 바로 아래 한 줄이
+  `비밀번호 찾기 | 회원가입` 이다 — 둘은 같은 무게다. 예전에는 '비밀번호를 잊으셨나요? 비밀번호 찾기' 와 '처음 사용하시나요?
+  회원가입' 두 줄로 떨어져 있었다.
+- **가입·재설정**: 칸이 여럿이라 이름표를 **칸 위**에 둔다 — 글자를 치면 안내 글자가 사라져 어느 칸인지 남지 않는다. 가입 아래는
+  '이미 계정이 있나요? 로그인'. 가입 버튼 글자는 두 앱 모두 '회원가입'(iOS 만 '계정 만들기' 였다).
+- **높이 하나 — 52**: 입력 칸·주 버튼·간편 로그인 버튼·`인증 받기`·코드 줄 `확인` 이 모두 같은 높이다(두 앱 같은 값). 그전에는
+  안드로이드가 전부 56, iOS 는 한 화면에 46·52·56 이 섞여 있었다. 글꼴을 아주 키우면 그만큼만 자란다.
+- **세 버튼의 무게**: 같은 높이·모서리 12. 카카오(다른 버튼을 카카오보다 눈에 띄게 두지 않는다)·Apple('Apple로 로그인' 을 다른 로그인
+  버튼보다 작게 두지 않는다)·Google(다른 간편 로그인만큼은 눈에 띄게) 가이드를 함께 지킨다 — 이메일은 칸과 같은 옅은 유리 바탕이다.
+- **간격**: 제목 줄 아래 첫 칸까지 32(줄 아래 24 + 8), 칸 사이 14, 주 버튼 위 18(14 + 4) — 두 앱 같다. 재설정은 칸 사이 12, 주 버튼
+  위 16.
+- **제목 줄**: 고르기·로그인·가입·재설정이 같은 줄이다(원형 뒤로가기 + 위쪽 가운데 제목, 스크롤 밖). 재설정만 달랐다(안드로이드는
+  왼쪽 큰 제목이 폼과 함께 스크롤, iOS 는 시스템 바).
+
+### 근거 — 2026-11-22 조사
+
+- **앱 캡처 10개 중 7개가 '수단 먼저, 이메일 입력은 다음 화면'** 이었다: 여기어때·야놀자·요기요·오늘의집·배달의민족·리멤버·클래스101.
+  3개는 입력 칸 먼저·간편 로그인 아래였다: KREAM·밀리의서재·웨이브(2021~2022 캡처). 요기요·여기어때는 원문을 직접 열어 확인했고,
+  나머지 여덟은 Codex 조사가 모은 캡처 출처다. 캡처 당시 화면이라 지금 버전과 다를 수 있다.
+- **여기어때(2023 공식 기술 블로그)**: 카카오가 로그인의 75% 를 넘는데 버튼이 작았고, 5% 미만인 이메일이 가장 큰 자리였다 → 간편
+  버튼을 키우고 이메일은 가입·로그인을 한 버튼으로 합쳐 주목도를 낮췄다 → 로그인 전환율 +27%.
+- **웹 로그인 다섯 곳을 직접 열어 쟀다**(무신사·오늘의집·컬리·쿠팡·클래스101 — 앱과 다를 수 있다): 칸 34~54, 버튼 40~54, 모서리 4~12.
+  **다섯 곳 모두 칸 위 이름표가 없다.** 찾기·가입은 로그인 버튼 근처 한 줄이다. 가입 화면 인증 버튼은 컬리가 칸 옆(44, 외곽선),
+  오늘의집이 칸 아래 꽉 찬 폭(44, 연회색)이다.
+- 출처: [여기어때](https://techblog.gccompany.co.kr/ux-designer가-데이터를-만나면-26918c14ae0d) ·
+  [요기요](https://product-designer.tistory.com/entry/간편로그인-기획-시-주의해야하는-사항) · [야놀자](https://seonyeon.tistory.com/464) ·
+  [오늘의집 앱](https://brunch.co.kr/@jiwoomaster/11) · [배민](https://easybaemin.com/ko/basic/2/) · [KREAM](https://wwit.design/2021/04/29/kream/) ·
+  [밀리의서재·리멤버](https://brunch.co.kr/@bommade/35) · [웨이브](https://naraon.tistory.com/541) ·
+  [클래스101](https://docs.channel.io/classmate/ko/articles/비밀번호-잊었을-때-e6290ec2) ·
+  가이드 [카카오](https://developers.kakao.com/docs/ko/kakaologin/design-guide) ·
+  [Apple](https://developer.apple.com/design/human-interface-guidelines/sign-in-with-apple) ·
+  [Google](https://developers.google.com/identity/branding-guidelines) · [네이버](https://developers.naver.com/docs/login/bi/bi.md)
 
 ## 이메일 인증 코드 — 가입과 비밀번호 재설정 (2026-10-11)
 
@@ -579,6 +622,9 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | 카카오 로그인(우리 앱의 토큰 · 인증된 이메일만 · 회원번호 먼저 · 이메일 덮어쓰지 않음 · 401/500) | `lib/kakao-oauth.ts` `verifyKakaoAccessToken` ← `routes/auth.ts` `POST /kakao` · 회귀 `test/kakao-oauth.test.ts`·`test/auth-kakao-route.test.ts` | `ui/auth/KakaoLogin.kt` `loginWithKakao` → `ui/main/MainViewModelAuthActions.kt` `finishKakaoLogin` · 회귀 `KakaoLoginWiringTest.kt` | `KakaoSignIn.swift` `signIn` → `AuthViewModel.loginWithKakao` |
 | 카카오 연결 해제 웹훅(대표 어드민 키 · 언제나 200 · 카카오로만 가입한 계정만 탈퇴 유예 · 회원번호 그대로) | `routes/kakao-webhook.ts` → `lib/kakao-unlink.ts` `handleKakaoUnlink` → `lib/account-deletion.ts` `requestAccountDeletion` · 회귀 `test/kakao-unlink-webhook.test.ts` | — | — |
 | 탈퇴 파기 뒤 카카오 연결 끊기(커밋 뒤 · 어드민 키 · -101 은 성공) | `index.ts` 유예 파기 → `lib/kakao-oauth.ts` `unlinkKakaoUser` · 회귀 `test/scheduled-purge-isolation.test.ts` | 기기 토큰만 버림 `signOutKakao` | 기기 토큰만 버림 `KakaoSignIn.discardDeviceToken` |
+| 로그인 수단 먼저(시작하기 → 카카오·구글/Apple·이메일로 계속하기 → 이메일 로그인) | — | `ui/auth/AuthMethodsScreen.kt` `AuthMethodsScreen` ← `AlarmTalkApp` 의 `AuthRoute.Methods` · 회귀 `KakaoLoginWiringTest.kt` | `Views/Auth/LoginView.swift` 의 `AuthMethodsView` ← `LandingView` 의 `showMethods` · UI 테스트 `SignUpFlowUITests`(CI 밖) |
+| 이메일 로그인은 칸 안 안내 글자만 · 가입·재설정은 칸 위 이름표 · 로그인 아래 `비밀번호 찾기 \| 회원가입` 한 줄 | — | `ui/auth/AuthScreen.kt` 의 `AuthTextField(placeholderOnly)`·`AuthLoginLinksRow` | `VocaTextField`·`VocaSecureField`(`placeholderOnly`) · `LoginView.loginLinksRow` |
+| 칸·버튼 높이 52(칸·주 버튼·간편 로그인·인증 받기·확인) | — | `ui/auth/LandingScreen.kt` 의 `AuthControlHeight` · 칸은 `AuthOutlinedField`(Material 칸이 스스로 거는 56 을 피해 같은 부품으로 직접 짰다) · 회귀 `AuthControlHeightTest.kt`(그려서 잰다) | `Views/Auth/AuthBackdrop.swift` 의 `AuthControlHeight` |
 | 가입 인증 버튼은 이메일 칸 옆(인증 받기 → 다시 받기 → ✓ 인증됨) | — | `ui/auth/AuthScreen.kt` `EmailVerifyButton` | `LoginView.emailVerifyButton` |
 | 인증 화면의 안내는 위쪽 토스트(안내 3초·오류 5초 · 칸에 붙은 오류는 그대로) | — | `ui/app/AlarmTalkAppHelpers.kt` `TopMessageHost` ← `AlarmTalkApp` 의 로그인 전 갈래 | `Views/Auth/AuthToast.swift` `AuthToastModifier` ← `LoginView`·`PasswordResetView` |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로(첫 진입만 — `refreshAppSessionNow` 의 `rollToken`·`sessionTokenToSave`) | `AuthViewModel.refreshUser` |

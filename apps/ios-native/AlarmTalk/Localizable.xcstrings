@@ -839,23 +839,6 @@
         }
       }
     },
-    "계정 만들기" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Create account"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アカウントを作成"
-          }
-        }
-      }
-    },
     "고른 목소리를 지금은 쓸 수 없어요. 다른 목소리를 골라 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2437,6 +2420,40 @@
         }
       }
     },
+    "로그인/회원가입" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log in or sign up"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログイン・会員登録"
+          }
+        }
+      }
+    },
+    "이메일로 계속하기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue with email"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メールで続ける"
+          }
+        }
+      }
+    },
     "마케팅 수신 설정을 변경하지 못했어요" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3469,7 +3486,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再設定"
+            "value" : "パスワード再設定"
           }
         }
       }
@@ -3538,23 +3555,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "パスワードを変更しました。新しいパスワードでログインしてください。"
-          }
-        }
-      }
-    },
-    "비밀번호를 잊으셨나요?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Forgot your password?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "パスワードをお忘れですか？"
           }
         }
       }
@@ -6872,23 +6872,6 @@
         }
       }
     },
-    "처음 사용하시나요?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "First time here?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "はじめてのご利用ですか？"
-          }
-        }
-      }
-    },
     "철회하고 삭제" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7519,7 +7502,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新規登録"
+            "value" : "会員登録"
           }
         }
       }
@@ -12519,40 +12502,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "カカオログインを完了できませんでした。もう一度お試しください。"
-          }
-        }
-      }
-    },
-    "또는 이메일로" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "or with email"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "またはメールで"
-          }
-        }
-      }
-    },
-    "또는 이메일로 가입" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "or sign up with email"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "またはメールで登録"
           }
         }
       }

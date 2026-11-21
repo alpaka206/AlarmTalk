@@ -24,12 +24,11 @@
     <string name="auth_email_verify_done">認証済み</string>
     <string name="auth_email_verify_resend_short">再送信</string>
     <string name="auth_kakao_login">カカオログイン</string>
-    <string name="auth_divider_email_login">またはメールで</string>
-    <string name="auth_divider_email_register">またはメールで登録</string>
     <string name="msg_kakao_login_failed">カカオログインを完了できませんでした。もう一度お試しください。</string>
     <string name="msg_register_email_social_kakao">カカオで登録済みのメールです。「カカオログイン」でログインしてください。</string>
-    <string name="auth_find_password">再設定</string>
-    <string name="auth_forgot_password">パスワードをお忘れですか？</string>
+    <string name="auth_find_password">パスワード再設定</string>
+    <string name="auth_methods_title">ログイン・会員登録</string>
+    <string name="auth_continue_with_email">メールで続ける</string>
     <string name="auth_label_confirm_password">パスワードの確認</string>
     <string name="auth_label_email">メールアドレス</string>
     <string name="auth_reset_title">パスワード再設定</string>
@@ -40,7 +39,6 @@
     <string name="msg_password_reset_failed">パスワードの再設定に失敗しました。</string>
     <string name="auth_label_password">パスワード</string>
     <string name="auth_label_verification_code">認証コード</string>
-    <string name="auth_landing_first_time">はじめてのご利用ですか？</string>
     <string name="auth_landing_get_started">始める</string>
     <string name="auth_landing_headline_pre">大好きな</string>
     <string name="auth_landing_headline_keyword">声</string>
@@ -117,7 +115,6 @@
     <string name="notification_alarm_status_name">アラームの状態</string>
     <string name="notification_alarm_status_description">予約できなかったアラームをお知らせします</string>
     <string name="common_google_continue">Googleで続ける</string>
-    <string name="common_google_login">Googleでログイン</string>
     <string name="common_permission_gate_allow_action">許可する</string>
     <string name="common_permission_gate_close_app">閉じる</string>
     <string name="common_permission_gate_exact_alarm_title">正確なアラームの権限を許可するとアラームを設定できます</string>

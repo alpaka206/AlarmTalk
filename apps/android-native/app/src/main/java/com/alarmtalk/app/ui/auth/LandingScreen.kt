@@ -88,6 +88,14 @@ private val LandingSeaBottom = Color(0xFF031236)
  * 동의 화면 체크 칸의 체크 표시와 같은 색이다. iOS `AuthSceneColors.onAccent`.
  */
 internal val TextOnBrandAccent = Color(0xFF0A1428)
+
+/**
+ * 인증 화면군의 입력 칸·버튼 높이 하나 — 칸, 주 버튼([GradientCta]), 카카오·구글, 인증 받기·확인이 모두 이 값이다.
+ * 2026-11-22 오너("버튼 높이 안드로이드·아이폰 다른 것도 적절한 크기로 통일")로 52 로 맞췄다. 그전에는 안드로이드가 전부 56,
+ * iOS 는 한 화면에 46·52·56 이 섞여 있었다. 실제 서비스를 재 보니 44~54 였고(무신사 칸 34·버튼 44, 오늘의집 칸 50·버튼 48,
+ * 컬리 54, 쿠팡 칸 48·버튼 44), 애플 기본 44pt·머티리얼 누르는 영역 48dp 보다 넉넉하다. iOS `AuthControlHeight` 와 같은 값이다.
+ */
+internal val AuthControlHeight = 52.dp
 // 밤하늘 위 유리 면 — 랜딩 미리듣기 상자와 '업데이트가 필요해요' 화면(`UpdateRequiredScreen`)이 같이 쓴다. iOS `AuthSceneColors.glassFill`·`glassBorder`.
 internal val GlassFill = Color(0x21FFFFFF)
 internal val GlassBorder = Color(0x2EFFFFFF)
@@ -466,7 +474,7 @@ internal fun GradientCta(text: String, onClick: () -> Unit, enabled: Boolean = t
                 .fillMaxWidth()
                 // ⚠ **`fillMaxSize()` 를 쓰지 말 것 — 버튼이 화면을 통째로 덮는다.**
                 //
-                // 높이 상한을 없앤 것(`height(56.dp)` → `heightIn(min = 56.dp)`)은 큰 글꼴에서
+                // 높이 상한을 없앤 것(`height(56.dp)` → `heightIn(min = …)`)은 큰 글꼴에서
                 // 라벨이 잘리지 않게 하려던 것이라 의도는 맞다. 문제는 **안쪽이 부모가 주는
                 // 최대 높이까지 늘어난다**는 것이다: Column 은 weight 없는 자식을 **먼저**
                 // 들어온 최대 제약으로 재므로, 여기서 `fillMaxSize()` 를 하면 CTA 가 화면
@@ -476,8 +484,8 @@ internal fun GradientCta(text: String, onClick: () -> Unit, enabled: Boolean = t
                 // '시작하기' 하나뿐이었다).
                 //
                 // 그래서 **최소 높이는 여기서만** 정하고 세로는 내용에 맞춘다 — 한 줄이면
-                // 56dp, 글꼴이 커져 두 줄이 되면 그만큼만 자란다.
-                .heightIn(min = 56.dp)
+                // [AuthControlHeight](52), 글꼴이 커져 두 줄이 되면 그만큼만 자란다.
+                .heightIn(min = AuthControlHeight)
                 // ⚠ **하늘색 바탕에 남색 글씨다**(2026-11-16 오너, 캔버스 '고르기 · 업데이트 버튼' B안). 예전의 파랑→하늘
                 // 그라데이션에 흰 글씨는 글자가 놓인 가운데 대비가 3:1 정도였다(오른쪽 끝 2.3:1). 이름은 옛 그대로 둔다.
                 .background(BrandAccentOnScene),

@@ -74,6 +74,12 @@ enum AuthSceneColors {
     fileprivate static let sceneBottom = Color.hex(0x070C1D)
 }
 
+/// 인증 화면군의 입력 칸·버튼 높이 하나 — 칸, 주 버튼(`GradientCta`), 카카오·Apple, 인증 받기·확인이 모두 이 값이다.
+/// 2026-11-22 오너("버튼 높이 안드로이드·아이폰 다른 것도 적절한 크기로 통일")로 52 로 맞췄다. 그전에는 한 화면에 칸 46·
+/// 간편 로그인 52·주 버튼 56 이 섞였고 안드로이드는 전부 56 이었다. 실제 서비스는 44~54 였고 애플 기본 버튼 44pt 보다 넉넉하다.
+/// 안드로이드 `ui/auth/LandingScreen.kt` 의 `AuthControlHeight` 와 같은 값이다.
+let AuthControlHeight: CGFloat = 52
+
 /// 인증 폼 화면(로그인·가입·비밀번호 재설정·약관 동의) 공통 배경 —
 /// 은은한 네이비 그라데이션 + 상단 브랜드 글로우. 안드로이드 `AuthScreen.kt:70-100`.
 struct AuthBackdrop<Content: View>: View {

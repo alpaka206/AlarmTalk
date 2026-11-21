@@ -48,7 +48,7 @@ enum UIPreviewSeed {
         #endif
     }
 
-    /// 인증 화면을 바로 띄우는 실행 인자 — `-UIPreviewAuthScreen login|register|reset|consent`.
+    /// 인증 화면을 바로 띄우는 실행 인자 — `-UIPreviewAuthScreen methods|login|register|reset|consent`(`methods` 는 수단 고르기).
     /// 시뮬레이터에는 스크립트로 탭할 방법이 없어, 화면 확인용 진입점을 인자로 연다.
     static var authScreen: String? {
         #if DEBUG

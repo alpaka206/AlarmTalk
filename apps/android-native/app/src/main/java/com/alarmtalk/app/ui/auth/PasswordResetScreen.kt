@@ -1,23 +1,14 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,10 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -93,29 +82,19 @@ internal fun PasswordResetScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding)
+                .padding(contentPadding),
+        ) {
+        // 제목 줄은 로그인·가입과 같다(`AuthTopBar` — 원형 뒤로가기 + 위쪽 가운데 제목, 스크롤 밖. 2026-11-22). 예전에는 이 화면만
+        // 뒤로가기 옆에 큰 제목을 왼쪽으로 세워 폼과 함께 스크롤됐다. iOS 짝 `PasswordResetView` 의 `WakerTopBar`.
+        AuthTopBar(title = stringResource(R.string.auth_reset_title), onBack = onBack)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 18.dp),
+                .padding(horizontal = 24.dp)
+                .padding(top = 8.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.auth_back),
-                        tint = TextOnScene,
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.auth_reset_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = TextOnScene,
-                )
-            }
             // 제목 아래 안내('가입한 이메일로 인증 코드를 보내드려요.')는 뺐다(2026-11-16 오너) — 칸과 버튼이 같은 말을 한다.
 
             AuthTextField(
@@ -158,40 +137,14 @@ internal fun PasswordResetScreen(
             )
 
             if (codeSent && !verified) {
-                // 가입 화면의 코드 줄과 같다 — 라벨은 줄 위에 따로, 줄에는 입력칸과 `확인` 만 같은 높이(56)로.
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        OutlinedTextField(
-                            value = code,
-                            onValueChange = { code = sanitizeVerificationCode(it) },
-                            singleLine = true,
-                            enabled = !busy,
-                            shape = WakerInputShape,
-                            colors = authFieldColors(),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.NumberPassword,
-                                imeAction = ImeAction.Done,
-                            ),
-                            modifier = Modifier.textInputTapTarget().then(Modifier.weight(1f)),
-                        )
-                        val verifyEnabled = !busy && code.length == VerificationCodeLength
-                        OutlinedButton(
-                            onClick = { onVerifyCode(email, code) },
-                            enabled = verifyEnabled,
-                            modifier = Modifier.heightIn(min = 56.dp),
-                            shape = WakerButtonShape,
-                            border = authOutlinedButtonBorder(verifyEnabled),
-                            colors = authOutlinedButtonColors(),
-                        ) {
-                            Text(stringResource(R.string.auth_confirm))
-                        }
-                    }
-                }
+                // 가입 화면의 코드 줄과 같은 부품이다(`AuthCodeConfirmRow` — 라벨은 줄 위, 칸과 `확인` 은 같은 높이).
+                AuthCodeConfirmRow(
+                    code = code,
+                    onCodeChange = { code = it },
+                    busy = busy,
+                    imeAction = ImeAction.Done,
+                    onConfirm = { onVerifyCode(email, code) },
+                )
                 Text(
                     text = stringResource(R.string.auth_verification_code_hint),
                     style = MaterialTheme.typography.bodySmall,
@@ -222,10 +175,10 @@ internal fun PasswordResetScreen(
                     imeAction = ImeAction.Done,
                     enabled = !busy,
                     isError = confirmPassword.isNotBlank() && !passwordMatches,
-                    supportingText = {
-                        if (confirmPassword.isNotBlank() && !passwordMatches) {
-                            Text(stringResource(R.string.auth_password_mismatch))
-                        }
+                    supportingText = if (confirmPassword.isNotBlank() && !passwordMatches) {
+                        { Text(stringResource(R.string.auth_password_mismatch)) }
+                    } else {
+                        null
                     },
                     passwordVisible = confirmPasswordVisible,
                     onTogglePasswordVisible = { confirmPasswordVisible = !confirmPasswordVisible },
@@ -238,12 +191,16 @@ internal fun PasswordResetScreen(
                     passwordMatches = passwordMatches,
                 )
 
-                GradientCta(
-                    text = stringResource(R.string.auth_reset_submit),
-                    onClick = { onConfirm(email, code, password) },
-                    enabled = !busy && canConfirm,
-                )
+                // 주 버튼은 규칙에서 12 + 4 떨어진다 — iOS `PasswordResetView.confirmButton` 의 `.padding(.top, 4)` 와 같다.
+                Box(Modifier.padding(top = 4.dp)) {
+                    GradientCta(
+                        text = stringResource(R.string.auth_reset_submit),
+                        onClick = { onConfirm(email, code, password) },
+                        enabled = !busy && canConfirm,
+                    )
+                }
             }
+        }
         }
     }
 }

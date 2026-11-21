@@ -233,9 +233,15 @@ class EmailCodeFailureMessageTest {
             "ui/auth/AuthScreen.kt" to "emailCode",
             "ui/auth/PasswordResetScreen.kt" to "code",
         )
+        // 코드 줄은 두 화면이 같은 부품(`AuthCodeConfirmRow`)이고, 새니타이저는 그 부품 안 한 곳이다(2026-11-22).
+        val row = withoutLineComments(readSource("ui/auth/AuthScreen.kt"))
+        assertTrue("코드 줄 부품이 새니타이저를 거치지 않는다.", row.contains("onValueChange = { onCodeChange(sanitizeVerificationCode(it)) }"))
         for ((path, state) in screens) {
             val source = withoutLineComments(readSource(path))
-            assertTrue("$path 의 코드 칸이 새니타이저를 거치지 않는다.", source.contains("$state = sanitizeVerificationCode(it)"))
+            assertTrue(
+                "$path 의 코드 칸이 공용 코드 줄을 쓰지 않는다(새니타이저를 건너뛴다).",
+                Regex("""AuthCodeConfirmRow\(\s*code = $state,""").containsMatchIn(source),
+            )
             assertFalse(
                 "$path 가 다시 `isDigit` 필터를 쓴다 — ASCII 가 아닌 숫자를 그대로 통과시킨다.",
                 source.contains("filter(Char::isDigit).take("),
@@ -258,7 +264,7 @@ class EmailCodeFailureMessageTest {
         assertTrue(reset.contains("codeSent = codeSent,"))
         assertTrue(reset.contains("enabled = !busy && canRequestEmailCode(email) && !verified,"))
         // 코드를 먼저 확인하고(코드를 쓰지 않는 `/password-reset/verify`) 그다음 새 비밀번호다.
-        assertTrue(reset.contains("onClick = { onVerifyCode(email, code) }"))
+        assertTrue(reset.contains("onConfirm = { onVerifyCode(email, code) }"))
         assertTrue(reset.indexOf("if (verified) {") > reset.indexOf("if (codeSent && !verified) {"))
     }
 

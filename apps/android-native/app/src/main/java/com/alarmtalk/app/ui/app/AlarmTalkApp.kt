@@ -1276,7 +1276,17 @@ internal fun AlarmTalkApp(
               when (val route = authRoute) {
                   AuthRoute.Landing -> LandingScreen(
                       contentPadding = padding,
-                      onStart = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
+                      onStart = { authNavigate(AuthRoute.Methods) },
+                  )
+                  // 로그인 수단을 먼저 고른다(2026-11-22 오너) — 카카오·구글은 여기서 끝나고, 이메일만 다음 화면으로 간다.
+                  // 콜백은 람다로 넘긴다 — 지역 함수 참조는 캡처가 첫 콤포지션 값으로 굳을 수 있다(CLAUDE.md).
+                  AuthRoute.Methods -> AuthMethodsScreen(
+                      contentPadding = padding,
+                      busy = authBusy,
+                      onBack = { authBack() },
+                      onKakaoSignIn = { launchKakaoSignIn() },
+                      onGoogleSignIn = { launchGoogleSignIn() },
+                      onContinueWithEmail = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
                   )
                   AuthRoute.ResetPassword -> {
                       // ⚠ **화면을 나갈 때 발송 상태를 지운다.** 안 지우면 뒤로 갔다가 다시
@@ -1335,9 +1345,6 @@ internal fun AlarmTalkApp(
                           val nextMode = if (route.mode == AuthMode.Login) AuthMode.Register else AuthMode.Login
                           authNavigate(AuthRoute.Auth(nextMode))
                       },
-                      onGoogleSignIn = ::launchGoogleSignIn,
-                      // 람다로 넘긴다 — 지역 함수 참조는 캡처가 첫 콤포지션 값으로 굳을 수 있다(CLAUDE.md).
-                      onKakaoSignIn = { launchKakaoSignIn() },
                       onFindPassword = { authNavigate(AuthRoute.ResetPassword) },
                   )
               }

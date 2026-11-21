@@ -33,7 +33,7 @@ struct KakaoLoginButton: View {
                 }
                 .padding(.horizontal, 16)
             }
-            .frame(maxWidth: .infinity, minHeight: 52)
+            .frame(maxWidth: .infinity, minHeight: AuthControlHeight)
             .background(Self.container, in: RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
             .contentShape(Rectangle())
         }
