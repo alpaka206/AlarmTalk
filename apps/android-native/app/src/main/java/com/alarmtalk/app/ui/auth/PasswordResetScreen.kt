@@ -137,18 +137,13 @@ internal fun PasswordResetScreen(
             )
 
             if (codeSent && !verified) {
-                // 가입 화면의 코드 줄과 같은 부품이다(`AuthCodeConfirmRow` — 라벨은 줄 위, 칸과 `확인` 은 같은 높이).
+                // 가입 화면의 코드 줄과 같은 부품이다(`AuthCodeConfirmRow` — 라벨은 줄 위, 칸과 `확인` 은 같은 높이, 안내는 줄 바로 아래).
                 AuthCodeConfirmRow(
                     code = code,
                     onCodeChange = { code = it },
                     busy = busy,
                     imeAction = ImeAction.Done,
                     onConfirm = { onVerifyCode(email, code) },
-                )
-                Text(
-                    text = stringResource(R.string.auth_verification_code_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AuthTextMuted,
                 )
             }
 

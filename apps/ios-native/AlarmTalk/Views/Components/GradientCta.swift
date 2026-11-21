@@ -46,7 +46,7 @@ struct GradientCta: View {
             // 폭·높이를 `frame` 으로 넓히는 버튼은 **전부** 이 줄이 필요하다.
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AuthPlainButtonStyle())
         .background(AuthSceneColors.accent)
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
         // 안드로이드와 같은 값으로 버튼 전체를 흐린다 — 회색으로 바꾸지 않는다.
@@ -80,11 +80,22 @@ struct AuthOutlinedButton: View {
                 // 글자만 눌린다(위 `GradientCta` 와 같은 이유).
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AuthPlainButtonStyle())
         .overlay(
             RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                 .stroke(enabled ? AuthSceneColors.line : AuthSceneColors.lineSoft, lineWidth: 1)
         )
         .disabled(!enabled)
+    }
+}
+
+/// 인증 화면 버튼의 평 모양 — 누르면 살짝 옅어지고, **꺼져도 스스로 흐리지 않는다.** 꺼진 모양은 각 버튼이 정한 색·불투명도
+/// 하나로만 낸다(안드로이드 `authOutlinedButtonColors` 의 55% 글자, `GradientCta` 의 0.6).
+///
+/// ⚠ `.plain` 으로 되돌리지 말 것. `.plain` 은 `.disabled` 일 때 글자를 한 번 더 흐려, 55% 로 맞춘 글자가 그보다 옅게 그려졌고
+/// 눌리지 않을 뿐인 `✓ 인증됨` 의 강조색까지 꺼진 버튼처럼 바랬다(2026-11-22 두 앱 대조 — 안드로이드는 또렷했다).
+struct AuthPlainButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.7 : 1)
     }
 }

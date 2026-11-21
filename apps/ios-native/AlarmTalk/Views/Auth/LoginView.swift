@@ -168,6 +168,7 @@ struct LoginView: View {
             if let preview = UIPreviewSeed.authToast { auth.statusMessage = preview }
             // DEBUG 화면 확인 — `-UIPreviewAuthScreen reset` 은 로그인 화면을 거쳐 비밀번호 재설정을 연다(릴리스에서는 늘 nil).
             if UIPreviewSeed.authScreen == "reset" { showPasswordReset = true }
+            if mode == .register, let step = UIPreviewSeed.registerStep { await applyRegisterPreviewStep(step) }
         }
         #endif
         // 제목은 화면 **안**에 있다(위 Text) — 네비게이션 바에 또 그리면 같은 말이 두 번 나온다.
@@ -495,6 +496,30 @@ struct LoginView: View {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
+    #if DEBUG
+    /// 화면 확인용 — `-UIPreviewRegisterStep code|rejected|verified|invalid`. 이메일을 넣은 **뒤** 한 박자 쉬고 단계를 놓는다 —
+    /// 이메일이 바뀌면 `.onChange(of: email)` 가 인증 상태와 오류를 지우기 때문이다. 릴리스에는 없다.
+    private func applyRegisterPreviewStep(_ step: String) async {
+        email = step == "invalid" ? "preview@alarm" : "preview@alarm-talk.com"
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        switch step {
+        case "code":
+            verificationSent = true
+        case "rejected":
+            verificationSent = true
+            auth.setPreviewEmailCodeError(APIErrorMessages.message(for: "AUTH_EMAIL_CODE_INVALID"))
+        case "verified":
+            verificationSent = true
+            verificationCompleted = true
+            verifiedEmail = normalizedEmail
+        case "invalid":
+            emailFormatError = true
+        default:
+            break
+        }
+    }
+    #endif
+
     private func handleModeChange(_ next: LoginMode) {
         // ⚠ **이 대입을 빼지 말 것.** 예전에는 아래 리셋만 하고 `mode` 를 바꾸지 않아서,
         // '회원가입' 을 눌러도 화면이 로그인 그대로였다. 랜딩의 '시작하기' 는 `.login`
@@ -629,7 +654,7 @@ struct AuthMethodsView: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AuthPlainButtonStyle())
         .opacity(auth.isBusy ? 0.38 : 1)
         .disabled(auth.isBusy)
     }
@@ -807,7 +832,7 @@ struct AuthEmailVerifyButton: View {
             // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AuthPlainButtonStyle())
         .overlay(
             RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                 .stroke(
@@ -869,13 +894,16 @@ struct AuthCodeConfirmRow: View {
             Button(action: onConfirm) {
                 Text("확인")
                     .font(theme.typography.labelLarge)
-                    .foregroundStyle(confirmEnabled ? AuthSceneColors.text : Color.white.opacity(0x59 / 255.0))
+                    // 꺼진 글자는 55% — 다른 인증 버튼(`AuthEmailVerifyButton`)·안드로이드 `authOutlinedButtonColors` 와 같다.
+                    // 35% 는 대비 3.15:1 로 읽기 어려워 2026-08-17 에 올렸는데 이 버튼만 빠져 있었다(2026-11-22).
+                    .foregroundStyle(confirmEnabled ? AuthSceneColors.text : Color.white.opacity(0x8C / 255.0))
                     .frame(minHeight: AuthControlHeight)
-                    .padding(.horizontal, 18)
+                    // 좌우 24 — 안드로이드 `OutlinedButton` 기본 여백과 같다(예전 iOS 만 18).
+                    .padding(.horizontal, 24)
                     // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(AuthPlainButtonStyle())
             .overlay(
                 RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                     .stroke(confirmEnabled ? AuthSceneColors.line : AuthSceneColors.lineSoft, lineWidth: 1)

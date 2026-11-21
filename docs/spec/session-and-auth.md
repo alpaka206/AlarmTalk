@@ -414,6 +414,14 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
   버튼보다 작게 두지 않는다)·Google(다른 간편 로그인만큼은 눈에 띄게) 가이드를 함께 지킨다 — 이메일은 칸과 같은 옅은 유리 바탕이다.
 - **간격**: 제목 줄 아래 첫 칸까지 32(줄 아래 24 + 8), 칸 사이 14, 주 버튼 위 18(14 + 4) — 두 앱 같다. 재설정은 칸 사이 12, 주 버튼
   위 16.
+- **인증 줄**(가입·재설정): 이메일 칸 옆 버튼(`인증 받기` → `다시 받기` → `✓ 인증됨`)과 코드 줄 [칸][`확인`] 이 모두 52 다. 코드 줄
+  **바로 아래(6)** 가 안내 '메일로 받은 6자리 코드를 입력해 주세요.' 이고, 거절·다시 받기 실패 문장은 **그 자리에 대신** 선다(작은
+  글씨·오류색 — 안내와 오류를 둘 다 띄우지 않는다). 코드 줄이 없을 때의 실패 문장은 이메일 줄 바로 아래다. 2026-11-22 전에는
+  안드로이드만 안내를 화면 간격(14) 밖에 두고 오류를 그 아래 큰 글씨로 하나 더 띄웠다.
+- **칸 아래 문장**(형식 오류·로그인 실패·비밀번호 불일치·코드 안내)은 칸 **왼쪽 끝**에서 시작한다 — 위 이름표와 같은 줄이다. 예전에는
+  안드로이드만 Material 칸 안쪽 여백(16)만큼 들여 썼다.
+- **꺼진 버튼은 한 번만 흐린다**: 외곽선 버튼 글자 55%, 주 버튼 전체 0.6. `✓ 인증됨` 은 눌리지 않을 뿐 '마친 상태' 라 강조색 그대로다.
+  iOS 의 `.plain` 버튼 모양은 꺼질 때 글자를 한 번 더 흐려 `✓ 인증됨` 까지 바랬다 — 인증 화면 버튼은 `AuthPlainButtonStyle` 을 쓴다.
 - **제목 줄**: 고르기·로그인·가입·재설정이 같은 줄이다(원형 뒤로가기 + 위쪽 가운데 제목, 스크롤 밖). 재설정만 달랐다(안드로이드는
   왼쪽 큰 제목이 폼과 함께 스크롤, iOS 는 시스템 바).
 
@@ -626,6 +634,7 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | 이메일 로그인은 칸 안 안내 글자만 · 가입·재설정은 칸 위 이름표 · 로그인 아래 `비밀번호 찾기 \| 회원가입` 한 줄 | — | `ui/auth/AuthScreen.kt` 의 `AuthTextField(placeholderOnly)`·`AuthLoginLinksRow` | `VocaTextField`·`VocaSecureField`(`placeholderOnly`) · `LoginView.loginLinksRow` |
 | 칸·버튼 높이 52(칸·주 버튼·간편 로그인·인증 받기·확인) | — | `ui/auth/LandingScreen.kt` 의 `AuthControlHeight` · 칸은 `AuthOutlinedField`(Material 칸이 스스로 거는 56 을 피해 같은 부품으로 직접 짰다) · 회귀 `AuthControlHeightTest.kt`(그려서 잰다) | `Views/Auth/AuthBackdrop.swift` 의 `AuthControlHeight` |
 | 가입 인증 버튼은 이메일 칸 옆(인증 받기 → 다시 받기 → ✓ 인증됨) | — | `ui/auth/AuthScreen.kt` `EmailVerifyButton` | `LoginView.emailVerifyButton` |
+| 코드 줄 바로 아래 안내, 거절 문장은 그 자리에 대신 · 칸 아래 문장은 칸 왼쪽 끝 · 꺼진 버튼은 한 번만 흐린다 | — | `ui/auth/AuthScreen.kt` 의 `AuthCodeConfirmRow(error)`·`AuthTextField` 의 오류 줄 | `LoginView.verificationCodeRow`·`PasswordResetView` 의 코드 묶음 · `Views/Components/GradientCta.swift` 의 `AuthPlainButtonStyle` · 화면 확인 `-UIPreviewRegisterStep code\|rejected\|verified\|invalid` |
 | 인증 화면의 안내는 위쪽 토스트(안내 3초·오류 5초 · 칸에 붙은 오류는 그대로) | — | `ui/app/AlarmTalkAppHelpers.kt` `TopMessageHost` ← `AlarmTalkApp` 의 로그인 전 갈래 | `Views/Auth/AuthToast.swift` `AuthToastModifier` ← `LoginView`·`PasswordResetView` |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로(첫 진입만 — `refreshAppSessionNow` 의 `rollToken`·`sessionTokenToSave`) | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |

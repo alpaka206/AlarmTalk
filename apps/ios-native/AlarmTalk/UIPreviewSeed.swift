@@ -48,6 +48,16 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 가입 화면의 인증 줄을 그 단계로 띄운다 — `-UIPreviewRegisterStep code|rejected|verified|invalid`(함께
+    /// `-UIPreviewAuthScreen register`). 서버 없이 코드 줄·거절 문장·`✓ 인증됨`·형식 오류를 보려고 둔다.
+    static var registerStep: String? {
+        #if DEBUG
+        return argValue("-UIPreviewRegisterStep")
+        #else
+        return nil
+        #endif
+    }
+
     /// 인증 화면을 바로 띄우는 실행 인자 — `-UIPreviewAuthScreen methods|login|register|reset|consent`(`methods` 는 수단 고르기).
     /// 시뮬레이터에는 스크립트로 탭할 방법이 없어, 화면 확인용 진입점을 인자로 연다.
     static var authScreen: String? {

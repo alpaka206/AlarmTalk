@@ -234,11 +234,10 @@ internal fun AuthTextField(
             trailingAction?.invoke()
         }
         if (supportingText != null) {
-            // Material 칸의 `supportingText` 자리(왼쪽 16·작은 글씨·오류색)를 그대로 옮겼다 — 여기 오는 것은 오류뿐이다.
-            Box(Modifier.padding(horizontal = 16.dp)) {
-                CompositionLocalProvider(LocalContentColor provides AuthErrorText) {
-                    ProvideTextStyle(MaterialTheme.typography.bodySmall, supportingText)
-                }
+            // 칸 아래 오류 — 작은 글씨·오류색, 칸 **왼쪽 끝**에서 시작한다(위 이름표와 같은 줄). 여기 오는 것은 오류뿐이다.
+            // 예전에는 Material 칸 안쪽 여백(16)만큼 들여 써서 iOS(들여 쓰지 않음)와 시작점이 달랐다(2026-11-22 두 앱 대조).
+            CompositionLocalProvider(LocalContentColor provides AuthErrorText) {
+                ProvideTextStyle(MaterialTheme.typography.bodySmall, supportingText)
             }
         }
     }
@@ -326,11 +325,15 @@ private fun AuthOutlinedField(
 }
 
 /**
- * 인증 코드 칸과 `확인` — 가입·비밀번호 재설정 두 화면이 같은 모양으로 쓴다. iOS 짝은 `LoginView.swift` 의 `AuthCodeConfirmRow`.
+ * 인증 코드 칸과 `확인`, 그 아래 한 줄 — 가입·비밀번호 재설정 두 화면이 같은 모양으로 쓴다. iOS 짝은 `LoginView.swift` 의
+ * `AuthCodeConfirmRow` 와 그것을 감싼 `verificationCodeRow`.
  *
  * ⚠ **라벨은 줄 위에 따로 둔다**(2026-11-09 오너 "입력창이랑 확인이랑 줄 다름"). 줄에는 칸과 버튼만 같은 높이
  * ([AuthControlHeight])로 둔다 — 라벨까지 한 묶음이면 가운데 정렬된 버튼이 라벨을 합친 높이의 가운데로 올라간다.
  * 확인은 여섯 자리가 찼을 때만 눌린다 — 거절된 숫자는 화면이 비우므로 같은 숫자를 다시 보낼 수 없다.
+ *
+ * 줄 바로 아래(6)는 안내 '메일로 받은 6자리 코드를…' 이고, [error] 가 있으면 **그 자리에** 오류가 대신 선다(작은 글씨·오류색).
+ * 2026-11-22 전에는 안드로이드만 안내를 화면 간격(14) 밖에 두고, 오류를 그 아래 큰 글씨로 하나 더 띄웠다 — iOS 와 달랐다.
  */
 @Composable
 internal fun AuthCodeConfirmRow(
@@ -338,30 +341,38 @@ internal fun AuthCodeConfirmRow(
     onCodeChange: (String) -> Unit,
     busy: Boolean,
     imeAction: ImeAction,
+    error: String? = null,
     onConfirm: () -> Unit,
 ) {
     val confirmEnabled = !busy && code.length == VerificationCodeLength
-    AuthTextField(
-        label = stringResource(R.string.auth_label_verification_code),
-        value = code,
-        // ASCII 숫자 여섯 자로 맞춘다 — `isDigit` 필터는 ASCII 가 아닌 숫자를 그대로 통과시키고 서버는 그걸 형식에서 떨어뜨린다.
-        onValueChange = { onCodeChange(sanitizeVerificationCode(it)) },
-        keyboardType = KeyboardType.NumberPassword,
-        imeAction = imeAction,
-        enabled = !busy,
-        trailingAction = {
-            OutlinedButton(
-                onClick = onConfirm,
-                enabled = confirmEnabled,
-                modifier = Modifier.heightIn(min = AuthControlHeight),
-                shape = WakerButtonShape,
-                border = authOutlinedButtonBorder(confirmEnabled),
-                colors = authOutlinedButtonColors(),
-            ) {
-                Text(stringResource(R.string.auth_confirm))
-            }
-        },
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        AuthTextField(
+            label = stringResource(R.string.auth_label_verification_code),
+            value = code,
+            // ASCII 숫자 여섯 자로 맞춘다 — `isDigit` 필터는 ASCII 가 아닌 숫자를 그대로 통과시키고 서버는 그걸 형식에서 떨어뜨린다.
+            onValueChange = { onCodeChange(sanitizeVerificationCode(it)) },
+            keyboardType = KeyboardType.NumberPassword,
+            imeAction = imeAction,
+            enabled = !busy,
+            trailingAction = {
+                OutlinedButton(
+                    onClick = onConfirm,
+                    enabled = confirmEnabled,
+                    modifier = Modifier.heightIn(min = AuthControlHeight),
+                    shape = WakerButtonShape,
+                    border = authOutlinedButtonBorder(confirmEnabled),
+                    colors = authOutlinedButtonColors(),
+                ) {
+                    Text(stringResource(R.string.auth_confirm))
+                }
+            },
+        )
+        Text(
+            text = error ?: stringResource(R.string.auth_verification_code_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (error != null) AuthErrorText else AuthTextMuted,
+        )
+    }
 }
 
 @Composable
@@ -578,6 +589,8 @@ internal fun AuthScreen(
             )
 
             if (mode == AuthMode.Register) {
+                // 인증 요청·코드 확인·가입의 실패 문장 — 코드 줄이 있으면 그 줄 아래 안내 자리(`AuthCodeConfirmRow` 의 `error`),
+                // 없으면 이메일 줄 바로 아래다. 스낵바는 키보드에 가려 안 보인다. iOS `LoginView` 의 `emailCodeError` 와 같은 자리·크기다.
                 if (codeSentForEmail && !isEmailVerified) {
                     AuthCodeConfirmRow(
                         code = emailCode,
@@ -587,25 +600,18 @@ internal fun AuthScreen(
                         },
                         busy = busy,
                         imeAction = ImeAction.Next,
+                        error = registerError,
                         onConfirm = { onConfirmEmailVerification(email, emailCode) },
                     )
+                } else if (registerError != null) {
                     Text(
-                        text = stringResource(R.string.auth_verification_code_hint),
+                        text = registerError,
                         style = MaterialTheme.typography.bodySmall,
-                        color = AuthTextMuted,
+                        color = AuthErrorText,
                     )
                 }
                 // 인증을 마친 것은 이메일 칸 옆 버튼('✓ 인증됨')이 말한다 — 아래에 '이메일 인증 완료' 줄을 또 두지
                 // 않는다(예전에는 버튼과 줄이 같은 말을 두 번 했다).
-
-                // 인증 요청/코드 확인/가입 실패 안내 — 스낵바는 키보드에 가려 안 보인다.
-                if (registerError != null) {
-                    Text(
-                        text = registerError,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = AuthErrorText,
-                    )
-                }
             }
 
             AuthTextField(

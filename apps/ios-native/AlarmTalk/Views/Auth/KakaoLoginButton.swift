@@ -37,7 +37,7 @@ struct KakaoLoginButton: View {
             .background(Self.container, in: RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AuthPlainButtonStyle())
         .opacity(enabled ? 1 : 0.38)
         .disabled(!enabled)
     }

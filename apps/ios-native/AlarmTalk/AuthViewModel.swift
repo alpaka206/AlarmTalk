@@ -183,6 +183,11 @@ final class AuthViewModel: ObservableObject {
     /// 「이메일 인증 코드」.
     @Published private(set) var emailCodeError: String?
 
+    #if DEBUG
+    /// 화면 확인용 — `-UIPreviewRegisterStep rejected` 가 코드 줄 아래 오류 자리를 띄운다(`LoginView`). 릴리스에는 없다.
+    func setPreviewEmailCodeError(_ message: String?) { emailCodeError = message }
+    #endif
+
     /// 코드 칸을 **비우라는 신호** — 화면은 값이 아니라 바뀌었다는 사실만 본다
     /// (`LoginView`·`PasswordResetView` 의 `.onChange`).
     ///
