@@ -244,7 +244,9 @@ struct VoiceOutputSettingsPane: View {
                     // ⚠ **눈금은 10단위**(안드로이드 `VoiceVolumeSelector` 와 같은 stop).
                     // 5단위로 두면 iOS 에서만 만들 수 있는 값(15·25…)이 생겨, 같은 알람을
                     // 두 기기에서 열었을 때 숫자가 달라 보인다.
-                    Slider(
+                    // 손잡이는 안드로이드와 같은 흰 동그라미(`WakerStepSlider`) — 시스템 `Slider` 의 넓적한 알약은 100% 에서 막대
+                    // 끝에 얼룩처럼 붙었다(2026-11-22 오너).
+                    WakerStepSlider(
                         value: Binding(
                             get: { Double(volumePercent) },
                             set: {
@@ -253,13 +255,12 @@ struct VoiceOutputSettingsPane: View {
                                 onVolumeLive?(next)
                             }
                         ),
-                        in: 10...100,
+                        range: 10...100,
                         step: 10,
-                        onEditingChanged: { editing in
-                            if !editing { onVolumeSettled?() }
-                        }
+                        accessibilityLabel: String(localized: "목소리 크기"),
+                        accessibilityValue: "\(volumePercent)%",
+                        onEditingEnded: { onVolumeSettled?() }
                     )
-                    .tint(theme.palette.primary)
                 }
                 .padding(.vertical, 12)
 

@@ -1073,7 +1073,7 @@ v4 Turbo(§10)는 클론 목소리를 원래보다 **높게** 낸다 — 협력�
 - **값은 말로 보인다 — 시안 A '말로 쓴 막대'**(2026-11-15 오너: "톤 조절은 a로 해도 돼"). 제목 줄은 `톤 조절` · 값 · (추천값
   그대로면) 작은 `추천`. 값은 0 `원래 높이`, ±2 까지 `조금 높게/낮게`, ±4 까지 `높게/낮게`, 그 너머 `많이 높게/낮게`(두 앱 같은
   경계 — 안드로이드 `pitchWordRes`, iOS `VoicePreviewConfirmView.pitchWord`). 숫자(`+1.5 반음`)는 읽어 주기에만 남는다. 막대는
-  '원래(0)' 에서 손잡이까지만 채우고 그 자리에 눈금(안드로이드 `WakerStepSlider` 의 `fillOrigin`, iOS `PitchOriginSlider`),
+  '원래(0)' 에서 손잡이까지만 채우고 그 자리에 눈금(두 앱 같은 `WakerStepSlider` 의 `fillOrigin` / `origin`),
   아래 한 줄에 `낮게 · 원래 · 높게`. 시안의 제목 '목소리 높이' 는 따르지 않았다 — 아래 2026-10-08 에 정한 이름이다.
 - **막대는 높이 하나다 — 화면 이름은 `톤 조절`**(2026-10-08 사용자, 그전 이름 '목소리 높이'). 값은 반음, **−10…+6**, 0.5
   눈금(`VOICE_PITCH_MIN_SEMITONES`·`VOICE_PITCH_MAX_SEMITONES`·`VOICE_PITCH_STEP_SEMITONES`, `@alarmtalk/shared` — 두 앱의

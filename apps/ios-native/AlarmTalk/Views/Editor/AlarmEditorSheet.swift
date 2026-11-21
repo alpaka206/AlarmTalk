@@ -559,6 +559,18 @@ struct AlarmEditorSheet: View {
             message: { duplicateAlarmMessage($0) },
             onReplace: { content in Task { await confirmReplaceDuplicate(content) } }
         ))
+        #if DEBUG
+        // 화면 확인용 — `-UIPreviewEditorPane voiceOutput|alarmSound|message` 면 편집기를 열자마자 그 하위 화면을 연다
+        // (`UIPreviewSeed.editorPane`, 함께 `-UIPreviewSeed -UIPreviewEditor`). 시뮬레이터에서 행을 누를 길이 없어서 둔다.
+        .task {
+            switch UIPreviewSeed.editorPane {
+            case "voiceOutput": settingsPane = .voiceOutput
+            case "alarmSound": settingsPane = .alarmSound
+            case "message": messagePaneOpen = true
+            default: break
+            }
+        }
+        #endif
         .onAppear {
             guard !didLoadInitial else { return }
             didLoadInitial = true

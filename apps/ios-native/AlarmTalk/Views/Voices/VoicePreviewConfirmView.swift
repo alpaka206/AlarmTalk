@@ -287,7 +287,7 @@ struct VoicePreviewConfirmView: View {
     /// 원본과의 비교는 `원본 듣기` 가 한다(0 도 0.5 눈금이라 막대로 맞출 수 있다). 막대에서 손을 떼면 그 높이로 구워
     /// (PSOLA — 몸집은 그대로) 처음부터 한 번 다시 튼다.
     /// **톤 조절** 카드(시안 A '말로 쓴 막대' — 2026-11-15 오너 "톤 조절은 a로 해도 돼"). 제목 줄은 `톤 조절`(2026-10-08 이름 그대로) · 값을
-    /// **말로**(`pitchWord`) · 추천값 그대로면 작은 `추천`. 막대는 '원래(0)' 에서 손잡이까지만 채우고(`PitchOriginSlider`), 아래 한
+    /// **말로**(`pitchWord`) · 추천값 그대로면 작은 `추천`. 막대는 '원래(0)' 에서 손잡이까지만 채우고(`WakerStepSlider` 의 `origin`), 아래 한
     /// 줄에 `낮게 · 원래 · 높게`. 버튼은 `원래 목소리`·`바꾼 목소리`. 안드로이드 `ui/voices/VoiceTuningCard.kt` 의 `VoiceTuningCard` 와 같다.
     /// (2026-10-08 에 뺀 '추천값' 줄·'0으로' 버튼은 되살리지 않는다 — 작은 `추천` 표시만 둔다.)
     private var tuningCard: some View {
@@ -311,7 +311,7 @@ struct VoicePreviewConfirmView: View {
                 }
             }
             VStack(spacing: 2) {
-                PitchOriginSlider(
+                WakerStepSlider(
                     value: Binding(
                         get: { tuning.pitchSt },
                         set: { tuning = VoiceTuning(pitchSt: $0, source: .user).normalized() }
@@ -351,8 +351,8 @@ struct VoicePreviewConfirmView: View {
         let range = VoiceTuning.pitchRange
         let originFraction = (0 - range.lowerBound) / (range.upperBound - range.lowerBound)
         return GeometryReader { geo in
-            let inset = PitchOriginSlider.thumbSize / 2
-            let track = max(geo.size.width - PitchOriginSlider.thumbSize, 1)
+            let inset = WakerStepSlider.thumbSize / 2
+            let track = max(geo.size.width - WakerStepSlider.thumbSize, 1)
             ZStack(alignment: .topLeading) {
                 Text(String(localized: "낮게"))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -931,86 +931,3 @@ struct VoicePreviewConfirmView: View {
     }
 }
 
-/// 목소리 높이 막대 — '원래(0)' 에서 손잡이까지만 채우고 그 자리에 눈금을 둔다(시안 A, 2026-11-15). 안드로이드 `WakerStepSlider` 의
-/// `fillOrigin` 과 같은 모양이다(트랙 4 · 흰 손잡이 20 · 손잡이 반지름만큼 들여 그린다). 시스템 `Slider` 는 왼쪽 끝부터만 채워서
-/// 직접 그린다. 손을 떼거나(끌기 끝) 읽어 주기로 한 칸 옮기면 `onEditingEnded` 를 부른다 — 그 높이로 굽고 다시 튼다.
-private struct PitchOriginSlider: View {
-    static let thumbSize: CGFloat = 20
-
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let step: Double
-    let origin: Double
-    let accessibilityLabel: String
-    let accessibilityValue: String
-    let onEditingEnded: () -> Void
-
-    @Environment(\.voiceAlarmTheme) private var theme
-    @Environment(\.isEnabled) private var isEnabled
-
-    var body: some View {
-        GeometryReader { geo in
-            let inset = Self.thumbSize / 2
-            let track = max(geo.size.width - Self.thumbSize, 1)
-            let valueX = inset + track * fraction(value)
-            let originX = inset + track * fraction(origin)
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(theme.palette.surfaceVariant)
-                    .frame(width: track, height: 4)
-                    .offset(x: inset)
-                Capsule()
-                    .fill(theme.palette.primary)
-                    .frame(width: abs(valueX - originX), height: 4)
-                    .offset(x: min(valueX, originX))
-                Capsule()
-                    .fill(theme.palette.onSurfaceVariant)
-                    .frame(width: 2, height: 12)
-                    .offset(x: originX - 1)
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: Self.thumbSize, height: Self.thumbSize)
-                    .shadow(color: .black.opacity(0.35), radius: 1.5, y: 1)
-                    .offset(x: valueX - inset)
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { drag in
-                        guard isEnabled else { return }
-                        let raw = range.lowerBound + Double((drag.location.x - inset) / track) * (range.upperBound - range.lowerBound)
-                        let next = snapped(raw)
-                        if next != value { value = next }
-                    }
-                    .onEnded { _ in
-                        guard isEnabled else { return }
-                        onEditingEnded()
-                    }
-            )
-        }
-        .frame(height: 44)
-        .opacity(isEnabled ? 1 : 0.38)
-        .accessibilityElement()
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(accessibilityValue)
-        .accessibilityAdjustableAction { direction in
-            guard isEnabled else { return }
-            switch direction {
-            case .increment: value = snapped(value + step)
-            case .decrement: value = snapped(value - step)
-            @unknown default: return
-            }
-            onEditingEnded()
-        }
-    }
-
-    private func fraction(_ v: Double) -> CGFloat {
-        CGFloat((v - range.lowerBound) / (range.upperBound - range.lowerBound))
-    }
-
-    private func snapped(_ raw: Double) -> Double {
-        let clamped = min(max(raw, range.lowerBound), range.upperBound)
-        return range.lowerBound + ((clamped - range.lowerBound) / step).rounded() * step
-    }
-}

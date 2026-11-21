@@ -167,6 +167,15 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 편집기를 열자마자 그 하위 화면을 연다 — `-UIPreviewEditorPane voiceOutput|alarmSound|message`(함께 `-UIPreviewEditor`).
+    static var editorPane: String? {
+        #if DEBUG
+        return argValue("-UIPreviewEditorPane")
+        #else
+        return nil
+        #endif
+    }
+
     /// 실행하자마자 알람 편집기를 연다 — `-UIPreviewEditor`. 화면 확인용.
     static var opensEditor: Bool {
         #if DEBUG
