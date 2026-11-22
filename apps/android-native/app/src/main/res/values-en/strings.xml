@@ -183,8 +183,6 @@
     <string name="recording_quality_mostly_silent">There are long stretches without speech.</string>
     <string name="recording_quality_quiet">Your voice was recorded quietly.</string>
     <string name="recording_quality_clipping">Parts of it were too loud and got distorted.</string>
-    <string name="recording_quality_summary">Speech heard: about %1$d s · Total: %2$d s</string>
-    <string name="recording_quality_footer">You can use it as is. Recording again may give you a clearer voice.</string>
     <string name="recording_quality_use_anyway">Use anyway</string>
     <string name="editor_error_recording_start_failed">Couldn\'t start recording.</string>
     <string name="editor_error_select_voice">Please choose a voice to use.</string>
@@ -258,7 +256,7 @@
     <string name="editorp_cheer_vary_hint">Recently prepared lines take a short break, so a different one is set up next.</string>
     <string name="editorp_cheer_pinned_hint">Only the line you pick will play.</string>
     <string name="editorp_random_manual_title">Your message</string>
-    <string name="editor_manual_charge_notice">Saving or editing uses 1 creation.</string>
+    <string name="editor_manual_charge_notice">Saving a new or edited message uses 1.</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>

@@ -28,7 +28,8 @@ import com.alarmtalk.app.data.ClipReadiness
  * iOS `ClipPreparationView.swift` 와 같은 화면이고 같은 문구를 쓴다.
  *
  * ⚠ **'준비됐어요' 상태가 없다**(2026-11-15 오너: "이거 없이 다 되면 자동으로 닫히도록"). 다 받으면 띄운 쪽이 저절로 닫는다
- * (편집기 `preparationVoiceId`). 그래서 이 화면은 언제나 퍼센트와 '무엇을 기다리는지' 만 말하고, 닫기는 '백그라운드에서 계속' 하나다.
+ * (편집기 `preparationVoiceId`). 그래서 이 화면은 언제나 퍼센트와 '무엇을 기다리는지' 만 말하고, 닫기는 '백그라운드에서 계속' 하나다
+ * (실패해서 '다시 시도하기' 가 떠 있으면 '닫기').
  *
  * ⚠ **이 화면이 알람 만들기를 막지 않는다.** (알람 설정 관문은 따로 있다 — 그 알람의 목소리를 다
  * 받기 전에는 `AlarmTalkApp.whenAlarmVoiceReady` 가 막는다, 2026-10-26.) 여기서 나가도 알람은 만들 수 있어야 한다 —
@@ -92,7 +93,9 @@ fun ClipPreparationScreen(
             Spacer(Modifier.padding(top = 12.dp))
             TextButton(onClick = onDismiss) {
                 // ⚠ 문구를 여기 박아 두면 en·ja 기기에 한국어가 그대로 뜬다(Codex #701 P2).
-                Text(stringResource(R.string.voices_clip_prep_background))
+                // 실패해서 '다시 시도하기' 가 떠 있으면 **'닫기'** 다 — 뒤에서 이어지는 일이 없는데 '백그라운드에서 계속' 이라고
+                // 하면 거짓말이다(2026-11-22 오너). 나가는 길은 남긴다(바깥 탭은 눈에 잘 안 띈다). iOS `ClipPreparationView` 와 같다.
+                Text(stringResource(if (hasFailure) R.string.r3dlg_modal_dialog_close else R.string.voices_clip_prep_background))
             }
         }
     }

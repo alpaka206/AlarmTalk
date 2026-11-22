@@ -106,7 +106,7 @@ class RecordingReviewTest {
 
     @Test
     @Config(qualifiers = "ko")
-    fun alertMessageSaysWhatWasMeasured() {
+    fun alertMessageSaysOnlyWhyAndTheAdvice() {
         val message = recordingReviewMessage(
             context,
             RecordingReview.Ask(listOf(RecordingAdvisory.QUIET), recovered = false, interrupted = true, metrics = metrics),
@@ -115,18 +115,17 @@ class RecordingReviewTest {
             listOf(
                 context.getString(R.string.recording_interrupted_kept),
                 context.getString(R.string.recording_quality_quiet),
-                "말소리로 들린 시간 약 8초 · 전체 20초",
-                context.getString(R.string.recording_quality_footer),
             ),
             message.lines(),
         )
-        // 'VAD' 라는 말은 화면에 나가지 않는다.
+        // 잰 수치·맺음말은 싣지 않는다(2026-11-22 오너 — 안내 줄만). 'VAD' 라는 말도 화면에 나가지 않는다.
+        assertFalse(message.contains("20"))
         assertFalse(message.contains("VAD"))
     }
 
     @Test
     @Config(qualifiers = "en")
-    fun alertMessageWithoutAdvisoriesHasNoFooter() {
+    fun alertMessageWithoutAdvisoriesSaysOnlyWhyItStopped() {
         val message = recordingReviewMessage(
             context,
             RecordingReview.Ask(emptyList(), recovered = true, interrupted = false, metrics = metrics),
@@ -134,7 +133,6 @@ class RecordingReviewTest {
         assertEquals(
             listOf(
                 context.getString(R.string.recording_quality_recovered),
-                "Speech heard: about 8 s · Total: 20 s",
             ),
             message.lines(),
         )

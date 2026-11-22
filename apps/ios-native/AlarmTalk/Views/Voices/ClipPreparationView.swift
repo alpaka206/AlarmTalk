@@ -143,7 +143,9 @@ struct ClipPreparationView: View {
                 }
 
                 if let onDismiss {
-                    Button(String(localized: "백그라운드에서 계속")) {
+                    // 실패해서 '다시 시도하기' 가 떠 있으면 **'닫기'** 다 — 뒤에서 이어지는 일이 없는데 '백그라운드에서 계속' 이라고
+                    // 하면 거짓말이다(2026-11-22 오너). 나가는 길은 남긴다. 안드로이드 `ClipPreparationScreen` 과 같다.
+                    Button(shownFailedVoiceIDs.isEmpty ? String(localized: "백그라운드에서 계속") : String(localized: "닫기")) {
                         onDismiss()
                     }
                     .font(theme.typography.bodyMedium)

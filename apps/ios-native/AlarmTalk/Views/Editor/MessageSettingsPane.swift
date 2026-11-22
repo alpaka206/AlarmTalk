@@ -314,7 +314,7 @@ struct MessageSettingsPane: View {
             // 횟수를 쓴다는 것을 **치기 전에** 한 줄로 말한다(2026-11-22 오너 — 폰 안 재사용·다시 받기 설명은 뺐다. 규칙은
             // `voice-and-message.md` §8). 안드로이드 `editor_manual_charge_notice`·`editor_error_manual_tts_quota` 와 같은 문장.
             Text(manualCreationAvailable
-                 ? String(localized: "저장하거나 수정할 때 1회 차감돼요.")
+                 ? String(localized: "새로 쓰거나 고친 문구를 저장하면 1회를 써요.")
                  : String(localized: "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요."))
         }
         #if DEBUG

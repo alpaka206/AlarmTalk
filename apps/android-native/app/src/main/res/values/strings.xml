@@ -189,8 +189,6 @@
     <string name="recording_quality_mostly_silent">말하지 않은 시간이 길어요.</string>
     <string name="recording_quality_quiet">목소리가 작게 녹음됐어요.</string>
     <string name="recording_quality_clipping">소리가 너무 커서 일부가 찌그러졌어요.</string>
-    <string name="recording_quality_summary">말소리로 들린 시간 약 %1$d초 · 전체 %2$d초</string>
-    <string name="recording_quality_footer">그대로 써도 돼요. 다시 녹음하면 목소리가 더 또렷하게 만들어질 수 있어요.</string>
     <string name="recording_quality_use_anyway">그래도 쓰기</string>
     <string name="editor_error_recording_start_failed">녹음을 시작할 수 없어요.</string>
     <string name="editor_error_select_voice">사용할 목소리를 선택해 주세요.</string>
@@ -267,7 +265,7 @@
     <string name="editorp_cheer_vary_hint">최근에 준비한 문구는 잠시 쉬고, 다른 응원으로 준비해요.</string>
     <string name="editorp_cheer_pinned_hint">고른 문구로만 울려요.</string>
     <string name="editorp_random_manual_title">직접 입력 문구</string>
-    <string name="editor_manual_charge_notice">저장하거나 수정할 때 1회 차감돼요.</string>
+    <string name="editor_manual_charge_notice">새로 쓰거나 고친 문구를 저장하면 1회를 써요.</string>
     <string name="editorp_random_fortune_title">운세 정보</string>
     <string name="editorp_random_save_button">저장</string>
     <string name="editorp_random_title">문구</string>

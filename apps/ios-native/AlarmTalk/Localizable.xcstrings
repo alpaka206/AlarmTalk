@@ -11371,25 +11371,25 @@
         }
       }
     },
-    "저장하거나 수정할 때 1회 차감돼요." : {
+    "새로 쓰거나 고친 문구를 저장하면 1회를 써요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saving or editing uses 1 creation."
+            "value" : "Saving a new or edited message uses 1."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存または修正すると1回分を使います。"
+            "value" : "新しく書いた文や直した文を保存すると1回使います。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장하거나 수정할 때 1회 차감돼요."
+            "value" : "새로 쓰거나 고친 문구를 저장하면 1회를 써요."
           }
         }
       }
@@ -11543,40 +11543,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "電話やほかのアプリのせいで録音が止まりました。12秒以上もう一度録音してください。"
-          }
-        }
-      }
-    },
-    "말소리로 들린 시간 약 %lld초 · 전체 %lld초" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Speech heard: about %lld s · Total: %lld s"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "話し声が聞こえた時間 約%lld秒 · 全体 %lld秒"
-          }
-        }
-      }
-    },
-    "그대로 써도 돼요. 다시 녹음하면 목소리가 더 또렷하게 만들어질 수 있어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can use it as is. Recording again may give you a clearer voice."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このまま使っても大丈夫です。録音し直すと、声がよりはっきり作られることがあります。"
           }
         }
       }

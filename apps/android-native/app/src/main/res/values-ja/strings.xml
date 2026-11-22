@@ -183,8 +183,6 @@
     <string name="recording_quality_mostly_silent">話していない時間が長いです。</string>
     <string name="recording_quality_quiet">声が小さく録音されました。</string>
     <string name="recording_quality_clipping">音が大きすぎて、一部がひずみました。</string>
-    <string name="recording_quality_summary">話し声が聞こえた時間 約%1$d秒 · 全体 %2$d秒</string>
-    <string name="recording_quality_footer">このまま使っても大丈夫です。録音し直すと、声がよりはっきり作られることがあります。</string>
     <string name="recording_quality_use_anyway">このまま使う</string>
     <string name="editor_error_recording_start_failed">録音を開始できませんでした。</string>
     <string name="editor_error_select_voice">使用する声を選択してください。</string>
@@ -258,7 +256,7 @@
     <string name="editorp_cheer_vary_hint">最近用意した言葉は少しお休みして、別の応援を用意します。</string>
     <string name="editorp_cheer_pinned_hint">選んだ言葉だけが流れます。</string>
     <string name="editorp_random_manual_title">入力した文面</string>
-    <string name="editor_manual_charge_notice">保存または修正すると1回分を使います。</string>
+    <string name="editor_manual_charge_notice">新しく書いた文や直した文を保存すると1回使います。</string>
     <string name="editorp_random_fortune_title">占い情報</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>
