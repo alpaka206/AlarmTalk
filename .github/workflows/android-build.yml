@@ -37,6 +37,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          # 러너에 캐시된 옛 17.x 가 아니라 그날의 최신 보안판을 받는다(2026-11 OpenJDK Base64 intrinsic 취약점 —
+          # 17.0.21.1 에서 고쳐졌다).
+          check-latest: true
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
