@@ -411,10 +411,12 @@ class PlayBillingManager(
      *
      * 서버가 같은 토큰을 여러 번 받아도 안전하다(멱등) — 검증 후 같은 구독으로 수렴한다.
      *
-     * @return 서버로 보낸 구매 수. 0 이면 스토어에 활성 구독이 없다.
+     * @return 서버로 보낸 구매 수. 0 이면 스토어가 **활성 구독이 없다고 답했다.** null 이면 **스토어에 묻지 못했다**(연결·조회
+     *   실패) — 둘을 같게 다루면 Play 가 잠깐 안 붙은 것뿐인데 사용자는 "복원할 구매가 없어요" 를 듣고 구독이 사라진 줄 안다
+     *   (2026-11-22 두 앱 통일 — [queryActiveSubscriptions] 와 같은 구분이다).
      */
-    suspend fun restorePurchases(userInitiated: Boolean = false, ownerUserId: String? = null): Int {
-        if (!ensureConnected()) return 0
+    suspend fun restorePurchases(userInitiated: Boolean = false, ownerUserId: String? = null): Int? {
+        if (!ensureConnected()) return null
         val result = billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
                 .setProductType(BillingClient.ProductType.SUBS)
@@ -422,7 +424,7 @@ class PlayBillingManager(
         )
         if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
             Log.w(TAG, "restorePurchases query failed code=${result.billingResult.responseCode}")
-            return 0
+            return null
         }
         var sent = 0
         result.purchasesList

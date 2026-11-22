@@ -130,7 +130,8 @@ struct WeatherRegionPickerSheet: View {
             }
 
         }
-        .padding(.bottom, 8)
+        // 아래 20 — 안드로이드 지역 시트(`WeatherLocationDialog`)를 담는 `WakerSelectionSheet` 의 아래 여백과 같다(2026-11-22 전 8).
+        .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         // 배경·모서리·드래그 핸들은 `BottomSheetHost` 가 그린다.
     }
@@ -159,13 +160,14 @@ struct WeatherRegionPickerSheet: View {
             dismiss()
         } label: {
             // 긴 이름("찰스턴(웨스트버지니아)", "North Chungcheong")은 칩 안에서 두 줄까지 감는다. 높이는 칩마다 같다(52).
+            // ⚠ **글자를 줄이지 않는다**(`minimumScaleFactor` 를 되살리지 말 것, 2026-11-22) — 안드로이드 `WeatherRegionChip` 처럼
+            //   두 줄을 넘으면 말줄임이다. 줄이면 칩마다 글자 크기가 달라 목록이 들쭉날쭉해진다.
             Text(verbatim: region.displayName(language: language))
                 .font(theme.typography.labelLarge)
                 .fontWeight(.semibold)
                 .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
-                .minimumScaleFactor(0.85)
                 .padding(.horizontal, 6)
                 .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52)
                 .background(

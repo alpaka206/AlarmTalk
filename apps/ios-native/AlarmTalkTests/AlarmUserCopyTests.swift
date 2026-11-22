@@ -6,7 +6,8 @@ final class AlarmUserCopyTests: XCTestCase {
     func test_voiceRecorderMicrophoneDeniedCopy_isKorean() {
         XCTAssertEqual(
             VoiceRecorderError.microphoneDenied.errorDescription,
-            "녹음하려면 마이크 권한이 필요해요."
+            // 안드로이드 `voices_mic_permission_required` 와 같은 말(2026-11-22 두 앱 통일).
+            "마이크 권한이 필요해요."
         )
     }
 

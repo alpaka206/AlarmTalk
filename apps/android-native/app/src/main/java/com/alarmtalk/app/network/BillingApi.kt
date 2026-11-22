@@ -48,6 +48,13 @@ data class BillingSubscription(
     @SerializedName("starts_at") val startsAt: String,
     @SerializedName("expires_at") val expiresAt: String,
     @SerializedName("cancel_at_period_end") val cancelAtPeriodEnd: Boolean = false,
+    /**
+     * 해지가 어느 스토어를 거쳐야 하는가 — `apple`·`google`, 스토어 결제가 아니면 null(서버 `storeCancelProviderOf`, 해지
+     * 라우트와 같은 판정이다). `apple` 이면 서버도 앱도 그 구독을 끊을 수 없다 — 해지 버튼은 해지 시점을 묻지 않고 아이폰의
+     * App Store 구독에서 해지하라고 말한다(2026-11-22 두 앱 통일 — iOS 는 같은 값으로 App Store 관리 시트를 연다).
+     * 구버전 서버는 주지 않는다(null) — 예전처럼 해지를 보내고, 거절(`STORE_CANCEL_UNSUPPORTED`)되면 같은 안내를 띄운다.
+     */
+    @SerializedName("store_provider") val storeProvider: String? = null,
 )
 
 data class BillingPlan(

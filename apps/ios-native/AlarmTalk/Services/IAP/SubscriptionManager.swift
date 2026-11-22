@@ -72,15 +72,9 @@ final class SubscriptionManager: ObservableObject {
         }
     }
 
-    /// 최소 1회 이상 제품 fetch 가 끝났는지. UI 가 "로딩 중 스켈레톤" 과
-    /// "정말로 제품이 없음(준비중/실패)" 을 구분하는 데 쓴다.
-    /// 첫 진입의 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 게이팅.
-    @Published private(set) var hasAttemptedProductFetch: Bool = false
-
-    /// 마지막 제품 fetch 가 (네트워크/StoreKit) 오류로 실패했는지.
-    /// 일시적 blip 으로 products 가 비어버린 경우, UI 가 영구 비활성 대신
-    /// "다시 시도" 재요청 버튼을 보여줄 수 있게 한다.
-    @Published private(set) var productFetchFailed: Bool = false
+    // ⚠ 상품을 받는 동안·못 받았을 때의 화면 갈래(스켈레톤·'다시 시도' 카드)는 2026-11-22 에 없앴다 — 이용권 화면은
+    //   카드를 언제나 그리고(가격은 폴백), 시작 버튼을 누르는 순간 상품을 다시 받는다(`BillingPanel.beginPurchase`).
+    //   안드로이드 `SubscriptionPanel` 도 카드를 언제나 그린다. 그 갈래만 쓰던 '시도했나·실패했나' 표시도 함께 지웠다.
 
     private var transactionListenerTask: Task<Void, Never>? = nil
     private let api: AlarmTalkAPI
@@ -210,20 +204,16 @@ final class SubscriptionManager: ObservableObject {
     }
 
     /// App Store 로부터 구독 상품의 제품 정보 fetch.
-    /// 실패해도 fatal 이 아니다 — UI 는 "제품 정보가 없어요" 카드를 보여주고
-    /// 다음 진입 시 재시도된다.
+    /// 실패해도 fatal 이 아니다 — 이용권 화면은 폴백 가격으로 카드를 그대로 그리고, 시작 버튼을 누르면
+    /// 다시 받는다(그때도 못 받으면 "이용권 정보를 불러오지 못했어요" 알럿).
     func fetchProducts() async {
         isLoadingProducts = true
-        defer {
-            isLoadingProducts = false
-            hasAttemptedProductFetch = true
-        }
+        defer { isLoadingProducts = false }
         do {
             let allIDs = SubscriptionProduct.allCases.map(\.rawValue)
             let fetched = try await Product.products(for: allIDs)
             self.products = fetched
             self.lastError = nil
-            self.productFetchFailed = false
             var trials: [String: Product.SubscriptionPeriod] = [:]
             for product in fetched {
                 guard let subscription = product.subscription,
@@ -234,8 +224,8 @@ final class SubscriptionManager: ObservableObject {
             }
             self.freeTrialPeriods = trials
         } catch {
-            self.lastError = String(localized: "제품 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.")
-            self.productFetchFailed = true
+            // 안드로이드 `msg_gb_billing_info_load_failed` 와 같은 문장이다.
+            self.lastError = String(localized: "이용권 정보를 불러오지 못했어요")
         }
     }
 
@@ -264,7 +254,8 @@ final class SubscriptionManager: ObservableObject {
     /// 반환값으로 호출자가 UI 토스트/배너를 띄우면 된다.
     func purchase(_ plan: SubscriptionProduct) async -> PurchaseResult {
         guard let product = product(for: plan) else {
-            return .failure(reason: String(localized: "제품 정보가 아직 준비되지 않았어요."))
+            // 결제 시트를 열 수 없다 — 안드로이드 `msg_gb_google_play_start_failed` 와 같은 문장(스토어 이름만 다르다).
+            return .failure(reason: String(localized: "App Store 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요."))
         }
         guard !isPurchasing else {
             return .failure(reason: String(localized: "결제가 진행 중이에요."))
@@ -346,10 +337,11 @@ final class SubscriptionManager: ObservableObject {
                 return .failure(reason: String(localized: "결제 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요."))
             }
         } catch {
+            // 안드로이드 `r3misc_billing_purchase_failed` 와 같은 문장이다(스토어 이름만 다르다).
             return .failure(
                 reason: Self.userFacingPurchaseError(
                     error,
-                    fallback: String(localized: "결제에 실패했어요. 잠시 후 다시 시도해 주세요.")
+                    fallback: String(localized: "App Store 결제에 실패했어요. 잠시 후 다시 시도해 주세요.")
                 )
             )
         }
@@ -383,29 +375,39 @@ final class SubscriptionManager: ObservableObject {
         return paymentMode == .freeTrial ? .freeTrial : .intro
     }
 
-    /// 다른 기기에서 구매한 구독을 현재 기기로 가져온다.
+    /// **이전 구매 복원** — 스토어와 동기화한 뒤, 이 Apple ID 의 활성 구독을 **서버에 올려 확인받는다.**
     /// `AppStore.sync()` 는 사용자에게 Apple ID 비밀번호 입력을 강제할 수 있다.
     ///
-    /// 호출자가 "복원됨 N건 / 복원할 구매 없음 / 오류" 를 구분해 안내할 수 있도록
-    /// `RestoreResult` 를 돌려준다. (이전에는 성공/실패와 무관하게 항상 동일한
-    /// "이전 구매를 확인했어요." 토스트만 떠 사용자를 오도하고 심사 리스크가 있었다.)
+    /// ⚠ **스토어가 돌려준 개수로 '복원했다' 고 말하지 않는다**(2026-11-22 두 앱 통일). 예전에는 `currentEntitlements` 를
+    /// 세어 "이전 구매 n건을 복원했어요" 라고 했다 — 그 구매가 다른 AlarmTalk 계정 것이면 그 숫자는 0 이 되어 "복원할 구매
+    /// 내역이 없어요" 가 됐고, 서버가 붙여 주지 않은 구매도 '복원' 으로 말했다. 안드로이드도 복원한 구매를 서버 확인으로
+    /// 보내고 그 결과를 말한다(`MainViewModelBillingActions.restorePurchases` → `confirmGooglePurchase`).
+    ///
+    /// - 서버가 하나라도 이 계정에 붙였다 → `.restored`("이용권을 적용했어요")
+    /// - 서버가 거절했다(다른 계정 소유·다른 스토어 갱신 중 등) → 그 이유
+    /// - 보낼 구독이 없다 → `.nothingToRestore`
+    /// - 스토어·서버에 닿지 못했다 → 복원 실패, 사용자가 Apple ID 창을 닫았다 → `.cancelled`(말하지 않는다)
+    ///
+    /// 다른 계정 표식이 박힌 구독도 **보낸다** — 판정은 서버가 한다(그 계정이 살아 있으면 거절, 탈퇴로 사라졌으면 이 계정이
+    /// 이어받는다 — `routes/billing-apple.ts`). 배경 재동기화(`resyncEntitlements`)는 보내지 않는다: 사용자가 누르지 않은
+    /// 회차에 남의 거절을 띄우면 안 되기 때문이다. 여기는 사용자가 누른 복원이라 결과를 말해야 한다.
     @discardableResult
     func restorePurchases() async -> RestoreResult {
         guard !isPurchasing else {
             return .failure(reason: String(localized: "결제가 진행 중이에요. 잠시 후 다시 시도해 주세요."))
         }
+        guard authProvider() != nil else {
+            return .failure(reason: String(localized: "로그인 후 사용할 수 있어요"))
+        }
         isPurchasing = true
         defer { isPurchasing = false }
         do {
             try await AppStore.sync()
-            // sync 직후 fresh entitlement 를 다시 읽어 활성 구독 수를 센다.
-            let restoredCount = await countActiveEntitlements()
-            await refreshPurchasedProducts()
-            self.lastError = nil
-            return restoredCount > 0 ? .restored(count: restoredCount) : .nothingToRestore
         } catch {
+            if let storeError = error as? StoreKitError, case .userCancelled = storeError {
+                return .cancelled
+            }
             // 에러 메시지는 RestoreResult 로만 노출한다(호출자가 토스트로 안내).
-            // lastError 까지 세팅하면 동일 메시지가 화면에 중복 표시되므로 두지 않는다.
             return .failure(
                 reason: Self.userFacingPurchaseError(
                     error,
@@ -413,25 +415,28 @@ final class SubscriptionManager: ObservableObject {
                 )
             )
         }
-    }
-
-    /// 현재 verified 활성 entitlement 개수. 복원 결과 안내용.
-    /// 복원 결과로 보여 줄 **이 계정의** 활성 구매 수.
-    ///
-    /// ⚠ **계정 필터를 빼지 말 것**(2026-09-01 리뷰). 같은 Apple ID 에 A 계정으로 산 구독이
-    /// 있고 지금 B 로 로그인해 있으면, 안 거를 경우 "1건 복원했어요" 라고 말해 놓고 B 는
-    /// 그대로 무료다(서버가 소유권으로 거절한다). 등급 계산과 **같은 기준**으로 센다.
-    /// 계정 토큰이 없는 레거시 구매는 세지 않는다 — 그건 '모름' 이지 '내 것' 이 아니다.
-    private func countActiveEntitlements() async -> Int {
-        guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
-        else { return 0 }
-        var count = 0
+        // 로그아웃 중에 받아 둔 환불 통보도 함께 민다 — 배경 재동기화와 같은 순서다.
+        await flushPendingRevocations()
+        var sent = 0
+        var confirmed = false
+        var rejection: String?
         for await result in Transaction.currentEntitlements {
-            guard let transaction = try? checkVerified(result) else { continue }
-            guard transaction.appAccountToken == currentAccount else { continue }
-            count += 1
+            guard let transaction = try? checkVerified(result),
+                  SubscriptionProduct(rawValue: transaction.productID) != nil else { continue }
+            sent += 1
+            let outcome = await syncWithBackend(transaction: transaction)
+            if outcome.confirmed {
+                confirmed = true
+            } else if rejection == nil {
+                rejection = outcome.rejection
+            }
         }
-        return count
+        await refreshPurchasedProducts()
+        if confirmed { return .restored }
+        if let rejection { return .failure(reason: rejection) }
+        if sent == 0 { return .nothingToRestore }
+        // 보낼 것은 있었는데 서버에 닿지 못했다(네트워크·점검) — '없음' 과 가른다(안드로이드 복원 실패와 같은 문장).
+        return .failure(reason: String(localized: "이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요."))
     }
 
     /// `Transaction.currentEntitlements` 를 다시 읽어 `currentTier` 를 atomic 하게 갱신.
@@ -725,8 +730,8 @@ final class SubscriptionManager: ObservableObject {
     ///
     /// 실패 시:
     ///   - StoreKit 영수증이 권위이므로 클라이언트 currentTier 는 이미 정확.
-    ///   - 백엔드의 plan/subscription row 가 갱신되지 않을 뿐. 사용자에게는
-    ///     "결제 확인 동기화 실패 — 자동 재시도됩니다" 메시지만 노출.
+    ///   - 백엔드의 plan/subscription row 가 갱신되지 않을 뿐. 화면에는 띄우지 않는다(배경 회차) —
+    ///     사용자가 누른 구매·복원은 돌려준 결과(`ConfirmOutcome`)로 말한다.
     ///   - 다음 foreground 진입 또는 `resyncEntitlements()` 호출 시 재시도.
     ///
     /// 점검 등으로 서버가 못 받는 경우(503)도 동일한 graceful degradation —
@@ -823,7 +828,9 @@ final class SubscriptionManager: ObservableObject {
             return ConfirmOutcome(confirmed: false, rejection: message)
         } catch {
             if surfacesError {
-                self.lastError = String(localized: "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다.")
+                // 구매 경로가 쓰는 것과 같은 문장이다 — 결제는 유효하니 복원으로 다시 붙일 길을 말한다.
+                // (이 값을 그리는 화면은 없다 — 배경 재동기화의 실패는 띄우지 않는다. 구매·복원은 돌려준 결과로 말한다.)
+                self.lastError = String(localized: "결제는 됐지만 이용권을 아직 확인하지 못했어요. 잠시 후 '이전 구매 복원'을 눌러 주세요.")
             }
             return .notConfirmed
         }
@@ -856,12 +863,12 @@ enum PurchaseResult: Equatable {
         return false
     }
 
-    /// UI 토스트 메시지.
-    var userMessage: String {
+    /// 위쪽 토스트에 띄울 문장 — 안드로이드 결제 결과와 같은 말이다. **사용자가 결제를 취소했으면 아무 말도 하지 않는다**(nil).
+    var userMessage: String? {
         switch self {
-        case .success:        return String(localized: "결제가 완료되었어요.")
-        case .userCancelled:  return String(localized: "결제를 취소했어요.")
-        case .pending:        return String(localized: "결제 승인 대기 중이에요.")
+        case .success:        return String(localized: "이용권을 적용했어요")
+        case .userCancelled:  return nil
+        case .pending:        return String(localized: "결제가 보류 중이에요. 결제 수단 승인이 끝나면 자동으로 적용돼요.")
         case .failure(let r): return r
         }
     }
@@ -869,30 +876,32 @@ enum PurchaseResult: Equatable {
 
 /// `SubscriptionManager.restorePurchases()` 결과.
 ///
-/// - `restored`: 복원된 활성 구독이 N건 있었음.
-/// - `nothingToRestore`: sync 는 성공했지만 이 Apple ID 로 복원할 구매가 없음.
-/// - `failure`: sync 자체가 실패(네트워크/취소 등).
+/// - `restored`: 서버가 이 계정에 이용권을 붙였다.
+/// - `nothingToRestore`: 이 Apple ID 에 보낼 활성 구독이 없다.
+/// - `cancelled`: 사용자가 Apple ID 창을 닫았다 — 말하지 않는다.
+/// - `failure`: 스토어·서버에 닿지 못했거나 서버가 거절했다(그 이유).
 enum RestoreResult: Equatable {
-    case restored(count: Int)
+    case restored
     case nothingToRestore
+    case cancelled
     case failure(reason: String)
 
     var isSuccess: Bool {
         switch self {
         case .restored, .nothingToRestore: return true
-        case .failure:                     return false
+        case .cancelled, .failure:         return false
         }
     }
 
-    /// UI 토스트 메시지 — 세 가지 결과를 명확히 구분해 안내한다.
-    var userMessage: String { localizedUserMessage() }
+    /// 위쪽 토스트에 띄울 문장 — 안드로이드 복원 결과와 같은 말이다. 말할 것이 없으면 nil.
+    var userMessage: String? { localizedUserMessage() }
 
-    func localizedUserMessage(bundle: Bundle = .main) -> String {
+    func localizedUserMessage(bundle: Bundle = .main) -> String? {
         switch self {
-        case .restored(count: 1): return String(localized: "이전 구매 1건을 복원했어요.", bundle: bundle)
-        case .restored(let count): return String(localized: "이전 구매 \(Int(count))건을 복원했어요.", bundle: bundle)
-        case .nothingToRestore:    return String(localized: "복원할 구매 내역이 없어요.", bundle: bundle)
-        case .failure(let r):      return r
+        case .restored:         return String(localized: "이용권을 적용했어요", bundle: bundle)
+        case .nothingToRestore: return String(localized: "복원할 구매가 없어요. 스토어 계정을 확인해 주세요.", bundle: bundle)
+        case .cancelled:        return nil
+        case .failure(let r):   return r
         }
     }
 }

@@ -81,7 +81,10 @@ struct VoicesPanelView: View {
                 VoicePreviewConfirmView(
                     draft: draft,
                     onSaved: { route = .preparation($0) },
+                    // '다시 만들기' 는 처음부터 다시 녹음한다(음원 준비로), 나가기 경고의 '나가고 삭제' 는 창을 닫는다(목록으로) —
+                    // 안드로이드 `VoiceProfileManagementPanel` 의 `draftExitWarningOpen` '나가기' 가 `closeCreateDialog` 하는 것과 같다.
                     onDiscarded: { route = .clone },
+                    onExited: { route = .management },
                     onMonthlyLimitRejected: { route = .management }
                 )
             } else {

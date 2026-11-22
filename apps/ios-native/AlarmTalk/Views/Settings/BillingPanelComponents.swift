@@ -53,14 +53,23 @@ extension SubscriptionManager {
 }
 import StoreKit
 
-// BillingPanel 에서 분리한 하위 카드/시트 컴포넌트. 동작/디자인 변경 없음.
+// BillingPanel 에서 분리한 하위 카드·버튼 컴포넌트. 값은 안드로이드 `ui/billing/BillingPanels.kt` 와 같다.
 
+/// 이용권 카드 상태 줄의 날짜 — "2026.12.09"(안드로이드 `PassDateFormatter` 의 `yyyy.MM.dd`).
 func formatPassDate(_ value: String?) -> String? {
+    parsePassDate(value).map { BillingDisplayDateFormatter.string(from: $0) }
+}
+
+/// 해지 알럿의 날짜 — "12월 9일"(기기 로케일의 '월 일'). 체험 첫 결제일·기간 한정 개인 플랜의 날짜와 같은 꼴이다
+/// (`PersonalPromo.dayLabel`, 안드로이드 해지 알럿도 같은 꼴로 맞춘다 — 2026-11-22 두 앱 통일).
+func formatPassDay(_ value: String?) -> String? {
+    parsePassDate(value).map { PersonalPromo.dayLabel($0) }
+}
+
+private func parsePassDate(_ value: String?) -> Date? {
     guard let value else { return nil }
-    let date = BillingISODateFormatter.date(from: value)
+    return BillingISODateFormatter.date(from: value)
         ?? BillingShortISODateFormatter.date(from: value)
-    guard let date else { return nil }
-    return BillingDisplayDateFormatter.string(from: date)
 }
 
 // ISO8601DateFormatter 인스턴스는 iOS 7 이후 thread-safe (Apple docs).
@@ -151,13 +160,15 @@ struct PlusPlanHeroCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 10) {
+                // 이름 17 SemiBold — 안드로이드 `PlusPlanHeroCard` 의 `titleMedium.copy(fontSize = 17.sp)`(토큰에 17 이 없다).
                 Text(PlanTier.personal.displayLabel)
-                    .font(.headline)
+                    .font(.pretendard(.semibold, size: 17, relativeTo: .body))
                     .foregroundStyle(theme.palette.onSurface)
                 Spacer()
                 if let badge = isCurrent ? String(localized: "현재 이용권") : trialLabel.map({ String(localized: "\(String($0)) 무료") }) {
                     Text(badge)
-                        .font(.caption.weight(.bold))
+                        .font(theme.typography.labelMedium)
+                        .fontWeight(.bold)
                         .padding(.vertical, 6)
                         .padding(.horizontal, 10)
                         .background(Capsule().fill(theme.palette.primary))
@@ -171,14 +182,18 @@ struct PlusPlanHeroCard: View {
                     .foregroundStyle(theme.palette.onSurface)
                     .fixedSize(horizontal: false, vertical: true)
                 if let priceLabel {
+                    // 가격 줄 15 SemiBold — 안드로이드 `bodyMedium.copy(fontSize = 15.sp)`.
                     Text(trialLabel.map { String(localized: "\(String($0)) 무료, 이후 \(String(priceLabel))") } ?? priceLabel)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.pretendard(.semibold, size: 15, relativeTo: .subheadline))
                         .foregroundStyle(theme.palette.primary)
                 }
                 if isCurrent, let statusText {
+                    // 상태 줄(만료·해지 예정·프로모) 14 SemiBold — 안드로이드 `bodyMedium` + SemiBold.
                     Text(statusText)
-                        .font(.subheadline.weight(.semibold))
+                        .font(theme.typography.bodyMedium)
+                        .fontWeight(.semibold)
                         .foregroundStyle(theme.palette.primary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Rectangle()
@@ -216,24 +231,28 @@ struct FreePlanSummaryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 8) {
+                // 이름 15 SemiBold · 가격 14 SemiBold — 안드로이드 `FreePlanSummaryCard` 와 같다.
                 Text(PlanTier.free.displayLabel)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.pretendard(.semibold, size: 15, relativeTo: .subheadline))
                     .foregroundStyle(theme.palette.onSurface)
                 Text(String(localized: "0원"))
-                    .font(.subheadline.weight(.semibold))
+                    .font(theme.typography.bodyMedium)
+                    .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.primary)
                 Spacer()
                 if isCurrent {
                     Text(String(localized: "현재 이용권"))
-                        .font(.caption.weight(.bold))
+                        .font(theme.typography.labelMedium)
+                        .fontWeight(.bold)
                         .padding(.vertical, 5)
                         .padding(.horizontal, 10)
                         .background(Capsule().fill(theme.palette.primary))
                         .foregroundStyle(theme.palette.onPrimary)
                 }
             }
+            // 혜택 한 줄 13 — 안드로이드 `bodySmall.copy(fontSize = 13.sp)`.
             Text(verbatim: PlanCard.features(for: .free).joined(separator: " · "))
-                .font(.footnote)
+                .font(.pretendard(.regular, size: 13, relativeTo: .footnote))
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -245,18 +264,22 @@ struct FreePlanSummaryCard: View {
                 .fill(theme.palette.surface)
         )
         .overlay(
+            // 카드 테두리 — 안드로이드 `FreePlanSummaryCard` 의 `wakerCardBorder()`(다크에서 한 단계 밝다).
             RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                .stroke(theme.palette.cardBorder, lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("planCard.free")
     }
 }
 
-/// 화면 아래 고정 영역의 시작 버튼(A안). 옛 `PlanCard.priceButton` 의 세 상태를 그대로 옮겼다 —
-/// 상품이 있으면 결제, 첫 조회 중이면 자리표시, 못 받았으면 비활성 '결제하기'.
+/// 화면 아래 고정 영역의 시작 버튼(A안) — 안드로이드 `SubscriptionPanel` 의 시작 버튼과 같다: 채움 primary·잠김
+/// surfaceVariant/onSurfaceVariant(`wakerButtonColors`), 반경 18, 높이 52 이상, 글자 titleSmall SemiBold. 진행 표시는 없다.
+///
+/// ⚠ **누를 수 없는 '결제하기' 를 두지 않는다**(2026-11-22 두 앱 통일). 예전에는 상품을 받는 동안 자리표시, 못 받으면 꺼진
+/// '결제하기' 를 그렸다 — 이유를 말하지 않는 죽은 버튼이었다. 이제 상품이 없어도 버튼은 늘 눌리고, 누르면 그때 상품을 다시
+/// 받는다. 그래도 못 받으면 "이용권 정보를 불러오지 못했어요" 알럿이다(`BillingPanel.beginPurchase`).
 struct PlanPurchaseButton: View {
-    @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var subscriptions: SubscriptionManager
     let tier: PlanTier
     let isBusy: Bool
@@ -267,54 +290,48 @@ struct PlanPurchaseButton: View {
     }
 
     var body: some View {
-        if let plan = SubscriptionProduct.make(tier: tier) {
-            if subscriptions.product(for: plan) != nil {
-                Button {
-                    onPurchase()
-                } label: {
-                    Group {
-                        if subscriptions.isPurchasing {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(theme.palette.onPrimary)
-                        } else {
-                            // ⚠ **버튼에 가격을 넣지 말 것**(2026-08-11 요청) — 가격은 카드가 말하고, 버튼은 무엇을 하는지만 말한다.
-                            Text(trialLabel.map { String(localized: "\(String($0)) 무료로 시작하기") } ?? String(localized: "결제하기"))
-                                .font(.headline)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(theme.palette.primary)
-                .foregroundStyle(theme.palette.onPrimary)
-                .disabled(isBusy || subscriptions.isPurchasing)
-            } else if subscriptions.isLoadingProducts || !subscriptions.hasAttemptedProductFetch {
-                RoundedRectangle(cornerRadius: theme.shapes.medium)
-                    .fill(theme.palette.outline.opacity(0.18))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .overlay(ProgressView().controlSize(.small))
-                    .accessibilityLabel(String(localized: "가격 불러오는 중"))
-            } else {
-                // ⚠ **"준비중" 같은 말을 지어내지 말 것** — 가격은 스토어가 권위라 못 받아 올 수 있다. 살 수 없다는 사실만 전한다.
-                Button {
-                    // no-op — 상품을 못 받았으니 결제로 갈 수 없다.
-                } label: {
-                    Text(String(localized: "결제하기"))
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.bordered)
-                .disabled(true)
-            }
+        Button(action: onPurchase) {
+            // ⚠ **버튼에 가격을 넣지 말 것**(2026-08-11 요청) — 가격은 카드가 말하고, 버튼은 무엇을 하는지만 말한다.
+            Text(trialLabel.map { String(localized: "\(String($0)) 무료로 시작하기") } ?? String(localized: "결제하기"))
         }
+        .buttonStyle(PlanStartButtonStyle())
+        .disabled(isBusy)
     }
 }
 
-/// 플러스 혜택 한 줄 — 강조색 체크 + 글자(A안). 안드로이드 `PlanCheckRow` 와 같다.
+/// 이용권 시작 버튼의 모양 — 안드로이드 M3 `Button` + `wakerButtonColors()` + `WakerButtonShape` 와 같은 값이다.
+private struct PlanStartButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PlanStartButtonBody(label: configuration.label, isPressed: configuration.isPressed)
+    }
+}
+
+private struct PlanStartButtonBody: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
+    let label: ButtonStyleConfiguration.Label
+    let isPressed: Bool
+
+    var body: some View {
+        label
+            .font(theme.typography.titleSmall)
+            .fontWeight(.semibold)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(isEnabled ? theme.palette.onPrimary : theme.palette.onSurfaceVariant)
+            // 안쪽 여백은 M3 버튼 기본값(좌우 24 · 위아래 8)이다 — 큰 글꼴에서 줄이 늘면 높이가 그만큼 자란다.
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(
+                isEnabled ? theme.palette.primary : theme.palette.surfaceVariant,
+                in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+            )
+            .opacity(isPressed ? 0.8 : 1)
+            .contentShape(Rectangle())
+    }
+}
+
+/// 플러스 혜택 한 줄 — 강조색 체크 + 글자(A안). 안드로이드 `PlanCheckRow` 와 같다: 아이콘 칸 18 · 사이 10 · 글자 15.
 struct PlanCheckRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let text: LocalizedStringKey
@@ -322,98 +339,27 @@ struct PlanCheckRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark")
-                .font(.subheadline.weight(.bold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(theme.palette.primary)
+                .frame(width: 18, height: 18)
                 .accessibilityHidden(true)
             Text(text)
-                .font(.subheadline)
+                .font(.pretendard(.regular, size: 15, relativeTo: .subheadline))
                 .foregroundStyle(theme.palette.onSurface)
-        }
-    }
-}
-
-/// 제품 정보를 불러오는 동안 보여주는 스켈레톤 (유료 플랜 분량).
-/// 첫 로딩의 일시적 빈 상태가 "망가진 화면"처럼 보이지 않게 한다.
-struct BillingPlansSkeleton: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            ForEach(0..<SubscriptionProduct.allCases.count, id: \.self) { _ in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        skeletonBar(width: 80, height: 16)
-                        Spacer()
-                    }
-                    skeletonBar(width: 180, height: 12)
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(AlarmTalkTheme.outline.opacity(0.18))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 40)
-                }
-                .padding(12)
-                .background(AlarmTalkTheme.surfaceVariant)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-        }
-        .redacted(reason: .placeholder)
-        .accessibilityElement()
-        .accessibilityLabel(String(localized: "이용권 정보를 불러오는 중이에요"))
-    }
-
-    private func skeletonBar(width: CGFloat, height: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 4)
-            .fill(AlarmTalkTheme.outline.opacity(0.18))
-            .frame(width: width, height: height)
-    }
-}
-
-/// 제품 fetch 가 실패해 목록이 비어버렸을 때 보여주는 에러/재시도 상태.
-/// 일시적 네트워크 blip 으로 페이월이 영구히 구매 불가가 되는 것을 막는다.
-struct BillingProductsErrorState: View {
-    let isRetrying: Bool
-    let onRetry: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(AlarmTalkTheme.error)
-                Text(String(localized: "이용권 정보를 불러오지 못했어요"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.text)
-            }
-            Text(String(localized: "네트워크 상태를 확인한 뒤 다시 시도해 주세요."))
-                .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            Button(action: onRetry) {
-                HStack(spacing: 6) {
-                    if isRetrying {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Label(String(localized: "다시 시도"), systemImage: "arrow.clockwise")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-            .foregroundStyle(AlarmTalkTheme.onPrimary)
-            .disabled(isRetrying)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AlarmTalkTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
+
+// ⚠ **상품을 기다리는 스켈레톤·가져오기 실패 카드(`BillingPlansSkeleton`·`BillingProductsErrorState`)를 되살리지 말 것**
+// (2026-11-22 두 앱 통일). 카드는 언제나 그리고 가격은 폴백(`FallbackPlanPrice` — "월 3,900원")으로 둔다. 못 받은 상품은
+// 시작 버튼을 누를 때 다시 받는다 — 안드로이드 `SubscriptionPanel` 도 카드를 언제나 그린다.
 
 /// 자동 갱신 안내 + 이용약관(EULA)/개인정보 처리방침 링크.
 /// Apple App Store Review Guideline 3.1.2 (구독 메타데이터 노출) 충족용.
 struct SubscriptionTermsFootnote: View {
     @Environment(\.openURL) private var openURL
+    @Environment(\.voiceAlarmTheme) private var theme
 
     // 약관/개인정보 외부 링크는 RootView 와 동일 출처를 사용한다.
     private static var termsURL: URL { LegalLinks.terms }
@@ -424,21 +370,21 @@ struct SubscriptionTermsFootnote: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(String(localized: "구독은 자동으로 갱신돼요. 현재 기간 종료 24시간 전까지 해지하지 않으면 동일 금액으로 갱신되며, 요금은 결제 시점에 Apple ID 계정으로 청구돼요. 구매 후 App Store 계정 설정에서 언제든지 갱신을 끄거나 해지할 수 있어요."))
-                .font(.caption2)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
+                .font(.pretendard(.regular, size: 11, relativeTo: .caption2))
+                .foregroundStyle(theme.palette.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 12) {
                 Button(String(localized: "이용약관")) { openURL(Self.termsURL) }
                 Text("·")
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
                 Button(String(localized: "개인정보 처리방침")) { openURL(Self.privacyURL) }
                 Text("·")
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
                 Button("EULA") { openURL(Self.eulaURL) }
             }
-            .font(.caption2.weight(.semibold))
-            .tint(AlarmTalkTheme.primary)
+            .font(.pretendard(.semibold, size: 11, relativeTo: .caption2))
+            .tint(theme.palette.primary)
         }
         .padding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)

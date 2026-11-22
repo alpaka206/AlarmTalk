@@ -25,7 +25,10 @@ struct VoiceCatalogRow<Below: View>: View {
 
     /// 행 내용 높이 — 미리듣기 버튼(48pt) 기준. 부가설명이 있든 없든 같게 둬야
     /// 목록이 들쭉날쭉해지지 않는다.
-    private static var contentHeight: CGFloat { 48 }
+    static var contentHeight: CGFloat { 48 }
+
+    /// 지금 이 행에 손가락이 닿아 있는가(눌림 축소 표시용).
+    @State private var isRowPressed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -42,12 +45,6 @@ struct VoiceCatalogRow<Below: View>: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // 행 전체가 눌리도록 빈 공간에도 히트영역을 준다.
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    guard enabled else { return }
-                    (onOpenActions ?? onPreview)()
-                }
 
                 if let onOpenActions {
                     Button(action: onOpenActions) {
@@ -89,7 +86,27 @@ struct VoiceCatalogRow<Below: View>: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        // ⚠ **행 전체가 눌린다**(진행 표시 줄·여백까지) — 안드로이드 `VoiceCatalogRow` 는 행 `Column` 전체에 `clickable` 을
+        // 건다. 예전 iOS 는 이름 영역만 눌려, 오른쪽 빈 자리나 진행 줄을 누르면 아무 일이 없었다. ⋮·듣기는 자식 버튼이라
+        // 제 탭을 먼저 가져간다.
+        .contentShape(Rectangle())
+        // 누름은 축소(0.98)로만 알린다 — 안드로이드 `VoiceCatalogRow` 의 `voiceRowPressScale` 과 같은 값. 누름 상태는
+        // 알람 행(`AlarmRow`)처럼 길게 누르기의 `pressing:` 에서 받는다 — 탭 제스처를 하나 더 달면 빈 자리 탭이 죽는다.
+        .pressScale(isRowPressed && enabled)
+        .onTapGesture { performRowAction() }
+        .onLongPressGesture(
+            minimumDuration: 0.5,
+            pressing: { pressing in isRowPressed = pressing },
+            // 길게 눌렀다 떼도 행 동작이다 — 안드로이드 `clickable` 은 길게 누른 뒤 떼어도 같은 동작을 한다.
+            perform: { performRowAction() }
+        )
         .opacity(enabled ? 1 : 0.5)
+    }
+
+    /// 관리할 게 있는 행(내 목소리)은 관리 시트, 나머지는 미리듣기.
+    private func performRowAction() {
+        guard enabled else { return }
+        (onOpenActions ?? onPreview)()
     }
 }
 
@@ -125,6 +142,9 @@ struct VoiceSectionCard<Content: View>: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String
     var trailing: AnyView?
+    /// 머리 바로 아래 한 줄 — 이 탭에서 한 일의 안내(흐린 글자)나 실패(빨간 글자). 안드로이드는 '내 목소리' 머리와 목록 사이에
+    /// `localMessage` 를 둔다(`ui/voices/VoiceProfileManagementPanel.kt`).
+    var message: VoiceSectionMessage?
     /// 내용이 하나도 없으면 **카드(배경·테두리)를 그리지 않는다.** 헤더는 남긴다 —
     /// '내 목소리' 헤더의 '추가' 가 목소리 등록으로 가는 **유일한 진입점**이라
     /// 헤더까지 감추면 만들 길이 사라진다.
@@ -132,12 +152,15 @@ struct VoiceSectionCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // 머리 → (안내 줄) → 카드 사이 12 — 안드로이드 목소리 탭은 머리·안내·목록을 한 `Column(spacedBy(12))` 에 둔다.
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 4) {
+                // 16 SemiBold — 안드로이드 `VoiceCatalogSectionHeader`(titleMedium · SemiBold)와 같다. 예전 iOS 는 14 Bold 였다.
                 Text(title)
-                    .font(theme.typography.titleSmall)
-                    .fontWeight(.bold)
+                    .font(theme.typography.titleMedium)
+                    .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.onSurface)
+                    .padding(.vertical, 4)
                     .accessibilityAddTraits(.isHeader)
 
                 Spacer(minLength: 8)
@@ -145,23 +168,87 @@ struct VoiceSectionCard<Content: View>: View {
             }
             .frame(minHeight: 40)
 
+            if let message {
+                Text(message.text)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(message.isError ? theme.palette.error : theme.palette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             if hasContent {
+                // 카드 안 위아래 여백은 없다 — 행이 제 여백(10)을 갖는다(안드로이드 `VoiceCatalogGroup`).
+                // 모서리 22 · 카드 테두리색 — 안드로이드 `VoiceCatalogGroup` 의 `WakerCardShape` · `wakerCardBorder()`.
                 VStack(alignment: .leading, spacing: 0) {
                     content()
                 }
-                .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     theme.palette.surface,
-                    in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
                 )
+                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                        .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
+                        .stroke(theme.palette.cardBorder, lineWidth: 1)
                 )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// 목소리 섹션 머리 아래 한 줄(`VoiceSectionCard.message`). 안내는 흐린 글자, 실패는 빨간 글자다(2026-10-29 오너 — 실패는
+/// 그 자리 빨간 글자).
+struct VoiceSectionMessage: Equatable {
+    let text: String
+    let isError: Bool
+}
+
+/// 만드는 중·지우는 중인 내 목소리 행 — 이름 옆(행 끝)에 진행 알약만 둔다. 그동안은 미리듣기도 관리도 의미가 없어 ⋮·듣기를
+/// 그리지 않는다. 안드로이드 `ui/voices/VoiceProfileRowComponents.kt` 의 `VoiceProfileRow`(만드는 중/지우는 중 갈래)와 같은
+/// 모양이다 — 행 높이·여백은 보통 행(`VoiceCatalogRow`)과 같게 둔다.
+struct VoiceProgressRow: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    let name: String
+    let progressText: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(name)
+                .font(theme.typography.titleMedium)
+                .fontWeight(.semibold)
+                .foregroundStyle(theme.palette.onSurface)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            VoiceProgressPill(text: progressText)
+        }
+        .frame(minHeight: VoiceCatalogRow<EmptyView>.contentHeight)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// 진행 알약 — 작은 스피너 + 굵은 작은 글자, 옅은 primaryContainer 바탕(안드로이드 `VoiceProgressMessage` 와 같은 값).
+struct VoiceProgressPill: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.mini)
+                .tint(theme.palette.onPrimaryContainer)
+                .frame(width: 14, height: 14)
+            Text(text)
+                .font(theme.typography.bodySmall)
+                .fontWeight(.semibold)
+                .foregroundStyle(theme.palette.onPrimaryContainer)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(theme.palette.primaryContainer.opacity(0.58), in: Capsule())
     }
 }
 

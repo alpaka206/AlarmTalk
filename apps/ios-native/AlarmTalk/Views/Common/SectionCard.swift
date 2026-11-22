@@ -21,10 +21,10 @@ extension View {
         modifier(SettingsCardModifier(title: title))
     }
 
-    /// 버튼 반경(`vocaButton`, 18)으로 자르고 `outlineVariant` 1pt 테두리를 두른다.
-    /// 배경은 부르는 쪽이 **먼저** 칠한다 — 그래야 모서리까지 함께 잘린다.
-    func outlinedButtonShape() -> some View {
-        modifier(OutlinedButtonShapeModifier())
+    /// 설정 카드의 **겉모양만**(표면·반경 18·테두리) — 안쪽 여백은 부르는 쪽이 정한다. 더보기의 프로필 카드처럼
+    /// 카드 하나가 곧 행 하나인 자리가 쓴다(안드로이드 `MenuTabPanel` 의 프로필 `Surface` — 안쪽 여백 16).
+    func settingsSurface() -> some View {
+        modifier(SettingsSurfaceModifier())
     }
 }
 
@@ -46,19 +46,8 @@ private struct SectionSurfaceModifier: ViewModifier {
     }
 }
 
-private struct OutlinedButtonShapeModifier: ViewModifier {
-    @Environment(\.voiceAlarmTheme) private var theme
-
-    func body(content: Content) -> some View {
-        content
-            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
-            )
-    }
-}
-
+/// 목소리 등록 화면의 예시 대본·업로드·구간 자르기 상자와 문구 고치기 칸이 쓴다. 테두리는 안드로이드 그 자리들의
+/// `wakerCardBorder()`(`ui/components/VoiceInputControls.kt`) 와 같은 카드 테두리다 — 다크에서 `outlineVariant` 보다 한 단계 밝다.
 /// 설정 카드 — **제목이 카드 안에 들어간다.**
 ///
 /// 안드로이드 `ui/settings/SettingsScreenComponents.kt` 의 `SettingsCard` 대응.
@@ -68,6 +57,10 @@ private struct OutlinedButtonShapeModifier: ViewModifier {
 /// ⚠ **제목을 카드 밖으로 빼지 말 것.** 예전 iOS 는 카드 위에 작은 회색 라벨을 띄웠는데,
 /// 그러면 카드가 무엇에 대한 것인지가 카드와 분리돼 스크롤 중에 짝이 어긋나 보인다.
 /// 모서리 8·테두리 `surfaceVariant` 도 토큰 위반이었다(18 / `outlineVariant`).
+///
+/// 값은 안드로이드 `SettingsCard` 그대로다 — 카드 안쪽 여백 **8**(사방), 제목은 titleSmall Bold 에 좌우 12·위아래 8.
+/// 행도 좌우 12 라(`SettingsValueButton`) 제목과 행 글자가 같은 시작선(카드 끝에서 20)에 선다.
+/// 테두리는 `outlineVariant` 다 — 안드로이드 `SettingsCard` 가 `wakerCardBorder` 가 아니라 그 색을 쓴다.
 private struct SettingsCardModifier: ViewModifier {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String?
@@ -76,20 +69,30 @@ private struct SettingsCardModifier: ViewModifier {
         VStack(alignment: .leading, spacing: 0) {
             if let title {
                 Text(title)
-                    .font(.subheadline.weight(.bold))
+                    .font(theme.typography.titleSmall)
+                    .fontWeight(.bold)
                     .foregroundStyle(theme.palette.onSurface)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
             }
             content
         }
-        .padding(.vertical, 4)
+        .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.palette.surface)
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
-        )
+        .settingsSurface()
+    }
+}
+
+private struct SettingsSurfaceModifier: ViewModifier {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .background(theme.palette.surface)
+            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
+            )
     }
 }

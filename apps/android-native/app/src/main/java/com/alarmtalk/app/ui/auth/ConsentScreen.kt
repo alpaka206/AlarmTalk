@@ -373,8 +373,7 @@ private fun ConsentRow(
                 )
             }
             // ⚠ 민감 동의(생체정보·국외이전)의 긴 설명은 라벨 아래 부제가 아니라 **`detail`**
-            // 로 넘긴다 — 그래야 이 화살표로 접힌다. iOS 는 같은 일을
-            // `ConsentRow.collapsibleDescription` 으로 한다(구조가 달라 이름이 다르다).
+            // 로 넘긴다 — 그래야 이 화살표로 접힌다. iOS `ConsentRow` 도 같은 이름(`detail`)으로 받는다.
             if (detail != null) {
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(

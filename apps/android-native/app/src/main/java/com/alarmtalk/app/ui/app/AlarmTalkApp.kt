@@ -704,6 +704,9 @@ internal fun AlarmTalkApp(
         val tab = currentTab ?: return@LaunchedEffect
         // 목소리 탭에 들어올 때마다 지난 실패 이유를 지운다 — 아래 스로틀보다 앞이다(갱신은 건너뛰어도 지우기는 한다).
         if (tab == NativeTab.Voices) viewModel.voiceTabError = null
+        // 이용권 화면에 들어올 때마다 Play 상품(가격·체험)을 다시 받는다 — 스로틀보다 앞이다(`reloadPlayProducts` 주석,
+        // 2026-11-22 두 앱 통일). 아래 스로틀은 우리 서버 요청을 아끼려는 것이고, 상품은 Play 에 묻는다.
+        if (tab == NativeTab.Billing) viewModel.reloadPlayProducts()
         val throttleKey = tab to sessionEffectKey
         val now = System.currentTimeMillis()
         val last = lastTabRefreshAt[throttleKey]
@@ -1787,6 +1790,14 @@ internal fun AlarmTalkApp(
                   manageUrl = manageUrl,
                   onDismiss = { viewModel.billingPlayManageUrl = null },
               )
+          }
+          // App Store 로 결제한 구독의 해지가 거절됐다(`STORE_CANCEL_UNSUPPORTED`) — 아이폰에서 해지하라고 말한다.
+          if (viewModel.billingAppStoreCancelNoticeOpen) {
+              AppStoreCancelNoticeDialog(onDismiss = { viewModel.billingAppStoreCancelNoticeOpen = false })
+          }
+          // 결제 직전 조회에서 다른 스토어가 갱신 중이었다 — 시작 버튼을 누를 때와 같은 알럿이다.
+          if (viewModel.billingCrossStoreBlockOpen) {
+              CrossStoreRenewalBlockDialog(onDismiss = { viewModel.billingCrossStoreBlockOpen = false })
           }
       }
     }

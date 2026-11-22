@@ -2,73 +2,65 @@ import AVFoundation
 import Combine
 import SwiftUI
 
-/// 단일 오디오/영상 파일의 임의 구간 (startMs ~ endMs) 을 재생하는 미니 플레이어.
+/// 단일 오디오/영상 파일의 임의 구간 (startMs ~ endMs) 을 재생하는 **폭을 채운 외곽선 버튼**.
 ///
-/// Android `MainViewModelVoiceActions.playSpeakerPreview` + `VoiceProfileManagementPanel`
-/// 의 `SpeakerCandidateRow` 가 결합돼 있던 기능을 SwiftUI 컴포넌트로 분리한 것.
+/// 안드로이드 `ui/components/VoiceInputControls.kt` 의 `AudioCropRangeSelector` 맨 아래 `OutlinedButton` 과 같은 모양이다 —
+/// 재생·정지 글리프 + '미리듣기'/'정지', 모서리 18, 카드 테두리색, 글자 onSurface. 예전에는 큰 재생 아이콘·제목·시간·진행
+/// 막대를 가진 미니 플레이어였다(2026-11-22 두 앱 통일). 구간 시각은 자르기 막대 위·아래 글자가 이미 말한다.
 /// VoiceCloneUploadFlow 가 사용한다.
 struct VoiceSegmentPreviewPlayer: View {
-    let title: String
-    let subtitle: String?
     let audioURL: URL
     let startMs: Int
     let endMs: Int
     var onError: ((String) -> Void)? = nil
 
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
     @StateObject private var controller = SegmentPlayerController()
     @State private var localError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                Button {
-                    if controller.isPlaying {
-                        controller.stop()
+        let shape = RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+        // 고른 구간이 없으면 누를 수 없다(안드로이드 `enabled = selectedDuration > 0`). 잠겨도 글자는 한 단계만 낮춘다.
+        let enabled = isEnabled && endMs > startMs
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                if controller.isPlaying {
+                    controller.stop()
+                } else {
+                    let errorMessage = String(localized: "미리듣기를 재생하지 못했어요.")
+                    if controller.play(url: audioURL, startMs: startMs, endMs: endMs) {
+                        localError = nil
                     } else {
-                        let errorMessage = String(localized: "미리듣기를 재생하지 못했어요.")
-                        if controller.play(url: audioURL, startMs: startMs, endMs: endMs) {
-                            localError = nil
-                        } else {
-                            localError = errorMessage
-                            onError?(errorMessage)
-                        }
-                    }
-                } label: {
-                    // ⚠ **정지(stop)에 일시정지(pause) 아이콘을 쓰지 말 것.** 이 버튼은 누르면
-                // `controller.stop()` 이라 다시 누르면 **처음부터** 재생된다 — ⏸ 를 보여주면
-                // '이어 듣기' 를 약속하는 셈이라 사용자가 기대와 다른 결과를 얻는다.
-                Image(systemName: controller.isPlaying ? "stop.fill" : "play.fill")
-                        .font(.system(size: 36))
-                        .foregroundStyle(AlarmTalkTheme.primary)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline.weight(.semibold))
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle).font(.caption).foregroundStyle(AlarmTalkTheme.textSecondary)
+                        localError = errorMessage
+                        onError?(errorMessage)
                     }
                 }
-                Spacer()
-                Text(timeLabel)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+            } label: {
+                HStack(spacing: 8) {
+                    // ⚠ **정지(stop)에 일시정지(pause) 아이콘·글자를 쓰지 말 것.** 이 버튼은 누르면 `controller.stop()` 이라
+                    // 다시 누르면 **처음부터** 재생된다 — ⏸·'일시정지' 는 '이어 듣기' 를 약속하는 셈이다.
+                    Image(systemName: controller.isPlaying ? "stop.fill" : "play.fill")
+                    Text(controller.isPlaying ? String(localized: "정지") : String(localized: "미리듣기"))
+                }
+                .font(theme.typography.labelLarge)
+                .foregroundStyle(enabled ? theme.palette.onSurface : theme.palette.onSurfaceVariant)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .overlay(shape.stroke(theme.palette.cardBorder, lineWidth: 1))
+                .contentShape(shape)
             }
-            ProgressView(value: controller.progress)
-                .tint(AlarmTalkTheme.primary)
-            if let localError {
+            .buttonStyle(.plain)
+            .disabled(!enabled)
+            // 실패는 부르는 쪽이 자기 자리에 그린다(`onError`). 받을 곳이 없을 때만 여기 둔다.
+            if onError == nil, let localError {
                 Text(localError)
-                    .font(.caption)
-                    .foregroundStyle(AlarmTalkTheme.error)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.error)
             }
         }
-        .padding(12)
-        .background(AlarmTalkTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small))
         .onDisappear { controller.stop() }
-    }
-
-    private var timeLabel: String {
-        let played = HelperFormatters.audioTimeLabel(Int(controller.elapsedSec * 1000))
-        return "\(played) / \(HelperFormatters.audioTimeLabel(endMs - startMs))"
     }
 }
 

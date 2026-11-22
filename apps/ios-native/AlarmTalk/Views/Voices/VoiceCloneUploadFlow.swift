@@ -77,6 +77,10 @@ struct VoiceCloneUploadFlow: View {
     /// 「녹음 품질 판정」). 확정 사유는 묻지 않고 거절 줄(`rerecordReason`)에 쓴다. 안드로이드 `recordingReview` 짝.
     @State private var recordingReview: RecordingReview?
     @State private var scriptExpanded = false
+    /// 예시 대본의 줄 간격 — 줄 높이 24(안드로이드 대본의 `bodyLarge.lineHeight`)에서 Pretendard 14 의 제 줄 높이(약 16.7)를 뺀
+    /// 값이다. 글자 크기 설정을 따라 같은 비율로 커진다(`bodyMedium` 과 같은 `.subheadline` 기준).
+    @ScaledMetric(relativeTo: .subheadline) private var scriptLineSpacing: CGFloat = 7.3
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     /// 선제 동의 시트를 띄우느라 멈춘 등록이 있는가 — 동의가 기록되면 **그 자리에서 이어서**
     /// 등록한다. 안드로이드의 `SensitiveConsentRequest.resumeVoiceDrafts` 대응이다.
     @State private var resumeSubmitAfterConsent = false
@@ -147,6 +151,12 @@ struct VoiceCloneUploadFlow: View {
         }
     }
 
+    /// 예시 대본 카드가 남은 높이를 채우는가 — 녹음 갈래의 음원 준비에서, 세로가 넉넉할 때만(가로로 눕힌 폰처럼 세로가
+    /// 좁으면 페이지 스크롤 + 카드 높이 상한으로 돌아간다 — 안드로이드의 짧은 창 폴백과 같은 이유다).
+    private var scriptFillsRemainingHeight: Bool {
+        registrationStep == .source && sourceMode == .record && verticalSizeClass != .compact
+    }
+
     private var canAdvanceFromSource: Bool {
         !voice.isBusy && !voice.recorder.isRecording && hasPreparedSource && isInValidRange
             && !(sourceMode == .record && recordingAnalyzing)
@@ -169,6 +179,17 @@ struct VoiceCloneUploadFlow: View {
                 // '만드는 중' 은 고를 것도 입력할 것도 없는 대기 화면이라 스크롤 본문에 얹지 않고 화면 한가운데에 둔다
                 // (2026-11-15 오너: "목소리 만드는 중이에요 그거 중앙에 배치되는게 맞지않을까?"). 안드로이드 `Creating` 단계와 같다.
                 creatingSection
+            } else if scriptFillsRemainingHeight {
+                // 녹음 갈래의 음원 준비는 **페이지를 스크롤하지 않는다** — 예시 대본 카드가 남은 높이를 채우고 그 안에서만
+                // 스크롤한다(녹음 카드와 대본을 한 화면에서 함께 본다). 안드로이드 `scriptFillsRemainingHeight` 와 같다.
+                // 본문이 한 화면이라 거절 줄(`rerecordReason`)로 올려 줄 스크롤도 없다.
+                VStack(alignment: .leading, spacing: 14) {
+                    sourceSection
+                    statusSection
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 ScrollViewReader { scroll in
                     ScrollView {
@@ -219,7 +240,8 @@ struct VoiceCloneUploadFlow: View {
                 guard let source = urls.first else { return }
                 Task { await importAudioFile(source) }
             case .failure(let error):
-                localError = AudioUserFacingError.message(for: error, fallback: String(localized: "파일을 선택하지 못했어요."))
+                // 안드로이드 `voices_selected_audio_unusable` 과 같은 말.
+                localError = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 오디오를 사용할 수 없어요."))
             }
         }
         // ⚠ **이 시트에서 동의했으면 등록을 이어서 한다**(Codex #703 P2). 시트의 '확인' 이 동의만 기록하고 끝나면 사용자가
@@ -297,26 +319,27 @@ struct VoiceCloneUploadFlow: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
                 fieldLabel(String(localized: "목소리 이름"))
-                TextField(String(localized: "예: 엄마 목소리"), text: $profileName)
-                    .onChange(of: profileName) { _, newValue in
-                        voice.cloneName = newValue
-                        let bounded = InputSanitizer.boundedVoiceName(newValue, wasTooLong: profileNameTooLong)
-                        profileNameTooLong = bounded.tooLong
-                        if bounded.value != newValue {
-                            profileName = bounded.value
-                            voice.cloneName = profileName
+                // 칸 → 오류 줄 4 — 안드로이드 `OutlinedTextField` 의 `supportingText` 자리와 같다.
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField(String(localized: "예: 엄마 목소리"), text: $profileName)
+                        .onChange(of: profileName) { _, newValue in
+                            voice.cloneName = newValue
+                            let bounded = InputSanitizer.boundedVoiceName(newValue, wasTooLong: profileNameTooLong)
+                            profileNameTooLong = bounded.tooLong
+                            if bounded.value != newValue {
+                                profileName = bounded.value
+                                voice.cloneName = profileName
+                            }
                         }
+                        // 오류면 테두리도 빨갛다(안드로이드 `isError = nameRequiredError || profileNameTooLong`).
+                        .alarmTalkFieldStyle(isError: nameRequiredError || profileNameTooLong)
+                    if nameRequiredError {
+                        // 이 말 한 번뿐이다 — 아래 안내 줄에 같은 이유를 또 띄우지 않는다(`submit`). 안드로이드 `voices_required_field`.
+                        fieldErrorLine(String(localized: "꼭 입력해 주세요."))
+                    } else if profileNameTooLong {
+                        // 상한에서 입력을 막은 이유 — 말없이 자르지 않는다(안드로이드 `voices_name_too_long` 짝).
+                        fieldErrorLine(String(localized: "이름은 \(InputSanitizer.voiceNameMaxLength)자까지 쓸 수 있어요."))
                     }
-                    .alarmTalkFieldStyle()
-                if submitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(String(localized: "목소리 이름을 입력해 주세요."))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(AlarmTalkTheme.error)
-                } else if profileNameTooLong {
-                    // 상한에서 입력을 막은 이유 — 말없이 자르지 않는다(안드로이드 `voices_name_too_long` 짝).
-                    Text(String(localized: "이름은 \(InputSanitizer.voiceNameMaxLength)자까지 쓸 수 있어요."))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(AlarmTalkTheme.error)
                 }
             }
 
@@ -339,6 +362,20 @@ struct VoiceCloneUploadFlow: View {
                     .alarmTalkFieldStyle()
             }
         }
+    }
+
+    /// '등록' 을 눌렀는데 이름이 비었다.
+    private var nameRequiredError: Bool {
+        submitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 칸 아래 오류 줄 — 12 · 빨간 글자, 칸 안 글자와 같은 시작선(16). 안드로이드 M3 `supportingText` 와 같다.
+    private func fieldErrorLine(_ text: String) -> some View {
+        Text(text)
+            .font(theme.typography.bodySmall)
+            .foregroundStyle(theme.palette.error)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// ⚠ **녹음 UI 를 여기서 새로 그리지 말 것**(2026-08-16 정리).
@@ -445,15 +482,19 @@ struct VoiceCloneUploadFlow: View {
             Text(String(localized: "너무 짧으면 목소리가 다르게 나올 수 있어요."))
                 .font(theme.typography.bodySmall)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
-            scriptSection
+            scriptSection(fillsHeight: scriptFillsRemainingHeight)
         } else {
             fileSection
             rerecordReasonLine
         }
     }
 
-    private var scriptSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    /// 예시 대본 카드 — 바탕 surfaceVariant 50% · 모서리 22 · 카드 테두리색, 대본 줄 높이 24. 안드로이드 `VoiceRecordScriptCard` 와
+    /// 같은 값이다. `fillsHeight` 면 펼친 대본이 화면의 남은 높이만큼만 차지하고 카드 안에서 스크롤한다(짧으면 그만큼만 —
+    /// 안드로이드 `weight(1f, fill = false)`). 아니면(세로가 좁은 창) 대본 높이를 240 으로 막고 그 안에서 스크롤한다.
+    private func scriptSection(fillsHeight: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
+        return VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(reduceMotion
                     ? .easeOut(duration: 0.15)
@@ -465,6 +506,7 @@ struct VoiceCloneUploadFlow: View {
                     Text(String(localized: "예시 대본"))
                         .font(theme.typography.titleSmall)
                         .fontWeight(.semibold)
+                        .foregroundStyle(theme.palette.onSurface)
                     Spacer()
                     Image(systemName: "chevron.down")
                         .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -476,18 +518,40 @@ struct VoiceCloneUploadFlow: View {
             .buttonStyle(.plain)
 
             if scriptExpanded {
-                Text(recordingScript)
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurface)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                scriptBody(fillsHeight: fillsHeight)
                     .transition(reduceMotion
                         ? .opacity
                         : .opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(theme.palette.surfaceVariant.opacity(0.38))
-        .outlinedButtonShape()
+        .background(theme.palette.surfaceVariant.opacity(0.5), in: shape)
+        .clipShape(shape)
+        .overlay(shape.stroke(theme.palette.cardBorder, lineWidth: 1))
+    }
+
+    /// 펼친 대본 — 들어가면 그대로, 넘치면 카드 안 스크롤로 그린다(`ViewThatFits`).
+    @ViewBuilder
+    private func scriptBody(fillsHeight: Bool) -> some View {
+        let text = Text(recordingScript)
+            .font(theme.typography.bodyMedium)
+            .lineSpacing(scriptLineSpacing)
+            .foregroundStyle(theme.palette.onSurface)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // 헤더가 제 여백을 가져갔으니 본문도 제 여백을 갖는다(안드로이드와 같다).
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        if fillsHeight {
+            ViewThatFits(in: .vertical) {
+                text
+                ScrollView { text }
+            }
+        } else {
+            ViewThatFits(in: .vertical) {
+                text
+                ScrollView { text }
+            }
+            .frame(maxHeight: 240)
+        }
     }
 
     private var recordingScript: String {
@@ -559,10 +623,11 @@ struct VoiceCloneUploadFlow: View {
         }
     }
 
-    /// 세부 정보의 칸 위 라벨 — 안드로이드 `VoiceFieldLabel` 과 같은 결(12 · 굵게 · 흐린 글자)이다.
+    /// 세부 정보의 칸 위 라벨 — 안드로이드 `VoiceFieldLabel` 과 같은 결(labelMedium 12 · SemiBold · 흐린 글자)이다.
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
-            .font(.caption.weight(.semibold))
+            .font(theme.typography.labelMedium)
+            .fontWeight(.semibold)
             .foregroundStyle(theme.palette.onSurfaceVariant)
     }
 
@@ -604,28 +669,54 @@ struct VoiceCloneUploadFlow: View {
             options: VoiceCloneSourceMode.allCases.map { ($0, $0.label) },
             selection: $sourceMode
         )
+        // 녹음 중에는 방식을 바꾸지 못한다 — 안드로이드 `VoiceCaptureModeSelector(enabled = !isRecording)`. 예전에는 녹음 중에
+        // '파일' 을 누르면 녹음이 말없이 끊겼다.
+        .disabled(voice.recorder.isRecording)
         .accessibilityLabel(Text(String(localized: "voice.capture.mode", defaultValue: "만드는 방법")))
         .accessibilityIdentifier("voice-capture-mode")
     }
 
     private var fileSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let uploadShape = RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
+        return VStack(alignment: .leading, spacing: 12) {
+            // 업로드 영역 — 고르기 전에는 가운데 정렬 드롭존(아이콘 28 위에 글자), 고른 뒤에는 '재업로드' 한 줄(아이콘 18 + 글자)로
+            // 줄인다. 아이콘은 두 상태 모두 흐린 글자색이다. 모서리 22 · 카드 테두리색. 안드로이드 `VoiceFileControls` 와 같다.
             Button { fileImporterPresented = true } label: {
-                VStack(spacing: 10) {
-                    Image(systemName: "arrow.up.doc")
-                        .font(.system(size: selectedFileURL == nil ? 28 : 18))
-                    Text(selectedFileURL == nil ? String(localized: "파일 또는 영상 업로드") : String(localized: "재업로드"))
-                        .font(theme.typography.bodyMedium)
-                        .fontWeight(.semibold)
+                Group {
+                    if selectedFileURL == nil {
+                        VStack(spacing: 10) {
+                            Image(systemName: "arrow.up.doc")
+                                .font(.system(size: 28))
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                            Text(String(localized: "파일 또는 영상 업로드"))
+                                .font(theme.typography.bodyMedium)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(theme.palette.onSurface)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 22)
+                    } else {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.up.doc")
+                                .font(.system(size: 18))
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                            Text(String(localized: "재업로드"))
+                                .font(theme.typography.bodyMedium)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(theme.palette.onSurface)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                    }
                 }
-                .foregroundStyle(theme.palette.onSurface)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, selectedFileURL == nil ? 22 : 12)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .background(theme.palette.surface)
-            .outlinedButtonShape()
+            .background(theme.palette.surface, in: uploadShape)
+            .clipShape(uploadShape)
+            .overlay(uploadShape.stroke(theme.palette.cardBorder, lineWidth: 1))
 
             if let url = selectedFileURL, let durationMs = selectedFileDurationMs {
                 Text(String(localized: "12초 이상 2분 이하 구간을 선택해 주세요."))
@@ -639,57 +730,66 @@ struct VoiceCloneUploadFlow: View {
 
             if let localError {
                 Text(localError)
-                    .font(.footnote.weight(.semibold))
+                    .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.error)
             }
         }
     }
 
+    /// 구간 자르기 카드 — 제목 줄(길이 알약), 손잡이 위 시작·끝 시각, 막대, 그 아래 `0:00 … 총 길이`, 폭을 채운 미리듣기 버튼.
+    /// 바탕 surfaceVariant 38% · 모서리 18 · 카드 테두리색 70%. 안드로이드 `AudioCropRangeSelector` 와 같은 구성·값이다.
+    /// ⚠ **짧은 파일(12초 미만)도 막대를 그린다**(안드로이드와 같다) — 못 넘어가는 이유는 하단 '다음' 버튼이 말한다.
     private func fileCropCard(url: URL, durationMs: Int) -> some View {
         let effectiveEndMs = min(cropEndMs, durationMs)
         let effectiveDurationMs = max(0, effectiveEndMs - cropStartMs)
-        return VStack(alignment: .leading, spacing: 10) {
-            if durationMs >= VoiceProfileLimits.minDurationMs {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(String(localized: "구간 자르기"))
-                            .font(theme.typography.labelLarge)
-                            .fontWeight(.semibold)
-                        Spacer()
-                        Text(HelperFormatters.audioTimeLabel(effectiveDurationMs))
-                            .font(theme.typography.labelMedium)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(theme.palette.onSecondaryContainer)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(theme.palette.secondaryContainer, in: Capsule())
-                    }
-                    // Android `AudioCropRangeSelector` 처럼 양쪽 핸들로 12~120초 구간을 직접 고른다.
-                    // (이전엔 시작점만 움직이고 길이는 항상 120초로 고정됐음).
-                    AudioCropRangeSlider(
-                        durationMs: durationMs,
-                        minDurationMs: VoiceProfileLimits.minDurationMs,
-                        maxDurationMs: VoiceProfileLimits.maxDurationMs,
-                        cropStartMs: $cropStartMs,
-                        cropEndMs: $cropEndMs
-                    )
-                }
+        let shape = RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(String(localized: "구간 자르기"))
+                    .font(theme.typography.labelLarge)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(theme.palette.onSurface)
+                Spacer()
+                Text(HelperFormatters.audioTimeLabel(effectiveDurationMs))
+                    .font(theme.typography.labelMedium)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(theme.palette.onSecondaryContainer)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(theme.palette.secondaryContainer, in: Capsule())
             }
+            // 손잡이를 따라가는 시작·끝 시각(겹치면 하나로 합친다).
+            AudioCropThumbLabels(durationMs: durationMs, startMs: cropStartMs, endMs: effectiveEndMs)
+            // Android `AudioCropRangeSelector` 처럼 양쪽 핸들로 12~120초 구간을 직접 고른다.
+            AudioCropRangeSlider(
+                durationMs: durationMs,
+                minDurationMs: VoiceProfileLimits.minDurationMs,
+                maxDurationMs: VoiceProfileLimits.maxDurationMs,
+                cropStartMs: $cropStartMs,
+                cropEndMs: $cropEndMs
+            )
+            // 파일 전체 타임라인은 0:00 ~ 총 길이로 고정이다 — 고른 값은 위 손잡이 글자가 말한다.
+            HStack {
+                Text(verbatim: HelperFormatters.audioTimeLabel(0))
+                Spacer()
+                Text(verbatim: HelperFormatters.audioTimeLabel(durationMs))
+            }
+            .font(theme.typography.bodySmall)
+            .foregroundStyle(theme.palette.onSurfaceVariant)
+            .monospacedDigit()
+            .accessibilityHidden(true)
 
             VoiceSegmentPreviewPlayer(
-                title: String(localized: "선택 구간 미리듣기"),
-                subtitle: "\(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(effectiveEndMs))",
                 audioURL: url,
                 startMs: cropStartMs,
                 endMs: effectiveEndMs,
                 onError: { localError = $0 }
             )
-
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.palette.surfaceVariant.opacity(0.38))
-        .outlinedButtonShape()
+        .background(theme.palette.surfaceVariant.opacity(0.38), in: shape)
+        .overlay(shape.stroke(theme.palette.cardBorder.opacity(0.7), lineWidth: 1))
     }
 
     @ViewBuilder
@@ -698,9 +798,8 @@ struct VoiceCloneUploadFlow: View {
         // 등록 창의 `localMessage` 와 같은 색이다.
         if let message = voice.statusMessage, !message.isEmpty {
             Text(message)
-                .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.error)
-                .padding(.horizontal, 4)
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.error)
         }
     }
 
@@ -719,15 +818,17 @@ struct VoiceCloneUploadFlow: View {
     @ViewBuilder
     private var bottomActions: some View {
         switch registrationStep {
+        // '다음'·'등록' 은 채움 한 벌이다 — 높이 40 · 모서리 18 · labelLarge, 잠기면 surfaceVariant 바탕에 onSurfaceVariant 글자
+        // (안드로이드 `wakerButtonColors()` · `WakerButtonShape`). 시스템 `.borderedProminent` 는 제 높이·글꼴(SF)을 가져 두 앱이
+        // 달라 보였다. 확정 화면의 `저장하기` 와 같은 스타일이다.
         case .source:
             Button {
                 voice.statusMessage = nil
                 registrationStep = .details
             } label: {
-                Text(sourceActionTitle).frame(maxWidth: .infinity)
+                Text(sourceActionTitle)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.palette.primary)
+            .buttonStyle(EditorActionButtonStyle(kind: .filled))
             .disabled(!canAdvanceFromSource)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -735,10 +836,9 @@ struct VoiceCloneUploadFlow: View {
             Button {
                 Task { await submit() }
             } label: {
-                Text(String(localized: "voice.register.submit")).frame(maxWidth: .infinity)
+                Text(String(localized: "voice.register.submit"))
             }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.palette.primary)
+            .buttonStyle(EditorActionButtonStyle(kind: .filled))
             .disabled(!canSubmit)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -758,13 +858,16 @@ struct VoiceCloneUploadFlow: View {
 
     private func submit() async {
         submitted = true
-        guard hasPaidVoiceAccess else {
-            voice.statusMessage = String(localized: "유료 이용권에서 사용할 수 있어요.")
+        let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 이름이 비었으면 칸 아래 '꼭 입력해 주세요.' 한 줄로만 말한다(`nameRequiredError`) — 아래 안내 줄에 같은 이유를 또
+        // 띄우지 않는다. 안드로이드 `submitCreateProfile` 도 이름부터 보고 안내 줄을 비운다.
+        guard !trimmedName.isEmpty else {
+            voice.statusMessage = nil
             return
         }
-        let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            voice.statusMessage = String(localized: "목소리 이름을 입력해 주세요.")
+        guard hasPaidVoiceAccess else {
+            // 유료 게이트 문장은 하나다 — 안드로이드 `plan_gate_paid_message` 와 같은 말이다.
+            voice.statusMessage = PaidGateCopy.message
             return
         }
         // ⚠ **빠진 민감 동의는 업로드 전에 시트 하나로 받는다**(2026-11-15 오너: "생성할때 모달로 떠서 한번에 다 받고
@@ -789,6 +892,7 @@ struct VoiceCloneUploadFlow: View {
         case .record:
             guard voice.recorder.latestRecordingURL != nil,
                   voice.recorder.latestDurationMs != nil else {
+                // 안드로이드 `voices_prepare_recording_first` 와 같은 말.
                 voice.statusMessage = String(localized: "먼저 목소리를 녹음해 주세요.")
                 registrationStep = .source
                 return
@@ -1007,24 +1111,33 @@ struct VoiceCloneUploadFlow: View {
     private var canCreateVoice: Bool { hasPaidVoiceAccess }
 
 
+    /// 고른 파일을 앱 사본으로 가져와 길이를 잰다. 문구는 안드로이드 `prepareSelectedFile` 과 같다 — 가져오지 못하면 "선택한
+    /// 오디오를 사용할 수 없어요.", 길이를 못 재면 "오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.".
     private func importAudioFile(_ source: URL) async {
+        let importedURL: URL
         do {
-            let importedURL = try copyImportedAudio(source)
-            let durationMs = try await readAudioDurationMs(importedURL)
-            // 뷰는 메인 액터라 await 뒤에도 여기서 곧바로 상태를 고친다.
-            selectedFileURL = importedURL
-            selectedFileName = source.lastPathComponent
-            selectedFileDurationMs = durationMs
-            applyCropDefaults(durationMs: durationMs)
-            localError = durationMs < VoiceProfileLimits.minDurationMs
-                ? String(localized: "12초 이상 파일을 선택해 주세요.")
-                : nil
-            // 새 파일이다 — 앞 파일(녹음)이 거절당한 이유(`rerecordReason`)는 이 파일의 이야기가 아니다. 남겨 두면 새
-            // 파일의 구간 카드 아래에 그 거절이 붙어, 새 파일이 거절당한 것처럼 읽힌다.
-            rerecordReason = nil
+            importedURL = try copyImportedAudio(source)
         } catch {
-            localError = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 파일을 준비하지 못했어요."))
+            localError = AudioUserFacingError.message(for: error, fallback: String(localized: "선택한 오디오를 사용할 수 없어요."))
+            return
         }
+        guard let durationMs = try? await readAudioDurationMs(importedURL) else {
+            // 쓰지 않을 사본은 곧바로 지운다 — 목소리 원본이다. 앞에 고른 파일은 그대로 둔다.
+            try? FileManager.default.removeItem(at: importedURL)
+            localError = String(localized: "오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
+            return
+        }
+        // 뷰는 메인 액터라 await 뒤에도 여기서 곧바로 상태를 고친다.
+        selectedFileURL = importedURL
+        selectedFileName = source.lastPathComponent
+        selectedFileDurationMs = durationMs
+        applyCropDefaults(durationMs: durationMs)
+        // ⚠ **짧은 파일(12초 미만)도 빨간 줄로 나무라지 않는다** — 못 넘어가는 이유는 하단 '다음' 버튼 자리가 말한다
+        // ("12초 이상인 파일을 선택해 주세요" — `sourceActionTitle`). 안드로이드 `prepareSelectedFile` 과 같다.
+        localError = nil
+        // 새 파일이다 — 앞 파일(녹음)이 거절당한 이유(`rerecordReason`)는 이 파일의 이야기가 아니다. 남겨 두면 새
+        // 파일의 구간 카드 아래에 그 거절이 붙어, 새 파일이 거절당한 것처럼 읽힌다.
+        rerecordReason = nil
     }
 
     private func preparedFileAudio() async throws -> (url: URL, durationMs: Int, uploadFileName: String?) {

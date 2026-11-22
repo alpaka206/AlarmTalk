@@ -39,8 +39,10 @@ struct WakerTopBar: View {
     var body: some View {
         ZStack {
             Text(title)
-                .font(theme.typography.titleMedium)
-                .fontWeight(.semibold)
+                // 17 SemiBold — 안드로이드 `ui/home/HomeComponents.kt` 의 `WakerTopBar`(titleLarge 를 17 로 줄이고 SemiBold)와
+                // 같은 크기다. 예전에는 titleMedium(16)이라 같은 화면의 제목이 iOS 만 1pt 작았다. 시스템 인라인 제목(.headline)과
+                // 같은 속도로 커진다.
+                .font(.pretendard(.semibold, size: 17, relativeTo: .headline))
                 .foregroundStyle(tint ?? theme.palette.onSurface)
                 .lineLimit(1)
             if let onBack {

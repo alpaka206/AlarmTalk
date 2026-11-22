@@ -82,6 +82,10 @@ internal fun SubscriptionPanel(
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
+    // 시작 버튼을 눌렀는데 다른 스토어(App Store)가 갱신을 쥐고 있다 — 결제 확인 알럿 대신 이 알럿을 띄운다([otherStoreOwnsRenewal]).
+    var showCrossStoreBlock by remember { mutableStateOf(false) }
+    // 해지 버튼을 눌렀는데 App Store 로 결제한 구독이다 — 해지 시점을 묻지 않고 아이폰에서 해지하라고 말한다.
+    var showAppStoreCancelNotice by remember { mutableStateOf(false) }
     val subscription = subscriptionResponse?.subscription
     val currentPlan = subscriptionResponse?.plan
     val nextPlan = subscriptionResponse?.nextPlan
@@ -185,7 +189,9 @@ internal fun SubscriptionPanel(
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 16.dp),
+                // 상단바 아래 간격(24)은 상단바가 갖는다(`WakerTopBarBottomGap`) — 위 여백을 더하지 않는다(2026-11-22 두 앱 통일,
+                // 예전의 위 8 은 다른 하위 화면보다 첫 카드를 8 더 내렸다).
+                .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (topLine != null) {
@@ -220,7 +226,15 @@ internal fun SubscriptionPanel(
             //   시작 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야 한다([PlanScreenCurrent.showsPurchase]).
             if (plusShowsPurchase) {
                 Button(
-                    onClick = { purchaseTarget = plusOption },
+                    onClick = {
+                        // **누르는 순간 한 번, 결제 직전에 한 번** 본다(iOS `BillingPanel.beginPurchase` 와 같은 차례). 여기서는 받아 둔
+                        // 응답으로, 결제 직전에는 서버에 새로 물어 본다(`startPlayPurchase` 의 결제 전 조회).
+                        if (otherStoreOwnsRenewal(subscriptionResponse)) {
+                            showCrossStoreBlock = true
+                        } else {
+                            purchaseTarget = plusOption
+                        }
+                    },
                     enabled = !billingBusy,
                     colors = wakerButtonColors(),
                     modifier = Modifier
@@ -265,7 +279,17 @@ internal fun SubscriptionPanel(
                     )
                 }
                 if (hasActive) {
-                    TextButton(onClick = { showCancelDialog = true }, enabled = !billingBusy) {
+                    TextButton(
+                        onClick = {
+                            // App Store 로 결제한 구독은 서버도 이 기기도 끊을 수 없다 — 해지 시점을 묻지 않는다(`store_provider`).
+                            if (subscription?.storeProvider == APP_STORE_PROVIDER) {
+                                showAppStoreCancelNotice = true
+                            } else {
+                                showCancelDialog = true
+                            }
+                        },
+                        enabled = !billingBusy,
+                    ) {
                         Text(
                             text = stringResource(R.string.billing_cancel_pass),
                             style = MaterialTheme.typography.bodyMedium,
@@ -306,6 +330,66 @@ internal fun SubscriptionPanel(
             },
         )
     }
+
+    if (showCrossStoreBlock) {
+        CrossStoreRenewalBlockDialog(onDismiss = { showCrossStoreBlock = false })
+    }
+
+    if (showAppStoreCancelNotice) {
+        AppStoreCancelNoticeDialog(onDismiss = { showAppStoreCancelNotice = false })
+    }
+}
+
+/** 구독 응답의 `store_provider`·`store_renewal_providers` 에서 App Store 를 뜻하는 값. */
+private const val APP_STORE_PROVIDER = "apple"
+
+/**
+ * 지금 이 계정의 갱신을 **Google Play 가 아닌 스토어**(App Store)가 쥐고 있는가 — 그러면 Play 결제를 열지 않는다(두 곳에서
+ * 함께 청구된다 — 코덱스 #730). 판정은 서버의 `store_renewal_providers` 하나다. 모르면(구버전 서버·아직 못 받은 응답) false 다 —
+ * 결제 직전에 서버에 새로 물어 다시 본다(`crossStoreRenewalBlocked`).
+ */
+internal fun otherStoreOwnsRenewal(response: BillingSubscriptionResponse?): Boolean =
+    response?.storeRenewalProviders?.any { it != "google" } == true
+
+/**
+ * 다른 스토어가 갱신 중이라 Play 결제를 막았다 — 시작 버튼을 누르는 순간과 결제 직전 조회가 같은 알럿을 쓴다(2026-11-22 두 앱
+ * 통일 — iOS `BillingPanel` 의 `purchaseBlock` 알럿과 같은 문장이다, 스토어 이름만 반대). 예전에는 결제 직전에만 보고 한 줄로 말했다.
+ */
+@Composable
+internal fun CrossStoreRenewalBlockDialog(onDismiss: () -> Unit) {
+    IosAlertDialog(
+        title = stringResource(R.string.billing_cross_store_block_title),
+        message = stringResource(R.string.billing_cross_store_block_message),
+        onDismiss = onDismiss,
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.auth_confirm),
+                emphasized = true,
+                onClick = onDismiss,
+            ),
+        ),
+    )
+}
+
+/**
+ * App Store 로 결제한 이용권의 해지 — 서버도 이 기기도 그 구독을 끊을 수 없다(애플 구독은 서버가 못 끊는다 —
+ * `docs/spec/billing-lifecycle.md`). 아이폰의 App Store 구독에서 해지하라고 말한다(2026-11-22 두 앱 통일). 버튼은 확인 하나다 —
+ * 이 기기에서 열 수 있는 관리 화면이 없다.
+ */
+@Composable
+internal fun AppStoreCancelNoticeDialog(onDismiss: () -> Unit) {
+    IosAlertDialog(
+        title = stringResource(R.string.billing_app_store_cancel_title),
+        message = stringResource(R.string.billing_app_store_cancel_message),
+        onDismiss = onDismiss,
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.auth_confirm),
+                emphasized = true,
+                onClick = onDismiss,
+            ),
+        ),
+    )
 }
 
 /**
@@ -600,7 +684,11 @@ private fun CancelSubscriptionDialog(
     onConfirm: (atPeriodEnd: Boolean) -> Unit,
 ) {
     var confirmImmediate by remember { mutableStateOf(false) }
-    val endDate = formatPass(subscription?.expiresAt, PassShortDateFormatter)
+    // "11월 22일" — 체험 안내·기간 한정 플랜과 같은 꼴이다([formatPassDay]).
+    val endDate = formatPassDay(
+        subscription?.expiresAt,
+        LocalConfiguration.current.locales[0] ?: java.util.Locale.getDefault(),
+    )
     // 로그아웃 확인과 같은 iOS 알럿 스타일(IosAlertDialog)로 통일 — 확인형 모달은 전부 이 계열.
     if (confirmImmediate) {
         IosAlertDialog(

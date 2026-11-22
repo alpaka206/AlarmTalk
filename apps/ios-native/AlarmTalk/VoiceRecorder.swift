@@ -14,8 +14,9 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     // ⚠ **`recordingLevels`(18칸 파형)를 되살리지 말 것**(2026-08-07 삭제).
     // 발행만 하고 **읽는 화면이 하나도 없었다** — 0.25초마다 배열을 새로 만들어 발행하니
     // 녹음 중 편집기 전체가 그만큼 다시 그려졌다. 안드로이드도 2026-07-07 개편에서
-    // 18칸 파형을 없앴다. 레벨 표시가 다시 필요해지면 **그 화면 안에서** 관측하게 만들 것 —
-    // 편집기 전체가 관측하는 자리에 두면 같은 일이 반복된다.
+    // 18칸 파형을 없앴다.
+    // 녹음 카드의 레벨 막대 넷(안드로이드 `VoiceInputControls.kt` 의 `RecordingLevelBars`)은 이 객체가 아니라
+    // `RecordingLevelMeter.shared` 가 발행한다 — 그것을 보는 것은 막대 뷰 하나뿐이라 편집기 전체가 다시 그려지지 않는다.
 
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
@@ -47,9 +48,8 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
         let recorder = try AVAudioRecorder(url: url, settings: settings)
         recorder.delegate = self
-        // 계측(레벨 미터)은 쓰지 않는다 — 읽던 파형 발행자를 없앴다(위 주석).
-        // 켜 두면 매 버퍼마다 파워를 계산해 두고 아무도 읽지 않는다.
-        recorder.isMeteringEnabled = false
+        // 계측은 녹음 카드의 레벨 막대가 읽는다(`RecordingLevelMeter` — 250ms 마다 한 번).
+        recorder.isMeteringEnabled = true
         recorder.record()
 
         self.recorder = recorder
@@ -78,6 +78,7 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         timer = nil
         lastStopReason = recorderReportedFailure ? .failed : reason
         isRecording = false
+        RecordingLevelMeter.shared.update(0)
         if let startedAt {
             latestDurationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
         }
@@ -186,6 +187,11 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
                 if Int(elapsed) != Int(self.elapsedSeconds) {
                     self.elapsedSeconds = elapsed
                 }
+                // 마이크 크기 — 직전 구간의 최대 진폭(0~1). 안드로이드 `MediaRecorder.maxAmplitude / 32767` 과 같은 척도다.
+                if let recorder = self.recorder, recorder.isRecording {
+                    recorder.updateMeters()
+                    RecordingLevelMeter.shared.update(RecordingLevelMeter.linearLevel(peakDecibels: recorder.peakPower(forChannel: 0)))
+                }
                 // Android `VoiceProfileManagementPanel` 의 녹음 루프(`LaunchedEffect(isRecording)`) 하드 캡 미러 —
                 // 2분(MAX_DURATION) 도달 시 녹음을 자동 정지한다. 사용자가 멈추지 않아
                 // 2분을 넘기면 업로드 단계에서 거부되던 문제를 사전 차단한다.
@@ -233,7 +239,31 @@ enum VoiceRecorderError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .microphoneDenied:
-            return String(localized: "녹음하려면 마이크 권한이 필요해요.")
+            // 안드로이드 `voices_mic_permission_required`·`editor_error_mic_permission_required` 와 같은 말.
+            return String(localized: "마이크 권한이 필요해요.")
         }
+    }
+}
+
+/// 녹음 중 마이크 크기(0~1) — 녹음 카드의 레벨 막대(`RecordingCard`)만 본다.
+///
+/// ⚠ **`VoiceRecorder` 의 `@Published` 로 옮기지 말 것.** 녹음기는 편집기와 등록 화면 전체가 관측한다 — 거기서 250ms 마다
+/// 발행하면 녹음 중 화면 전체가 그만큼 다시 그려진다(위 `recordingLevels` 주석). 녹음은 한 번에 하나뿐이라(마이크는 하나다)
+/// 녹음기 둘(목소리 등록·알람 편집기)이 이 하나를 같이 쓴다.
+@MainActor
+final class RecordingLevelMeter: ObservableObject {
+    static let shared = RecordingLevelMeter()
+
+    @Published private(set) var level: Float = 0
+
+    func update(_ value: Float) {
+        let clamped = min(max(value, 0), 1)
+        if clamped != level { level = clamped }
+    }
+
+    /// dBFS(최대 0) → 선형 진폭(0~1).
+    nonisolated static func linearLevel(peakDecibels: Float) -> Float {
+        guard peakDecibels.isFinite else { return 0 }
+        return min(max(powf(10, peakDecibels / 20), 0), 1)
     }
 }

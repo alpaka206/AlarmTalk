@@ -151,7 +151,13 @@ enum FortunePromptInputFormat {
     }
 }
 
+/// 운세 정보 입력칸 셋(성별 · 생년월일 · 태어난 시간). 설정 화면과 문구 화면의 폼 시트(`formSheet`)가 같이 쓴다.
+///
+/// 치수는 안드로이드 `FortuneInfoDialog` 와 같다(2026-11-22 두 앱 통일) — 칸 제목 14 SemiBold `onSurface`(비면 빨강 "· 필수 입력"),
+/// 성별 칩 높이 52 · 글자 16 SemiBold · 사이 10, 고른 칩은 `primaryContainer` + `primary` 1.5 테두리, 날짜·시간 칸은 높이 56 의
+/// 외곽선 칸이고 연·월·일 폭은 1.2 : 1 : 1. 그전 iOS 는 시스템 글꼴 12 제목 + "필수" 배지, 42 칩, 48 칸, 같은 폭 셋이었다.
 struct FortunePromptInputFields: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @Binding var gender: String
     @Binding var birthDate: String
     @Binding var birthTime: String
@@ -163,26 +169,27 @@ struct FortunePromptInputFields: View {
         VStack(alignment: .leading, spacing: 14) {
             if let helperText {
                 Text(helperText)
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
             }
 
             fieldSection(title: String(localized: "성별"), hasError: submitted && FortunePromptInputFormat.normalizedGender(gender).isEmpty) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     genderButton(String(localized: "남성"), value: FortunePromptInputFormat.male)
                     genderButton(String(localized: "여성"), value: FortunePromptInputFormat.female)
                 }
             }
 
-            fieldSection(title: String(localized: "생년월일"), hasError: submitted && !FortunePromptInputFormat.isValidBirthDate(birthDate)) {
+            let birthDateError = submitted && !FortunePromptInputFormat.isValidBirthDate(birthDate)
+            fieldSection(title: String(localized: "생년월일"), hasError: birthDateError) {
                 // ⚠ **그래픽 달력 시트로 되돌리지 말 것.** 안드로이드는 연·월·일 드롭다운
                 // 3개다(`ui/editor/AlarmFortuneSettings.kt`). 달력은 1990년처럼 먼 해로 가려면
                 // 여러 번 넘겨야 하고, 무엇보다 같은 입력이 두 앱에서 전혀 다른 화면이었다.
                 // ⚠ **연 → 월 → 일 순서로만 고를 수 있다**(2026-08-11 요청, 안드로이드와 같다).
                 // 앞을 안 고르면 뒤는 잠긴다 — 일(日) 목록은 연·월이 정해져야 **말일이
                 // 결정되고**(2월 28/29), 그 전에는 무엇을 보여줘도 틀린 목록이다.
-                HStack(spacing: 8) {
-                    dropdown(display: yearText, isPlaceholder: yearValue == nil) {
+                WeightedRow(weights: [1.2, 1, 1], spacing: 8) {
+                    dropdown(display: yearText, isPlaceholder: yearValue == nil, hasError: birthDateError) {
                         ForEach(Self.selectableYears, id: \.self) { year in
                             Button(FortunePromptInputFormat.yearLabel(year)) { setBirth(year: year) }
                         }
@@ -190,6 +197,7 @@ struct FortunePromptInputFields: View {
                     dropdown(
                         display: monthText,
                         isPlaceholder: monthValue == nil,
+                        hasError: birthDateError,
                         enabled: yearValue != nil
                     ) {
                         ForEach(1...12, id: \.self) { month in
@@ -199,6 +207,7 @@ struct FortunePromptInputFields: View {
                     dropdown(
                         display: dayText,
                         isPlaceholder: dayValue == nil,
+                        hasError: birthDateError,
                         enabled: yearValue != nil && monthValue != nil
                     ) {
                         ForEach(1...daysInSelectedMonth, id: \.self) { day in
@@ -208,17 +217,16 @@ struct FortunePromptInputFields: View {
                 }
             }
 
-            fieldSection(
-                title: String(localized: "태어난 시간"),
-                hasError: submitted && !FortunePromptInputFormat.isValidBirthTime(birthTime)
-            ) {
+            let birthTimeError = submitted && !FortunePromptInputFormat.isValidBirthTime(birthTime)
+            fieldSection(title: String(localized: "태어난 시간"), hasError: birthTimeError) {
                 // ⚠ **14개를 펼치지 말 것.** 예전에는 시간대 버튼을 2열 그리드로 전부 펼치고
                 // 그 아래 '정확한 시간 선택' 휠 시트까지 달아서, 카드가 화면을 꽉 채웠다
                 // (2026-08-10 지적). 안드로이드는 드롭다운 **하나**다 — 선택지는 그대로 13종
                 // + 시간 모름이고, 접혀 있을 뿐이다.
                 dropdown(
                     display: birthTimeText,
-                    isPlaceholder: FortunePromptInputFormat.normalizedBirthTime(birthTime).isEmpty
+                    isPlaceholder: FortunePromptInputFormat.normalizedBirthTime(birthTime).isEmpty,
+                    hasError: birthTimeError
                 ) {
                     ForEach(FortunePromptInputFormat.timeChoices) { choice in
                         Button(FortunePromptInputFormat.displayLabel(choice.label)) { birthTime = choice.value }
@@ -287,57 +295,51 @@ struct FortunePromptInputFields: View {
     }
 
     /// 닫힌 상태 껍데기 — 안드로이드 `readOnly OutlinedTextField` + 우측 chevron 과 같다.
-    /// 반경은 `theme.shapes.medium`(18 = `WakerInputShape`).
+    /// 반경은 `theme.shapes.medium`(18 = `WakerInputShape`), 높이 56, 바탕 `surface` 74% · 테두리 `outlineVariant`(비면
+    /// 빨강) — 안드로이드 `wakerOutlinedTextFieldColors` 의 평상시·오류 색과 같다. 글자는 입력칸 글자(bodyLarge 16).
     @ViewBuilder
     private func dropdown<Content: View>(
         display: String,
         isPlaceholder: Bool,
+        hasError: Bool = false,
         enabled: Bool = true,
         @ViewBuilder menu: () -> Content
     ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
         Menu {
             menu()
         } label: {
             HStack(spacing: 6) {
                 Text(display)
+                    .font(theme.typography.bodyLarge)
                     .lineLimit(1)
-                    .foregroundStyle(isPlaceholder ? AlarmTalkTheme.textSecondary : AlarmTalkTheme.text)
+                    .foregroundStyle(isPlaceholder ? theme.palette.onSurfaceVariant : theme.palette.onSurface)
                 Spacer(minLength: 0)
                 // ⚠ **누를 수 있는 자리라는 티를 내야 한다**(2026-08-11 지적 "드롭다운 티가
                 // 잘 안 난다"). 흐린 chevron 하나로는 읽히지 않아, 아래위 화살표를 강조색
                 // 알약 안에 넣는다 — 애플이 자기 폼에서 쓰는 표시와 같은 문법이다.
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(enabled ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
+                    .foregroundStyle(enabled ? theme.palette.primary : theme.palette.onSurfaceVariant)
                     .frame(width: 22, height: 22)
                     .background(
                         Circle().fill(
-                            (enabled ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
+                            (enabled ? theme.palette.primary : theme.palette.onSurfaceVariant)
                                 .opacity(0.14)
                         )
                     )
             }
             .padding(.leading, 12)
             .padding(.trailing, 8)
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .background(
-                RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.button, style: .continuous)
-                    .fill(AlarmTalkTheme.surfaceVariant.opacity(0.46))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.button, style: .continuous)
-                    .stroke(AlarmTalkTheme.outline, lineWidth: 1)
-            )
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .background(shape.fill(theme.palette.surface.opacity(0.74)))
+            .overlay(shape.stroke(hasError ? theme.palette.error : theme.palette.outlineVariant, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .disabled(!enabled)
         // 잠긴 칸은 흐리게 — 왜 안 눌리는지 형태로 말한다.
         .opacity(enabled ? 1 : 0.45)
-        // ⚠ **`layoutPriority` 로 폭 비율을 주지 말 것.** 그건 비율이 아니라 '먼저 자리를
-        // 가져가는 순서'라, 연도가 거의 다 먹고 **월·일은 글자가 안 보일 만큼 찌그러졌다**
-        // (2026-08-10 캡처로 확인). 안드로이드는 weight 1.2 : 1 : 1 인데, 셋을 같은 폭으로
-        // 둬도 '연도' 네 글자가 충분히 들어간다 — 단순한 쪽을 택한다.
         .frame(maxWidth: .infinity)
     }
 
@@ -347,29 +349,19 @@ struct FortunePromptInputFields: View {
         birthTime = FortunePromptInputFormat.normalizedBirthTime(birthTime)
     }
 
+    /// 칸 제목 + 내용. 비어 있는데 저장을 눌렀으면 제목이 빨갛게 "〈제목〉 · 필수 입력" 이 된다 — 안드로이드
+    /// `FortuneInputSection`(`editorp_fortune_required_suffix`)과 같다.
     @ViewBuilder
     private func fieldSection<Content: View>(
         title: String,
-        subtitle: String? = nil,
         hasError: Bool,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-                if hasError {
-                    Text("필수")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(AlarmTalkTheme.error)
-                }
-            }
-            if let subtitle {
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
+            Text(hasError ? String(localized: "\(title) · 필수 입력") : title)
+                .font(theme.typography.labelLarge)
+                .fontWeight(.semibold)
+                .foregroundStyle(hasError ? theme.palette.error : theme.palette.onSurface)
             content()
         }
     }
@@ -380,20 +372,65 @@ struct FortunePromptInputFields: View {
         }
     }
 
+    /// 성별 칩 — 안드로이드 `GenderChoice` 와 같다(반경 14 · 고르면 `primaryContainer` 바탕에 `primary` 1.5 테두리,
+    /// 아니면 `surface` 바탕에 `outline` 1 테두리 · 글자 titleMedium 16 SemiBold).
     private func choiceButton(label: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let shape = RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
+        return Button(action: action) {
             Text(label)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(selected ? AlarmTalkTheme.text : AlarmTalkTheme.textSecondary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 42)
-                .background(selected ? AlarmTalkTheme.primary.opacity(0.18) : AlarmTalkTheme.surfaceVariant.opacity(0.7))
-                .overlay(
-                    RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small, style: .continuous)
-                        .stroke(selected ? AlarmTalkTheme.primary.opacity(0.55) : AlarmTalkTheme.outline, lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small, style: .continuous))
+                .font(theme.typography.titleMedium)
+                .fontWeight(.semibold)
+                .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(shape.fill(selected ? theme.palette.primaryContainer : theme.palette.surface))
+                .overlay(shape.stroke(selected ? theme.palette.primary : theme.palette.outline, lineWidth: selected ? 1.5 : 1))
+                .contentShape(shape)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// 칸들을 **비율대로** 나눠 놓는다 — 안드로이드 `Row` 의 `Modifier.weight` 와 같다(생년월일 연·월·일 1.2 : 1 : 1).
+///
+/// ⚠ **`layoutPriority` 로 비율을 흉내 내지 말 것.** 그건 비율이 아니라 '먼저 자리를 가져가는 순서'라, 연도가 거의 다 먹고
+/// 월·일은 글자가 안 보일 만큼 찌그러졌다(2026-08-10 캡처). 남는 폭(전체 − 사이 간격)을 가중치 비로 나눈다.
+private struct WeightedRow: Layout {
+    let weights: [CGFloat]
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width
+            ?? subviews.reduce(0) { $0 + $1.sizeThatFits(.unspecified).width } + totalSpacing(subviews.count)
+        let widths = slotWidths(total: width, count: subviews.count)
+        let height = zip(subviews, widths)
+            .map { $0.sizeThatFits(ProposedViewSize(width: $1, height: proposal.height)).height }
+            .max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let widths = slotWidths(total: bounds.width, count: subviews.count)
+        var x = bounds.minX
+        for (subview, width) in zip(subviews, widths) {
+            subview.place(
+                at: CGPoint(x: x, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: width, height: bounds.height)
+            )
+            x += width + spacing
+        }
+    }
+
+    private func totalSpacing(_ count: Int) -> CGFloat {
+        spacing * CGFloat(max(count - 1, 0))
+    }
+
+    private func slotWidths(total: CGFloat, count: Int) -> [CGFloat] {
+        let slotWeights = (0..<count).map { $0 < weights.count ? weights[$0] : 1 }
+        let sum = slotWeights.reduce(0, +)
+        guard sum > 0 else { return Array(repeating: 0, count: count) }
+        let available = max(total - totalSpacing(count), 0)
+        return slotWeights.map { available * $0 / sum }
     }
 }

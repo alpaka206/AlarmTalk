@@ -25,23 +25,21 @@ struct EditorCard<Content: View>: View {
     var verticalPadding: CGFloat = 4
     /// 좌우 여백 — 기본 16. 반복(요일) 카드만 18 이다(안드로이드 `ScheduleDetailsCard` 의 padding 18).
     var horizontalPadding: CGFloat = 16
+    /// 모서리 반경 — 기본은 편집기 카드(`vocaCard` 22). 하위 화면(문구·목소리 크기)의 카드는 `medium`(18 = 안드로이드
+    /// `WakerPanelShape` — `SnoozeOptionSection`·`RandomPromptDetailRow` 의 껍데기)을 넘긴다.
+    var cornerRadius: CGFloat? = nil
     @ViewBuilder var content: () -> Content
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? theme.shapes.vocaCard, style: .continuous)
         VStack(alignment: .leading, spacing: 0) {
             content()
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            theme.palette.surface,
-            in: RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-                .stroke(theme.palette.cardBorder, lineWidth: 1)
-        )
+        .background(theme.palette.surface, in: shape)
+        .overlay(shape.stroke(theme.palette.cardBorder, lineWidth: 1))
     }
 }
 
@@ -59,8 +57,11 @@ struct AlarmSettingRow: View {
     let onTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onTap) {
+        // ⚠ **행 전체가 한 버튼이고 셰브론은 행 끝에 붙는다**(2026-11-22 두 앱 통일 — 안드로이드 `AlarmSettingRow`: 글 → 12 →
+        //   (스위치) → 6 → 셰브론 16). 예전에는 셰브론이 따로 44 폭 버튼 가운데에 앉아 행 끝보다 한참 안쪽에 떠 있었다.
+        //   누르는 영역은 행 전체라 셰브론에 44 칸을 따로 둘 필요가 없다.
+        Button(action: onTap) {
+            HStack(spacing: 6) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(theme.typography.bodyLarge)
@@ -73,33 +74,36 @@ struct AlarmSettingRow: View {
                         .truncationMode(.tail)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PressScaleButtonStyle())
+                .padding(.trailing, 12)
 
-            Button(action: onTap) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .frame(width: 44, height: 44)
-                    // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
-                    .contentShape(Rectangle())
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
             }
-            .buttonStyle(.plain)
+            .padding(.vertical, 12)
+            .frame(minHeight: 56)
+            // ⚠ 없으면 글자만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 12)
-        .frame(minHeight: 56)
+        .buttonStyle(PressScaleButtonStyle())
     }
 }
 
-/// 세부 설정 카드 행 사이 구분선. 카드 좌우 패딩 안쪽으로만 긋는다.
+/// 카드 행 사이 구분선. 기본은 카드 좌우 패딩 안쪽 폭 그대로다.
+///
+/// 문구 목록처럼 행이 자기 좌우 여백을 갖는 카드(좌우 여백 0)에서는 `leadingInset` 으로 **글자 시작선부터 카드 끝까지**
+/// 긋는다 — 안드로이드 `SnoozeOptionDivider`(start 44)와 같다(`RadioRow.textInset`).
 struct AlarmSettingDivider: View {
     @Environment(\.voiceAlarmTheme) private var theme
+    var leadingInset: CGFloat = 0
 
     var body: some View {
         Rectangle()
             .fill(theme.palette.outlineVariant)
             .frame(height: 1)
+            .padding(.leading, leadingInset)
     }
 }
 

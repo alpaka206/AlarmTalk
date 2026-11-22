@@ -334,7 +334,6 @@
 		CE25E7301DA532996A74BA95 /* PersonalPromoNoticeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D83966262B6E7FF274E0584 /* PersonalPromoNoticeUITests.swift */; };
 		CF47E876E2B1D1AF14960521 /* SessionTokenRenewal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82C467C2565ADFF3EE449881 /* SessionTokenRenewal.swift */; };
 		D12B4A02203BA1C6F7FEBE3B /* WeatherVariantRolloverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C75DB9B643CF3B45BF58E0 /* WeatherVariantRolloverTests.swift */; };
-		D24BBA54EBB8905ED136B876 /* BundledLegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E67A1EE12ED53636F8740A18 /* BundledLegalDocumentView.swift */; };
 		D2D1F86586550DD78EA7ABFF /* BucketVariantResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2814AA70411EC7A3564475A1 /* BucketVariantResolverTests.swift */; };
 		D30265AE4597A222A6867E0F /* MessageContextMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B974CF425547C72D086DCFE /* MessageContextMemoryTests.swift */; };
 		D3817E0B7FAFEE9522D0F67F /* AlarmSoundPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4061A001D00A305855EE9206 /* AlarmSoundPlanTests.swift */; };
@@ -809,7 +808,6 @@
 		E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidayStore.swift; sourceTree = "<group>"; };
 		E4FA548127A2AE3F3ED3B6D3 /* GradientCta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientCta.swift; sourceTree = "<group>"; };
 		E5BC3CAD414D42352F98B1FE /* InputSanitizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputSanitizerTests.swift; sourceTree = "<group>"; };
-		E67A1EE12ED53636F8740A18 /* BundledLegalDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledLegalDocumentView.swift; sourceTree = "<group>"; };
 		E6CE8AAF8C07B7F35CAF6FC0 /* AudioCacheRoundTripTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheRoundTripTests.swift; sourceTree = "<group>"; };
 		E83EE33037EEA219CF54843B /* AuxiliaryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryScreen.swift; sourceTree = "<group>"; };
 		EC6B972EFA8543A20D363BEE /* SectionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionCard.swift; sourceTree = "<group>"; };
@@ -1008,7 +1006,6 @@
 				5BA5B44687C7E74BE1298D82 /* AccountPanel.swift */,
 				95B28A584FFD00AD1BF0633C /* BillingPanel.swift */,
 				4A16A1874C65D3C925FAE2EF /* BillingPanelComponents.swift */,
-				E67A1EE12ED53636F8740A18 /* BundledLegalDocumentView.swift */,
 				8387E0DA3E616BE65DAD2CA6 /* ConsentHistoryView.swift */,
 				318294BCA312AB4B0D42EBCB /* LegalDocumentView.swift */,
 				88E875D85BBF8CD8FDCC8D4B /* MenuView.swift */,
@@ -1794,7 +1791,6 @@
 				841A22ED805CADE2B01A83C7 /* BottomSheetTitle.swift in Sources */,
 				786ACCD0B7CE5906A798C1FD /* BucketVariantResolver.swift in Sources */,
 				228A10E322923716D69F87B0 /* BundledLegalDocument.swift in Sources */,
-				D24BBA54EBB8905ED136B876 /* BundledLegalDocumentView.swift in Sources */,
 				1E9A263F624211B29A75FEEA /* CheerVariety.swift in Sources */,
 				38FAD9501D95B722F1DBD8FE /* ChipStyle.swift in Sources */,
 				5A0B69B7819B1C4D38D88D1E /* ClipPrefetchActivityAttributes.swift in Sources */,

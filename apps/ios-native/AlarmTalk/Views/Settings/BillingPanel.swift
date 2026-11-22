@@ -18,27 +18,51 @@ import UIKit
 /// 프로모는 산 이용권이 아니다(`PlanScreenCurrent.showsPurchase`, 스펙 D4).
 /// (해지는 우리 백엔드가 처리하므로 '지금/종료일' 두 갈래가 그대로 있다.)
 struct BillingPanel: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var subscriptions: SubscriptionManager
 
-    /// 결제 결과를 사용자에게 토스트로 알리기 위한 transient 메시지.
-    @State private var purchaseFeedback: String?
+    /// 결제·복원·해지의 결과 안내 — 화면 **위쪽 토스트**로 띄우고 몇 초 뒤 걷는다(안드로이드 위쪽 안내 자리
+    /// `TopMessageHost` 와 같은 자리·같은 모양 — `AuthToastModifier`). 성공·오류·안내로 색을 가른다.
+    ///
+    /// ⚠ **스크롤 맨 아래 각주로 되돌리지 말 것**(2026-11-22 두 앱 통일). 예전에는 결과 문장이 약관 각주 밑에 남아 사라지지
+    /// 않았고, 화면이 길면 보이지도 않았다. 해지 결과·조회 실패는 아예 그리는 곳이 없었다(`SocialFeatureViewModel.statusMessage`).
+    /// 배경 재동기화의 실패(`SubscriptionManager.lastError`)는 띄우지 않는다 — 사용자가 누른 일의 결과만 말한다.
+    @State private var toast: BillingToast?
     @State private var showCancelSubscriptionSheet = false
     @State private var showCancelImmediateConfirm = false
+    /// Google Play 해지 호출이 실패했다 — Google Play 에서 직접 해지하도록 알린다(안드로이드 `PlayStoreManageDialog`).
+    @State private var showPlayManageAlert = false
     /// 결제 확인 대기 중인 플랜. nil 이면 알럿이 닫혀 있다.
     /// 상품은 등급에서 하나로 정해진다(`SubscriptionProduct.make(tier:)`).
     @State private var pendingPurchase: PlanTier?
     /// 결제를 막은 이유. **버튼을 죽이지 않고 눌리면 이유를 말한다**(편집기의
     /// `SaveBlockReason` 과 같은 규약 — 죽은 버튼은 고장으로 읽힌다).
     @State private var purchaseBlock: PurchaseBlockReason?
+    /// 이 화면이 시작한 결제·복원 흐름이 도는 중인가 — 상품 다시 받기·결제 전 조회부터 결과 반영까지.
+    @State private var billingTaskInFlight = false
+
+    private struct BillingToast: Equatable {
+        let message: String
+        let style: AuthToastStyle
+    }
 
     enum PurchaseBlockReason: String, Identifiable {
         /// 지금 이용권의 자동갱신을 Play 가 쥐고 있다.
         case playOwnsRenewal
-        /// 이미 유료인데 **어느 스토어가 갱신을 쥐었는지 아직 모른다**(응답 전·실패).
+        /// 이미 유료인데 **어느 스토어가 갱신을 쥐었는지 아직 모른다**(응답 전).
         case renewalOwnerUnknown
+        /// 결제 직전의 조회(또는 상품 다시 받기)가 실패했다 — 진행하지 않고 다시 시도하게 한다
+        /// (안드로이드 `crossStoreRenewalBlocked` 의 `msg_gb_billing_info_load_failed` 와 같은 말).
+        case loadFailed
         var id: String { rawValue }
+    }
+
+    /// 시작·복원·해지 세 버튼을 잠그는 **바쁨 하나** — 안드로이드 `billingBusy` 와 같다. 결제 전 조회·결제·복원·해지가
+    /// 도는 동안 켜진다. 따로 잠그면 결제 전 조회 사이에 복원·해지가 끼어든다.
+    private var billingBusy: Bool {
+        billingTaskInFlight || socialFeatures.isBusy || subscriptions.isPurchasing
     }
 
     /// **산 이용권**의 등급 — 기간 한정 개인 플랜은 여기 들어가지 않는다(`purchasedPlan`).
@@ -84,6 +108,11 @@ struct BillingPanel: View {
         )
     }
 
+    /// 해지 버튼을 그리는가 — **산** 이용권(구독 응답의 구독과 플랜)이 있을 때만. 안드로이드 `SubscriptionPanel` 의 `hasActive`.
+    private var hasActiveSubscription: Bool {
+        socialFeatures.subscription?.subscription != nil && socialFeatures.subscription?.plan != nil
+    }
+
     var body: some View {
         // ── 요금제 화면 A안(2026-11-15 오너 — 캔버스 proposal-10 '플러스 한 장 + 아래 고정 버튼') ──
         // 위(스크롤): 플러스 큰 카드 · 무료 한 줄 카드 · 약관 각주. 아래(고정): 시작 버튼 · 자동 결제 안내 · 복원 · 해지.
@@ -94,63 +123,35 @@ struct BillingPanel: View {
         //
         // 기간 한정 개인 플랜 — **한 번만** 말한다. 가짜 구독 카드·해지 버튼을 만들지 않는다(서버도 `subscription: null` 이다).
         // 프로모만 쓰는 계정은 플러스 카드의 상태 문구로 말하고(`planScreen.promoOnPersonalCard`), 산 이용권·보류 행이 있는
-        // 계정만 예전처럼 카드 위 한 줄이다.
+        // 계정만 예전처럼 카드 위 한 줄이다. 카드는 상품을 받기 전·못 받았을 때도 언제나 그린다(가격은 폴백) — 그래서 카드
+        // 위로 되돌리는 갈래가 없다(안드로이드와 같다).
         let promoLastDay = personalPromoLastDay
         let screen = planScreen(promoActive: promoLastDay != nil)
-        // 카드가 **그려지는가** — 첫 로딩(스켈레톤)과 가져오기 실패(다시 시도)에는 카드가 없다. ⚠ 그때 플러스 카드에 앉을
-        // 문구를 그냥 두면 **어디에도 안 보인다** — 카드가 없는 동안은 카드 위 한 줄로 되돌린다(`drawsPromoLineAboveList`).
-        let showsSkeleton = subscriptions.isLoadingProducts && subscriptions.products.isEmpty
-        let showsFetchError = subscriptions.products.isEmpty
-            && subscriptions.productFetchFailed
-            && subscriptions.hasAttemptedProductFetch
-        let cardsVisible = !showsSkeleton && !showsFetchError
-        let personalCardStatus: String? = screen.promoOnPersonalCard
-            ? promoLastDay.map { Self.personalPromoLineText(lastDay: $0) }
-            : nil
+        let statusText = currentStatusText(screen: screen, promoLastDay: promoLastDay)
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if screen.drawsPromoLineAboveList(cardsVisible: cardsVisible), let promoLastDay {
+                    if screen.drawsPromoLineAboveList(cardsVisible: true), let promoLastDay {
                         personalPromoLine(lastDay: promoLastDay)
                     }
-                    if showsSkeleton {
-                        // 첫 로딩 — 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 스켈레톤.
-                        BillingPlansSkeleton()
-                    } else if showsFetchError {
-                        // 가져오기 실패(일시적 blip) — 영구 비활성 대신 "다시 시도" 로 재요청할 수 있게 한다.
-                        BillingProductsErrorState(isRetrying: subscriptions.isLoadingProducts) {
-                            Task { await subscriptions.fetchProducts() }
-                        }
-                    } else {
-                        PlusPlanHeroCard(
-                            isCurrent: screen.isCurrent(.personal),
-                            // ⚠ '현재' 와 따로 본다 — 프로모로 현재가 된 플러스에도 시작 버튼이 남는다.
-                            showsPurchase: screen.showsPurchase(.personal),
-                            statusText: personalCardStatus
-                        )
-                        FreePlanSummaryCard(isCurrent: screen.isCurrent(.free))
-                    }
+                    PlusPlanHeroCard(
+                        isCurrent: screen.isCurrent(.personal),
+                        // ⚠ '현재' 와 따로 본다 — 프로모로 현재가 된 플러스에도 시작 버튼이 남는다.
+                        showsPurchase: screen.showsPurchase(.personal),
+                        statusText: statusText
+                    )
+                    FreePlanSummaryCard(isCurrent: screen.isCurrent(.free))
 
                     SubscriptionTermsFootnote()
-
-                    if let feedback = purchaseFeedback {
-                        Text(feedback)
-                            .font(.footnote)
-                            .foregroundStyle(AlarmTalkTheme.textSecondary)
-                            .padding(.top, 4)
-                    }
-
-                    if let lastError = subscriptions.lastError {
-                        Text(lastError)
-                            .font(.footnote)
-                            .foregroundStyle(AlarmTalkTheme.error)
-                            .padding(.top, 4)
-                    }
                 }
-                .padding(20)
+                // 네비게이션 바 아래 24(하위 화면 공통 간격) · 좌우 20 · 아래 16 — 안드로이드 `SubscriptionPanel` 의 스크롤 여백이다.
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 16)
             }
-            bottomBar(showsPurchase: cardsVisible && screen.showsPurchase(.personal))
+            bottomBar(showsPurchase: screen.showsPurchase(.personal))
         }
+        .authToast(message: toast?.message, style: toast?.style ?? .success) { toast = nil }
         // ⚠ **`.sectionSurface()` 로 되돌리지 말 것**(2026-08-11 요청). 플랜 카드들이 이미
         // 각자 카드라, 그 전체를 또 한 겹 카드로 감싸면 **카드 안의 카드**가 된다 —
         // 실기에서 요금 상자들을 큰 상자가 다시 감싸고 있었다. 안드로이드는 플랜 카드만
@@ -173,6 +174,10 @@ struct BillingPanel: View {
             // 것을 또 받았고, 진행 중인 갱신과 겹쳐 두 벌이 나갔다. 결제 직전에는 창과 무관하게
             // 권위 응답을 다시 받는다(`confirmAndPurchase` 의 결제 전 조회).
             await socialFeatures.refreshOnEntry(session: auth.session)
+            // 구독을 못 받았으면 그 이유를 위쪽에 알린다 — 안드로이드도 이용권 화면에 들어올 때 받은 조회의 실패를 띄운다.
+            if let failure = socialFeatures.refreshFailureMessage, toast == nil {
+                showToast(failure, .error)
+            }
         }
         // ⚠ **해지는 2단이다**(안드로이드 `BillingPanels.kt` `CancelSubscriptionDialog`).
         // '지금 해지' 는 남은 기간 비례 환불 + 목소리 3일 뒤 영구 삭제라 되돌릴 수 없는데,
@@ -182,19 +187,25 @@ struct BillingPanel: View {
         // 커스텀 시트를 쓰지 않는 이유: 확인형 모달은 iOS 표준 `.alert` 다(CLAUDE.md —
         // 안드로이드의 IosAlertDialog 가 이걸 흉내 낸 것이므로, iOS 에서 껍데기를 새로
         // 만들면 오히려 원본에서 멀어진다).
-        // ⚠ 문구는 안드로이드 `billing_play_*` 문자열과 **글자까지 같다**(스토어 이름만 다르다).
+        // ⚠ 다른 스토어 갱신 중 문구는 안드로이드의 같은 알럿과 **글자까지 같고 스토어 이름만 반대**다(2026-11-22 두 앱 통일).
         .alert(item: $purchaseBlock) { reason in
             switch reason {
             case .playOwnsRenewal:
                 return Alert(
-                    title: Text(String(localized: "Google Play 에서 결제 중이에요")),
-                    message: Text(String(localized: "지금 이용권은 Google Play 로 자동 갱신되고 있어요. 애플로 결제하면 두 곳에서 함께 청구돼요. Play 스토어 → 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요.")),
+                    title: Text(String(localized: "Google Play에서 결제 중이에요")),
+                    message: Text(String(localized: "지금 이용권은 Google Play로 자동 갱신되고 있어요. App Store로 결제하면 두 곳에서 함께 청구돼요. Google Play 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요.")),
                     dismissButton: .cancel(Text(String(localized: "확인")))
                 )
             case .renewalOwnerUnknown:
                 return Alert(
                     title: Text(String(localized: "이용권 정보를 불러오는 중이에요")),
                     message: Text(String(localized: "지금 이용권이 어느 스토어에서 갱신되는지 확인하고 있어요. 잠시 후 다시 시도해 주세요.")),
+                    dismissButton: .cancel(Text(String(localized: "확인")))
+                )
+            case .loadFailed:
+                return Alert(
+                    title: Text(String(localized: "이용권 정보를 불러오지 못했어요")),
+                    message: Text(String(localized: "잠시 후 다시 시도해 주세요.")),
                     dismissButton: .cancel(Text(String(localized: "확인")))
                 )
             }
@@ -220,43 +231,37 @@ struct BillingPanel: View {
             Text(purchaseMessage(for: pending))
         }
         .alert(String(localized: "이용권을 해지할까요?"), isPresented: $showCancelSubscriptionSheet) {
-            Button(cancelPeriodEndTitle) {
-                Task {
-                    await socialFeatures.cancelSubscription(mode: "at_period_end", session: auth.session)
-                    await auth.refreshUser()
-                }
-            }
+            Button(cancelPeriodEndTitle) { startCancel(mode: "at_period_end") }
             Button(String(localized: "지금 해지"), role: .destructive) { showCancelImmediateConfirm = true }
             Button(String(localized: "취소"), role: .cancel) {}
         } message: {
             Text(cancelDescription)
         }
-        // ⚠ **해지의 유일한 길이다(App Store 결제일 때).** Apple 자동갱신 구독은 서버가
-        // 못 끊어서 백엔드가 `STORE_CANCEL_UNSUPPORTED` 로 거절하고 아무것도 바꾸지 않는다.
-        // 그 신호를 받으면 시스템 구독 관리 시트를 연다 — 이게 없으면 "해지에 실패했어요"
-        // 만 남고 앱 안에서 해지할 방법이 사라진다(심사 거절 사유이기도 하다).
-        //
-        // `AppStore.showManageSubscriptions(in:)` 는 시트를 **앱 안에서** 띄운다. URL 로
-        // App Store 를 여는 폴백은 앱을 떠나므로, 시트를 못 띄울 때만 쓴다.
-        .onChange(of: socialFeatures.needsAppStoreSubscriptionManagement) { _, needs in
-            guard needs else { return }
-            socialFeatures.needsAppStoreSubscriptionManagement = false
-            Task { await openAppStoreSubscriptionManagement() }
-        }
         .alert(String(localized: "지금 바로 해지할까요?"), isPresented: $showCancelImmediateConfirm) {
             // 안드로이드 `BillingPanels` 의 '지금 바로 해지할까요?' 와 같은 말('지금 해지').
-            Button(String(localized: "지금 해지"), role: .destructive) {
-                Task {
-                    await socialFeatures.cancelSubscription(mode: "immediate", session: auth.session)
-                    await auth.refreshUser()
-                }
-            }
+            Button(String(localized: "지금 해지"), role: .destructive) { startCancel(mode: "immediate") }
             Button(String(localized: "취소"), role: .cancel) {}
         } message: {
             // 목소리 3일 보관 안내는 뺐다(2026-11-09 오너). 안드로이드 `billing_cancel_immediate_description` 과 같은 문장이다.
             Text(String(localized: "남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요."))
         }
+        // Google Play 해지 호출이 실패했다(`PLAY_CANCEL_FAILED`·`PLAY_REVOKE_FAILED`) — 서버·앱 상태는 그대로다.
+        // 안드로이드 `PlayStoreManageDialog` 와 같은 제목·본문·버튼([취소][Google Play 열기])이다.
+        .alert(String(localized: "Google Play에서 직접 관리가 필요해요"), isPresented: $showPlayManageAlert) {
+            Button(String(localized: "취소"), role: .cancel) {}
+            Button(String(localized: "Google Play 열기")) {
+                UIApplication.shared.open(Self.playSubscriptionsURL, options: [:], completionHandler: nil)
+            }
+            .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(String(localized: "앱에서 해지를 완료하지 못했어요. Google Play 구독 관리에서 직접 해지할 수 있어요. 구독 상태는 바뀌지 않았어요."))
+        }
     }
+
+    /// Google Play 구독 관리 페이지. 서버는 실패 응답에 그 구독의 주소(`manage_url`)를 싣지만, iOS 의 API 오류 값은 그 칸을
+    /// 들고 오지 않는다 — 그래서 서버가 상품을 모를 때 쓰는 기본 주소(`playManageUrl` 의 `base`)를 연다. 그 사람의 Play
+    /// 구독 목록이 열린다.
+    static let playSubscriptionsURL = URL(string: "https://play.google.com/store/account/subscriptions")!
 
     /// "플러스 무료 이용 중 · {lastDay}까지" — 카드 위 한 줄과 플러스 카드의 상태 문구가 **같은 글자**를
     /// 쓰도록 한 곳에서 만든다. 문구는 안드로이드 `personal_promo_plan_line` 이 원본이다(ko·en·ja).
@@ -264,16 +269,55 @@ struct BillingPanel: View {
         String(localized: "플러스 무료 이용 중 · \(lastDay)까지")
     }
 
-    /// 카드 위 한 줄 — 산 이용권·보류 행이 있는 계정, 그리고 프로모만 쓰는 계정이라도 플랜
-    /// 카드가 아직·끝내 그려지지 않은 동안(스켈레톤·가져오기 실패)이다
-    /// (`PlanScreenCurrent.drawsPromoLineAboveList(cardsVisible:)`).
-    /// 글자만 둔다 — 안드로이드(`BillingPanels.kt` 의 `personal_promo_plan_line`)에 아이콘이 없다.
+    /// 플러스 카드의 상태 한 줄 — 안드로이드 `SubscriptionPanel` 의 `currentStatusText` 와 같은 판정·문장이다:
+    /// 프로모만 쓰면 프로모 한 줄, 산 이용권이면 해지 예정(다음 플랜 / 종료) · 기한 · '사용 중' 순이다.
+    private func currentStatusText(screen: PlanScreenCurrent, promoLastDay: String?) -> String? {
+        if screen.promoOnPersonalCard {
+            return promoLastDay.map { Self.personalPromoLineText(lastDay: $0) }
+        }
+        guard let response = socialFeatures.subscription,
+              let subscription = response.subscription,
+              response.plan != nil else { return nil }
+        return Self.subscriptionStatusText(subscription: subscription, nextPlan: response.nextPlan)
+    }
+
+    /// 산 이용권의 상태 문장. 날짜는 카드의 '년.월.일' 꼴이다(`formatPassDate`).
+    nonisolated static func subscriptionStatusText(subscription: BillingSubscription, nextPlan: BillingPlan?) -> String {
+        let expiresAt = formatPassDate(subscription.expiresAt)
+        if subscription.cancelAtPeriodEnd == true {
+            if let nextPlan {
+                let nextName = PlanTier.displayName(forPlanKey: nextPlan.key)
+                    ?? nextPlan.name.nilIfBlank
+                    ?? String(localized: "이용권")
+                if let expiresAt {
+                    return String(localized: "\(expiresAt) 이후 \(nextName) 이용권으로 변경돼요.")
+                }
+                return String(localized: "\(nextName) 이용권으로 변경 예정이에요.")
+            }
+            if let expiresAt {
+                return String(localized: "\(expiresAt)까지 사용 후 종료돼요.")
+            }
+            return String(localized: "현재 이용권이 종료 예정이에요.")
+        }
+        if let expiresAt {
+            return String(localized: "\(expiresAt)까지 사용할 수 있어요.")
+        }
+        return String(localized: "사용 중인 이용권이에요.")
+    }
+
+    /// 카드 위 한 줄 — 산 이용권·보류 행이 있는 계정의 프로모 줄(`PlanScreenCurrent.promoLineAboveList`).
+    /// 글자만 둔다 — 안드로이드(`BillingPanels.kt` 의 `personal_promo_plan_line`)에 아이콘이 없다. 14 SemiBold primary·좌우 4.
     private func personalPromoLine(lastDay: String) -> some View {
         Text(Self.personalPromoLineText(lastDay: lastDay))
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(AlarmTalkTheme.primary)
+            .font(theme.typography.bodyMedium)
+            .fontWeight(.semibold)
+            .foregroundStyle(theme.palette.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 4)
+    }
+
+    private func showToast(_ message: String, _ style: AuthToastStyle) {
+        toast = BillingToast(message: message, style: style)
     }
 
     // MARK: - App Store 구독 관리
@@ -329,15 +373,36 @@ struct BillingPanel: View {
         Self.purchaseBlockReason(currentTier: currentTier, response: socialFeatures.subscription)
     }
 
-    /// 플랜 카드를 눌렀을 때. **여기서 한 번, 결제 직전에 한 번** 본다.
+    /// 시작 버튼을 눌렀을 때. **여기서 한 번, 결제 직전에 한 번** 본다.
     ///
+    /// 상품을 아직 못 받았으면(첫 진입의 조회가 실패했거나 아직 안 끝났다) **지금 다시 받는다** — 그래도 없으면 결제로 갈 수
+    /// 없으니 "이용권 정보를 불러오지 못했어요" 알럿이다(2026-11-22 — 누를 수 없는 버튼 대신). 받은 뒤에 확인 알럿을 띄워야
+    /// 체험 조건(첫 결제일·금액)을 정확히 말한다.
+    private func beginPurchase(tier: PlanTier) {
+        guard !billingBusy else { return }
+        if let plan = SubscriptionProduct.make(tier: tier), subscriptions.product(for: plan) == nil {
+            billingTaskInFlight = true
+            Task {
+                await subscriptions.fetchProducts()
+                billingTaskInFlight = false
+                guard subscriptions.product(for: plan) != nil else {
+                    purchaseBlock = .loadFailed
+                    return
+                }
+                presentPurchaseConfirmation(tier: tier)
+            }
+            return
+        }
+        presentPurchaseConfirmation(tier: tier)
+    }
+
     /// ⚠ **갱신을 다른 스토어가 쥐고 있으면 막는다**(코덱스 #730 3차). Play 로 결제 중인
     /// 이용권이 있는데 애플 결제를 시작하면, 확정은 **우리 DB 의 옛 구독 행만** 취소할 뿐
     /// Play 의 자동갱신은 끊지 못한다 — 두 스토어가 동시에 청구하고, 서버는 새 애플 구독만
     /// 보여 주므로 **Play 를 관리할 입구가 앱에서 사라진다.**
     ///
     /// 결제 전에 가격·해지 안내를 확인 알럿으로 한 번 말한다(안드로이드 `PlayPurchaseDialog` 와 같다).
-    private func beginPurchase(tier: PlanTier) {
+    private func presentPurchaseConfirmation(tier: PlanTier) {
         if let block = purchaseBlockReason() {
             purchaseBlock = block
             // 모르는 상태였다면 곧바로 다시 읽어 본다 — 사용자가 아무것도 안 해도
@@ -359,16 +424,23 @@ struct BillingPanel: View {
     /// 청구가 일어나기 전에 권위 값을 한 번 받아 온다.
     ///
     /// ⚠ **못 받아 오면 진행하지 않는다.** 여기서 캐시로 넘어가면 이 함수를 만든 이유가
-    /// 사라진다 — 사용자는 다시 시도하면 되고, 잃는 것은 한 번의 탭이다.
+    /// 사라진다 — 사용자는 다시 시도하면 되고, 잃는 것은 한 번의 탭이다. 그때는 "이용권 정보를 불러오지 못했어요"
+    /// 알럿으로 말한다('불러오는 중' 이 아니다 — 기다려도 저절로 풀리지 않는다).
+    ///
+    /// 조회부터 결제 결과 반영까지 세 버튼을 잠근다(`billingBusy`) — 그 사이 복원·해지가 끼어들지 않게.
     ///
     /// 남는 창: 조회와 결제 사이의 수백 ms. 그건 서버 가드가 받는다(그때는 청구를
     /// 되돌릴 수 없으므로 문구로 안내하고, 다음 시도에서 통과시킨다).
     private func confirmAndPurchase(_ product: SubscriptionProduct) async {
-        guard let requestToken = auth.session?.token else { return }
+        guard !billingBusy, let requestToken = auth.session?.token else { return }
+        billingTaskInFlight = true
+        defer { billingTaskInFlight = false }
         // ⚠ `refreshStoreState` 는 **여기서만** 켠다 — 서버가 애플에 직접 물어보므로
         //   배경 갱신에 켜면 애플이 느릴 때 일상 조회까지 같이 늦어진다.
         guard let preflight = await socialFeatures.refreshSubscriptionForPurchase(session: auth.session) else {
-            purchaseBlock = .renewalOwnerUnknown
+            if !Task.isCancelled, auth.session?.token == requestToken {
+                purchaseBlock = .loadFailed
+            }
             return
         }
         guard !Task.isCancelled, auth.session?.token == requestToken else { return }
@@ -407,26 +479,26 @@ struct BillingPanel: View {
             await UIApplication.shared.open(url)
             return
         }
-        purchaseFeedback = String(localized: "설정 앱 > Apple 계정 > 구독 에서 해지할 수 있어요.")
+        showToast(String(localized: "설정 앱 > Apple 계정 > 구독 에서 해지할 수 있어요."), .info)
     }
 
     // MARK: - Bottom bar (A안)
 
-    /// 화면 아래 고정 영역 — 시작 버튼과 자동 결제 안내, 그 아래 복원·해지 글자 버튼. 안드로이드 `SubscriptionPanel` 의 아래 영역과 같다.
-    /// 자동 결제 안내는 **시작 버튼 바로 아래 한 문장**이다(App Store 지침 3.1.2: 체험 기간, 체험 뒤 가격·주기, 결제 시점,
-    /// 해지 방법을 결제 전에 보인다). 결제 확인 알럿도 같은 문장을 쓴다.
+    /// 화면 아래 고정 영역 — 시작 버튼과 자동 결제 안내, 그 아래 복원·해지 글자 버튼. 안드로이드 `SubscriptionPanel` 의 아래 영역과
+    /// 같다(좌우 20 · 위 8 · 아래 12 · 사이 8). 자동 결제 안내는 **시작 버튼 바로 아래 한 문장**이다(App Store 지침 3.1.2: 체험
+    /// 기간, 체험 뒤 가격·주기, 결제 시점, 해지 방법을 결제 전에 보인다). 결제 확인 알럿도 같은 문장을 쓴다.
     @ViewBuilder
     private func bottomBar(showsPurchase: Bool) -> some View {
         VStack(spacing: 8) {
             if showsPurchase {
-                PlanPurchaseButton(tier: .personal, isBusy: socialFeatures.isBusy) {
+                PlanPurchaseButton(tier: .personal, isBusy: billingBusy) {
                     beginPurchase(tier: .personal)
                 }
                 if subscriptions.freeTrialPeriod(for: .personal) != nil,
                    let disclosure = subscriptions.trialDisclosure(for: .personal) {
                     Text(disclosure)
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                         .fixedSize(horizontal: false, vertical: true)
@@ -434,9 +506,10 @@ struct BillingPanel: View {
             }
             // ⚠ **복원 → 해지 순서**(2026-08-24 지시) — 되돌릴 수 있는 액션이 먼저, 되돌릴 수 없는 액션이 마지막.
             // A안(2026-11-15)부터 둘 다 **작은 글자 버튼**이다 — 화면 폭 버튼이던 2026-08-17·08-24 지시를 오너가 시안으로 바꿨다.
-            HStack(spacing: 20) {
+            // 사이 4 · 버튼 높이 40 · 좌우 12 는 안드로이드 `TextButton` 의 값이다.
+            HStack(spacing: 4) {
                 restorePurchasesButton
-                if socialFeatures.subscription?.subscription != nil {
+                if hasActiveSubscription {
                     cancelSubscriptionButton
                 }
             }
@@ -444,11 +517,27 @@ struct BillingPanel: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 8)
-        .padding(.bottom, 8)
+        .padding(.bottom, 12)
+    }
+
+    /// 아래 고정 영역의 글자 버튼 — 안드로이드 `TextButton`(높이 40 · 좌우 12, 글자 bodyMedium Medium). 바쁜 동안은 잠기고
+    /// 글자가 흐려진다(M3 `TextButton` 의 꺼진 글자 onSurface 38%).
+    private func billingTextButton(_ title: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(theme.typography.bodyMedium)
+                .fontWeight(.medium)
+                .foregroundStyle(billingBusy ? theme.palette.onSurface.opacity(0.38) : color)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(AuthPlainButtonStyle())
+        .disabled(billingBusy)
     }
 
     private var cancelSubscriptionButton: some View {
-        Button(role: .destructive) {
+        billingTextButton(String(localized: "이용권 해지"), color: theme.palette.error) {
             // ⚠ **App Store 구독이면 곧바로 시스템 시트를 연다**(코덱스 #730 2차). 서버는 애플 구독 해지를 **항상**
             //   `STORE_CANCEL_UNSUPPORTED` 로 거절한다 — '기간 종료 해지 / 지금 해지' 를 고르게 하면 할 수 없는 일을
             //   고르게 만드는 셈이다. 모드 선택은 Play 구독에만 뜻이 있다.
@@ -457,46 +546,88 @@ struct BillingPanel: View {
             } else {
                 showCancelSubscriptionSheet = true
             }
-        } label: {
-            Text(String(localized: "이용권 해지"))
-                .font(.subheadline.weight(.medium))
-                .padding(.vertical, 8)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(AlarmTalkTheme.error)
-        .disabled(socialFeatures.isBusy)
+    }
+
+    // MARK: - Cancel
+
+    /// 해지를 보내고 결과를 말한다 — 문장은 안드로이드와 같다(종료일 해지 "이번 이용 기간까지 그대로 쓸 수 있어요. 다음 결제는
+    /// 없어요" · 즉시 "이용권을 해지했어요" · 실패 "해지에 실패했어요").
+    private func startCancel(mode: String) {
+        Task {
+            let outcome = await socialFeatures.cancelSubscription(mode: mode, session: auth.session)
+            switch outcome {
+            case .canceled(let message):
+                showToast(message, .success)
+                // 해지 뒤 갱신(`refreshAll(force:)`)이 끝까지 못 갔을 때만 사용자 새로고침을 한 번 더 — `/auth/me` 를
+                // 한 흐름에서 두 번 부르지 않는다(스펙 plan-gates §4, `refreshAllThenUserIfIncomplete` 와 같은 규칙).
+                if !socialFeatures.entitlementSnapshotComplete {
+                    await auth.refreshUser()
+                }
+            case .failed(let message):
+                showToast(message, .error)
+            case .appStoreManagementRequired:
+                // ⚠ **해지의 유일한 길이다(App Store 결제일 때).** Apple 자동갱신 구독은 서버가
+                // 못 끊어서 백엔드가 `STORE_CANCEL_UNSUPPORTED` 로 거절하고 아무것도 바꾸지 않는다.
+                // 그 신호를 받으면 시스템 구독 관리 시트를 연다 — 이게 없으면 "해지에 실패했어요"
+                // 만 남고 앱 안에서 해지할 방법이 사라진다(심사 거절 사유이기도 하다).
+                //
+                // `AppStore.showManageSubscriptions(in:)` 는 시트를 **앱 안에서** 띄운다. URL 로
+                // App Store 를 여는 폴백은 앱을 떠나므로, 시트를 못 띄울 때만 쓴다.
+                await openAppStoreSubscriptionManagement()
+            case .playManagementRequired:
+                showPlayManageAlert = true
+            case .skipped:
+                break
+            }
+        }
     }
 
     // MARK: - Restore
 
     private var restorePurchasesButton: some View {
-        Button {
-            Task {
-                let result = await subscriptions.restorePurchases()
-                // 복원이 성공한 경우에만 백엔드 entitlement 재동기화 + 상태 새로고침.
-                // 사용자 새로고침은 위 해지 시트 닫힘과 같은 규칙이다(`refreshAllThenUserIfIncomplete`).
-                if result.isSuccess {
-                    await subscriptions.resyncEntitlements()
-                    await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
-                }
-                // 복원됨 N건 / 복원할 구매 없음 / 오류 를 구분해 안내한다.
-                purchaseFeedback = result.userMessage
-            }
-        } label: {
-            HStack(spacing: 6) {
-                if subscriptions.isPurchasing {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Text(String(localized: "이전 구매 복원"))
-            }
-            // A안(2026-11-15): 화면 아래 고정 영역의 **작은 글자 버튼**이다(안드로이드도 같다).
-            .font(.subheadline.weight(.medium))
-            .padding(.vertical, 8)
+        billingTextButton(String(localized: "이전 구매 복원"), color: theme.palette.primary) {
+            restorePurchases()
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(AlarmTalkTheme.primary)
-        .disabled(subscriptions.isPurchasing)
+    }
+
+    /// 이전 구매 복원 — 스토어와 동기화하고 **서버가 확인한 결과**를 말한다(`SubscriptionManager.restorePurchases`).
+    /// 확인하는 동안은 "구매를 확인하고 있어요…" 안내를 띄우고 세 버튼을 잠근다(안드로이드 `billing_restore_checking`).
+    /// 진행 표시(스피너)는 두지 않는다 — 안드로이드에도 없다.
+    private func restorePurchases() {
+        guard !billingBusy else { return }
+        billingTaskInFlight = true
+        showToast(String(localized: "구매를 확인하고 있어요…"), .info)
+        Task {
+            defer { billingTaskInFlight = false }
+            let result = await subscriptions.restorePurchases()
+            if let message = result.userMessage {
+                showToast(message, Self.toastStyle(for: result))
+            } else {
+                // 사용자가 Apple ID 창을 닫았다 — 확인 중 안내만 걷는다.
+                toast = nil
+            }
+            if result.isSuccess {
+                // 사용자 새로고침은 해지 시트 닫힘과 같은 규칙이다(`refreshAllThenUserIfIncomplete`).
+                await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
+            }
+        }
+    }
+
+    static func toastStyle(for result: RestoreResult) -> AuthToastStyle {
+        switch result {
+        case .restored: return .success
+        case .nothingToRestore, .cancelled: return .info
+        case .failure: return .error
+        }
+    }
+
+    static func toastStyle(for result: PurchaseResult) -> AuthToastStyle {
+        switch result {
+        case .success: return .success
+        case .pending, .userCancelled: return .info
+        case .failure: return .error
+        }
     }
 
     // MARK: - Purchase
@@ -521,9 +652,13 @@ struct BillingPanel: View {
             : String(localized: "\(name) 이용권은 \(String(price))이에요. App Store로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.")
     }
 
+    /// 결제 결과를 위쪽 토스트로 말한다 — 완료 "이용권을 적용했어요" · 보류 · 실패(그 이유). **사용자가 결제 시트를 닫았으면
+    /// 아무 말도 하지 않는다**(`PurchaseResult.userMessage` 가 nil).
     private func purchase(_ product: SubscriptionProduct) async {
         let result = await subscriptions.purchase(product)
-        purchaseFeedback = result.userMessage
+        if let message = result.userMessage {
+            showToast(message, Self.toastStyle(for: result))
+        }
         if result.isSuccess {
             // 백엔드 plan/구독 row 도 함께 새로고침해 UI 일관성 유지.
             // 사용자 새로고침은 이용권 새로고침이 끝까지 못 갔을 때만 부른다
@@ -536,16 +671,17 @@ struct BillingPanel: View {
     // 반려). 소모성 상품을 사서 받은 코드를 남이 쳐서 유료 기능을 여는 길이었다. 할인·무료 이용은 스토어
     // 오퍼 코드로 준다. 무결제 발급(`POST /billing/checkout` 의 `gift: true`)도 서버가 거절한다.
 
-    /// 종료일이 있으면 날짜를 박는다 — '언제까지 쓰는지' 가 이 선택의 전부다.
+    /// 종료일이 있으면 날짜를 박는다 — '언제까지 쓰는지' 가 이 선택의 전부다. 날짜는 "12월 9일" 꼴이다(`formatPassDay` —
+    /// 체험 첫 결제일·프로모 날짜와 같은 꼴, 안드로이드 해지 알럿과 같다).
     private var cancelPeriodEndTitle: String {
-        if let end = formatPassDate(socialFeatures.subscription?.subscription?.expiresAt) {
+        if let end = formatPassDay(socialFeatures.subscription?.subscription?.expiresAt) {
             return String(localized: "\(end)에 해지")
         }
         return String(localized: "종료일에 해지")
     }
 
     private var cancelDescription: String {
-        if let end = formatPassDate(socialFeatures.subscription?.subscription?.expiresAt) {
+        if let end = formatPassDay(socialFeatures.subscription?.subscription?.expiresAt) {
             return String(localized: "종료일 해지는 \(end)까지 그대로 쓰고 끝나요. 지금 해지하면 남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요.")
         }
         return String(localized: "해지 시점을 선택해 주세요. 종료일 해지는 이번 이용 기간까지 그대로 쓸 수 있어요. 지금 해지하면 남은 기간 요금은 비례 환불돼요.")

@@ -979,10 +979,10 @@ final class AuthViewModel: ObservableObject {
             if response.verified == false {
                 // 지금 서버는 거절을 4xx 로만 답한다(`routes/auth.ts` 의 `/email-code/verify`).
                 // 이 갈래는 옛 응답 모양을 위한 것이고, 틀린 코드와 같은 자리·같은 신호로 다룬다.
-                showEmailCodeError(String(localized: "인증 코드가 일치하지 않아요."), refused: true)
+                showEmailCodeError(String(localized: "인증 코드가 맞지 않아요."), refused: true)
                 return false
             }
-            statusMessage = String(localized: "이메일 인증이 완료됐어요.")
+            statusMessage = String(localized: "이메일 인증이 완료됐어요")
             return true
         } catch {
             reportFailure("Email verification confirm failed", error)
@@ -1137,7 +1137,7 @@ final class AuthViewModel: ObservableObject {
         do {
             _ = try await emailCodeAPI.verifyPasswordResetCode(email: normalized, code: trimmedCode)
             passwordResetVerifiedEmail = normalized
-            statusMessage = String(localized: "이메일 인증이 완료됐어요.")
+            statusMessage = String(localized: "이메일 인증이 완료됐어요")
             return true
         } catch {
             reportFailure("Password reset code verify failed", error)
@@ -1180,7 +1180,7 @@ final class AuthViewModel: ObservableObject {
             reportFailure("Password reset confirm failed", error)
             // 재설정 확정도 같은 판정으로 코드를 본다 — 문장은 표에서 고르고, 코드가 거절됐으면
             // 칸을 비운다. 다시 받는 길은 그 화면의 요청 버튼이다(`PasswordResetView.sendCodeButton`).
-            failStatus(Self.emailCodeErrorMessage(for: error, fallback: String(localized: "비밀번호 재설정에 실패했어요")))
+            failStatus(Self.emailCodeErrorMessage(for: error, fallback: String(localized: "비밀번호 재설정에 실패했어요.")))
             if Self.isEmailCodeRefusal((error as? APIError)?.serverErrorCode) {
                 emailCodeFieldClearTick &+= 1
                 // 확인을 마친 뒤 10분이 지나 만료로 거절되면 '인증됨' 도 내려야 코드 줄과 `다시 받기` 가 돌아온다.
@@ -1542,7 +1542,7 @@ final class AuthViewModel: ObservableObject {
                     // 화면 확인 모드는 서버 없이 도는 모드라 첫 /auth/me 가 401 이다.
                     // 여기서 로그아웃하면 랜딩으로 튕겨 아무 화면도 못 본다.
                     if !UIPreviewSeed.isEnabled {
-                        signOut(message: String(localized: "세션이 만료됐어요. 다시 로그인해 주세요."))
+                        signOut(message: String(localized: "로그인이 만료됐어요. 다시 로그인해 주세요."))
                     }
                 } else if status == 403 {
                     // 권한 박탈 — 세션은 유지하되 사용자에게 알림
@@ -1619,7 +1619,7 @@ final class AuthViewModel: ObservableObject {
         // UI 미리보기 모드에서는 401 로 로그아웃하지 않는다 — 서버 없이 화면만 보는 모드라
         // 첫 요청이 실패하는 순간 로그인 화면으로 튕겨 아무것도 못 본다.
         if UIPreviewSeed.isEnabled { return }
-        signOut(message: String(localized: "세션이 만료됐어요. 다시 로그인해 주세요."))
+        signOut(message: String(localized: "로그인이 만료됐어요. 다시 로그인해 주세요."))
     }
 
     /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받았을 때. 세션은 유지한다(로그아웃하지 않음).
@@ -2066,7 +2066,7 @@ final class AuthViewModel: ObservableObject {
         let server = serverPolicyVersionHint.flatMap(Int.init)
         if let server, let bundled, server <= bundled {
             // 그 동작 자리에 빨간 글자로 말한다 — `statusMessage` 는 로그인한 동안 아무도 그리지 않는다.
-            failAction(action, String(localized: "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요"))
+            failAction(action, String(localized: "동의 기록에 실패했어요. 다시 시도해 주세요"))
             return true
         }
         consentUnsupported = true
@@ -2275,11 +2275,21 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **성공 토스트를 되살리지 말 것**(안드로이드와 같은 조치, 2026-08-11). 스위치가 이미 결과를 보여준다 — 실패만 알린다.
             guard failed, let failure else { return }
             if handleConsentVersionMismatch(failure, action: .marketing) { return }
-            failAction(.marketing, userFacingErrorMessage(failure, fallback: String(localized: "마케팅 수신 설정을 변경하지 못했어요")))
+            failAction(.marketing, userFacingErrorMessage(failure, fallback: String(localized: "수신 설정 변경에 실패했어요. 다시 시도해 주세요")))
         }
     }
 
     // MARK: - 음성 생체정보 동의 철회
+
+    /// 철회가 끝났다는 안내 — 동의 내역 화면이 위쪽 토스트로 띄운다(안드로이드 `msg_voice_consent_withdrawn` 과 같은 문장).
+    nonisolated static var voiceConsentWithdrawnMessage: String {
+        String(localized: "음성 생체정보 동의를 철회했어요. 등록한 목소리가 삭제됐어요.")
+    }
+
+    /// 철회가 안 됐다는 기본 문장 — 철회 행 아래 빨간 글자다(안드로이드 `msg_voice_consent_withdraw_failed` 와 같은 문장).
+    nonisolated static var voiceConsentWithdrawFailedMessage: String {
+        String(localized: "동의 철회에 실패했어요. 다시 시도해 주세요.")
+    }
 
     /// 동의 내역 화면의 '동의 철회'. 등록한 목소리·녹음 원본·생성 음성이 서버에서
     /// 영구 삭제되고, 그 목소리로 울리던 알람은 기본 목소리(미나)로 바뀐다.
@@ -2309,7 +2319,7 @@ final class AuthViewModel: ObservableObject {
             // 시스템(기본) 목소리는 내 생체정보가 아니라 철회와 무관하다.
             revokedVoiceIDs = profiles.filter { $0.isSystem != true }.map(\.id).filter { !$0.isEmpty }
         } catch {
-            failAction(.withdrawal, userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
+            failAction(.withdrawal, userFacingErrorMessage(error, fallback: Self.voiceConsentWithdrawFailedMessage))
             return false
         }
 
@@ -2322,7 +2332,7 @@ final class AuthViewModel: ObservableObject {
             )
         } catch {
             if handleConsentVersionMismatch(error, action: .withdrawal) { return false }
-            failAction(.withdrawal, userFacingErrorMessage(error, fallback: String(localized: "동의를 철회하지 못했어요")))
+            failAction(.withdrawal, userFacingErrorMessage(error, fallback: Self.voiceConsentWithdrawFailedMessage))
             return false
         }
 
@@ -2339,7 +2349,8 @@ final class AuthViewModel: ObservableObject {
         if !consentSensitiveMissing.contains("voice_biometric") {
             consentSensitiveMissing.append("voice_biometric")
         }
-        statusMessage = String(localized: "음성 생체정보 처리 동의를 철회했어요.")
+        // 화면 안내는 동의 내역 화면의 위쪽 토스트가 한다(`voiceConsentWithdrawnMessage`) — 여기 값은 로그인한 동안 그리는 곳이 없다.
+        statusMessage = Self.voiceConsentWithdrawnMessage
         // 3) 서버가 방금 지운 내 목소리를 목록에서도 걷는다 — 안드로이드는 같은 자리에서 목록을 다시 받는다
         //    (`ui/main/MainViewModelAuthActions.kt`). 예전 iOS 는 푸시나 다음 진입 갱신(60초 창이면 건너뛴다)까지 지운 목소리를
         //    그대로 보여 줬다(2026-10-29 두 앱 비교). 진행 중인 갱신에 막히지 않게 `force` 로 받는다.

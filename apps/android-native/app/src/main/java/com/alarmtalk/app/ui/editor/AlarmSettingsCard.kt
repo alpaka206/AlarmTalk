@@ -249,11 +249,12 @@ internal fun AlarmSoundSettingsPane(
 
             // 켜고 끄는 사용/무음 토글은 두지 않는다 — 알람음 여부는 '재생 방식'이 정하고,
             // 여기선 어떤 소리를 얼마나 크게 울릴지만 고른다(볼륨 0 = 무음).
+            // 좌우 20·구역 사이 16 — 진동 pane·문구 pane·iOS `PaneScaffold` 와 같은 값이다(2026-11-22 두 앱 통일).
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 SnoozeOptionSection(title = stringResource(R.string.editor_alarm_sound_title)) {
                     AlarmSoundActionRow(

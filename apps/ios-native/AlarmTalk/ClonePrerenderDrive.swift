@@ -30,6 +30,9 @@ final class ClonePrerenderDrive: ObservableObject {
     @Published private(set) var phase: Phase = .generating
     /// 0~100. 생성과 다운로드를 이어 붙인 **하나의** 값.
     @Published private(set) var percent: Int = 0
+    /// 만들 클립의 전체 개수를 알았는가 — 서버의 첫 응답 전에는 모른다. 모르는 동안 등록 준비 화면은 **흐르는 막대**를
+    /// 그린다(안드로이드 `PrerenderDriveState.overallFraction` 이 null 인 동안과 같다).
+    @Published private(set) var totalKnown = false
 
     private let api: AlarmTalkAPI
     private var task: Task<Void, Never>?
@@ -127,6 +130,7 @@ final class ClonePrerenderDrive: ObservableObject {
                     generationTotal = step.total
                     generated = step.generated
                     finished = step.done
+                    if generationTotal > 0 { totalKnown = true }
                     if step.claimStuck == true {
                         // ⚠ **무진전으로 세지 않는다.** 서버가 클레임을 못 놓은 회차라, 리스가
                         //   끝나기 전에는 몇 번을 물어도 같은 개수가 온다(모델 주석 참조).
@@ -157,6 +161,7 @@ final class ClonePrerenderDrive: ObservableObject {
                 generationTotal = status.total
                 generated = status.generated
                 finished = status.status == "done"
+                if generationTotal > 0 { totalKnown = true }
                 if status.status == "failed" {
                     phase = .failed
                     return
@@ -188,6 +193,8 @@ final class ClonePrerenderDrive: ObservableObject {
         if Task.isCancelled { return }
 
         // --- 2) 다운로드(50~100%) ---
+        // 만들기가 끝났으면 진행은 50% 에서 이어진다 — 더는 '모름' 이 아니다.
+        totalKnown = true
         phase = .downloading
         percent = Self.mergedPercent(
             generated: generationTotal,

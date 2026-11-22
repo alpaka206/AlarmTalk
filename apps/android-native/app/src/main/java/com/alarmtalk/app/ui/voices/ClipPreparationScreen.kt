@@ -95,7 +95,12 @@ fun ClipPreparationScreen(
                 // ⚠ 문구를 여기 박아 두면 en·ja 기기에 한국어가 그대로 뜬다(Codex #701 P2).
                 // 실패해서 '다시 시도하기' 가 떠 있으면 **'닫기'** 다 — 뒤에서 이어지는 일이 없는데 '백그라운드에서 계속' 이라고
                 // 하면 거짓말이다(2026-11-22 오너). 나가는 길은 남긴다(바깥 탭은 눈에 잘 안 띈다). iOS `ClipPreparationView` 와 같다.
-                Text(stringResource(if (hasFailure) R.string.r3dlg_modal_dialog_close else R.string.voices_clip_prep_background))
+                // 글자색은 흐린 색이다 — 강조색이면 위 '다시 시도하기' 와 무게가 같아진다(2026-11-22 두 앱 통일, 등록 마지막
+                // 단계의 '백그라운드에서 계속' 과 같은 색).
+                Text(
+                    text = stringResource(if (hasFailure) R.string.r3dlg_modal_dialog_close else R.string.voices_clip_prep_background),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

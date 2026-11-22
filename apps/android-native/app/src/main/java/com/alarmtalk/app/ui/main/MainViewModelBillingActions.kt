@@ -163,11 +163,12 @@ internal fun MainViewModel.restorePurchases() {
         // 일어나면 콜백에서 `confirmGooglePurchase` 가 **B 를 시작 계정으로 잡는다** — 가드가
         // B==B 로 통과해 A 의 구매가 B 의 인가로 제출되고 결과·에러가 B 화면에 뜬다.
         val restoreOwnerUserId = authSession?.user?.id
+        // null = 스토어에 묻지 못했다(연결·조회 실패, 예외 포함) — '없음'(0)과 다르다([restoreResultMessageRes]).
         val restored = runCatching {
             playBilling.restorePurchases(userInitiated = true, ownerUserId = restoreOwnerUserId)
         }
             .onFailure { error -> AlarmTalkLog.reportError("Failed to restore Play purchases", error) }
-            .getOrDefault(0)
+            .getOrNull()
         // ⚠ **busy 는 이 함수가 소유한다**(2026-09-01 리뷰). 예전에는 보낸 게 있으면
         // `confirmGooglePurchase` 콜백이 풀어 줬는데, 정합화를 조용하게 만들면서 그 콜백이
         // 더는 풀지 않는다 — 사용자가 '이전 구매 복원' 을 누르면 결제 UI 가 **뷰모델이 다시
@@ -176,7 +177,43 @@ internal fun MainViewModel.restorePurchases() {
         billingBusy = false
         // 보낸 게 있으면 문구는 그대로 두고 **확인 결과가 덮어쓴다**(성공이면 '이용권이
         // 적용됐어요', 실패면 그 사유) — 그래서 복원은 `UserRestore` 로 보낸다.
-        if (restored == 0) message = app.getString(R.string.billing_restore_none)
+        restoreResultMessageRes(restored)?.let { res -> message = app.getString(res) }
+    }
+}
+
+/**
+ * '이전 구매 복원' 에서 **보낸 구매가 없을 때** 무엇을 말하는가(보냈으면 null — 확인 결과가 말한다).
+ *
+ * 스토어에 묻지 못한 것(null — Play 연결·조회 실패)과 스토어가 없다고 답한 것(0)을 가른다(2026-11-22 두 앱 통일). 예전에는
+ * 둘 다 "복원할 구매가 없어요" 였다 — Play 가 잠깐 안 붙었을 뿐인데 결제한 사용자가 구독이 사라진 줄 안다.
+ */
+@androidx.annotation.StringRes
+internal fun restoreResultMessageRes(sent: Int?): Int? = when {
+    sent == null -> R.string.billing_restore_failed
+    sent == 0 -> R.string.billing_restore_none
+    else -> null
+}
+
+/**
+ * Play 상품(가격·무료 체험)을 다시 받는다 — 앱을 시작할 때와 **이용권 화면에 들어올 때**(2026-11-22 두 앱 통일 — iOS 는 그
+ * 화면에 들어올 때 받는다). 시작할 때 한 번만 받으면 그때 실패한 기기는 앱을 다시 켤 때까지 폴백 가격으로 남고, 체험 자격이
+ * 바뀐 것(결제한 뒤 체험 오퍼가 빠진다)도 화면에 늦게 실린다.
+ *
+ * 못 받으면 받아 둔 값을 그대로 둔다 — 상품 캐시는 받은 것만 덮는다(`PlayBillingManager.queryProductDetails`). 카드는 값이
+ * 없어도 언제나 그려지고(폴백 가격), 시작 버튼은 누르는 순간 상품을 다시 받는다(`PlayBillingManager.launchPurchase`).
+ */
+internal fun MainViewModel.reloadPlayProducts() {
+    viewModelScope.launch {
+        runCatching { playBilling.preloadProducts() }
+            .onSuccess {
+                billingPlanPrices = listOf("personal")
+                    .mapNotNull { key -> playBilling.formattedPriceForPlan(key)?.let { key to it } }
+                    .toMap()
+                billingPlanTrials = listOf("personal")
+                    .mapNotNull { key -> playBilling.freeTrialPeriodForPlan(key)?.let { key to it } }
+                    .toMap()
+            }
+            .onFailure { error -> Log.w(TAG, "Failed to load Play products", error) }
     }
 }
 
@@ -272,7 +309,12 @@ private suspend fun MainViewModel.refreshBillingAfterMutation(
     }
 }
 
-private fun billingFailureMessage(context: android.content.Context, errorCode: String?, fallback: String): String =
+/**
+ * 결제 확인·해지가 거절됐을 때의 문구 — **이 화면의 표 → 공용 표(`apiErrorMessage`) → [fallback]** 차례로 고른다(층 규칙은
+ * `network/ApiErrorMessages.kt` 머리말). 2026-11-22 두 앱 통일 전에는 공용 표를 건너뛰어, 문구가 정해진 코드
+ * (`CROSS_STORE_RENEWAL_ACTIVE`·`RATE_LIMITED` 등)도 기본 문구로 뭉개졌다. iOS `SubscriptionManager` 와 같은 차례다.
+ */
+internal fun billingFailureMessage(context: android.content.Context, errorCode: String?, fallback: String): String =
     when (errorCode) {
         "SAME_PLAN" -> context.getString(R.string.msg2_billing_fail_same_plan)
         "NO_ACTIVE_SUBSCRIPTION" -> context.getString(R.string.msg2_billing_fail_no_active_subscription)
@@ -285,7 +327,10 @@ private fun billingFailureMessage(context: android.content.Context, errorCode: S
         // 기본 문구로 흘리지 않는다 — 그 계정으로 로그인하면 된다.
         "TRANSACTION_OWNED_BY_OTHER_USER" ->
             context.getString(R.string.msg2_billing_fail_transaction_owned_by_other_user)
-        else -> fallback
+        // 이 결제는 **살아 있는 다른 계정**이 샀다(서버 403). 다시 시도해도 같다 — 할 일을 말한다(iOS 와 같은 문장).
+        "TRANSACTION_ACCOUNT_MISMATCH" ->
+            context.getString(R.string.msg2_billing_fail_transaction_account_mismatch)
+        else -> com.alarmtalk.app.network.apiErrorMessage(context, errorCode) ?: fallback
     }
 
 // ⚠ **코드를 쳐서 유료 기능을 여는 길(초대·선물·프로모 코드 등록)과 선물 이용권 구매를 되살리지
@@ -335,8 +380,7 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
     }
     if (planClaimed) personalPromoLedger.recordPlanApplied(planRequest)
     subscriptionResponse = fresh
-    if (fresh.storeRenewalProviders.any { it != "google" })
-        R.string.msg_cross_store_renewal_active else null
+    if (otherStoreOwnsRenewal(fresh)) R.string.msg_cross_store_renewal_active else null
 }
 
 /**
@@ -364,7 +408,13 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
             throw cancelled
         }
         if (blocked != null) {
-            message = getApplication<android.app.Application>().getString(blocked)
+            // 다른 스토어가 갱신을 쥐고 있으면 **알럿**으로 말한다 — 카드의 시작 버튼을 누르는 순간 보는 것과 같은 알럿이다
+            // (2026-11-22 두 앱 통일 — iOS `BillingPanel.confirmAndPurchase` 의 `purchaseBlock`). 확인하지 못한 것은 예전처럼 한 줄이다.
+            if (blocked == R.string.msg_cross_store_renewal_active) {
+                billingCrossStoreBlockOpen = true
+            } else {
+                message = getApplication<android.app.Application>().getString(blocked)
+            }
             billingBusy = false
             return@launch
         }
@@ -505,6 +555,7 @@ internal fun MainViewModel.confirmGooglePurchase(
                 refreshBillingAfterMutation(authorization, "google play confirm", ownerTicket)
                 refreshAppSession(rollToken = purchaseConfirmRollsToken(origin))
             } else if (showsResult) {
+                // 결제는 스토어가 받았다 — 서버가 아직 확인하지 못한 것이다. 다시 붙일 길(복원)을 말한다(iOS 와 같은 문장).
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)
             }
         }.onFailure { error ->
@@ -518,10 +569,12 @@ internal fun MainViewModel.confirmGooglePurchase(
                 )
             }
             if (showsResult && authSession?.user?.id == ownerUserId) {
+                // 문구가 정해진 코드가 아니면(네트워크·5xx) 결제는 됐는데 확인만 못 한 것이다 — 복원으로 다시 붙이라고 말한다
+                // (2026-11-22 두 앱 통일 — iOS `SubscriptionManager` 의 같은 갈래).
                 message = billingFailureMessage(
                     getApplication<android.app.Application>(),
                     apiErrorCode(error),
-                    userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed)),
+                    userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)),
                 )
             }
         }
@@ -556,12 +609,11 @@ private fun MainViewModel.recordStorePurchaseVerified(
     )
 }
 
-// 서버가 스토어 구독을 직접 해지하지 못해 사용자를 스토어 구독 관리로 보내야 하는 에러 코드.
-// 502(PLAY_*) / 409(STORE_CANCEL_UNSUPPORTED) 모두 서버·앱 상태 무변경 → 안내 다이얼로그만 띄운다.
-private val STORE_MANAGE_REQUIRED_CODES = setOf(
+// 서버가 Play 구독을 직접 해지하지 못해 사용자를 Google Play 구독 관리로 보내야 하는 에러 코드(502). 서버·앱 상태
+// 무변경 → 안내 다이얼로그만 띄운다(`PlayStoreManageDialog`).
+private val PLAY_MANAGE_REQUIRED_CODES = setOf(
     "PLAY_CANCEL_FAILED",
     "PLAY_REVOKE_FAILED",
-    "STORE_CANCEL_UNSUPPORTED",
 )
 
 internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
@@ -594,7 +646,13 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             AlarmTalkLog.reportError("Failed to cancel subscription mode=$mode", error)
             // code 와 manage_url 은 같은 응답의 짝이라 apiError 로 함께 뽑는다.
             val apiFailure = apiError(error)
-            if (apiFailure.code in STORE_MANAGE_REQUIRED_CODES) {
+            if (apiFailure.code == "STORE_CANCEL_UNSUPPORTED") {
+                // App Store 로 결제한 구독이다(409) — 서버도 이 기기도 끊을 수 없다. 아이폰에서 해지하라고 말한다
+                // (`AppStoreCancelNoticeDialog`). ⚠ 예전에는 응답의 애플 관리 주소를 'Google Play 열기' 알럿에 실어 열었다
+                // (2026-11-22 두 앱 통일에서 없앴다). 해지 버튼은 구독 응답의 `store_provider` 로 먼저 막는다 — 여기는 구버전
+                // 서버·낡은 응답의 뒷문이다.
+                billingAppStoreCancelNoticeOpen = true
+            } else if (apiFailure.code in PLAY_MANAGE_REQUIRED_CODES) {
                 // 서버·앱 상태 모두 무변경 — 스낵바 대신 Google Play 직접 관리 안내 다이얼로그.
                 billingPlayManageUrl = apiFailure.manageUrl
                     ?: playSubscriptionManageUrl(subscriptionResponse?.plan?.key)

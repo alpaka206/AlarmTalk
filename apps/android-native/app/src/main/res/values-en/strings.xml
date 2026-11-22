@@ -99,6 +99,11 @@
     <string name="billing_play_purchase_title">Start the %1$s plan?</string>
     <string name="billing_restore_purchases">Restore purchases</string>
     <string name="billing_restore_none">No purchases to restore. Check your store account.</string>
+    <string name="billing_restore_failed">Couldn\'t restore your previous purchases. Please try again in a moment.</string>
+    <string name="billing_cross_store_block_title">Billed through the App Store</string>
+    <string name="billing_cross_store_block_message">Your current plan renews automatically through the App Store. Buying on Google Play would bill you in both places. Cancel it in your App Store subscriptions first, or try again after it expires.</string>
+    <string name="billing_app_store_cancel_title">This plan was purchased on the App Store</string>
+    <string name="billing_app_store_cancel_message">Please cancel it in App Store subscriptions on your iPhone.</string>
     <string name="billing_restore_checking">Checking your purchases…</string>
     <string name="billing_select_button">Pay</string>
     <string name="billing_status_available_until">Available until %1$s.</string>
@@ -228,7 +233,7 @@
     <string name="editor_voice_preparing_value">%1$s · Preparing</string>
     <string name="editor_voice_select_title">Choose a voice</string>
     <string name="editor_block_voice_settling_title">Almost ready</string>
-    <string name="msg_voice_replacement_settling">We’re finishing up your replaced voice. Please pick it again in a moment.</string>
+    <string name="msg_voice_replacement_settling">We’re finishing up your replaced voice. Please save again in a moment.</string>
     <string name="editor_voice_source_local">Record it</string>
     <string name="editor_voice_volume_preview_hint">Plays the greeting sample, not your alarm message.</string>
     <string name="editor_voice_volume">Voice volume</string>
@@ -265,7 +270,7 @@
     <string name="hs_delete_account_title">Are you sure you want to delete your account?</string>
     <string name="hs_delete_account_body">Your account and all data will be permanently deleted in 30 days. Log in again before then to cancel the deletion.</string>
     <string name="hs_delete_account_confirm">Delete</string>
-    <string name="hs_profile_content_desc">Profile</string>
+    <string name="menu_profile_my_account">My account</string>
     <string name="hs_profile_menu_pass">Plan</string>
     <string name="hs_create_alarm_button">Create first alarm</string>
     <string name="hs_settings_delete_account">Delete account</string>
@@ -308,8 +313,7 @@
 
     <string name="msg_gb_login_required_purchase_plan">Please log in first to purchase a plan.</string>
 
-    <string name="msg_gb_payment_confirm_failed">Couldn\'t confirm your payment.</string>
-    <string name="msg_gb_payment_confirm_failed_retry">Couldn\'t confirm your payment. Please try again in a moment.</string>
+    <string name="msg_gb_payment_confirm_failed_retry">Payment went through, but your plan has not been confirmed yet. Please tap Restore purchases shortly.</string>
     <string name="msg_gb_plan_applied">Your plan has been applied.</string>
     <string name="msg_gb_subscription_cancel_at_period_end">You can keep using your plan until the end of this period. There\'s no next payment.</string>
     <string name="msg_gb_subscription_cancel_failed">Couldn\'t cancel your plan.</string>
@@ -329,6 +333,7 @@
     <string name="msg_permission_notifications_required">Notification permission is needed to show the alarm screen and stop button.</string>
     <string name="msg_permission_record_audio_required">Microphone permission is needed to record your voice.</string>
     <string name="msg_register_all_fields_required">Please fill in all the sign-up details.</string>
+    <string name="msg_reset_all_fields_required">Please fill in all fields.</string>
     <string name="msg_register_email_taken">This email is already registered. Please log in.</string>
     <string name="msg_register_email_social_google">This email is registered with Google. Please continue with Google.</string>
     <string name="msg_register_email_social_apple">This email is registered with Apple. Please sign in with Apple in the iPhone app.</string>
@@ -362,7 +367,7 @@
     <string name="rd_audio_upload_path_missing">The audio file path could not be found.</string>
     <string name="rd_audio_upload_file_missing">The audio file could not be found.</string>
     <string name="rd_audio_duration_unreadable">Files whose audio length can\'t be read can\'t be used.</string>
-    <string name="rd_audio_extract_failed">We couldn\'t extract audio from the selected file. Please try a different file.</string>
+    <string name="rd_audio_extract_failed">We couldn\'t find audio in the selected file. Please try a different file.</string>
     <string name="rd_audio_mp3_trim_failed">We couldn\'t save the MP3 section. Please choose a different file.</string>
     <string name="rd_audio_open_failed">We couldn\'t open the selected audio file.</string>
     <string name="rd_audio_over_limit_trim_failed">We couldn\'t automatically trim a file longer than %1$d sec. Please reselect in m4a/aac/mp4 format.</string>
@@ -410,7 +415,7 @@
     <string name="voices_language_label">Language for alarm lines</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
-    <string name="voices_prepare_recording_first">Please prepare a recorded voice first.</string>
+    <string name="voices_prepare_recording_first">Please record your voice first.</string>
     <string name="voices_prepare_selected_failed">Couldn\'t prepare the selected audio.</string>
     <string name="voices_preparing">Preparing</string>
     <string name="voices_preparing_audio">Preparing your audio.</string>
@@ -461,7 +466,6 @@
     <string name="voicesr_edit_name">Edit name</string>
     <string name="voicesr_create_alarm_with_voice">New alarm with this voice</string>
     <string name="voicesr_more">More</string>
-    <string name="voicesr_pause">Pause</string>
     <string name="voicesr_prerender_progress">Preparing alarm voice %1$d%%</string>
     <string name="voicesr_preview">Preview</string>
     <string name="voicesr_relationship_custom_placeholder">e.g. granddaughter, partner, coworker</string>
@@ -542,6 +546,7 @@
     <string name="msg2_billing_fail_free_not_billable">The Free plan can\'t be applied here</string>
     <string name="msg2_billing_fail_user_not_found">Please check your login details again</string>
     <string name="msg2_billing_fail_transaction_owned_by_other_user">This purchase is already linked to another account. Please sign in with that account</string>
+    <string name="msg2_billing_fail_transaction_account_mismatch">This purchase was made with another account. Please sign in to that account.</string>
     <string name="onb_voice_title">Getting the voices your alarms will use</string>
     <string name="onb_voice_loading">Downloading voices…</string>
     <string name="misc2_theme_mode_system">Match system</string>
@@ -562,7 +567,6 @@
     <string name="r3app_bottom_tab_menu">More</string>
     <string name="menu_profile_subtitle">My info · App settings</string>
     <string name="menu_language_label">App language</string>
-    <string name="menu_language_system">System default</string>
     <string name="menu_section_legal">Legal</string>
     <string name="menu_open_source_licenses">Open source licenses</string>
     <string name="menu_app_version">App version %1$s</string>
@@ -759,7 +763,7 @@
     <string name="voice_pack_editor_detail">Extra pack</string>
     <string name="voice_pack_download_failed">Couldn\'t download. Please try again.</string>
     <string name="voice_pack_retry_download">Download again</string>
-    <string name="voice_pack_manual_unavailable">Extra pack voices can\'t read messages you type yourself. Please choose a theme.</string>
+    <string name="voice_pack_manual_unavailable">Extra pack voices can\'t read messages you type yourself. Please choose a theme on the message screen.</string>
     <string name="voice_pack_not_available">This pack isn\'t available right now.</string>
     <string name="voice_pack_switch_drops_text_title">Switch to the extra pack voice?</string>
     <string name="voice_pack_switch_drops_text_message">Extra pack voices only say prepared messages, so the message you typed will be removed.</string>

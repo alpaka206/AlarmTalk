@@ -182,8 +182,9 @@ internal fun MenuTabPanel(
                 ) {
                     Text(
                         // 닉네임은 없앴다(2026-10-29) — 로그인한 계정의 이메일을 보인다. iOS 더보기 머리도 같다.
+                        // 이메일이 없는 계정은 '내 계정' 이다(2026-11-22 두 앱 통일 — iOS `MenuView` 의 `displayName`).
                         text = authSession?.user?.email?.takeIf { it.isNotBlank() }
-                            ?: stringResource(R.string.hs_profile_content_desc),
+                            ?: stringResource(R.string.menu_profile_my_account),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -211,14 +212,16 @@ internal fun MenuTabPanel(
             )
             // 앱별 언어는 시스템 설정(Android 13+)에 위임한다 — locales_config 기준으로 목록이 뜬다.
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                val appLocales = context.getSystemService(android.app.LocaleManager::class.java)
-                    ?.applicationLocales
-                val languageValue = if (appLocales == null || appLocales.isEmpty) {
-                    stringResource(R.string.menu_language_system)
-                } else {
-                    val locale = appLocales.get(0)
-                    locale.getDisplayLanguage(locale).replaceFirstChar { it.uppercase(locale) }
-                }
+                // 값은 언제나 **지금 화면이 쓰는 언어의 이름**이다(2026-11-22 두 앱 통일 — iOS `MenuView.appLanguageLabel`).
+                // '시스템 기본' 이라고 하면 지금 무슨 언어인지가 보이지 않는다. 앱이 가진 언어(ko·en·ja)로 맞춘 값이다 —
+                // 기기 언어가 그 밖이어도 화면은 셋 중 하나로 그려진다(`appVoiceLanguageOf`). 앱별 언어를 고르면 화면 설정
+                // (`LocalConfiguration`)이 그 언어로 바뀐다.
+                val appLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
+                    androidx.compose.ui.platform.LocalConfiguration.current.locales[0]?.language,
+                )
+                val languageLocale = java.util.Locale.forLanguageTag(appLanguage)
+                val languageValue = languageLocale.getDisplayLanguage(languageLocale)
+                    .replaceFirstChar { it.uppercase(languageLocale) }
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.outlineVariant,

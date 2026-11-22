@@ -101,62 +101,63 @@ struct ClipPreparationView: View {
         }
     }
 
+    /// 편집기 준비 창의 **내용** — 카드(모서리 28 · surface)와 어두운 스크림은 아래 `ClipPreparationDialog` 가 그린다. 퍼센트 → 막대 → 무엇을 기다리는지 → (실패면 '다시 시도하기') → 닫기가 한 덩어리로 카드 가운데에
+    /// 선다 — 닫기는 상태 줄 바로 아래다. 안드로이드 `ui/voices/ClipPreparationScreen.kt` 의 `ClipPreparationScreen` 과 같은
+    /// 구성·값이다(편집기의 `Dialog` 안에 그린다).
     private var standardPreparation: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 0)
+            Text(headline)
+                // 36 · 굵기 400 — M3 displaySmall 그대로(안드로이드와 같다). 앱 토큰 `displaySmall` 은 SemiBold 라 쓰지 않는다.
+                .font(.pretendard(.regular, size: 36, relativeTo: .largeTitle))
+                .foregroundStyle(theme.palette.onSurface)
+                // 숫자가 흔들리지 않게 — 퍼센트가 오르내릴 때 폭이 변하면 시선이 튄다.
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.2), value: shownPercent)
 
-            VStack(spacing: 16) {
-                Text(headline)
-                    .font(theme.typography.displaySmall)
-                    .foregroundStyle(theme.palette.onSurface)
-                    // 숫자가 흔들리지 않게 — 퍼센트가 오르내릴 때 폭이 변하면 시선이 튄다.
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.2), value: shownPercent)
+            // 폭은 최대 280, 두께 4, 끝이 둥글고 트랙은 surfaceVariant — 안드로이드 `LinearProgressIndicator` 와 같다(끝 점 없음).
+            PreparationProgressBar(fraction: Double(shownPercent) / 100, thickness: 4)
+                .frame(maxWidth: 280)
+                .padding(.top, 16)
 
-                ProgressView(value: Double(shownPercent), total: 100)
-                    .tint(theme.palette.primary)
-                    .frame(maxWidth: 280)
+            Text(statusLine)
+                .font(theme.typography.bodyMedium)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+                .padding(.top, 16)
 
-                Text(statusLine)
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
-            }
-            .padding(.horizontal, 24)
-
-            Spacer(minLength: 0)
-
-            VStack(spacing: 12) {
-                if !shownFailedVoiceIDs.isEmpty {
-                    // 서버가 만들다 실패한 목소리 — 다시 큐에 올린다. 다운로드 실패는
-                    // 선다운로드가 다음 회차에 부족분만 다시 받으므로 버튼이 필요 없다.
-                    Button(String(localized: "다시 시도하기")) {
-                        Task {
-                            await readiness.retryFailedRenders(session: auth.session)
-                            await refresh()
-                        }
+            if !shownFailedVoiceIDs.isEmpty {
+                // 서버가 만들다 실패한 목소리 — 다시 큐에 올린다. 다운로드 실패는
+                // 선다운로드가 다음 회차에 부족분만 다시 받으므로 버튼이 필요 없다.
+                Button(String(localized: "다시 시도하기")) {
+                    Task {
+                        await readiness.retryFailedRenders(session: auth.session)
+                        await refresh()
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(theme.palette.primary)
                 }
-
-                if let onDismiss {
-                    // 실패해서 '다시 시도하기' 가 떠 있으면 **'닫기'** 다 — 뒤에서 이어지는 일이 없는데 '백그라운드에서 계속' 이라고
-                    // 하면 거짓말이다(2026-11-22 오너). 나가는 길은 남긴다. 안드로이드 `ClipPreparationScreen` 과 같다.
-                    Button(shownFailedVoiceIDs.isEmpty ? String(localized: "백그라운드에서 계속") : String(localized: "닫기")) {
-                        onDismiss()
-                    }
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                }
+                .buttonStyle(PreparationRetryButtonStyle())
+                .padding(.top, 24)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 32)
+
+            if let onDismiss {
+                // 실패해서 '다시 시도하기' 가 떠 있으면 **'닫기'** 다 — 뒤에서 이어지는 일이 없는데 '백그라운드에서 계속' 이라고
+                // 하면 거짓말이다(2026-11-22 오너). 나가는 길은 남긴다. 글자는 흐린 글자색이다(두 앱 같다 — 2026-11-22).
+                Button {
+                    onDismiss()
+                } label: {
+                    Text(shownFailedVoiceIDs.isEmpty ? String(localized: "백그라운드에서 계속") : String(localized: "닫기"))
+                        .font(theme.typography.labelLarge)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+            }
         }
+        .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(theme.palette.surface)
     }
 
     /// ⚠ **등록 폼 골격(상단바 + 본문 + 하단 행)을 쓰지 않는다**(2026-09-29 지시).
@@ -178,21 +179,31 @@ struct ClipPreparationView: View {
                 .multilineTextAlignment(.center)
             Spacer().frame(height: 6)
             // 생성과 다운로드를 **하나의 퍼센트**로 말한다(2026-09-21 지시).
+            // 28 SemiBold(headlineMedium) — 안드로이드 `VoiceClipPreparationStep` 과 같다.
             // 숫자가 흔들리지 않게 — 폭이 변하면 시선이 튄다.
             Text("\(drive.percent)%")
-                .font(theme.typography.displaySmall)
+                .font(theme.typography.headlineMedium)
                 .foregroundStyle(theme.palette.onSurface)
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .animation(.easeInOut(duration: 0.2), value: drive.percent)
+            // 막대는 폭 78% · 두께 8 · surfaceVariant 트랙(안드로이드와 같다). 전체 개수를 아직 모르면(서버 첫 응답 전) **흐르는
+            // 막대**다 — 0% 에 멈춘 막대는 멈춘 것처럼 보인다.
             // ⚠ **막대를 스피너와 번갈아 그리지 말 것**(2026-09-21 지적 "잠깐 깜박"). 예전에는
             //   3초마다 도는 갱신 중에 원형 스피너로 바뀌었는데, 스피너는 제 크기라
-            //   막대(280)와 폭이 달라 **화면이 좁아졌다 넓어졌다** 했다. 전체 개수를 아직
-            //   모르는 동안에도 같은 자리에 같은 폭의 막대를 둔다.
-            ProgressView(value: Double(drive.percent), total: 100)
-                .progressViewStyle(.linear)
-                .tint(theme.palette.primary)
+            //   막대와 폭이 달라 **화면이 좁아졌다 넓어졌다** 했다. 흐르는 막대도 같은 자리·같은 폭이다.
+            GeometryReader { geo in
+                Group {
+                    if drive.totalKnown {
+                        PreparationProgressBar(fraction: Double(drive.percent) / 100, thickness: 8)
+                    } else {
+                        PreparationIndeterminateBar(thickness: 8)
+                    }
+                }
+                .frame(width: geo.size.width * 0.78)
                 .frame(maxWidth: .infinity)
+            }
+            .frame(height: 8)
         }
         .padding(.horizontal, 24)
         // 아래 버튼 줄만큼 **위아래를 똑같이** 비운다 — 블록은 정확히 가운데에 있고,
@@ -208,8 +219,9 @@ struct ClipPreparationView: View {
                 Button {
                     onDismiss()
                 } label: {
+                    // 글자 버튼(labelLarge · 흐린 글자색) — 안드로이드 `VoiceClipPreparationStep` 의 `TextButton`.
                     Text(String(localized: "백그라운드에서 계속"))
-                        .font(theme.typography.bodyMedium)
+                        .font(theme.typography.labelLarge)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                         .padding(.horizontal, 12)
                         .frame(minHeight: Self.bottomActionHeight)
@@ -314,5 +326,144 @@ struct ClipPreparationView: View {
             //   고른 목소리를 되돌린다. 여기서 한 번 받아 두면 그 고리가 끊긴다.
             await voiceStudio.loadStockClips(session: auth.session, force: true)
         }
+    }
+}
+
+/// 편집기에서 여는 준비 창 — 어두운 스크림 위 **가운데 카드**(모서리 28 · surface)에 `ClipPreparationView` 를 그린다. 안드로이드
+/// 편집기의 `Dialog` + `Surface(WakerDialogShape)`(`ui/editor/AlarmEditorScreen.kt` 의 `preparationVoiceId`)와 같은 모양이다 —
+/// 예전 iOS 는 아래에서 올라오는 시스템 시트였다. 바깥(스크림)을 누르면 닫힌다(안드로이드 `onDismissRequest`).
+///
+/// ⚠ 시스템 `.sheet`·`fullScreenCover` 가 아니라 **띄우는 화면 위에 얹는다** — 목소리 고르기 시트가 닫히는 그 순간에 열리는 일이
+/// 많아(`AlarmEditorSheet.selectVoiceOption`), 프레젠테이션 둘이 겹치지 않게 한다.
+struct ClipPreparationDialog: ViewModifier {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    /// 준비할 목소리. nil 이면 창이 없다.
+    let voiceID: String?
+    /// 손으로 닫는다('백그라운드에서 계속'·'닫기'·바깥 탭).
+    let onDismiss: () -> Void
+    /// 다 받아 저절로 닫힌다(`ClipPreparationView.onReady`).
+    let onReady: () -> Void
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            // 나타나고 사라지는 것만 서서히 — 애니메이션은 이 겹 안에만 건다(띄운 화면의 다른 변화까지 움직이지 않게).
+            ZStack {
+                if let voiceID {
+                    dialog(voiceID: voiceID)
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: voiceID != nil)
+        }
+    }
+
+    private func dialog(voiceID: String) -> some View {
+        ZStack {
+            AlarmTalkTheme.scrim
+                .contentShape(Rectangle())
+                .onTapGesture { onDismiss() }
+                .accessibilityHidden(true)
+            ClipPreparationView(
+                onDismiss: onDismiss,
+                onReady: onReady,
+                targetVoiceID: voiceID
+            )
+            // 카드 안 위아래 32 · 좌우 24(좌우는 준비 화면이 갖는다), 화면 가장자리에서 좌우 24 · 위아래 72(안드로이드 대화창 폭·
+            // 높이에 맞춘 값).
+            .padding(.vertical, 32)
+            .background(
+                theme.palette.surface,
+                in: RoundedRectangle(cornerRadius: theme.shapes.extraLarge, style: .continuous)
+            )
+            // 넓은 화면(아이패드)에서는 대화창 폭에서 멈춘다 — 안드로이드 대화창도 큰 화면에서 폭이 정해져 있다.
+            .frame(maxWidth: 560)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 72)
+            .accessibilityAddTraits(.isModal)
+        }
+        .ignoresSafeArea()
+        .transition(.opacity)
+    }
+}
+
+/// 준비 화면의 진행 막대 — 끝이 둥글고 트랙은 surfaceVariant, 채움은 강조색이다. 안드로이드 `LinearProgressIndicator`
+/// (`strokeCap = Round` · `trackColor = surfaceVariant` · 틈·끝 점 없음)와 같은 모양이다. 시스템 `ProgressView` 는 두께·트랙색을
+/// 정할 수 없어 직접 그린다.
+private struct PreparationProgressBar: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    let fraction: Double
+    let thickness: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            let clamped = min(max(fraction, 0), 1)
+            ZStack(alignment: .leading) {
+                Capsule().fill(theme.palette.surfaceVariant)
+                Capsule()
+                    .fill(theme.palette.primary)
+                    .frame(width: geo.size.width * clamped)
+            }
+        }
+        .frame(height: thickness)
+        // 안드로이드 `tween(550, FastOutSlowInEasing)` 과 같은 박자로 채운다.
+        .animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.55), value: fraction)
+        .accessibilityElement()
+        .accessibilityValue(Text(verbatim: "\(Int((min(max(fraction, 0), 1) * 100).rounded()))%"))
+    }
+}
+
+/// 전체 양을 아직 모를 때의 **흐르는 막대** — 강조색 조각이 트랙 위를 왼쪽에서 오른쪽으로 계속 흘러간다(안드로이드 인디터미넌트
+/// `LinearProgressIndicator` 의 결). 크기·투명도가 아니라 조각 자리만 움직여 배치에 끼지 않는다.
+private struct PreparationIndeterminateBar: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    let thickness: CGFloat
+    @State private var flowing = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let segment = width * 0.4
+            Capsule()
+                .fill(theme.palette.surfaceVariant)
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(theme.palette.primary)
+                        .frame(width: segment)
+                        .offset(x: flowing ? width : -segment)
+                }
+                .clipShape(Capsule())
+        }
+        .frame(height: thickness)
+        .onAppear {
+            withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
+                flowing = true
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// '다시 시도하기' — 안드로이드 M3 `Button` 과 같은 채움 캡슐(높이 40 · 좌우 24 · labelLarge · primary 위 onPrimary).
+private struct PreparationRetryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PreparationRetryButtonBody(label: configuration.label, isPressed: configuration.isPressed)
+    }
+}
+
+private struct PreparationRetryButtonBody: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    let label: ButtonStyleConfiguration.Label
+    let isPressed: Bool
+
+    var body: some View {
+        label
+            .font(theme.typography.labelLarge)
+            .foregroundStyle(theme.palette.onPrimary)
+            .padding(.horizontal, 24)
+            .frame(minHeight: 40)
+            .background(theme.palette.primary, in: Capsule())
+            .opacity(isPressed ? 0.8 : 1)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
     }
 }

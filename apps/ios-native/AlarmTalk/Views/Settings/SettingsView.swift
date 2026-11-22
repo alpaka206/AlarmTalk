@@ -38,7 +38,8 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            // 카드 사이 16 — 안드로이드 `SettingsScreen` 의 `spacedBy(16.dp)`(전 화면 공통 규격).
+            VStack(alignment: .leading, spacing: 16) {
                 // ⚠ **상단 X 도, 본문 제목도 다시 넣지 말 것.** 이 화면은 시트가 아니라
                 // push 라 네비게이션 바가 뒤로가기와 제목을 이미 그린다. X 를 같이 두면
                 // 같은 일을 하는 탈출구가 둘이 되고(CLAUDE.md 「모달」), 본문에 제목을 또
@@ -65,7 +66,8 @@ struct SettingsView: View {
                         note: weatherLegacyNote,
                         action: { weatherDialogOpen = true }
                     )
-                    Divider()
+                    // 카드 안쪽 여백까지 닿는 선 — 안드로이드 `SettingsScreen` 의 문구 정보 카드(`HorizontalDivider()` 기본값)와 같다.
+                    SettingsDivider()
                     SettingsValueButton(
                         label: "운세 정보",
                         value: fortuneInfoLabel,
@@ -105,14 +107,20 @@ struct SettingsView: View {
                     SettingsValueButton(label: "약관 및 개인정보 처리 동의") {
                         legalDestination = .consentHistory
                     }
-                    Divider().padding(.horizontal, 8).padding(.vertical, 4)
+                    SettingsDivider()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                     SettingsValueButton(label: "오픈소스 라이선스") {
                         legalDestination = .ossLicenses
                     }
                 }
                 .settingsCard(title: String(localized: "법적 정보"))
             }
-            .padding(20)
+            // 네비게이션 바 아래 24 — 안드로이드 하위 화면의 상단바 아래 간격(`WakerTopBarBottomGap`)과 같다. 좌우 20·아래 12 도
+            // 안드로이드 `SettingsScreen` 의 목록 여백 그대로다.
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 12)
         }
         .homeGradientBackground()
         // 제목은 네비게이션 바가 그린다(본문에 또 두지 않는다 — 위 주석).
@@ -321,7 +329,9 @@ struct SettingsView: View {
 }
 
 /// 라벨 + (선택) 값 + chevron 행. 설정·더보기 두 화면이 함께 쓴다.
-/// Android `SettingsRow`(`ui/settings/SettingsScreenComponents.kt`)와 같이 선행 아이콘은 두지 않는다.
+/// Android `SettingsRow`(`ui/settings/SettingsScreenComponents.kt`)·`MenuTabRow`(`ui/home/HomeComponents.kt`)와 같은 값이다 —
+/// 최소 높이 52, 좌우 12(카드 안쪽 여백 8 과 합쳐 글자가 카드 끝에서 20), 이름 bodyLarge SemiBold, 값 bodyMedium SemiBold
+/// primary, 꺾쇠 칸 20, 사이 12. 선행 아이콘은 두지 않는다.
 struct SettingsValueButton: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
@@ -329,29 +339,48 @@ struct SettingsValueButton: View {
     var value: String? = nil
     /// 행 아래 작은 안내(예: 되짚지 못한 옛 지역의 "목록에서 다시 골라 주세요"). 없으면 안 그린다.
     var note: String? = nil
+    /// 행의 위아래 여백 — 설정 행 6(`SettingsRow`), 더보기 행 8(`MenuTabRow`). 한 줄 행은 최소 높이 52 가 정한다.
+    var verticalPadding: CGFloat = 6
+    /// 이 행이 시작한 일이 도는 중이면 꺾쇠 자리에 진행 표시를 그린다(더보기의 회원 탈퇴 신청).
+    var showsProgress: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    // ⚠ **이름은 줄을 바꿔 다 보이고, 접히는 쪽은 값이다.** 이름이 잘리면 무엇을 누르는지 알 수 없다 —
+                    // 그래서 이름에 우선순위를 주고 값은 한 줄에서 말줄임한다(안드로이드 `SettingsRow` 의 주석과 같은 규칙).
                     Text(label)
-                        .fontWeight(.medium)
+                        .font(theme.typography.bodyLarge)
+                        .fontWeight(.semibold)
                         .foregroundStyle(theme.palette.onSurface)
-                    Spacer(minLength: 12)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+                    Spacer(minLength: 0)
                     if let value {
                         // ⚠ **값은 primary 로 강조한다.** 라벨과 값이 둘 다 무채색이면
-                        // 어느 쪽이 현재 설정값인지 안 읽힌다(안드로이드
-                        // `SettingsScreenComponents.kt:100-110` 도 primary + SemiBold).
+                        // 어느 쪽이 현재 설정값인지 안 읽힌다(안드로이드 `SettingsRow` 도 primary + SemiBold).
                         Text(value)
-                            .font(.subheadline.weight(.semibold))
+                            .font(theme.typography.bodyMedium)
+                            .fontWeight(.semibold)
                             .foregroundStyle(theme.palette.primary)
                             .lineLimit(1)
+                            .truncationMode(.tail)
                             .multilineTextAlignment(.trailing)
                     }
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                    if showsProgress {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 20, height: 20)
+                    } else {
+                        SettingsChevron()
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, verticalPadding)
+                .frame(minHeight: 52)
                 if let note {
                     // ⚠ **왼쪽 정렬, 라벨과 같은 시작선**이다 — 안드로이드 `SettingsRow` 의 `supportingText`
                     // (`TextAlign.Start`, 행 안쪽 시작 여백)와 같다. 오른쪽 정렬은 이 앱에서 **값**만의
@@ -362,18 +391,43 @@ struct SettingsValueButton: View {
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleButtonStyle())
     }
 }
 
+/// 설정·더보기 행 끝의 꺾쇠. 안드로이드는 `KeyboardArrowRight` 아이콘을 20 칸(행)·22 칸(더보기 프로필)에 그린다 —
+/// 같은 칸에 같은 굵기로 그려 화면마다 크기가 달라 보이지 않게 한다. 글리프는 iOS 것(SF 심볼)이다.
+struct SettingsChevron: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    var size: CGFloat = 20
+
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: size * 0.7, weight: .semibold))
+            .foregroundStyle(theme.palette.onSurfaceVariant)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
+/// 설정 카드 안의 구분선 — `outlineVariant`(안드로이드 `HorizontalDivider` 의 기본 색). 들임은 부르는 쪽이 정한다.
+struct SettingsDivider: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    var body: some View {
+        Divider().overlay(theme.palette.outlineVariant)
+    }
+}
+
 /// 테마 선택 — 공용 시트를 쓴다(아이콘 + 제목).
 struct ThemeModePickerSheet: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     let current: AlarmTalkThemeMode
     let onSelect: (AlarmTalkThemeMode) -> Void
 
@@ -387,14 +441,16 @@ struct ThemeModePickerSheet: View {
             HStack(spacing: 12) {
                 Image(systemName: mode.systemImage)
                     .font(.title3)
-                    .foregroundStyle(AlarmTalkTheme.primary)
+                    .foregroundStyle(theme.palette.primary)
                     .frame(width: 32)
                 // ⚠ **설명 줄을 되살리지 말 것**(2026-08-17 지시). 아이콘·제목이 이미
                 // 말한 것을 되풀이했고, "밤에 보기 편한" 같은 문장은 사용자가 왜 그걸
                 // 고르는지를 앱이 넘겨짚는다. 안드로이드에서도 함께 지웠다.
+                // 행 제목은 bodyLarge SemiBold — 안드로이드 `WakerSheetOptionRow` 의 제목과 같다.
                 Text(mode.pickerTitle)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.text)
+                    .font(theme.typography.bodyLarge)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(theme.palette.onSurface)
             }
         }
     }

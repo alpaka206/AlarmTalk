@@ -20,6 +20,11 @@ final class SocialFeatureViewModel: ObservableObject {
 
     @Published var statusMessage: String?
 
+    /// 마지막 이용권 새로고침(`refreshAll`)이 **실패했으면** 그 이유 — 이용권 화면이 들어올 때 위쪽 토스트로 띄운다
+    /// (안드로이드 `refreshBillingData(showMessage = true)` 의 `msg_gb_billing_info_load_failed` 와 같은 문장).
+    /// 갱신을 받아들일 때 비우고, 그 회차의 구독 조회가 실패하면 그 이유를 적는다. 밀려난 회차는 적지 않는다.
+    @Published private(set) var refreshFailureMessage: String?
+
     /// 마지막 `refreshAll` 이 **권한 판단에 필요한 것을 모두** 받아왔는가
     /// (구독 + `/auth/me` 의 plan). 하나라도 실패하면 false.
     ///
@@ -28,9 +33,21 @@ final class SocialFeatureViewModel: ObservableObject {
     /// 목소리 알람이 톤으로 바뀐다**(2026-08-18 Codex #697 P1). 파괴적 판단은 이 값이 true 일 때만.
     private(set) var entitlementSnapshotComplete = false
 
-    /// 해지를 App Store 에서 해야 하는가 — 서버가 `STORE_CANCEL_UNSUPPORTED` 로 거절했을 때.
-    /// 이용권 화면이 이걸 보고 StoreKit 구독 관리 시트를 연다.
-    @Published var needsAppStoreSubscriptionManagement = false
+    /// 해지 한 번의 결과 — 이용권 화면이 위쪽 토스트·알럿으로 그린다(안드로이드 `cancelSubscription` 의 `message`·
+    /// `billingPlayManageUrl`). 예전에는 결과를 `statusMessage` 에만 적었는데 그 값을 그리는 화면이 없어, 해지가 됐는지
+    /// 안 됐는지 화면이 아무 말도 하지 않았다.
+    enum CancelOutcome: Equatable {
+        /// 서버가 해지했다 — 그 안내 문장.
+        case canceled(String)
+        /// 해지하지 못했다 — 그 이유.
+        case failed(String)
+        /// App Store 결제라 서버가 끊을 수 없다(`STORE_CANCEL_UNSUPPORTED`, 무변경) — 시스템 구독 관리 시트로 보낸다.
+        case appStoreManagementRequired
+        /// Google Play 해지 호출이 실패했다(`PLAY_CANCEL_FAILED`·`PLAY_REVOKE_FAILED`, 무변경) — Google Play 에서 직접 해지하게 한다.
+        case playManagementRequired
+        /// 다른 해지가 돌고 있어 이번 요청은 보내지 않았다.
+        case skipped
+    }
 
     private let api: AlarmTalkAPI
     private let accessSnapshotStore: AccessSnapshotStore
@@ -137,6 +154,7 @@ final class SocialFeatureViewModel: ObservableObject {
         activeUserID = nil
         subscription = nil
         statusMessage = nil
+        refreshFailureMessage = nil
     }
 
     /// **화면 진입 갱신** — 같은 계정의 완결된 갱신이 같은 앱 진입 안에서 60초 안에 있었으면
@@ -178,6 +196,8 @@ final class SocialFeatureViewModel: ObservableObject {
         //   건너 다음 진입에 도착했을 때 완료 시점의 진입 번호를 적으면, 떠나 있는 동안 다른
         //   기기에서 바뀐 것을 돌아와서 1분 동안 못 받는다.
         let admitted = entryRefreshClock()
+        // 이 회차의 결과로 다시 적는다 — 앞 회차의 실패가 이번 진입의 안내로 남지 않게.
+        refreshFailureMessage = nil
         if !isRefreshing { isRefreshing = true }
         // ⚠ **내린는 것은 '지금 세대' 뿐이다**(2026-09-01 리뷰 3차 정정). 세운 사람이
         // 내리게 하면, 밀려난 갱신이 세대 가드에서 돌아가면서 **진행 중인 `force` 갱신의
@@ -190,6 +210,8 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         var messages: [String] = []
+        /// 이용권 화면 안내(`refreshFailureMessage`)에 쓸 구독 조회 실패의 이유 — 라벨 없이 안드로이드와 같은 문장이다.
+        var firstFailure: String?
         // 권한 스냅샷은 **문 하나로만** 쓴다. 표는 요청 전에 뜨고, rolling refresh 로 토큰이
         // 굴러가면 **우리가 굴린 것**이므로 표도 함께 옮긴다(안 옮기면 그 뒤 쓰기가 전부 거절된다 —
         // 30차에 실제로 그렇게 `entitlementSnapshotComplete` 가 영영 안 섰다).
@@ -248,6 +270,8 @@ final class SocialFeatureViewModel: ObservableObject {
                     error: error,
                     fallback: String(localized: "이용권 정보를 불러오지 못했어요")
                 ))
+                // 이용권 화면의 안내(`refreshFailureMessage`)는 구독 조회가 실패했을 때만이다 — 구독은 받았으니 화면은 맞다
+                // (안드로이드 `refreshBillingData` 는 구독 하나만 받는다).
             }
             // ⚠ **await 뒤에는 다시 본다**(2026-08-31 리뷰 2차). 위 가드를 통과한 뒤 이
             // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
@@ -324,6 +348,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 error: error,
                 fallback: String(localized: "이용권 정보를 불러오지 못했어요")
             ))
+            firstFailure = Self.refreshFailureText(error)
             // ⚠ **`/auth/me` 는 이미 나갔다 — 그 답을 이 진입의 결과로 적는다**(코덱스 #827). 두 조회를
             //   한꺼번에 보내므로 구독이 실패해도 계정 요청은 표와 함께 실제로 나갔다. 여기서
             //   버리면 이 진입의 첫 결과가 비어, 뒤에 오는 다른 응답이 세션 한가운데서 종료 안내를
@@ -353,6 +378,13 @@ final class SocialFeatureViewModel: ObservableObject {
         }
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
+        // 취소된 회차(화면을 떠났다)는 실패가 아니다 — 안내하지 않는다.
+        refreshFailureMessage = Task.isCancelled ? nil : firstFailure
+    }
+
+    /// 이용권 새로고침 실패의 안내 문장 — 안드로이드 `refreshBillingData` 의 `userFacingError(…, msg_gb_billing_info_load_failed)` 와 같다.
+    nonisolated static func refreshFailureText(_ error: Error) -> String {
+        userFacingErrorMessage(error, fallback: String(localized: "이용권 정보를 불러오지 못했어요"))
     }
 
     /// 구독 정보만 조용히 재조회. Apple IAP confirm 이 `success: true` 로 끝난 직후
@@ -462,32 +494,48 @@ final class SocialFeatureViewModel: ObservableObject {
         statusMessage = successMessage
     }
 
-    func cancelSubscription(mode: String = "at_period_end", session: AuthSession?) async {
+    /// 이용권을 해지한다. 결과는 돌려주는 값으로 화면이 그린다(`CancelOutcome`) — 문장은 안드로이드
+    /// `MainViewModelBillingActions.cancelSubscription` 과 같다.
+    @discardableResult
+    func cancelSubscription(mode: String = "at_period_end", session: AuthSession?) async -> CancelOutcome {
         guard let token = session?.token else {
-            statusMessage = String(localized: "로그인이 필요해요.")
-            return
+            let message = String(localized: "로그인 후 사용할 수 있어요")
+            statusMessage = message
+            return .failed(message)
         }
-        guard !isBusy else { return }
+        guard !isBusy else { return .skipped }
         isBusy = true
         defer { isBusy = false }
 
         do {
             let normalizedMode = Self.normalizedCancellationMode(mode)
             _ = try await api.cancelSubscription(mode: normalizedMode, token: token)
-            let successMessage = normalizedMode == "immediate" ? String(localized: "이용권을 해지했어요.") : String(localized: "구독 해지를 예약했어요.")
+            // 해지해도 만든 목소리는 지우지 않는다 — 문장은 언제까지 쓰는지와 다음 결제가 없다는 것만 말한다(안드로이드와 같다).
+            let successMessage = normalizedMode == "immediate"
+                ? String(localized: "이용권을 해지했어요")
+                : String(localized: "이번 이용 기간까지 그대로 쓸 수 있어요. 다음 결제는 없어요")
             await refreshAllAfterMutation(session: session, successMessage: successMessage)
+            return .canceled(successMessage)
         } catch {
-            // ⚠ **App Store 구독은 서버가 못 끊는다.** Apple 에는 Play 의
-            // `purchases.subscriptions.cancel` 에 해당하는 API 가 없어서, 사용자가 App Store
-            // 구독 관리 화면에서 직접 끊어야 한다. 서버가 이 코드로 거절하면(무변경)
-            // 여기서 그 화면으로 보낸다 — 안 보내면 "해지에 실패했어요" 만 남고 **해지할
-            // 길이 앱 어디에도 없다**(심사 거절 사유이기도 하다).
-            if Self.extractServerErrorCode(from: error) == "STORE_CANCEL_UNSUPPORTED" {
-                needsAppStoreSubscriptionManagement = true
+            switch Self.extractServerErrorCode(from: error) {
+            case "STORE_CANCEL_UNSUPPORTED":
+                // ⚠ **App Store 구독은 서버가 못 끊는다.** Apple 에는 Play 의
+                // `purchases.subscriptions.cancel` 에 해당하는 API 가 없어서, 사용자가 App Store
+                // 구독 관리 화면에서 직접 끊어야 한다. 서버가 이 코드로 거절하면(무변경)
+                // 그 화면으로 보낸다 — 안 보내면 "해지에 실패했어요" 만 남고 **해지할
+                // 길이 앱 어디에도 없다**(심사 거절 사유이기도 하다).
                 statusMessage = nil
-                return
+                return .appStoreManagementRequired
+            case "PLAY_CANCEL_FAILED", "PLAY_REVOKE_FAILED":
+                // Google Play 호출이 실패했다 — 서버·앱 상태 모두 무변경이다. 안드로이드 `PlayStoreManageDialog` 처럼
+                // Google Play 에서 직접 해지하도록 안내한다(이용권 화면의 알럿).
+                statusMessage = nil
+                return .playManagementRequired
+            default:
+                let message = Self.billingErrorMessage(error, fallback: String(localized: "해지에 실패했어요"))
+                statusMessage = message
+                return .failed(message)
             }
-            statusMessage = Self.billingErrorMessage(error, fallback: String(localized: "해지에 실패했어요"))
         }
     }
 

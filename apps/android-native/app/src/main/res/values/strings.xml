@@ -15,7 +15,7 @@
     <string name="auth_consent_privacy">[필수] 개인정보 처리방침 동의</string>
     <string name="auth_consent_processing">처리 중…</string>
     <string name="auth_consent_terms">[필수] 이용약관 동의</string>
-    <string name="msg_cross_store_renewal_active">이 계정은 App Store 에서 결제 중이에요. App Store 구독에서 먼저 해지한 뒤 다시 시도해 주세요.</string>
+    <string name="msg_cross_store_renewal_active">이 계정은 App Store에서 결제 중이에요. App Store 구독에서 먼저 해지한 뒤 다시 시도해 주세요.</string>
     <string name="auth_consent_document_unavailable">문서를 불러오지 못했어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.</string>
     <string name="auth_consent_title">서비스 이용을 위해\n약관에 동의해 주세요</string>
     <string name="auth_consent_voice_biometric">[선택] 음성 생체정보 처리 동의</string>
@@ -105,6 +105,11 @@
     <string name="billing_play_purchase_title">%1$s 이용권을 시작할까요?</string>
     <string name="billing_restore_purchases">이전 구매 복원</string>
     <string name="billing_restore_none">복원할 구매가 없어요. 스토어 계정을 확인해 주세요.</string>
+    <string name="billing_restore_failed">이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="billing_cross_store_block_title">App Store에서 결제 중이에요</string>
+    <string name="billing_cross_store_block_message">지금 이용권은 App Store로 자동 갱신되고 있어요. Google Play로 결제하면 두 곳에서 함께 청구돼요. App Store 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요.</string>
+    <string name="billing_app_store_cancel_title">App Store에서 결제한 이용권이에요</string>
+    <string name="billing_app_store_cancel_message">아이폰의 App Store 구독에서 해지해 주세요.</string>
     <string name="billing_restore_checking">구매를 확인하고 있어요…</string>
     <string name="billing_select_button">결제하기</string>
     <string name="billing_status_available_until">%1$s까지 사용할 수 있어요.</string>
@@ -237,7 +242,7 @@
     <string name="editor_voice_preparing_value">%1$s · 준비 중</string>
     <string name="editor_voice_select_title">목소리 고르기</string>
     <string name="editor_block_voice_settling_title">아직 준비 중이에요</string>
-    <string name="msg_voice_replacement_settling">바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.</string>
+    <string name="msg_voice_replacement_settling">바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.</string>
     <string name="editor_voice_source_local">직접 녹음</string>
     <string name="editor_voice_volume_preview_hint">실제 알람 문구가 아니라 인사말로 들려드려요.</string>
     <string name="editor_voice_volume">목소리 크기</string>
@@ -274,7 +279,7 @@
     <string name="hs_delete_account_title">정말 탈퇴할까요?</string>
     <string name="hs_delete_account_body">30일 뒤에 계정과 모든 데이터가 영구 삭제돼요. 그 전에 다시 로그인하면 탈퇴를 취소할 수 있어요.</string>
     <string name="hs_delete_account_confirm">탈퇴</string>
-    <string name="hs_profile_content_desc">프로필</string>
+    <string name="menu_profile_my_account">내 계정</string>
     <string name="hs_profile_menu_pass">이용권</string>
     <string name="hs_create_alarm_button">첫 알람 만들기</string>
     <string name="hs_settings_delete_account">회원 탈퇴</string>
@@ -295,7 +300,7 @@
     <string name="settings_marketing_load_failed">불러오지 못했어요 · 다시 시도</string>
     <string name="hs_empty_card_helper">듣고 싶은 목소리가 깨워줘요.</string>
     <string name="hs_status_inactive">모든 알람이 꺼져 있어요.</string>
-    <string name="hs_status_no_alarm">알람이 없어요.</string>
+    <string name="hs_status_no_alarm">아직 알람이 없어요.</string>
     <string name="hs_status_ring_in">%1$s 후에 울려요.</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s 목소리</string>
     <string name="msg_account_deletion_request_failed">회원 탈퇴 신청에 실패했어요</string>
@@ -329,8 +334,7 @@
 
     <string name="msg_gb_login_required_purchase_plan">이용권을 구매하려면 먼저 로그인해 주세요</string>
 
-    <string name="msg_gb_payment_confirm_failed">결제 확인에 실패했어요</string>
-    <string name="msg_gb_payment_confirm_failed_retry">결제 확인에 실패했어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="msg_gb_payment_confirm_failed_retry">결제는 됐지만 이용권을 아직 확인하지 못했어요. 잠시 후 \'이전 구매 복원\'을 눌러 주세요.</string>
     <string name="msg_gb_plan_applied">이용권을 적용했어요</string>
     <string name="msg_gb_subscription_cancel_at_period_end">이번 이용 기간까지 그대로 쓸 수 있어요. 다음 결제는 없어요</string>
     <string name="msg_gb_subscription_cancel_failed">해지에 실패했어요</string>
@@ -350,6 +354,7 @@
     <string name="msg_permission_notifications_required">알람 화면과 종료 버튼을 표시하려면 알림 권한이 필요해요.</string>
     <string name="msg_permission_record_audio_required">음성을 녹음하려면 마이크 권한이 필요해요.</string>
     <string name="msg_register_all_fields_required">회원가입 정보를 모두 입력해 주세요.</string>
+    <string name="msg_reset_all_fields_required">모든 항목을 입력해 주세요.</string>
     <string name="msg_register_email_taken">이미 가입된 이메일이에요. 로그인해 주세요.</string>
     <string name="msg_register_email_social_google">구글로 가입된 이메일이에요. \'Google로 계속하기\'로 로그인해 주세요.</string>
     <string name="msg_register_email_social_apple">Apple로 가입된 이메일이에요. 아이폰 앱에서 Apple로 로그인해 주세요.</string>
@@ -383,7 +388,7 @@
     <string name="rd_audio_upload_path_missing">오디오 파일 경로를 찾을 수 없어요.</string>
     <string name="rd_audio_upload_file_missing">오디오 파일을 찾을 수 없어요.</string>
     <string name="rd_audio_duration_unreadable">오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.</string>
-    <string name="rd_audio_extract_failed">선택한 파일에서 오디오를 추출하지 못했어요. 다른 파일로 시도해 주세요.</string>
+    <string name="rd_audio_extract_failed">선택한 파일에서 오디오를 찾지 못했어요. 다른 파일로 시도해 주세요.</string>
     <string name="rd_audio_mp3_trim_failed">MP3 구간을 저장하지 못했어요. 다른 파일을 선택해 주세요.</string>
     <string name="rd_audio_open_failed">선택한 오디오 파일을 열 수 없어요.</string>
     <string name="rd_audio_over_limit_trim_failed">%1$d초 초과 파일을 자동으로 자르지 못했어요. m4a/aac/mp4 형식으로 다시 선택해 주세요.</string>
@@ -432,7 +437,7 @@
     <string name="voices_lang_ja" translatable="false">日本語</string>
     <string name="voices_name_placeholder">예: 엄마 목소리</string>
     <string name="voices_next">다음</string>
-    <string name="voices_prepare_recording_first">녹음한 음성을 먼저 준비해 주세요.</string>
+    <string name="voices_prepare_recording_first">먼저 목소리를 녹음해 주세요.</string>
     <string name="voices_prepare_selected_failed">선택한 음성을 준비하지 못했어요.</string>
     <string name="voices_preparing">준비 중</string>
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
@@ -485,7 +490,6 @@
     <string name="voicesr_edit_name">이름 수정</string>
     <string name="voicesr_create_alarm_with_voice">이 목소리로 새 알람 만들기</string>
     <string name="voicesr_more">더보기</string>
-    <string name="voicesr_pause">일시정지</string>
     <string name="voicesr_prerender_progress">알람 음성 준비 중 %1$d%%</string>
     <string name="voicesr_preview">미리듣기</string>
     <string name="voicesr_relationship_custom_placeholder">예: 손녀, 연인, 동료</string>
@@ -493,7 +497,7 @@
     <string name="voicesr_relationship_placeholder">예: 엄마, 친구</string>
     <string name="voicesr_required_field">꼭 입력해 주세요.</string>
     <string name="voicesr_save">저장</string>
-    <string name="voicesr_status_creating">생성 중</string>
+    <string name="voicesr_status_creating">만드는 중</string>
     <string name="voicesr_status_deleting">삭제 중</string>
     <string name="voicesr_voice_name_label">목소리 이름</string>
     <string name="label_audio_file">음성 파일</string>
@@ -566,6 +570,7 @@
     <string name="msg2_billing_fail_free_not_billable">무료 이용권은 여기에서 적용할 수 없어요</string>
     <string name="msg2_billing_fail_user_not_found">로그인 정보를 다시 확인해 주세요</string>
     <string name="msg2_billing_fail_transaction_owned_by_other_user">이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요</string>
+    <string name="msg2_billing_fail_transaction_account_mismatch">이 결제는 다른 계정으로 구매한 거예요. 그 계정으로 로그인해 주세요.</string>
     <string name="onb_voice_title">알람에 쓸 목소리를 받고 있어요</string>
     <string name="onb_voice_loading">목소리를 받는 중이에요…</string>
     <string name="misc2_theme_mode_system">시스템 설정과 같이</string>
@@ -586,7 +591,6 @@
     <string name="r3app_bottom_tab_menu">더보기</string>
     <string name="menu_profile_subtitle">내 정보 · 앱 설정</string>
     <string name="menu_language_label">앱 언어</string>
-    <string name="menu_language_system">시스템 기본</string>
     <string name="menu_section_legal">법적 정보</string>
     <string name="menu_open_source_licenses">오픈소스 라이선스</string>
     <string name="menu_app_version">앱 버전 %1$s</string>
@@ -629,7 +633,7 @@
     <string name="r3ed_ampm_wheel_am">오전</string>
     <string name="r3ed_ampm_wheel_pm">오후</string>
     <string name="r3misc_billing_purchase_pending">결제가 보류 중이에요. 결제 수단 승인이 끝나면 자동으로 적용돼요.</string>
-    <string name="r3misc_session_expired">로그인이 만료되었어요. 다시 로그인해 주세요.</string>
+    <string name="r3misc_session_expired">로그인이 만료됐어요. 다시 로그인해 주세요.</string>
     <string name="r3misc_consent_required">계속하려면 필수 동의가 필요해요.</string>
     <string name="r3misc_login_required_generic">로그인 후 사용할 수 있어요</string>
     <string name="r3misc_google_signin_unavailable">현재 Google 로그인을 사용할 수 없어요. 이메일로 로그인해 주세요.</string>
@@ -784,7 +788,7 @@
     <string name="voice_pack_editor_detail">추가 팩</string>
     <string name="voice_pack_download_failed">받지 못했어요. 다시 시도해 주세요.</string>
     <string name="voice_pack_retry_download">다시 받기</string>
-    <string name="voice_pack_manual_unavailable">추가 팩 목소리는 직접 입력에 쓸 수 없어요. 테마를 골라 주세요.</string>
+    <string name="voice_pack_manual_unavailable">추가 팩 목소리는 직접 입력에 쓸 수 없어요. 문구 화면에서 테마를 골라 주세요.</string>
     <string name="voice_pack_not_available">이 팩은 지금 받을 수 없어요.</string>
     <string name="voice_pack_switch_drops_text_title">추가 팩 목소리로 바꿀까요?</string>
     <string name="voice_pack_switch_drops_text_message">추가 팩 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>

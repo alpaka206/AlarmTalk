@@ -24,8 +24,8 @@ final class ConsentScreenshotUITests: XCTestCase {
         shot(app, "01-접힌상태")
 
         // 민감 동의 2종의 설명은 **기본으로 접혀 있어야** 한다.
-        // ⚠ 목록 순서상 **첫 화살표는 '국외 이전' 행**이다(생체정보가 아니다).
-        // 처음엔 생체정보 설명을 찾다가 "펼쳤는데 안 나온다" 로 헛짚었다.
+        // ⚠ 화살표는 약관·처리방침(전문)에도 있다 — 목록 순서상 **세 번째 화살표가 '국외 이전' 행**이다
+        // (만 14세 → 약관 → 처리방침 → 국외 이전 → 생체정보 → 광고성 정보). 예전에는 첫 화살표를 국외 이전으로 봤다.
         let firstDetail = app.staticTexts.containing(
             NSPredicate(format: "label CONTAINS %@", "국외 처리자에게 전송될 수 있습니다")
         ).firstMatch
@@ -37,11 +37,13 @@ final class ConsentScreenshotUITests: XCTestCase {
             "접힌 상태에서 제목·[선택] 표기가 사라졌다"
         )
 
-        // 펼침 — 체크와 다른 동작이어야 한다(펼쳤다고 체크되면 안 된다).
-        let expand = app.buttons.matching(
-            NSPredicate(format: "label == %@", "설명 펼치기")
-        ).firstMatch
-        XCTAssertTrue(expand.waitForExistence(timeout: 3), "펼침 버튼이 없다")
+        // 펼침 — 체크와 다른 동작이어야 한다(펼쳤다고 체크되면 안 된다). 접근성 이름은 안드로이드와 같은 '항목 펼치기' 다.
+        let expandButtons = app.buttons.matching(
+            NSPredicate(format: "label == %@", "항목 펼치기")
+        )
+        XCTAssertTrue(expandButtons.firstMatch.waitForExistence(timeout: 3), "펼침 버튼이 없다")
+        let expand = expandButtons.element(boundBy: 2)
+        XCTAssertTrue(expand.exists, "국외 이전 행의 펼침 버튼이 없다")
         expand.tap()
 
         XCTAssertTrue(

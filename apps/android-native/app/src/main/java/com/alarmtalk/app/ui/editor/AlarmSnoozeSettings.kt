@@ -130,13 +130,9 @@ internal fun SnoozeOptionSection(
     // 목록에 붙어 있었다.
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (title != null) {
-            Text(
-                text = title,
-                // iOS `EditorSectionTitle` = `titleSmall`(14) **bold**.
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
-            )
+            // 편집기 구역 제목과 같은 한 벌이다(`EditorSectionTitle` — titleSmall·SemiBold·흐린 색). iOS `EditorSectionTitle` 도
+            // 2026-11-15 에 이 값으로 맞췄다 — 예전 이 자리의 Bold·onSurface 는 그 전의 iOS 값이었다(2026-11-22 두 앱 통일).
+            EditorSectionTitle(title)
         }
         Surface(
             // 다행 그룹 박스가 형제 단일 행 패널(18)보다 작은 14 를 쓰던 radius 역전 해소.

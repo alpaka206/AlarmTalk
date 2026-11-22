@@ -14,6 +14,8 @@ import SwiftUI
 ///
 /// Android `VoiceConsentSheet.kt` 의 1:1 포팅.
 struct VoiceConsentSheet: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+
     let busy: Bool
     let types: [String]
     /// 동의 직후 목소리 등록이 이어지는가.
@@ -44,9 +46,11 @@ struct VoiceConsentSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // titleMedium · Bold — 안드로이드 `VoiceConsentSheet` 의 제목과 같다.
             Text(registrationContext ? String(localized: "목소리 등록에는 별도 동의가 필요해요") : String(localized: "알람 문구를 만들려면 동의가 필요해요"))
-                .font(.headline)
-                .foregroundStyle(AlarmTalkTheme.text)
+                .font(theme.typography.titleMedium)
+                .fontWeight(.bold)
+                .foregroundStyle(theme.palette.onSurface)
 
             // ⚠ **높이 상한을 박지 말 것**(2026-11-15). 예전에는 320 이었는데, 등록 자리에서 생체정보(부연 세 줄)와 다른
             // 항목을 함께 받으면 그 높이를 넘어 맨 아래 항목이 가려진 채 확인 버튼이 꺼져 있었다.
@@ -58,38 +62,53 @@ struct VoiceConsentSheet: View {
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.error)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.error)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            HStack {
+            // 두 글자 버튼이 오른쪽 끝에 맞닿아 있다(안드로이드 `TextButton` 둘 — 글자는 둘 다 강조색, '확인' 만 SemiBold).
+            HStack(spacing: 0) {
                 Spacer()
-                Button(String(localized: "취소"), action: onDismiss)
-                    .disabled(busy)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-                Button(action: onAgree) {
-                    // '확인' 하나다(2026-11-15 오너: "체크하면 동의니깐 확인으로 해도 되지않을까?"). 동의는 체크가 하고 이
-                    // 버튼은 그 체크를 낸다. 무엇이 이어지는지는 제목·본문이 말한다(`registrationContext`). 안드로이드와 같다.
-                    Text(String(localized: "확인"))
-                        .fontWeight(.semibold)
-                }
-                .disabled(!allChecked || busy)
-                .padding(.leading, 12)
+                textButton(String(localized: "취소"), enabled: !busy, action: onDismiss)
+                // '확인' 하나다(2026-11-15 오너: "체크하면 동의니깐 확인으로 해도 되지않을까?"). 동의는 체크가 하고 이
+                // 버튼은 그 체크를 낸다. 무엇이 이어지는지는 제목·본문이 말한다(`registrationContext`). 안드로이드와 같다.
+                textButton(String(localized: "확인"), weight: .semibold, enabled: allChecked && !busy, action: onAgree)
             }
         }
         .padding(20)
-        .background(AlarmTalkTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.extraLarge, style: .continuous))
+        .background(theme.palette.surface)
+        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.extraLarge, style: .continuous))
         .padding(24)
+    }
+
+    /// 글자 버튼 — 안드로이드 M3 `TextButton` 과 같은 값(labelLarge · 강조색 · 높이 40 · 좌우 12, 잠기면 onSurface 38%).
+    private func textButton(
+        _ title: String,
+        weight: Font.Weight? = nil,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(theme.typography.labelLarge)
+                .fontWeight(weight)
+                .foregroundStyle(enabled ? theme.palette.primary : theme.palette.onSurface.opacity(0.38))
+                .padding(.horizontal, 12)
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 
     /// 본문과 체크 항목 — 화면에 들어가면 그대로, 넘치면 스크롤 안에 그린다(위 `ViewThatFits`).
     private var consentItems: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // 본문 12(bodySmall) — 안드로이드와 같다.
             Text(registrationContext ? Self.voiceBody : Self.ttsBody)
-                .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
 
             if asksBiometric {
@@ -119,16 +138,17 @@ struct VoiceConsentSheet: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: binding.wrappedValue ? "checkmark.square.fill" : "square")
                     .font(.title3)
-                    .foregroundStyle(binding.wrappedValue ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
+                    .foregroundStyle(binding.wrappedValue ? theme.palette.primary : theme.palette.onSurfaceVariant)
+                // 체크 문구·부연 모두 12(bodySmall) — 안드로이드 `VoiceConsentCheck` 와 같다.
                 VStack(alignment: .leading, spacing: 4) {
                     Text(label)
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.text)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurface)
                         .multilineTextAlignment(.leading)
                     if let description {
                         Text(description)
-                            .font(.footnote)
-                            .foregroundStyle(AlarmTalkTheme.textSecondary)
+                            .font(theme.typography.bodySmall)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
                             .multilineTextAlignment(.leading)
                     }
                 }
@@ -148,9 +168,10 @@ struct VoiceConsentSheet: View {
         음성 프로필은 언제든 삭제할 수 있고, 지우면 목소리도 함께 삭제돼요.
         """) }
 
+    /// 안드로이드 `tts_consent_body` 와 같은 말 — 어미도 '전송돼요.' 로 맞춘다(예전 iOS 는 '전송됩니다.' 였다).
     private static var ttsBody: String { String(localized: """
         알람 문구를 목소리로 만들 때, 문구와 목소리가 음성 AI 제공자(ElevenLabs)와 문구 생성\
-        (Google, 미국)을 거쳐 처리돼요. 이 과정에서 데이터가 국외로 전송됩니다. 동의하지 않아도 \
+        (Google, 미국)을 거쳐 처리돼요. 이 과정에서 데이터가 국외로 전송돼요. 동의하지 않아도 \
         알람 자체는 쓸 수 있지만, 목소리로 읽어주는 알람은 만들 수 없어요.
         """) }
 }

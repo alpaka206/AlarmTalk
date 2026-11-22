@@ -70,7 +70,7 @@ extension AlarmEditorSheet {
                         //  2. 그 준비 결과가 곧 '무엇을 골랐는가' 였다. 그래서 회선이 느리거나
                         //     끊기면 고른 테마가 화면에서 사라지고 "불러오는 중이에요" 로 보였다.
                         // 지금은 선택이 값 하나(`selectedBucketDraft`)이고 음원은 저장할 때
-                        // 받는다. 저장 버튼이 그동안 '저장 중…' 을 보여준다.
+                        // 받는다. 저장 버튼이 그동안 '저장 중' 을 보여준다.
 
                         // ⚠ '음성 탭에서 만들기' 버튼을 상시로 두지 않는다 — 목소리가 이미
                         // 있는 사람에게는 매번 다른 탭으로 보내는 버튼이 편집기에 남는다.
@@ -79,12 +79,23 @@ extension AlarmEditorSheet {
                         // 목록을 아직 불러오는 중에 "없음" 으로 단정해 버튼을 내면 안 된다 —
                         // 목소리가 있는 사람에게 잠깐 깜빡였다가 사라진다.
                         if voiceProfileOptions.isEmpty && !voiceStudio.isRefreshing {
-                            Button {
-                                onJumpToVoices()
-                            } label: {
-                                Label(String(localized: "목소리 탭에서 만들기"), systemImage: "waveform")
+                            // 안드로이드 `VoiceAudioCard` 의 `NoUsableVoiceProfileCallout` 과 같은 한 줄 — 안내 + '목소리 만들기'
+                            // (2026-11-22 두 앱 통일. 그전 iOS 는 '목소리 탭에서 만들기' 버튼 하나였다).
+                            HStack(spacing: 12) {
+                                Text(String(localized: "아직 사용할 목소리가 없어요."))
+                                    .font(theme.typography.bodyMedium)
+                                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Button(String(localized: "목소리 만들기")) { onJumpToVoices() }
+                                    .buttonStyle(EditorActionButtonStyle(kind: .filled))
+                                    .fixedSize()
                             }
-                            .buttonStyle(.bordered)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                                    .fill(theme.palette.surfaceVariant.opacity(0.42))
+                            )
                         }
                     }
 

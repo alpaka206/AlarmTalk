@@ -101,3 +101,66 @@ final class PurchaseBlockReasonTests: XCTestCase {
         XCTAssertNil(reason(.free, nil))
     }
 }
+
+/// 플러스 카드의 상태 한 줄 — 안드로이드 `SubscriptionPanel` 의 `currentStatusText` 와 같은 판정이다(2026-11-22 두 앱 통일).
+/// 해지 예약(다음 플랜 / 종료) → 기한 → '사용 중' 순으로 고른다.
+final class BillingStatusTextTests: XCTestCase {
+    /// 정오(UTC)라 어느 시간대에서 돌려도 같은 날이다.
+    private let expiresAt = "2026-10-01T12:00:00.000Z"
+
+    private func subscription(expiresAt: String, cancelAtPeriodEnd: Bool?) -> BillingSubscription {
+        BillingSubscription(
+            id: "sub-1",
+            planId: "plan-1",
+            status: "active",
+            expiresAt: expiresAt,
+            storeProvider: "google",
+            cancelAtPeriodEnd: cancelAtPeriodEnd
+        )
+    }
+
+    func test_해지_예약이_없으면_기한까지_쓸_수_있다고_말한다() {
+        let text = BillingPanel.subscriptionStatusText(
+            subscription: subscription(expiresAt: expiresAt, cancelAtPeriodEnd: false),
+            nextPlan: nil
+        )
+        XCTAssertEqual(text, String(localized: "\(String("2026.10.01"))까지 사용할 수 있어요."))
+    }
+
+    func test_옛_스냅샷처럼_해지_예약을_모르면_예약_없음으로_읽는다() {
+        let text = BillingPanel.subscriptionStatusText(
+            subscription: subscription(expiresAt: expiresAt, cancelAtPeriodEnd: nil),
+            nextPlan: nil
+        )
+        XCTAssertEqual(text, String(localized: "\(String("2026.10.01"))까지 사용할 수 있어요."))
+    }
+
+    func test_해지_예약이면_기한_뒤_종료된다고_말한다() {
+        let text = BillingPanel.subscriptionStatusText(
+            subscription: subscription(expiresAt: expiresAt, cancelAtPeriodEnd: true),
+            nextPlan: nil
+        )
+        XCTAssertEqual(text, String(localized: "\(String("2026.10.01"))까지 사용 후 종료돼요."))
+    }
+
+    func test_해지_예약에_다음_플랜이_있으면_그_플랜으로_바뀐다고_말한다() {
+        let next = BillingPlan(id: "plan-free", key: "free", name: "Free", planType: "free")
+        let text = BillingPanel.subscriptionStatusText(
+            subscription: subscription(expiresAt: expiresAt, cancelAtPeriodEnd: true),
+            nextPlan: next
+        )
+        let nextName = PlanTier.free.displayLabel
+        XCTAssertEqual(text, String(localized: "\(String("2026.10.01")) 이후 \(nextName) 이용권으로 변경돼요."))
+    }
+
+    func test_날짜를_못_읽으면_날짜_없는_문장을_쓴다() {
+        XCTAssertEqual(
+            BillingPanel.subscriptionStatusText(subscription: subscription(expiresAt: "", cancelAtPeriodEnd: false), nextPlan: nil),
+            String(localized: "사용 중인 이용권이에요.")
+        )
+        XCTAssertEqual(
+            BillingPanel.subscriptionStatusText(subscription: subscription(expiresAt: "", cancelAtPeriodEnd: true), nextPlan: nil),
+            String(localized: "현재 이용권이 종료 예정이에요.")
+        )
+    }
+}

@@ -132,8 +132,9 @@ struct MainTabsView: View {
                             currentTabContent
                         }
                         .padding(.horizontal, 20)
-                        .padding(.top, 20)
-                        .padding(.bottom, 24)
+                        // 위 24 · 아래 32 — 안드로이드 목소리·더보기 탭 목록의 여백과 같다(`AlarmListScreen` 의 `contentPadding`).
+                        .padding(.top, 24)
+                        .padding(.bottom, 32)
                     }
                     .background(theme.homeGradient)
                 }
@@ -149,7 +150,9 @@ struct MainTabsView: View {
             .overlay(alignment: .bottomTrailing) {
                 // 선택 모드에서는 숨긴다 — 삭제 바와 ＋가 함께 있으면 오른쪽 아래에서
                 // 손가락이 뭘 노리는지 애매해진다(안드로이드 `!alarmSelectionActive`).
-                if selectedTab == .alarms && !store.alarms.isEmpty && !alarmSelectionActive {
+                // ⚠ **이 계정 것만 센다**(`AlarmsListView.visibleAlarms` 와 같은 목록). `store.alarms` 를 그대로 보면 다른
+                //   계정의 알람만 남은 기기에서 목록은 빈 카드인데 ＋FAB 까지 함께 떠 같은 일을 하는 버튼이 둘이 된다.
+                if selectedTab == .alarms && !store.alarms(visibleTo: auth.session?.user.id).isEmpty && !alarmSelectionActive {
                     Button {
                         // ⚠ **여기서 편집기를 직접 열지 말 것.** 예전에는 이 버튼이
                         // `editorTarget` 을 곧바로 세워, 알람 목록의 `openCreateAlarm()`

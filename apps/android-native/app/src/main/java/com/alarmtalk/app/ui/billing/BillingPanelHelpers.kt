@@ -29,8 +29,20 @@ internal fun formatPass(value: String?, formatter: DateTimeFormatter): String? =
 internal val PassDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy.MM.dd")
 
-internal val PassShortDateFormatter: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("M/d")
+/**
+ * 해지 알럿의 날짜 — 기기 언어의 "월 일"("11월 22일"·"November 22"·"11月22日"). 체험 안내·기간 한정 플랜의 날짜와 같은
+ * 꼴이다(`formatPersonalPromoDay`). 2026-11-22 두 앱 통일 전에는 이 자리만 "11/22" 였다. 날짜는 예전처럼 끝 시각의 기기 날짜다.
+ */
+internal fun formatPassDay(
+    value: String?,
+    locale: java.util.Locale,
+    zone: ZoneId = ZoneId.systemDefault(),
+): String? =
+    value?.let {
+        runCatching {
+            formatPersonalPromoDay(Instant.parse(it).atZone(zone).toLocalDate(), locale)
+        }.getOrNull()
+    }
 
 /**
  * Google Play 구독 관리 딥링크. planKey 로 Play 상품 ID(sku)를 알면 해당 구독 상세로,

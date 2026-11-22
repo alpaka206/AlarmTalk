@@ -627,6 +627,10 @@ struct BillingSubscriptionResponse: Codable, Equatable {
     /// `limitedPlan` 하나로 읽는다.
     var planGrant: PersonalPromo? = nil
 
+    /// 해지 예약 뒤 바뀔 플랜(`next_plan`) — 이용권 카드의 상태 줄이 "…이후 …이용권으로 변경돼요" 를 고른다
+    /// (안드로이드 `BillingSubscriptionResponse.nextPlan`). 없으면 nil(옛 스냅샷·구버전 서버도 nil 로 읽힌다).
+    var nextPlan: BillingPlan? = nil
+
     /// `userPlan` 과 짝인 **기한**(기간 한정 개인 플랜 또는 관리자 기간 지급). 서버는 둘을 함께 보내지 않는다.
     var limitedPlan: PersonalPromo? { PersonalPromo.normalized(personalPromo) ?? PersonalPromo.normalized(planGrant) }
 }
@@ -650,6 +654,9 @@ struct BillingSubscription: Codable, Identifiable, Equatable {
     /// `STORE_CANCEL_UNSUPPORTED` 를 받으면 관리 시트로 보내는 길이 그대로 있다
     /// (`SocialFeatureViewModel.cancelSubscription`). 안드로이드가 원래 그 하나만 쓴다.
     var storeProvider: String?
+    /// 기간 끝에 해지하도록 예약됐는가(`cancel_at_period_end`) — 이용권 카드의 상태 줄이 "…까지 사용 후 종료돼요" 를 고른다
+    /// (안드로이드 `BillingSubscription.cancelAtPeriodEnd`). 없으면 nil(옛 스냅샷·구버전 서버) — 예약 없음으로 읽는다.
+    var cancelAtPeriodEnd: Bool? = nil
 }
 
 struct BillingPlan: Codable, Identifiable, Equatable {

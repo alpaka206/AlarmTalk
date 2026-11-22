@@ -24,8 +24,9 @@ enum BundledLegalDocument: String, CaseIterable {
         }
     }
 
-    /// 번들에 실린 원문. 못 읽으면 nil — 호출부는 **웹으로 떨어지지 않고** 오류를 띄운다
-    /// (`BundledLegalDocumentView.unavailable`). 랜딩 문서를 대신 띄우면 이 타입의 존재
+    /// 번들에 실린 원문. 못 읽으면 nil — 호출부는 **웹으로 떨어지지 않는다**: 동의 흐름은 업데이트 차단 화면으로
+    /// 보내고(`RootView` 의 `bundledLegalDocumentsReadable`), 동의 화면의 펼친 전문 자리는 "문서를 불러오지 못했어요"
+    /// 를 쓴다(`ConsentView` 의 `ConsentRow`). 랜딩 문서를 대신 띄우면 이 타입의 존재
     /// 이유가 사라진다 — 보여 준 것과 기록한 버전이 다시 갈라진다.
     ///
     /// 파일은 **번들 루트**에 있다(`project.yml` 이 `docs/legal` 의 두 파일을 개별

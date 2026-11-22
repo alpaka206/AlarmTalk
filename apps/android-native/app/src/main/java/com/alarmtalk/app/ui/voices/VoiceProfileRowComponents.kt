@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Stop
@@ -30,6 +31,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -41,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -366,6 +369,39 @@ internal fun VoiceCatalogRow(
 /** 목소리 행의 내용 높이 — 미리듣기 IconButton(48dp) 기준. */
 private val VoiceCatalogRowContentHeight = 48.dp
 
+/**
+ * 목소리 행 아래의 '알람 음성 준비 중 n%' — **막대와 숫자를 함께** 보인다(스펙 voice-and-message §4-1). 2026-11-22 두 앱
+ * 통일 전에는 스피너 알약이라 얼마나 남았는지가 숫자로만 읽혔다. iOS `VoicePrerenderStatusRow` 와 같은 값이다 — 막대는 최대
+ * 120·강조색, 사이 8, 글자 `bodySmall`·흐린 색. 막대 모양은 등록 마지막 단계의 막대와 같다(끝 점·틈 없음).
+ */
+@Composable
+private fun VoicePrerenderProgressLine(percent: Int) {
+    val fraction = percent.coerceIn(0, 100) / 100f
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LinearProgressIndicator(
+            progress = { fraction },
+            // 남는 폭이 120 보다 좁으면(큰 글씨) 막대가 줄고 글자는 그대로다.
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .widthIn(max = 120.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            strokeCap = StrokeCap.Round,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
+        )
+        Text(
+            text = stringResource(R.string.voicesr_prerender_progress, percent),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 internal fun VoiceProfileRow(
     profile: VoiceProfile,
@@ -418,9 +454,7 @@ internal fun VoiceProfileRow(
             // 알람 음성(사전렌더 클립) 준비 상태 — 서버·로컬 둘 다 끝났으면 아무것도 표시하지 않는다.
             // 실패는 그리지 않는다 — 목소리 탭이 스스로 다시 걸고(`VoiceAutoRetry`) 그동안 '준비 중' 으로 보인다.
             when (readiness) {
-                is CloneVoiceReadiness.Progress -> VoiceProgressMessage(
-                    stringResource(R.string.voicesr_prerender_progress, readiness.percent),
-                )
+                is CloneVoiceReadiness.Progress -> VoicePrerenderProgressLine(readiness.percent)
 
                 null -> Unit
             }

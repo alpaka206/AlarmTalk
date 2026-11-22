@@ -26,7 +26,8 @@ struct VoicePlayModePicker: View {
     @Namespace private var thumbNamespace
 
     var body: some View {
-        HStack(spacing: 4) {
+        // 칸 사이는 0 — 안드로이드 `EditorSegmentedSelector` 의 `spacedBy(0.dp)` 와 같다(2026-11-22 전 iOS 는 4). 트랙 안 여백 4 는 같다.
+        HStack(spacing: 0) {
             ForEach(AlarmPlayMode.pickerCases) { option in
                 segment(for: option)
             }
@@ -137,7 +138,8 @@ struct AppSegmentedPicker<Value: Hashable>: View {
     @Namespace private var thumbNamespace
 
     var body: some View {
-        HStack(spacing: 4) {
+        // 칸 사이는 0 — 안드로이드 `EditorSegmentedSelector` 의 `spacedBy(0.dp)` 와 같다(2026-11-22 전 iOS 는 4).
+        HStack(spacing: 0) {
             ForEach(options.indices, id: \.self) { index in
                 segment(options[index])
             }
@@ -166,8 +168,8 @@ struct AppSegmentedPicker<Value: Hashable>: View {
                 .font(theme.typography.labelLarge)
                 .fontWeight(.semibold)
                 .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
+                // 넘치면 말줄임 — 안드로이드 `PlayModeChip`(maxLines 1 · Ellipsis)과 같다. 글자를 줄이지 않는다(2026-11-22).
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 10)
                 .padding(.vertical, theme.spacing.sm)

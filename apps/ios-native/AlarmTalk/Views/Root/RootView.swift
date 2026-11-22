@@ -83,7 +83,11 @@ struct RootView: View {
                 UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
             } else if !auth.isAuthenticated {
                 NavigationStack {
+                    // 로그아웃한 순간의 안내(탈퇴 신청 접수 등 `signOut(message:)`)는 곧바로 이 첫 화면에 뜬다 — 안드로이드는 로그인
+                    // 전 화면도 같은 위쪽 안내 자리(`TopMessageHost`)를 쓴다. 로그인·가입 화면은 저마다 같은 토스트를 단다.
+                    // 스택 **안의 첫 화면**에 단다 — 스택 전체에 달면 그 위로 밀려 들어온 로그인 화면의 토스트와 두 장이 겹친다.
                     LandingView()
+                        .authToast(message: auth.statusMessage, isError: auth.statusIsError) { auth.statusMessage = nil }
                 }
             } else if !auth.consentStatusChecked && !consentCachedDone {
                 // 동의 확인 응답 전에는 온보딩·홈을 아예 그리지 않는다. 응답 전 기본값

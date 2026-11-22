@@ -29,6 +29,9 @@ struct AlarmTalkTypography {
 
     let labelLarge: Font
     let labelMedium: Font
+    /// 11 · Medium — M3 `labelSmall`. 톤 카드의 `추천`·`낮게·원래·높게` 처럼 가장 작은 보조 글자(안드로이드
+    /// `ui/voices/VoiceTuningCard.kt` 의 `labelSmall` 자리)에 쓴다.
+    let labelSmall: Font
 }
 
 enum PretendardWeight: String {
@@ -130,6 +133,7 @@ extension AlarmTalkTypography {
         bodySmall: .pretendard(.regular, size: 12, relativeTo: .caption),
 
         labelLarge: .pretendard(.medium, size: 14, relativeTo: .subheadline),
-        labelMedium: .pretendard(.medium, size: 12, relativeTo: .caption)
+        labelMedium: .pretendard(.medium, size: 12, relativeTo: .caption),
+        labelSmall: .pretendard(.medium, size: 11, relativeTo: .caption2)
     )
 }

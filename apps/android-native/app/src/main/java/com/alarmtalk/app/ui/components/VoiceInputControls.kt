@@ -655,9 +655,11 @@ internal fun AudioCropRangeSelector(
                     preparing = isPreviewPreparing,
                 )
                 Spacer(Modifier.width(8.dp))
+                // 누르면 멈추고 다시 누르면 처음부터 트는 **정지**다 — '일시정지' 라고 하면 이어서 들을 줄 안다
+                // (2026-11-22 두 앱 통일 — 아이콘도 정지 모양이다, 위 `VoicePreviewButtonIcon`).
                 Text(
                     text = if (isPreviewActive) {
-                        stringResource(R.string.voicesr_pause)
+                        stringResource(R.string.voicesr_preview_stop)
                     } else {
                         stringResource(R.string.voicesr_preview)
                     },

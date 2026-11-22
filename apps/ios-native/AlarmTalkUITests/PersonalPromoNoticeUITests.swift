@@ -133,8 +133,8 @@ final class PersonalPromoNoticeUITests: XCTestCase {
     /// (`ScreenSweepUITests.test_sweep_menuSubscreens` 와 같은 이유).
     private let promoPrefix = "플러스 무료 이용 중"
 
-    /// 더보기 → 이용권. 프로모 문구가 **어딘가에** 보일 때까지 기다린다 — 카드가 아직 없어도
-    /// (스켈레톤·가져오기 실패) 문구는 카드 위 한 줄로 보여야 한다(`drawsPromoLineAboveList`).
+    /// 더보기 → 이용권. 프로모 문구가 **어딘가에** 보일 때까지 기다린다(카드는 이제 언제나 그려진다 —
+    /// 문구 자리는 `drawsPromoLineAboveList`).
     private func openBilling(_ extra: [String] = []) throws -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-UIPreviewSeed", "-UIPreviewPersonalPromo", "20", "-UIPreviewTab", "menu"] + extra

@@ -99,6 +99,11 @@
     <string name="billing_play_purchase_title">%1$s利用券を始めますか？</string>
     <string name="billing_restore_purchases">以前の購入を復元</string>
     <string name="billing_restore_none">復元できる購入がありません。ストアのアカウントをご確認ください。</string>
+    <string name="billing_restore_failed">以前の購入を復元できませんでした。しばらくしてからもう一度お試しください。</string>
+    <string name="billing_cross_store_block_title">App Store で課金中です</string>
+    <string name="billing_cross_store_block_message">現在の利用券は App Store で自動更新されています。Google Play で購入すると両方から請求されます。App Store の定期購入で先に解約するか、期間終了後にもう一度お試しください。</string>
+    <string name="billing_app_store_cancel_title">App Store で購入した利用券です</string>
+    <string name="billing_app_store_cancel_message">iPhone の App Store の定期購入から解約してください。</string>
     <string name="billing_restore_checking">購入を確認しています…</string>
     <string name="billing_select_button">決済する</string>
     <string name="billing_status_available_until">%1$sまでご利用いただけます。</string>
@@ -228,7 +233,7 @@
     <string name="editor_voice_preparing_value">%1$s · 準備中</string>
     <string name="editor_voice_select_title">声を選ぶ</string>
     <string name="editor_block_voice_settling_title">まだ準備中です</string>
-    <string name="msg_voice_replacement_settling">変更した音声を整理しています。しばらくしてからもう一度選んでください。</string>
+    <string name="msg_voice_replacement_settling">変更した音声を整理しています。しばらくしてからもう一度保存してください。</string>
     <string name="editor_voice_source_local">自分で録音</string>
     <string name="editor_voice_volume_preview_hint">実際のアラーム文言ではなく、あいさつのサンプルを再生します。</string>
     <string name="editor_voice_volume">声の大きさ</string>
@@ -265,7 +270,7 @@
     <string name="hs_delete_account_title">本当に退会しますか？</string>
     <string name="hs_delete_account_body">30日後にアカウントとすべてのデータが完全に削除されます。それまでに再度ログインすると退会を取り消せます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
-    <string name="hs_profile_content_desc">プロフィール</string>
+    <string name="menu_profile_my_account">マイアカウント</string>
     <string name="hs_profile_menu_pass">利用券</string>
     <string name="hs_create_alarm_button">最初のアラームを作成</string>
     <string name="hs_settings_delete_account">退会</string>
@@ -286,7 +291,7 @@
     <string name="settings_marketing_load_failed">読み込めませんでした · タップで再試行</string>
     <string name="hs_empty_card_helper">聞きたい声が起こしてくれます。</string>
     <string name="hs_status_inactive">すべてのアラームがオフです。</string>
-    <string name="hs_status_no_alarm">アラームがありません。</string>
+    <string name="hs_status_no_alarm">まだアラームがありません。</string>
     <string name="hs_status_ring_in">%1$s後に鳴ります。</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$sの声</string>
     <string name="msg_account_deletion_request_failed">退会の申請に失敗しました。</string>
@@ -308,8 +313,7 @@
 
     <string name="msg_gb_login_required_purchase_plan">プランを購入するには、まずログインしてください。</string>
 
-    <string name="msg_gb_payment_confirm_failed">決済の確認に失敗しました。</string>
-    <string name="msg_gb_payment_confirm_failed_retry">決済の確認に失敗しました。しばらくしてからもう一度お試しください。</string>
+    <string name="msg_gb_payment_confirm_failed_retry">決済は完了しましたが、プランをまだ確認できていません。しばらくしてから「以前の購入を復元」を押してください。</string>
     <string name="msg_gb_plan_applied">プランを適用しました。</string>
     <string name="msg_gb_subscription_cancel_at_period_end">今の利用期間まではそのまま使えます。次のお支払いはありません。</string>
     <string name="msg_gb_subscription_cancel_failed">解約に失敗しました。</string>
@@ -329,6 +333,7 @@
     <string name="msg_permission_notifications_required">アラーム画面と停止ボタンを表示するには、通知の許可が必要です。</string>
     <string name="msg_permission_record_audio_required">音声を録音するには、マイクの許可が必要です。</string>
     <string name="msg_register_all_fields_required">会員登録の情報をすべて入力してください。</string>
+    <string name="msg_reset_all_fields_required">すべての項目を入力してください。</string>
     <string name="msg_register_email_taken">既に登録済みのメールです。ログインしてください。</string>
     <string name="msg_register_email_social_google">Googleで登録済みのメールです。「Googleで続ける」でログインしてください。</string>
     <string name="msg_register_email_social_apple">Appleで登録済みのメールです。iPhoneアプリからAppleでサインインしてください。</string>
@@ -362,7 +367,7 @@
     <string name="rd_audio_upload_path_missing">音声ファイルのパスが見つかりません。</string>
     <string name="rd_audio_upload_file_missing">音声ファイルが見つかりません。</string>
     <string name="rd_audio_duration_unreadable">オーディオの長さを確認できないファイルは使用できません。</string>
-    <string name="rd_audio_extract_failed">選択したファイルからオーディオを抽出できませんでした。別のファイルでお試しください。</string>
+    <string name="rd_audio_extract_failed">選択したファイルからオーディオが見つかりませんでした。別のファイルでお試しください。</string>
     <string name="rd_audio_mp3_trim_failed">MP3の区間を保存できませんでした。別のファイルを選んでください。</string>
     <string name="rd_audio_open_failed">選択したオーディオファイルを開けませんでした。</string>
     <string name="rd_audio_over_limit_trim_failed">%1$d秒を超えるファイルを自動で切り取れませんでした。m4a/aac/mp4形式で選び直してください。</string>
@@ -410,7 +415,7 @@
     <string name="voices_language_label">アラームを読み上げる言語</string>
     <string name="voices_name_placeholder">例:お母さんの声</string>
     <string name="voices_next">次へ</string>
-    <string name="voices_prepare_recording_first">まず録音した音声をご用意ください。</string>
+    <string name="voices_prepare_recording_first">まず声を録音してください。</string>
     <string name="voices_prepare_selected_failed">選択した音声を準備できませんでした。</string>
     <string name="voices_preparing">準備中</string>
     <string name="voices_preparing_audio">音声を準備しています。</string>
@@ -461,7 +466,6 @@
     <string name="voicesr_edit_name">名前を編集</string>
     <string name="voicesr_create_alarm_with_voice">この声で新しいアラームを作成</string>
     <string name="voicesr_more">もっと見る</string>
-    <string name="voicesr_pause">一時停止</string>
     <string name="voicesr_prerender_progress">アラーム音声を準備中 %1$d%%</string>
     <string name="voicesr_preview">プレビュー</string>
     <string name="voicesr_relationship_custom_placeholder">例:孫娘、恋人、同僚</string>
@@ -542,6 +546,7 @@
     <string name="msg2_billing_fail_free_not_billable">無料プランはここでは適用できません</string>
     <string name="msg2_billing_fail_user_not_found">ログイン情報をもう一度ご確認ください</string>
     <string name="msg2_billing_fail_transaction_owned_by_other_user">この購入は既に別のアカウントに紐づいています。そのアカウントでログインしてください</string>
+    <string name="msg2_billing_fail_transaction_account_mismatch">この購入は別のアカウントで行われました。そのアカウントでログインしてください。</string>
     <string name="onb_voice_title">アラームで使う声を受け取っています</string>
     <string name="onb_voice_loading">声をダウンロード中です…</string>
     <string name="misc2_theme_mode_system">システム設定に合わせる</string>
@@ -562,7 +567,6 @@
     <string name="r3app_bottom_tab_menu">その他</string>
     <string name="menu_profile_subtitle">マイ情報・アプリ設定</string>
     <string name="menu_language_label">アプリの言語</string>
-    <string name="menu_language_system">システムのまま</string>
     <string name="menu_section_legal">法的情報</string>
     <string name="menu_open_source_licenses">オープンソースライセンス</string>
     <string name="menu_app_version">アプリバージョン %1$s</string>
@@ -755,7 +759,7 @@
     <string name="voice_pack_editor_detail">追加パック</string>
     <string name="voice_pack_download_failed">ダウンロードできませんでした。もう一度お試しください。</string>
     <string name="voice_pack_retry_download">もう一度ダウンロード</string>
-    <string name="voice_pack_manual_unavailable">追加パックの声は自分で入力した文には使えません。テーマを選んでください。</string>
+    <string name="voice_pack_manual_unavailable">追加パックの声は自分で入力した文には使えません。文言の画面でテーマを選んでください。</string>
     <string name="voice_pack_not_available">このパックは現在ダウンロードできません。</string>
     <string name="voice_pack_switch_drops_text_title">追加パックの声に変えますか？</string>
     <string name="voice_pack_switch_drops_text_message">追加パックの声は用意された文だけを話すため、自分で入力した文は消えます。</string>

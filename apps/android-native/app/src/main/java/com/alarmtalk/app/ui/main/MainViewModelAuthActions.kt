@@ -39,6 +39,8 @@ internal fun MainViewModel.login(email: String, password: String) {
         loginError = null
         loginErrorCode = null
         authNotice = null
+        // 앞선 로그아웃의 서버 뒷정리가 끝난 뒤에 보낸다 — 늦은 폐기가 이 세션을 죽이지 않게([awaitServerSignOutCleanup]).
+        awaitServerSignOutCleanup()
         // 표는 **보내기 직전에** 뜬다 — 응답이 다음 진입에 도착하면 그 진입의 답으로 세지 않게(D11).
         val accountRequest = beginAccountRequest()
         runCatching {
@@ -224,6 +226,8 @@ internal fun MainViewModel.register(
     viewModelScope.launch {
         authBusy = true
         registerError = null
+        // 앞선 로그아웃의 서버 뒷정리가 끝난 뒤에 보낸다 — 늦은 폐기가 이 세션을 죽이지 않게([awaitServerSignOutCleanup]).
+        awaitServerSignOutCleanup()
         val accountRequest = beginAccountRequest()
         runCatching {
             api.register(
@@ -338,7 +342,8 @@ internal fun MainViewModel.confirmPasswordReset(
     if (authBusy) return
     val normalizedEmail = email.trim().lowercase()
     if (normalizedEmail.isBlank() || code.trim().length != 6 || newPassword.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_register_all_fields_required)
+        // 재설정 화면이다 — 가입 문구("회원가입 정보를…")를 빌려 쓰지 않는다(2026-11-22, iOS 와 같은 말).
+        message = getApplication<android.app.Application>().getString(R.string.msg_reset_all_fields_required)
         return
     }
     viewModelScope.launch {
@@ -375,6 +380,8 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
     }
     viewModelScope.launch {
         authBusy = true
+        // 앞선 로그아웃의 서버 뒷정리가 끝난 뒤에 보낸다 — 늦은 폐기가 이 세션을 죽이지 않게([awaitServerSignOutCleanup]).
+        awaitServerSignOutCleanup()
         val accountRequest = beginAccountRequest()
         runCatching {
             api.loginGoogle(GoogleLoginRequest(idToken = idToken))
@@ -404,6 +411,8 @@ internal fun MainViewModel.finishKakaoLogin(accessToken: String) {
     }
     viewModelScope.launch {
         authBusy = true
+        // 앞선 로그아웃의 서버 뒷정리가 끝난 뒤에 보낸다 — 늦은 폐기가 이 세션을 죽이지 않게([awaitServerSignOutCleanup]).
+        awaitServerSignOutCleanup()
         val accountRequest = beginAccountRequest()
         runCatching {
             api.loginKakao(KakaoLoginRequest(accessToken = accessToken))
@@ -543,42 +552,61 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
     val shouldSignOutKakao = session?.provider == AuthSessionStore.PROVIDER_KAKAO
     viewModelScope.launch {
         authBusy = true
-        // ⚠ **위험 구간은 `clearSignedInSession` 보다 앞에서 열린다.** 아래 `api.logout` 이
-        // 서버 `token_epoch` 를 먼저 올리는 순간부터, 그때 떠 있던 워커 요청이 401 로
-        // 돌아온다 — 로컬 세대·토큰은 맨 마지막 `clear()` 까지 그대로라 두 문을 **정상적으로**
-        // 통과하고, 그러면 '자동 만료' 마커가 남아 곧 떼어낼 알람이 로그인 화면 뒤에서
-        // 되살아난다(거기서는 끌 수도 없다). 그래서 표시는 **서버를 부르기 전에** 세운다.
-        // 내리는 것은 `clearSignedInSession` 의 finally 가 한다 — 거듭 세워도 무해하다
-        // (시작 시각을 다시 적을 뿐이고, 창은 60초 뒤 스스로 닫힌다).
+        // ⚠ **표시는 서버를 부르기 전에 세운다.** 아래 `api.logout` 이 서버 `token_epoch` 를 올리는 순간부터 그때 떠 있던
+        // 워커 요청이 401 로 돌아온다 — 로컬 세대·토큰이 그대로면 두 문을 **정상적으로** 통과해 '자동 만료' 마커가 남고, 곧
+        // 떼어낼 알람이 로그인 화면 뒤에서 되살아난다(거기서는 끌 수도 없다). 내리는 것은 `clearSignedInSession` 의 finally
+        // 가 한다 — 거듭 세워도 무해하다(시작 시각을 다시 적을 뿐이고, 창은 60초 뒤 스스로 닫힌다).
         markSignOutInProgress()
-        // 서버에 로그아웃을 알려 token_epoch 를 올린다(남아있던 토큰 전부 401 TOKEN_REVOKED).
-        // 네트워크 실패가 로컬 로그아웃을 막지 않도록 best-effort 로 처리한다.
-        if (session != null) {
-            // token_epoch 를 올리기 전에(=세션 토큰 유효할 때) 이 기기 FCM 토큰을 서버에서 먼저 제거한다.
-            // 로그아웃한(또는 공유) 기기에 이 계정의 알람 push 가 계속 오는 것을 막는다.
-            runCatching {
-                com.alarmtalk.app.fcm.AlarmTalkMessagingService.unregisterCurrentToken(session.token)
-            }.onFailure { error -> Log.w(TAG, "FCM unregister on logout failed (continuing)", error) }
-            runCatching {
-                api.logout(com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token))
-            }.onFailure { error ->
-                Log.w(TAG, "Server logout failed (continuing local sign-out)", error)
-            }
-        }
-        if (shouldSignOutGoogle) {
-            runCatching {
-                signOutGoogle()
-            }.onFailure { error ->
-                Log.w(TAG, "Failed to sign out Google account", error)
-            }
-        }
-        if (shouldSignOutKakao) {
-            runCatching { signOutKakao() }.onFailure { error -> Log.w(TAG, "Failed to sign out Kakao account", error) }
-        }
-        // 알람 분리·기본 목소리 초기화·세션 클리어는 모든 종료 경로 공용(clearSignedInSession).
+        // ⚠ **로컬 세션을 먼저 비운다 — 화면이 곧바로 닫힌다**(2026-11-22 두 앱 통일 — iOS `AuthViewModel.signOutExplicitly`).
+        //   예전에는 푸시 해제·서버 로그아웃 왕복을 다 기다린 뒤에 비워, 느린 망에서는 로그아웃이 멈춘 것처럼 보였다.
+        //   비우면서 세대가 오른다 — 뒤에서 도는 폐기가 올린 `token_epoch` 로 돌아오는 워커의 401 은 세대 문에서 걸린다.
+        //   알람 분리·기본 목소리 초기화·세션 클리어는 모든 종료 경로 공용(clearSignedInSession).
         clearSignedInSession(departingUserId = session?.user?.id)
         authBusy = false
+        // 서버·로그인 공급자 뒷정리는 뒤에서 한다. 네트워크 실패가 로그아웃을 되돌리지 않는다(best-effort — 예전과 같다).
+        // 다음 로그인은 이 일이 끝난 뒤에 보낸다([awaitServerSignOutCleanup]).
+        val previous = serverSignOutCleanup
+        serverSignOutCleanup = viewModelScope.launch {
+            previous?.join()
+            // 구글·카카오 계정의 로그인 기억을 먼저 지운다 — 서버 왕복을 기다리지 않게(다음 로그인의 계정 고르기가 바로 뜬다).
+            if (shouldSignOutGoogle) {
+                runCatching {
+                    signOutGoogle()
+                }.onFailure { error ->
+                    Log.w(TAG, "Failed to sign out Google account", error)
+                }
+            }
+            if (shouldSignOutKakao) {
+                runCatching { signOutKakao() }.onFailure { error -> Log.w(TAG, "Failed to sign out Kakao account", error) }
+            }
+            if (session != null) {
+                // ⚠ **푸시 해제가 폐기보다 먼저다.** 폐기(token_epoch 상향)가 먼저면 해제가 401 로 죽어, 로그아웃한(또는
+                // 공유) 기기에 이 계정의 알람 push 가 계속 온다. 두 요청 모두 떠나는 세션의 토큰을 직접 싣는다.
+                runCatching {
+                    com.alarmtalk.app.fcm.AlarmTalkMessagingService.unregisterCurrentToken(session.token)
+                }.onFailure { error -> Log.w(TAG, "FCM unregister on logout failed (continuing)", error) }
+                // 서버에 로그아웃을 알려 token_epoch 를 올린다(남아있던 토큰 전부 401 TOKEN_REVOKED). 그 401 은 로컬 세션이
+                // 이미 비어 있어 처리기가 버린다(`handleUnauthorized`).
+                runCatching {
+                    api.logout(com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token))
+                }.onFailure { error ->
+                    Log.w(TAG, "Server logout failed (local sign-out already done)", error)
+                }
+            }
+        }
     }
+}
+
+/**
+ * 앞선 로그아웃의 **서버 뒷정리가 끝날 때까지** 기다린다 — 세션을 받는 요청(로그인·가입·구글·카카오)이 보내기 직전에 부른다.
+ *
+ * 로그아웃은 로컬 세션을 먼저 비우고 `/auth/logout` 을 뒤에서 보낸다([logout]). 그 요청이 처리되기 전에 **같은 계정으로**
+ * 다시 로그인하면, 늦게 도착한 폐기가 `token_epoch` 를 올려 방금 받은 세션이 401 로 죽는다(iOS `AuthViewModel` 의
+ * `serializeAuthServerMutation` 이 막는 사고). 기다렸다가 보내면 충분하다 — 로그아웃은 로그인한 동안에만 시작되므로, 로그인
+ * 요청이 날아가는 사이에 새 폐기가 끼어들 수 없다.
+ */
+internal suspend fun MainViewModel.awaitServerSignOutCleanup() {
+    serverSignOutCleanup?.join()
 }
 
 // 회원 탈퇴(유예) 신청 — 즉시 삭제 대신 POST /me/deletion 으로 30일 유예 상태로 둔다.

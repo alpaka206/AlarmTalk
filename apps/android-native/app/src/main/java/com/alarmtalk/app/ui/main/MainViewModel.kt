@@ -180,6 +180,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal var signingOut = false
 
     /**
+     * 로그아웃의 **서버 뒷정리**(푸시 해제 → 토큰 폐기, 구글·카카오 로그아웃). 로그아웃은 로컬 세션을 먼저 비우고 이 일을
+     * 뒤에서 한다(`logout`). 로그인은 이게 끝난 뒤에 요청을 보낸다([awaitServerSignOutCleanup]) — 늦게 처리된 `/auth/logout`
+     * 이 `token_epoch` 를 올리면 **방금 같은 계정으로 받은 세션이 죽는다**(iOS `AuthViewModel` 의 `authServerMutation` 과 같은 이유).
+     */
+    internal var serverSignOutCleanup: kotlinx.coroutines.Job? = null
+
+    /**
      * 저장소에만 반영된 세션 갱신을 메모리로 끌어온다.
      *
      * 백그라운드 워커는 `GET /auth/me` 로 받은 새 토큰을 **저장소에만** 쓴다. 이 ViewModel 은
@@ -842,6 +849,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 서버가 Play 구독을 직접 해지하지 못했을 때(PLAY_CANCEL_FAILED 등) 띄우는
     // "Google Play에서 직접 관리" 안내 다이얼로그의 구독 관리 URL. null 이면 숨김.
     var billingPlayManageUrl by mutableStateOf<String?>(null)
+    // 해지가 App Store 구독이라 거절됐다(`STORE_CANCEL_UNSUPPORTED`) — "아이폰의 App Store 구독에서 해지" 알럿(`AppStoreCancelNoticeDialog`).
+    var billingAppStoreCancelNoticeOpen by mutableStateOf(false)
+    // 결제 직전 조회에서 다른 스토어가 갱신을 쥐고 있었다 — 결제를 열지 않고 알럿으로 말한다(`CrossStoreRenewalBlockDialog`).
+    var billingCrossStoreBlockOpen by mutableStateOf(false)
 
     // planKey("personal") → Play 실제 표시가격(formattedPrice). preloadProducts
     // 성공 시 채워지며, 비면 UI 가 문자열 리소스로 폴백한다. 하드코딩 대신 청구 통화·금액을 정확히 표기.
@@ -1613,6 +1624,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         storeEntitlementUntilMillis = null
         storeEntitlementChecked = false
         billingPlayManageUrl = null
+        billingAppStoreCancelNoticeOpen = false
+        billingCrossStoreBlockOpen = false
         registerEmailVerificationSentTo = null
         registerEmailVerified = null
         // 세션이 비워지는 모든 경로(로그아웃/만료/탈퇴)에서 동의 게이트 상태도 함께 초기화한다.
@@ -1740,18 +1753,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         // BillingClient 연결 + 상품 정보 선로드 — 이용권 패널의 구매 시트가 즉시 뜨게 한다.
-        viewModelScope.launch {
-            runCatching { playBilling.preloadProducts() }
-                .onSuccess {
-                    billingPlanPrices = listOf("personal")
-                        .mapNotNull { key -> playBilling.formattedPriceForPlan(key)?.let { key to it } }
-                        .toMap()
-                    billingPlanTrials = listOf("personal")
-                        .mapNotNull { key -> playBilling.freeTrialPeriodForPlan(key)?.let { key to it } }
-                        .toMap()
-                }
-                .onFailure { error -> Log.w(TAG, "Failed to preload Play products", error) }
-        }
+        // 이용권 화면에 들어올 때도 다시 받는다(`reloadPlayProducts` 주석).
+        reloadPlayProducts()
         // **앱에 들어올 때마다**(콜드 스타트·백그라운드에서 복귀) `/auth/me` 를 새로 받는다.
         // 예전에는 콜드 스타트에 한 번만 불렀다 — 그 자리를 이것이 대신한다(StateFlow 라 이미
         // 들어와 있는 진입도 곧바로 한 번 받는다. 진입 전(0)이면 첫 ON_START 를 기다린다).

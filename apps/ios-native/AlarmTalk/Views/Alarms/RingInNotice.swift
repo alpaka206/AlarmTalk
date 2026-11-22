@@ -241,17 +241,20 @@ struct RingInNoticeHost: View {
 // MARK: - 하단 탭 위에 떠 있는 것들의 자리
 
 /// ＋FAB(`MainTabsView`)와 켜면 뜨는 안내(`RingInNoticeHost`)가 **같은 값**을 본다 — 한쪽만 옮기면 안내가 FAB 에 겹친다.
+///
+/// ＋FAB 자리는 안드로이드 `Scaffold` 의 기본 자리와 같다 — **오른쪽 16 · 하단바 위 16**(2026-11-22 두 앱 통일. 그전 iOS 는
+/// 오른쪽 20 · 하단바 위 22 였다).
 enum FloatingChrome {
-    /// 하단바 위로 띄우는 아래 여백 — ＋FAB 의 아래 끝이다.
-    static let bottomInset: CGFloat = 92
+    /// ＋FAB 의 아래 끝 — 탭 화면 맨 아래(하단바 아래 끝)에서 잰다. 하단바 높이 + 16 이라 하단바 위 16 이다.
+    static let bottomInset: CGFloat = BottomNavBar.height + 16
     /// ＋FAB 의 지름.
     static let fabSize: CGFloat = 56
     /// ＋FAB 의 오른쪽 여백.
-    static let fabTrailingInset: CGFloat = 20
+    static let fabTrailingInset: CGFloat = 16
     /// 안내의 아래 여백 — ＋FAB **위**(사이 12)다.
     ///
     /// ⚠ **FAB 와 같은 띠에 두지 말 것.** 가운데 정렬을 지키려면 양옆을 FAB 폭만큼 똑같이 비워야 해서 쓸 폭이 반쯤 준다
-    /// (402pt 기기 226pt · 375pt 기기 199pt). 글자만 재도(Pretendard Medium 14, 2026-11-09) 영어
+    /// (402pt 기기 234pt · 375pt 기기 207pt). 글자만 재도(Pretendard Medium 14, 2026-11-09) 영어
     /// "Rings in 9 hours 21 minutes." 가 178pt, 일본어 "9時間21分後に鳴ります。" 가 150pt 다 — 아이콘·여백(약 65pt)을 더하면
     /// 402pt 에서 영어가, 375pt 에서는 일본어도 두 줄로 꺾인다. 안내를 띄우는 두 자리(저장 뒤 목록·목록의 켜기)에는 언제나 FAB 가
     /// 있다 — 떠 있는 사이 다른 탭으로 옮겨도 남은 몇 초는 자리를 옮기지 않는다(뛰지 않게).

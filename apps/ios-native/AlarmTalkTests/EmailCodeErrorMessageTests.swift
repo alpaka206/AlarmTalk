@@ -19,7 +19,7 @@ final class EmailCodeErrorMessageTests: XCTestCase {
     private let mismatch = "맞지 않아요"
     private let verifyFallback = APIErrorMessages.temporaryFailure
     private let registerFallback = "회원가입에 실패했어요"
-    private let resetFallback = "비밀번호 재설정에 실패했어요"
+    private let resetFallback = "비밀번호 재설정에 실패했어요."
     private let sendFallback = "인증 코드를 보내지 못했어요"
 
     private func refusal(_ status: Int, _ code: String) -> APIError {

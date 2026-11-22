@@ -50,7 +50,7 @@ enum APIErrorMessages {
 
         // ── 로그인·계정 ───────────────────────────────────────────────────
         case "AUTH_INVALID_CREDENTIALS":
-            return String(localized: "이메일 또는 비밀번호를 확인해 주세요.")
+            return String(localized: "이메일 또는 비밀번호가 맞지 않아요.")
         // 로그인 바디에서 **이메일만** 형식에 안 맞을 때. 예전에는 이것도
         // `AUTH_VALIDATION_FAILED` 로 뭉뚱그려 와서 "로그인에 실패했어요" 로 읽혔고,
         // 사용자는 멀쩡한 비밀번호를 계속 다시 쳤다.
@@ -93,8 +93,9 @@ enum APIErrorMessages {
         // ⚠ 앱이 먼저 막지만 그 판정은 **캐시된 스냅샷**이라, 다른 기기에서 방금 Play
         //   구독을 시작한 경우를 못 본다 — 서버가 확정 시점에 한 번 더 보고 이 코드로
         //   거절한다. 사용자가 할 수 있는 일이 분명하므로 그것을 말한다.
+        //   문장은 안드로이드 `msg_cross_store_renewal_active` 와 같고 스토어 이름만 반대다(띄어쓰기 "Google Play에서" — 2026-11-22).
         case "CROSS_STORE_RENEWAL_ACTIVE":
-            return String(localized: "이 계정은 Google Play 에서 결제 중이에요. Play 스토어 → 구독에서 먼저 해지한 뒤 다시 시도해 주세요.")
+            return String(localized: "이 계정은 Google Play에서 결제 중이에요. Google Play 구독에서 먼저 해지한 뒤 다시 시도해 주세요.")
 
         // ── 목소리 ────────────────────────────────────────────────────────
         case "VOICE_CLONE_AUDIO_TOO_SHORT":
@@ -109,7 +110,7 @@ enum APIErrorMessages {
         case "INVALID_DURATION":
             return String(localized: "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요.")
         case "INVALID_AUDIO_MIME_TYPE":
-            return String(localized: "지원하지 않는 오디오 형식이에요. 다시 녹음해 주세요.")
+            return String(localized: "지원하지 않는 오디오 형식이에요. 다른 파일로 다시 시도해 주세요.")
         case "VOICE_SLOT_EXHAUSTED", "VOICE_CAPACITY_EXHAUSTED":
             return String(localized: "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요.")
         case "VOICE_LIMIT_REACHED":

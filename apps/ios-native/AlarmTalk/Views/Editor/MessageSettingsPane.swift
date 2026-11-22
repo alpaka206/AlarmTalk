@@ -93,11 +93,13 @@ struct MessageSettingsPane: View {
     @State private var draftFortuneBirthDate: String = ""
     @State private var draftFortuneBirthTime: String = ""
 
-    /// 「사주 정보」 시트 안에서만 쓰는 임시 값. '확인' 을 눌러야 `draftFortune*` 로 간다.
+    /// 「사주 정보」 시트 안에서만 쓰는 임시 값. '저장' 을 눌러야(셋이 다 찼을 때) `draftFortune*` 로 간다.
     /// ⚠ 아래 「직접 입력」 알럿과 **같은 이유**로 있다 — 직접 바인딩하면 취소가 취소가 아니다.
     @State private var fortuneSheetGender: String = ""
     @State private var fortuneSheetBirthDate: String = ""
     @State private var fortuneSheetBirthTime: String = ""
+    /// 「사주 정보」 시트에서 '저장' 을 한 번 눌렀나 — 그 뒤로 빈 칸 제목이 빨갛게 "· 필수 입력" 을 단다(설정 화면의 같은 폼과 같다).
+    @State private var fortuneSubmitted = false
 
     @State private var weatherDialogOpen = false
     @State private var fortuneDialogOpen = false
@@ -128,15 +130,19 @@ struct MessageSettingsPane: View {
     @ViewBuilder
     private func lockedManualRow(label: String) -> some View {
         Button(action: onManualLocked) {
-            HStack(spacing: 10) {
+            // 자물쇠는 **고른 표시 자리(글자 왼쪽)** 다 — 안드로이드 `SnoozeLockedRow`(자물쇠 24 → 12 → 글자, 좌우 14 · 최소 56)와
+            // 같다. 2026-11-22 전 iOS 만 자물쇠가 글자 오른쪽 끝이라, 같은 목록에서 이 행만 표시 자리가 반대였다.
+            HStack(spacing: RadioRow.markSpacing) {
+                // ⚠ 라디오 점보다 크게 둔다(2026-08-15 지시). 안드로이드 `SnoozeLockedRow` 와 같은 값.
+                FeatureLockBadge(size: 24, iconSize: 14)
                 Text(label)
                     .font(theme.typography.bodyLarge)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
-                Spacer()
-                // ⚠ 라디오 점보다 크게 둔다(2026-08-15 지시). 안드로이드 `SnoozeLockedRow` 와 같은 값.
-                FeatureLockBadge(size: 24, iconSize: 14)
+                Spacer(minLength: 8)
             }
-            .frame(minHeight: 52)
+            .padding(.horizontal, RadioRow.horizontalPadding)
+            .padding(.vertical, 8)
+            .frame(minHeight: 56)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -156,9 +162,11 @@ struct MessageSettingsPane: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    EditorCard(verticalPadding: 0) {
+                    // 목록 카드 = 안드로이드 `SnoozeOptionSection` — 반경 18(`WakerPanelShape`), 좌우 여백은 행이 갖는다(14),
+                    // 구분선은 글자 시작선(44)부터 카드 끝까지(2026-11-22 전 iOS 는 반경 22 · 카드 좌우 16 · 구분선 카드 안쪽 폭).
+                    EditorCard(verticalPadding: 0, horizontalPadding: 0, cornerRadius: theme.shapes.medium) {
                         ForEach(Array(visibleOptions.enumerated()), id: \.element.id) { index, option in
-                            if index > 0 { AlarmSettingDivider() }
+                            if index > 0 { AlarmSettingDivider(leadingInset: RadioRow.textInset) }
                             if option.id == MessageSettingsResult.manualContext, manualLocked {
                                 lockedManualRow(label: option.label)
                             } else {
@@ -174,7 +182,9 @@ struct MessageSettingsPane: View {
                     cheerVarietyCard
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                // 상단바 → 첫 카드 24 — 안드로이드 `WakerTopBar` 의 아래 간격(`WakerTopBarBottomGap`)과 같다(2026-11-22 전 16).
+                .padding(.top, 24)
+                .padding(.bottom, 16)
             }
             // ⚠ **입력창 밖을 눌러 키보드를 닫을 길을 둔다.** iOS 는 바깥 탭으로 키보드가
             // 자동으로 닫히지 않아서, 없으면 키보드가 화면 절반을 가린 채 버튼에 닿지 못한다
@@ -237,47 +247,28 @@ struct MessageSettingsPane: View {
         }
         // ⚠ **`$draftFortune*` 에 직접 바인딩하지 말 것.** 아래 「직접 입력」 알럿과 같은
         // 이유다 — 직접 바인딩하면 타이핑이 곧바로 화면 draft 에 반영돼 **취소가 취소가
-        // 아니게 된다.** 시트 전용 상태에 받아 '확인' 에서만 대입한다.
+        // 아니게 된다.** 시트 전용 상태에 받아 '저장' 에서만 대입한다.
         // (2026-08-18 전에는 여기만 직접 바인딩이었다. 스와이프로 닫아도 값이 남았다.)
-        .sheet(isPresented: $fortuneDialogOpen, onDismiss: { cancelContextSelection() }) {
-            NavigationStack {
-                ScrollView {
-                    FortunePromptInputFields(
-                        gender: $fortuneSheetGender,
-                        birthDate: $fortuneSheetBirthDate,
-                        birthTime: $fortuneSheetBirthTime
-                    )
-                    .padding(20)
-                }
-                .homeGradientBackground()
-                .navigationTitle(String(localized: "운세 정보"))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button(String(localized: "취소")) { fortuneDialogOpen = false }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(String(localized: "확인")) {
-                            draftFortuneGender = fortuneSheetGender
-                            draftFortuneBirthDate = fortuneSheetBirthDate
-                            draftFortuneBirthTime = fortuneSheetBirthTime
-                            contextBeforeDialog = nil
-                            fortuneDialogOpen = false
-                        }
-                        // ⚠ **셋을 다 본다** — 서버 `fortune_ready` 와 같은 선이다
-                        // (`needsInput(for:)` 주석). 생년월일만 보면 저장은 되는데
-                        // 울릴 때 운세 문구가 안 나온다.
-                        .disabled(
-                            !FortunePromptInputFormat.isComplete(
-                                gender: fortuneSheetGender,
-                                birthDate: fortuneSheetBirthDate,
-                                birthTime: fortuneSheetBirthTime
-                            )
-                        )
-                    }
-                }
-            }
-            .presentationDetents([.medium, .large])
+        //
+        // ⚠ **설정 화면의 운세 폼과 같은 껍데기다**(`formSheet` — 2026-11-22 두 앱 통일). 취소 · 제목 · 저장이 위에 있고,
+        //   저장은 **언제나 눌린다** — 누르면 빈 칸 제목이 빨갛게 "· 필수 입력" 을 단다(안드로이드 `FortuneInfoDialog` 와 같다).
+        //   처음부터 내용 높이만큼 연다. 예전에는 시스템 시트를 반쪽(.medium)으로 열고, 셋이 다 차기 전에는 '확인' 이 꺼져
+        //   왜 못 누르는지 말하지 않았다.
+        .formSheet(
+            isPresented: $fortuneDialogOpen,
+            title: String(localized: "운세 정보"),
+            onCancel: {
+                fortuneDialogOpen = false
+                cancelContextSelection()
+            },
+            onSave: { saveFortuneSheet() }
+        ) {
+            FortunePromptInputFields(
+                gender: $fortuneSheetGender,
+                birthDate: $fortuneSheetBirthDate,
+                birthTime: $fortuneSheetBirthTime,
+                submitted: fortuneSubmitted
+            )
         }
         // ⚠ **`$draftManualText` 에 직접 바인딩하지 말 것.** 그러면 타이핑이 곧바로
         // 화면 draft 에 반영돼 **'취소' 가 취소가 아니게 된다**(두 버튼 body 가 비어
@@ -362,15 +353,20 @@ struct MessageSettingsPane: View {
             // ⚠ **문구를 반드시 함께 보여준다.** 생성형은 내용이 매번 새로 만들어져 틀릴
             // 일이 없지만 직접 입력은 글자가 그대로다 — 안 보이면 어제 문구를 물고 온
             // 새 알람을 알아챌 방법이 없다.
-            PromptDetailCard(
-                title: String(localized: "문구"),
-                value: draftManualText.isEmpty ? String(localized: "아직 입력하지 않았어요") : draftManualText,
-                // 언제나 눌린다 — 더 만들 길이 없으면 열린 창이 말한다(`manualCreationAvailable`).
-                onChange: {
-                    contextBeforeDialog = nil
-                    manualDialogOpen = true
-                }
-            )
+            // 문구가 비면 카드를 그리지 않는다 — 안드로이드 `RandomPromptSettingsPane` 과 같다(`isManual && draftManualText.isNotBlank()`).
+            // 빈 직접 입력은 고르는 순간 입력창이 뜨고(`select(_:)`), 취소하면 종류가 되돌아가 이 자리에 오지 않는다.
+            if !draftManualText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                PromptDetailCard(
+                    // 제목은 '직접 입력 문구' — 안드로이드 `editorp_random_manual_title` 과 같은 말이다(2026-11-22 전 iOS 는 '문구').
+                    title: String(localized: "직접 입력 문구"),
+                    value: draftManualText,
+                    // 언제나 눌린다 — 더 만들 길이 없으면 열린 창이 말한다(`manualCreationAvailable`).
+                    onChange: {
+                        contextBeforeDialog = nil
+                        manualDialogOpen = true
+                    }
+                )
+            }
         default:
             EmptyView()
         }
@@ -385,11 +381,12 @@ struct MessageSettingsPane: View {
         if draftContext == RandomPromptContext.cheer.rawValue, !cheerPhrases.isEmpty {
             VStack(alignment: .leading, spacing: 16) {
                 EditorSectionTitle(text: "응원 문구")
-                EditorCard(verticalPadding: 0) {
+                // 위 목록 카드와 같은 껍데기(반경 18 · 행이 좌우 14 · 구분선은 글자 시작선부터).
+                EditorCard(verticalPadding: 0, horizontalPadding: 0, cornerRadius: theme.shapes.medium) {
                     RadioRow(label: String(localized: "다양하게"), selected: draftCheerMode == .vary) {
                         draftCheerMode = .vary
                     }
-                    AlarmSettingDivider()
+                    AlarmSettingDivider(leadingInset: RadioRow.textInset)
                     RadioRow(label: String(localized: "이 문구로 고정"), selected: draftCheerMode == .pinned) {
                         draftCheerMode = .pinned
                         // 고정할 문구가 아직 없으면 첫 문구를 고른 채로 연다 — 빈 고정은 없다.
@@ -405,9 +402,9 @@ struct MessageSettingsPane: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .padding(.horizontal, 4)
                 if draftCheerMode == .pinned {
-                    EditorCard(verticalPadding: 0) {
+                    EditorCard(verticalPadding: 0, horizontalPadding: 0, cornerRadius: theme.shapes.medium) {
                         ForEach(Array(cheerPhrases.enumerated()), id: \.element.id) { index, phrase in
-                            if index > 0 { AlarmSettingDivider() }
+                            if index > 0 { AlarmSettingDivider(leadingInset: RadioRow.textInset) }
                             RadioRow(label: phrase.text, selected: draftCheerPinned == phrase.contentId) {
                                 draftCheerPinned = phrase.contentId
                             }
@@ -494,7 +491,26 @@ struct MessageSettingsPane: View {
         fortuneSheetGender = draftFortuneGender
         fortuneSheetBirthDate = draftFortuneBirthDate
         fortuneSheetBirthTime = draftFortuneBirthTime
+        fortuneSubmitted = false
         fortuneDialogOpen = true
+    }
+
+    /// 「사주 정보」 시트의 '저장'. 빈 칸이 있으면 **닫지 않고** 어느 칸이 비었는지 보여 준다(설정 화면 `saveFortuneDraft` 와 같다).
+    ///
+    /// ⚠ **셋을 다 본다** — 서버 `fortune_ready` 와 같은 선이다(`needsInput(for:)` 주석). 생년월일만 보면 저장은 되는데
+    /// 울릴 때 운세 문구가 안 나온다.
+    private func saveFortuneSheet() {
+        fortuneSubmitted = true
+        guard FortunePromptInputFormat.isComplete(
+            gender: fortuneSheetGender,
+            birthDate: fortuneSheetBirthDate,
+            birthTime: fortuneSheetBirthTime
+        ) else { return }
+        draftFortuneGender = fortuneSheetGender
+        draftFortuneBirthDate = fortuneSheetBirthDate
+        draftFortuneBirthTime = fortuneSheetBirthTime
+        contextBeforeDialog = nil
+        fortuneDialogOpen = false
     }
 
     private func rowLabel(_ option: (id: String, label: String)) -> String {
@@ -512,25 +528,31 @@ struct MessageSettingsPane: View {
     /// ⚠ **지역 이름만 보인다 — 나라를 붙이지 말 것**(저장은 나라+도시 둘 다, 화면은 지역 이름).
     /// 여기만 "대한민국 · 서울" 이면 같은 값이 두 이름을 갖는다 — 설정 행
     /// (`SettingsView.weatherLocationLabel`)과 문구 요약도 `WeatherRegions.displayName` 하나를 쓴다.
+    /// 빈 값은 "아직 고르지 않았어요" — 안드로이드 `editorp_random_weather_region_required` 와 같은 말이다(지역은 목록에서 고른다).
     private var weatherSummary: String {
         WeatherRegions.displayName(country: draftWeatherCountry, city: draftWeatherCity)
-            ?? String(localized: "아직 정하지 않았어요")
+            ?? String(localized: "아직 고르지 않았어요")
     }
 
+    /// "남성 · 1990-01-01 · 07:31~09:30" — **성별 · 날짜 · 시간** 순이고, **셋이 다 있을 때만** 요약한다. 하나라도 비면
+    /// "아직 입력하지 않았어요" 다. 안드로이드 `fortuneInfoSummary`(같은 순서)와 그 호출부의 판정과 같다(2026-11-22 전 iOS 는
+    /// 날짜 · 시간 · 성별 순이었고, 날짜만 있어도 요약했다 — 그 상태로는 운세가 울리지 않는데 다 넣은 것처럼 보였다).
+    /// 완성 판정은 `needsInput(for:)` 와 같은 `isComplete` 다 — 요약과 입력창이 같은 선을 본다.
     private var fortuneSummary: String {
-        let date = draftFortuneBirthDate.trimmingCharacters(in: .whitespaces)
-        guard !date.isEmpty else { return String(localized: "아직 정하지 않았어요") }
-        var parts = [date]
-        let time = draftFortuneBirthTime.trimmingCharacters(in: .whitespaces)
-        if !time.isEmpty { parts.append(FortunePromptInputFormat.displayLabel(time)) }
-        let gender = draftFortuneGender.trimmingCharacters(in: .whitespaces)
+        guard FortunePromptInputFormat.isComplete(
+            gender: draftFortuneGender,
+            birthDate: draftFortuneBirthDate,
+            birthTime: draftFortuneBirthTime
+        ) else { return String(localized: "아직 입력하지 않았어요") }
         // ⚠ **`"male"` 과 비교하지 말 것 — 저장값은 `"남성"`/`"여성"` 이다.**
         // 그렇게 비교하던 시절에는 조건이 절대 참이 되지 않아 **남성을 고른 사람에게도
         // 요약이 "여성" 으로** 떴다. 값 계약의 단일 출처는 `FortunePromptInputFormat` 이고,
         // 정규화를 거치면 옛 표기("male"·"M"·"남" 등)도 올바르게 풀린다.
-        let normalizedGender = FortunePromptInputFormat.normalizedGender(gender)
-        if !normalizedGender.isEmpty { parts.append(FortunePromptInputFormat.displayLabel(normalizedGender)) }
-        return parts.joined(separator: " · ")
+        return [
+            FortunePromptInputFormat.displayLabel(FortunePromptInputFormat.normalizedGender(draftFortuneGender)),
+            FortunePromptInputFormat.normalizedBirthDate(draftFortuneBirthDate),
+            FortunePromptInputFormat.displayLabel(FortunePromptInputFormat.normalizedBirthTime(draftFortuneBirthTime)),
+        ].joined(separator: " · ")
     }
 
     // ⚠ **`saveEnabled` 를 되살리지 말 것**(2026-08-18 삭제). 이 화면에는 [취소][저장] 바가

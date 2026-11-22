@@ -138,13 +138,41 @@ final class SubscriptionManagerTests: XCTestCase {
     func testPurchaseResultUserMessageNotEmpty() {
         let cases: [PurchaseResult] = [
             .success(productID: "com.example"),
-            .userCancelled,
             .pending,
             .failure(reason: "network down"),
         ]
         for result in cases {
-            XCTAssertFalse(result.userMessage.isEmpty, "user message must not be empty: \(result)")
+            XCTAssertFalse((result.userMessage ?? "").isEmpty, "user message must not be empty: \(result)")
         }
+    }
+
+    /// 사용자가 결제 시트를 닫았으면 **아무 말도 하지 않는다**(안드로이드 `onPurchaseFailed(null)` 과 같다).
+    func testPurchaseResultSaysNothingWhenUserCancels() {
+        XCTAssertNil(PurchaseResult.userCancelled.userMessage)
+    }
+
+    /// 완료·보류 문장은 안드로이드 결제 결과와 같은 말이다(`msg_gb_plan_applied`·`r3misc_billing_purchase_pending`).
+    func testPurchaseResultMessagesMatchAndroidCopy() {
+        XCTAssertEqual(PurchaseResult.success(productID: "x").userMessage, String(localized: "이용권을 적용했어요"))
+        XCTAssertEqual(
+            PurchaseResult.pending.userMessage,
+            String(localized: "결제가 보류 중이에요. 결제 수단 승인이 끝나면 자동으로 적용돼요.")
+        )
+    }
+
+    /// 복원은 **서버가 확인한 결과**를 말한다 — 스토어의 개수로 '복원했다' 고 하지 않는다. Apple ID 창을 닫았으면 말하지 않는다.
+    func testRestoreResultMessages() {
+        XCTAssertEqual(RestoreResult.restored.userMessage, String(localized: "이용권을 적용했어요"))
+        XCTAssertEqual(
+            RestoreResult.nothingToRestore.userMessage,
+            String(localized: "복원할 구매가 없어요. 스토어 계정을 확인해 주세요.")
+        )
+        XCTAssertNil(RestoreResult.cancelled.userMessage)
+        XCTAssertEqual(RestoreResult.failure(reason: "이유").userMessage, "이유")
+        XCTAssertTrue(RestoreResult.restored.isSuccess)
+        XCTAssertTrue(RestoreResult.nothingToRestore.isSuccess)
+        XCTAssertFalse(RestoreResult.cancelled.isSuccess)
+        XCTAssertFalse(RestoreResult.failure(reason: "이유").isSuccess)
     }
 
 }

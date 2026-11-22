@@ -805,7 +805,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
 
         // 자리 — 녹음 카드 **바로** 아래(힌트·예시 대본보다 앞), 파일 고르기 **바로** 아래.
         let source = try AppSourceText.region(
-            of: flow, from: "private var sourceSection: some View {", to: "private var scriptSection: some View {"
+            of: flow, from: "private var sourceSection: some View {", to: "private func scriptSection(fillsHeight: Bool) -> some View {"
         )
         func lineAfter(_ anchor: String) throws -> Substring {
             let end = try XCTUnwrap(source.range(of: anchor), "음원 준비 단계에서 못 찾았다: \(anchor)").upperBound
@@ -824,7 +824,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let started = try XCTUnwrap(onRecord.range(of: "await voice.startRecording()"), "녹음 버튼이 녹음을 시작하지 않는다")
         let clearedOnRecord = try XCTUnwrap(onRecord.range(of: "rerecordReason = nil"), "녹음을 다시 시작해도 이유가 남는다")
         XCTAssertLessThan(started.lowerBound, clearedOnRecord.lowerBound, "녹음을 시작하기도 전에 이유를 걷는다")
-        let imported = try AppSourceText.region(of: flow, from: "private func importAudioFile(", to: "} catch {")
+        let imported = try AppSourceText.region(of: flow, from: "private func importAudioFile(", to: "private func preparedFileAudio(")
         XCTAssertTrue(imported.contains("rerecordReason = nil"), "파일을 새로 가져와도 이유가 남는다")
         let modeChange = try AppSourceText.region(of: flow, from: ".onChange(of: sourceMode)", to: "private func goBack()")
         XCTAssertTrue(modeChange.contains("rerecordReason = nil"), "녹음·파일 방식을 바꿔도 이유가 남는다")

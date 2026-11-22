@@ -90,7 +90,11 @@ class VoiceRegistrationFailureWiringTest {
             1,
             Regex("""onDiscardVoiceDraftQuietly\(""").findAll(panel).count(),
         )
-        assertTrue(panel.contains("onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } }"))
+        // `다시 만들기` 는 사용자가 누른 삭제 길 그대로다 — 지우기 전에 '다시 만들기로 지운다' 를 적을 뿐이다
+        // (`theRemakeGoesBackToTheSourceStepInsteadOfClosing`).
+        assertTrue(
+            Regex("""confirmNewVoice\?\.let \{\s*remakeDraftId = it\.id\s*onDeleteVoiceDraft\(it\.id\)\s*\}""").containsMatchIn(panel),
+        )
         assertTrue(functionBody(panel, "if (draftExitWarningOpen)").contains("exitDraftId?.let(onDeleteVoiceDraft)"))
 
         // 앱이 조용한 길을 뷰모델의 조용한 삭제에 잇고, 목록 화면이 패널에 그대로 넘긴다.
@@ -203,6 +207,31 @@ class VoiceRegistrationFailureWiringTest {
         val reset = effect.indexOf("promotedForPrerenderId = null")
         assertTrue("저장 실패에서 '저장을 보냈다' 표시를 내리지 않는다.", reset >= 0)
         assertTrue("갈래를 가르기 전에 내려야 한다 — 어느 갈래로 가든 저장은 끝났다.", reset < effect.indexOf("when ("))
+    }
+
+    @Test
+    fun theRemakeGoesBackToTheSourceStepInsteadOfClosing() {
+        // 스펙 voice-and-message §4-1: 확인 스텝에서 `다시 만들기` 를 고르면 처음부터 다시 녹음한다(iOS 는 새 등록 흐름을 띄운다 —
+        // `VoicesPanelView` 의 `onDiscarded`). 2026-11-22 전 안드로이드는 초안이 지워지면 창을 닫아, 다시 만들려면 목록에서
+        // `추가` 부터 다시 눌러야 했다.
+        val draftGone = functionBody(panel, "LaunchedEffect(pendingVoiceDraft?.id, pendingVoiceDraft?.status)")
+        assertTrue(draftGone.contains("val remakeRequested = remakeDraftId != null && remakeDraftId == confirmNewVoice?.id"))
+        assertTrue(
+            "`다시 만들기` 로 지운 초안이 창을 닫는다 — 음원 준비로 돌아가야 한다.",
+            draftGone.contains("if (remakeRequested) restartRegistrationFromSource() else closeCreateDialog()"),
+        )
+        // 다시 여는 것은 닫았다 연 것과 같다 — 폼을 비우고, 창은 열린 채로 뷰모델에 다시 알린다(안 알리면 그 뒤의 등록 거절이
+        // 열린 창 대신 스낵바로 간다 — `registrationFailureSurface`).
+        val restart = functionBody(panel, "fun restartRegistrationFromSource()")
+        val close = restart.indexOf("closeCreateDialog()")
+        val reopen = restart.indexOf("showCreateForm = true")
+        val notify = restart.indexOf("onRegistrationWindowOpenChange(true)")
+        assertTrue("다시 만들기가 폼을 비운 뒤 창을 다시 열고 알리지 않는다.", close >= 0 && reopen > close && notify > reopen)
+        // 표시는 남지 않는다 — 삭제가 실패하면(거절 효과, 갈래를 가르기 전에) 그리고 창을 닫으면 내린다. 남으면 나중에 다른 이유로
+        // 사라진 초안(나가기 경고·서버 정리)이 창을 닫는 대신 음원 준비로 돌아간다.
+        val effect = functionBody(panel, "LaunchedEffect(voiceRegistrationFailure)")
+        assertTrue(effect.indexOf("remakeDraftId = null") in 0 until effect.indexOf("when ("))
+        assertTrue(functionBody(panel, "fun closeCreateDialog()").contains("remakeDraftId = null"))
     }
 
     @Test

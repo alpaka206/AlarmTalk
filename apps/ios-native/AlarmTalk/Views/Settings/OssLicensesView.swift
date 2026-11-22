@@ -60,18 +60,26 @@ struct OssLicensesView: View {
     ]
 
     var body: some View {
-        List(Self.libraries) { library in
-            NavigationLink {
-                LicenseTextView(title: library.name, licenseName: library.license.displayName, resourceName: library.license.resourceName)
-            } label: {
-                Text(library.name)
-                    .font(theme.typography.bodyLarge)
-                    .foregroundStyle(theme.palette.onSurface)
-                    .frame(height: 56 - 22, alignment: .leading)
+        // 안드로이드 `OssLicensesScreen` 과 같은 **미니멀 목록**이다 — 구분선·꺾쇠 없이 높이 56·좌우 24 인 글자 행만 둔다.
+        // 시스템 `List` 는 행마다 구분선과 꺾쇠를 그려 두 앱이 다른 화면처럼 보였다. 위 24 는 하위 화면 공통 간격이다.
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Self.libraries) { library in
+                    NavigationLink {
+                        LicenseTextView(title: library.name, licenseName: library.license.displayName, resourceName: library.license.resourceName)
+                    } label: {
+                        Text(library.name)
+                            .font(theme.typography.bodyLarge)
+                            .foregroundStyle(theme.palette.onSurface)
+                            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                            .padding(.horizontal, 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressScaleButtonStyle())
+                }
             }
-            .listRowBackground(Color.clear)
+            .padding(.top, 24)
         }
-        .listStyle(.plain)
         .homeGradientBackground()
         .navigationTitle(String(localized: "오픈소스 라이선스"))
         .navigationBarTitleDisplayMode(.inline)
@@ -105,6 +113,8 @@ private struct LicenseTextView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
             .padding(.vertical, 8)
+            // 하위 화면 공통 — 네비게이션 바 아래 24(안드로이드 상단바 아래 간격과 같다). 그 안의 위 8 은 안드로이드 본문 여백 그대로다.
+            .padding(.top, 24)
         }
         .homeGradientBackground()
         .navigationTitle(title)

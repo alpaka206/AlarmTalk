@@ -80,12 +80,13 @@ internal fun SettingsRow(
             // 두면 값이 길 때 라벨이 밀려 "운세 / 정보" 처럼 두 줄로 접혔다 — 접혀야 할 쪽은
             // 항상 값이다. 값이 없는 행(로그아웃 등)은 Spacer 가 그 자리를 대신 채워
             // 오른쪽 셰브론이 늘 같은 자리에 온다.
+            // ⚠ 라벨 자체가 행보다 길면(큰 글씨·긴 번역) **줄을 바꾼다**(2026-11-22 두 앱 통일 — iOS `SettingsValueButton` 도
+            // 라벨 줄 수를 막지 않는다). 예전의 한 줄 제한은 말줄임표 없이 글자 중간을 잘랐다.
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
             )
             if (value != null) {
                 Text(

@@ -101,30 +101,12 @@ struct AlarmEditorSheet: View {
     /// 바로 붙게 해줘"). 저장·문구 종류가 연 준비 페이지는 닫기만 한다. 안드로이드 `preparationAppliesVoice` 와 같다.
     @State var preparationPendingVoiceOption: VoiceSelectionSheet.Option?
 
-    /// 타입 체커가 body 안에서 인라인 바인딩을 만나면 시간 초과가 나서 밖으로 뺐다.
-    private var preparationSheetPresented: Binding<Bool> {
-        Binding(
-            get: { preparationVoiceID != nil },
-            set: { if !$0 { preparationVoiceID = nil; preparationPendingVoiceOption = nil } }
-        )
+    /// 준비 창을 손으로 닫는다('백그라운드에서 계속'·'닫기'·바깥 탭) — 고른 목소리를 붙이지 않는다(지금 목소리가 그대로 남는다).
+    private func dismissClipPreparation() {
+        preparationVoiceID = nil
+        preparationPendingVoiceOption = nil
     }
 
-    @ViewBuilder
-    private var preparationSheet: some View {
-        // ⚠ `targetVoiceID` 를 반드시 넘긴다 — 안 넘기면 준비 화면이 앱의 매니페스트에 그 목소리가
-        // 실리기 전에 끝났다고 보고 저절로 닫혀, 돌아가면 관문이 또 막는다(2026-08-18 · 2026-11-15 저절로 닫힘).
-        ClipPreparationView(
-            // 손으로 닫으면('백그라운드에서 계속') 고른 목소리를 붙이지 않는다 — 지금 목소리가 그대로 남는다.
-            onDismiss: { preparationVoiceID = nil; preparationPendingVoiceOption = nil },
-            onReady: { finishClipPreparation() },
-            targetVoiceID: preparationVoiceID
-        )
-            .environmentObject(auth)
-            .environmentObject(voiceStudio)
-            // 시트는 환경을 그대로 물려받지 못하는 자리라 여기서도 다시 꽂는다
-            // (위 둘과 같은 이유). 준비 화면이 프리페처를 깨울 수 있어야 한다.
-            .environmentObject(prefetcher)
-    }
     /// 편집기 플레이어가 지금 녹음(방금 녹음한 것 또는 저장된 녹음)을 들려주는 중인가.
     /// 그 밖의 미리듣기(목소리·알람음)와 녹음 박스의 재생 버튼 상태를 가른다.
     @State var previewingLocalAudio = false
@@ -250,8 +232,9 @@ struct AlarmEditorSheet: View {
                 // 타입 메타데이터를 복사하는 런타임 루틴(`initializeWithCopy`)이 스택을
                 // 다 써서 편집기를 여는 순간 **세그폴트로 죽었다**(2026-08-07).
                 // 한 계층에 조각 6개까지만 두고, 새 섹션은 새 `@ViewBuilder` 프로퍼티로.
-                // 여백·간격은 안드로이드 편집기와 같다 — 좌우 16(`editorHorizontalPadding`), 섹션 사이 20(`spacedBy(20.dp)`),
-                // 아래 24(`editorBottomPadding`). 2026-11-15 전까지 iOS 만 좌우 20·사이 16·아래 20 이었다.
+                // 여백·간격은 안드로이드 편집기와 같다 — 좌우 16(`editorHorizontalPadding`), 위 20(목록 `contentPadding` top),
+                // 섹션 사이 20(`spacedBy(20.dp)`), 아래 24(`editorBottomPadding`). 2026-11-15 전까지 iOS 만 좌우 20·사이 16·아래 20
+                // 이었고, 2026-11-22 전까지 휠 위가 12(8 + 휠 4)였다.
                 VStack(alignment: .leading, spacing: 20) {
                     timeWheelSection
                     repeatCard
@@ -259,7 +242,7 @@ struct AlarmEditorSheet: View {
                     detailSettingsSection
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 20)
                 .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.interactively)
@@ -277,7 +260,9 @@ struct AlarmEditorSheet: View {
             EditorActionBar(
                 saveTitle: saveButtonTitle,
                 saving: isWorking || voiceStudio.isBusy,
-                savingLabel: voiceStudio.isBusy ? "음성 만드는 중…" : "저장 중…",
+                // ⚠ **'저장 중' 하나다**(안드로이드 `editor_saving`) — 음성을 만드는 동안에도 같다. 버튼은 무엇을 하는지만
+                //   말한다(안드로이드 `EditorActionButtons` 주석 — 덧붙인 말이 길면 라벨이 줄어든다).
+                savingLabel: "저장 중",
                 // 저장할 수 없는 사유로는 끄지 않는다 — 누르면 이유를 말한다(`editorSaveBlockReason`).
                 saveEnabled: true,
                 onCancel: onClose,
@@ -299,9 +284,9 @@ struct AlarmEditorSheet: View {
     /// 파란 박스 안에 넣으면 시각이 한 덩어리 위젯처럼 보여 화면의 주인공에서 밀려난다.
     @ViewBuilder
     private var timeWheelSection: some View {
+        // 위 여백은 본문이 갖는다(20) — 여기서 더하지 않는다.
         TimeWheelPicker(hour: $draft.hour, minute: $draft.minute)
             .frame(maxWidth: .infinity)
-            .padding(.top, 4)
     }
 
     /// ⚠ **'반복' 섹션 제목을 다시 넣지 말 것.** 안드로이드에는 편집기 섹션 제목이
@@ -669,9 +654,18 @@ struct AlarmEditorSheet: View {
             }
             manualQuota = try? await AlarmTalkAPI.shared.manualQuota(token: token)
         }
+        // 아직 못 받은 목소리의 준비 창 — 시스템 시트가 아니라 편집기 위 **가운데 카드 다이얼로그**다(`ClipPreparationDialog`,
+        // 안드로이드 편집기의 `Dialog` 와 같은 모양). ⚠ `.overlay { … }` 로 여기 풀어 쓰지 말 것 — 이 긴 사슬의 타입 검사가 시간
+        // 초과로 멈춘다(2026-11-22). `.modifier` 는 후보가 하나라 싸다.
+        // ⚠ `targetVoiceID` 를 반드시 넘긴다(`voiceID`) — 안 넘기면 준비 화면이 앱의 매니페스트에 그 목소리가 실리기 전에
+        // 끝났다고 보고 저절로 닫혀, 돌아가면 관문이 또 막는다(2026-08-18 · 2026-11-15 저절로 닫힘).
+        .modifier(ClipPreparationDialog(
+            voiceID: preparationVoiceID,
+            onDismiss: { dismissClipPreparation() },
+            onReady: { finishClipPreparation() }
+        ))
         // 선택 목소리가 바뀌면 직전 생성/스톡 선택을 비워, 다른 프로필의 오디오를
         // 저장하지 않게 한다. 미리듣기 중이면 함께 정지한다.
-        .sheet(isPresented: preparationSheetPresented) { preparationSheet }
         .onChange(of: voiceStudio.selectedProfileID) { oldProfileID, newProfileID in
             guard !suppressProfileChangeInvalidation else { return }
             // ⚠ **아직 못 받은 목소리는 고를 수 없다.** 방금 등록한 목소리처럼 클립을 다 못
@@ -1039,7 +1033,7 @@ struct AlarmEditorSheet: View {
     ///    '목소리 탭에서 만들기' 버튼이 해결 액션까지 갖고 있다.
     ///  - 녹음 미완료 → `RecordingCard` 자체가 CTA 다.
     ///  - 날씨 테마 지역 없음 / 문구 정보 미완 → 문구 행과 문구 화면의
-    ///    상세 카드(`PromptDetailCard`)가 "아직 정하지 않았어요" 로 말한다.
+    ///    상세 카드(`PromptDetailCard`)가 "아직 고르지 않았어요"(지역)·"아직 입력하지 않았어요"(운세)로 말한다.
     ///  - 빈 직접 입력 → **버튼을 죽이지 않는다**(2026-09-29). 누르면 `saveFlow` 가 서버를
     ///    부르기 전에 알럿으로 말한다(`manualTextMissing`).
     ///
@@ -1090,7 +1084,7 @@ struct AlarmEditorSheet: View {
             //    (2026-09-02 추가 — 그전에는 기본 목소리가 운세를 고를 수 없어 날씨만
             //     봐도 충분했다. 문구 목록을 합치면서 이 갈래가 열렸다.
             //     안드로이드 `AlarmEditorScreen` 의 `SaveBlockReason.FORTUNE_INFO_MISSING` 짝.)
-            // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
+            // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 고르지 않았어요" / "아직 입력하지 않았어요").
             guard bucketNeedsMissingInput(bucket) else { return nil }
             return bucket == .fortune ? .fortuneInfoMissing : .weatherLocationMissing
         }
@@ -1110,7 +1104,7 @@ struct AlarmEditorSheet: View {
         // '저장 중' 일 때뿐이다」). 곧 풀리는 상태라 죽은 버튼은 고장으로 읽힌다 —
         // 누를 수 있게 두고 **누르면 이유를 말한다**(`saveFlow` 첫머리).
         if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return .voiceMissing }
-        // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
+        // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 고르지 않았어요" / "아직 입력하지 않았어요").
         if voiceStudio.randomPrompt {
             guard !randomPromptSettingsComplete else { return nil }
             return activePromptContext.usesFortune && !fortuneInfoReady ? .fortuneInfoMissing : .weatherLocationMissing
@@ -1310,7 +1304,7 @@ struct AlarmEditorSheet: View {
     /// 목소리 행이 보여줄 값 — 녹음 갈래면 '직접 녹음', 아니면 고른 목소리 이름.
     var voiceRowSubtitle: String {
         if voiceSourceMode == .localAudio { return String(localized: "직접 녹음") }
-        if let settling = settlingSelectedVoiceName { return String(localized: "\(settling) · 준비 중") }
+        if let settling = settlingSelectedVoiceName { return String(localized: "\(String(settling)) · 준비 중") }
         // 고른 목소리가 목록에 없으면(지웠거나 지금 쓸 수 없음) 자리표시자다 — 안드로이드 `editor_voice_select` 와 같은 말.
         return selectedVoiceName ?? String(localized: "목소리 선택")
     }
@@ -1696,7 +1690,7 @@ struct AlarmEditorSheet: View {
     /// **저장 시점에** 고른 테마의 음원을 준비한다. 성공하면 true.
     ///
     /// 편집 중에는 아무것도 받지 않으므로(선택은 값 하나다) 저장이 이 일을 대신한다.
-    /// 그동안 저장 버튼은 이미 '저장 중…' 을 보여준다(`EditorActionBar(saving:)`).
+    /// 그동안 저장 버튼은 이미 '저장 중' 을 보여준다(`EditorActionBar(saving:)`).
     ///
     /// ⚠ **실패하면 저장을 중단해야 한다.** 음원 없이 넘어가면 `LocalAlarmStore.validateDraft`
     /// 가 `voiceAudioRequired` 로 던져 "저장할 수 없어요" 만 뜨고 이유를 알 수 없다.
@@ -3318,7 +3312,7 @@ struct AlarmEditorSheet: View {
     }
 
     private func duplicateAlarmMessage(_ content: DuplicateAlarmConfirmContent) -> String {
-        return String(localized: "\(content.timeLabel) 알람을 새 알람으로 교체할까요?")
+        return String(localized: "\(String(content.timeLabel)) 알람을 새 알람으로 교체할까요?")
     }
 
     func toggleLocalRecording() {
@@ -3336,7 +3330,7 @@ struct AlarmEditorSheet: View {
                 try await localRecorder.start()
                 localAudioMessage = String(localized: "녹음 중…")
             } catch {
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "녹음을 시작하지 못했어요."))
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: String(localized: "녹음을 시작할 수 없어요."))
             }
         }
     }
@@ -3379,7 +3373,8 @@ struct AlarmEditorSheet: View {
         stopAllEditorPreviews()
         localRecorder.clearLatest()
         clearExistingLocalAudio = true
-        localAudioMessage = String(localized: "음성 오디오를 지웠어요.")
+        // 지웠다고 따로 말하지 않는다 — 카드가 '녹음하기' 로 돌아가는 것이 곧 그 말이다(안드로이드와 같다, 2026-11-22).
+        localAudioMessage = nil
     }
 
     func cachedLocalAudioForSave(existing: LocalAlarmRecord?) async throws -> CachedLocalAlarmAudio {

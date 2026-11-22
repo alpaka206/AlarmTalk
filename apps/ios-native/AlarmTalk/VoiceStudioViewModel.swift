@@ -161,7 +161,15 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 하나로 합치면 목록을 불러오는 사이에 누른 버튼이 조용히 무시된다.
     @Published private(set) var isRefreshing = false
 
-    @Published var statusMessage: String?
+    /// 안내·실패 한 줄. ⚠ 실패를 적으면 미리듣기 준비 안내(`greetingPreviewNotice`)는 걷는다 — 한 자리에 둘이 남아 옛 안내가
+    /// 실패 뒤에 되살아나지 않게.
+    @Published var statusMessage: String? {
+        didSet { if statusMessage != nil { greetingPreviewNotice = nil } }
+    }
+    /// 목소리 탭 미리듣기의 **안내**(실패가 아니다) — 클론의 인사말 클립이 아직 없을 때 "이 목소리의 미리듣기를 준비 중이에요."
+    /// 목소리 탭은 이것을 흐린 글자로, `statusMessage` 는 빨간 글자로 '내 목소리' 머리 아래에 그린다(안드로이드
+    /// `ui/voices/VoiceProfileManagementPanel.kt` 의 `localMessage` 자리).
+    @Published var greetingPreviewNotice: String?
     /// 마지막 `generateTTS` 가 서버에서 받은 `error_code`(성공·코드 없음이면 nil). 편집기가 429 `MANUAL_TTS_QUOTA_EXCEEDED`
     /// 뒤의 갈래(광고 제안·보상 확인 중·다음 제공일 — `docs/spec/ad-rewards.md` §1-1)를 고를 때 쓴다.
     var lastGenerateErrorCode: String?
@@ -367,6 +375,8 @@ final class VoiceStudioViewModel: ObservableObject {
     ///   원래대로 기본 크기 — 목소리를 고르는 자리에서는 '어떤 목소리인가' 를 듣는 것이라
     ///   크기를 건드리지 않는다.
     func previewGreeting(voiceId: String, session: AuthSession?, volumePercent: Int? = nil) async {
+        // 지난 누름의 '준비 중' 안내는 이번 누름의 이야기가 아니다.
+        greetingPreviewNotice = nil
         if previewingGreetingVoiceId == voiceId {
             greetingPreviewRequestId += 1
             previewPlayer.stop()
@@ -402,8 +412,8 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         guard let clip = greetingClip(voiceId: voiceId) else {
             // 클론은 사전렌더가 끝나야 인사말 클립이 생긴다 — 조용히 아무 일도 안 하면
-            // 버튼이 고장 난 것처럼 보인다.
-            statusMessage = String(localized: "미리듣기를 준비하고 있어요. 잠시 뒤에 다시 눌러 주세요.")
+            // 버튼이 고장 난 것처럼 보인다. 실패가 아니라 안내다(흐린 글자) — 안드로이드 `voices_greeting_preview_preparing`.
+            greetingPreviewNotice = String(localized: "이 목소리의 미리듣기를 준비 중이에요.")
             return
         }
         greetingPreviewRequestId += 1
@@ -1114,6 +1124,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         cloneName = fields.name
         guard let url = recorder.latestRecordingURL, let durationMs = recorder.latestDurationMs else {
+            // 안드로이드 `voices_prepare_recording_first` 와 같은 말.
             statusMessage = String(localized: "먼저 목소리를 녹음해 주세요.")
             return nil
         }
@@ -1141,7 +1152,7 @@ final class VoiceStudioViewModel: ObservableObject {
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
-        tooShortMessage: String = String(localized: "12초 이상 준비해 주세요.")
+        tooShortMessage: String = String(localized: "12초 이상 2분 이하 구간을 선택해 주세요.")
     ) async -> VoiceProfile? {
         // 지난 등록의 말소리 거절을 이번 등록에 들고 가지 않는다([noSpeechRejected]) — 아래에서 일찍 돌아가도.
         noSpeechRejected = false
@@ -1229,11 +1240,11 @@ final class VoiceStudioViewModel: ObservableObject {
             return nil
         }
         guard let profileID = selectedProfileID else {
-            statusMessage = String(localized: "사용할 목소리를 먼저 선택해 주세요.")
+            statusMessage = String(localized: "사용할 목소리를 선택해 주세요.")
             return nil
         }
         guard randomPrompt || !ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            statusMessage = String(localized: "깨워줄 말을 입력하거나 문구 종류를 골라 주세요.")
+            statusMessage = String(localized: "알람 문구를 입력하거나 문구 종류를 골라 주세요.")
             return nil
         }
         let promptContext = RandomPromptContext.normalized(randomContext)
@@ -1242,7 +1253,7 @@ final class VoiceStudioViewModel: ObservableObject {
             return nil
         }
         if randomPrompt && promptContext.usesFortune && !hasFortuneInfo {
-            statusMessage = String(localized: "운세에 쓸 정보를 모두 입력해 주세요.")
+            statusMessage = String(localized: "운세가 들어간 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요.")
             return nil
         }
         guard !isBusy else { return nil }

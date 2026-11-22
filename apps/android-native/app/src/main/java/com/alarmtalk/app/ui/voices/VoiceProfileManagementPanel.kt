@@ -17,6 +17,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -71,6 +72,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -498,6 +500,9 @@ internal fun VoiceProfileManagementPanel(
     // '이 목소리로 할게요'를 눌러 승격한 보이스 id — draft 소멸이 삭제가 아니라 승격에서
     // 왔음을 구분해, 플로우를 닫는 대신 '목소리 생성 중' 스텝으로 잇는다.
     var promotedForPrerenderId by remember { mutableStateOf<String?>(null) }
+    // 확정 화면의 `다시 만들기` 로 지우는 초안 id — 그 초안이 사라지면 창을 닫지 않고 음원 준비부터 다시 한다
+    // (`restartRegistrationFromSource`). 그 밖의 이유로 사라진 초안(나가기 경고·서버 정리)은 예전처럼 창을 닫는다.
+    var remakeDraftId by remember { mutableStateOf<String?>(null) }
     var confirmPreviewBusy by remember { mutableStateOf(false) }
     // 톤 카드를 그리는가 — 첫 미리듣기 준비가 **끝난 뒤**에만 그린다(2026-11-15 오너: "목소리 등록 확인 화면 준비중일때는 톤
     // 조절도 완성되었을때 뜨게 해줘"). 받는 동안 그리면 막대가 기본값에 있다가 추천값으로 튄다. 실패로 끝나도 그린다 — 그때는
@@ -1404,11 +1409,12 @@ internal fun VoiceProfileManagementPanel(
                         selectedAudio = audio
                         recordingElapsedMillis = duration
                         recordTooShort = true
-                        // 끼어들어 멈춘 짧은 녹음이면 왜 멈췄는지 말한다 — 사용자가 멈춘 것이 아니다.
-                        localMessage = if (result.interruption != null) {
-                            context.getString(R.string.recording_interrupted_short)
-                        } else {
-                            null
+                        // 끼어들어 멈춘 짧은 녹음이면 왜 멈췄는지 말한다 — 사용자가 멈춘 것이 아니다. 자리는 녹음 카드 바로
+                        // 아래의 거절 줄이다(2026-11-22 두 앱 통일 — iOS `VoiceCloneUploadFlow.reviewFinishedRecording` 과
+                        // 같다). 단계 맨 아래 줄에 두면 대사 카드를 펼친 채로는 화면 밖이다.
+                        localMessage = null
+                        if (result.interruption != null) {
+                            rerecordReason = context.getString(R.string.recording_interrupted_short)
                         }
                     } else {
                         selectedAudio = null
@@ -1511,6 +1517,17 @@ internal fun VoiceProfileManagementPanel(
         sourceF0Job?.cancel()
         sourceF0Job = null
         heardTunings = emptySet()
+        remakeDraftId = null
+    }
+
+    // `다시 만들기` 로 초안이 지워졌다 — 창을 닫지 않고 처음(음원 준비)부터 다시 한다(2026-11-22 두 앱 통일, 스펙
+    // voice-and-message §4-1 "다시 만들기를 고르면 처음부터 다시 녹음한다"). iOS 는 새 등록 흐름을 띄운다(`VoicesPanelView` 의
+    // `onDiscarded`) — 닫았다가 다시 연 것과 같다: 폼은 처음 상태로 비우고 창은 그대로 둔다. 닫힘을 알린 바로 뒤에 열림을
+    // 다시 알린다 — 그리는 값(`registrationWindowShown`)은 그대로라 열림 알림 효과가 다시 돌지 않는다.
+    fun restartRegistrationFromSource() {
+        closeCreateDialog()
+        showCreateForm = true
+        onRegistrationWindowOpenChange(true)
     }
 
     // 등록 요청을 보낸 뒤에도 다이얼로그를 닫지 않고 '만드는 중' 스텝으로 전환한다 —
@@ -1603,11 +1620,14 @@ internal fun VoiceProfileManagementPanel(
             }
 
             // draft 소멸(삭제/승격) → 미리듣기 상태 정리. 승격이면 플로우를 닫는 대신
-            // '목소리 생성 중' 스텝으로 이어 알람 문구 생성·다운로드까지 끝낸다.
+            // '목소리 생성 중' 스텝으로 이어 알람 문구 생성·다운로드까지 끝낸다. `다시 만들기` 로 지운 것이면
+            // 창을 닫지 않고 음원 준비로 돌아간다(`restartRegistrationFromSource`).
             draft == null && confirmNewVoice?.isDraft == true -> {
                 val promotedId = promotedForPrerenderId
                     ?.takeIf { requested -> requested == confirmNewVoice?.id }
                     ?.takeIf { requested -> voiceProfiles.any { it.id == requested } }
+                val remakeRequested = remakeDraftId != null && remakeDraftId == confirmNewVoice?.id
+                remakeDraftId = null
                 confirmPreviewJob?.cancel()
                 confirmPreviewJob = null
                 stopMediaPreview(invalidateGreetingPreview = false)
@@ -1619,7 +1639,7 @@ internal fun VoiceProfileManagementPanel(
                     onStartPrerenderDrive(promotedId)
                     currentStep = VoiceRegistrationStep.Prerendering
                 } else if (showCreateForm) {
-                    closeCreateDialog()
+                    if (remakeRequested) restartRegistrationFromSource() else closeCreateDialog()
                 }
             }
         }
@@ -1683,6 +1703,9 @@ internal fun VoiceProfileManagementPanel(
         // 저장이 실패했으면 '저장을 보냈다' 는 표시를 내린다. 안 내리면 뒤에 누른 `다시 만들기` 가
         // 지우는 동안 저장 버튼이 '저장 중…' 으로 그려진다(두 버튼의 진행 표시가 이 값으로 갈린다).
         promotedForPrerenderId = null
+        // `다시 만들기`(초안 삭제)가 실패했으면 그 화면에 머문다 — 표시가 남으면 나중에 다른 이유로 사라진 초안이
+        // 음원 준비로 돌아간다.
+        remakeDraftId = null
         // ⚠ `windowOpen` 은 **지금 그려져 있는가**다(`registrationWindowShown` — 이 순간의 값을 읽는다). 만드는 중에
         // 이용권이 끝나고 등록이 실패하면, 위의 되돌리기 효과(만드는 중 → 세부 정보)가 **같은 차례에 먼저** 돌아
         // 그려지지 않는 단계로 바꿔 놓는다 — 그래서 이 거절은 스낵바로 간다. '열기로 했다'(`showCreateForm`)로 가르면
@@ -2265,12 +2288,17 @@ internal fun VoiceProfileManagementPanel(
         } else {
             0.dp
         }
+        // 배경은 다른 하위 전체화면과 같은 밤하늘 그라데이션이다(2026-11-22 두 앱 통일 — CLAUDE.md 디자인 토큰
+        // `homeGradientBrush`). 상태바 자리까지 칠하도록 인셋 여백보다 **앞에** 둔다.
         val dialogSurfaceModifier = if (useManualSystemInsets) {
             Modifier
                 .fillMaxSize()
+                .background(homeGradientBrush())
                 .statusBarsPadding()
         } else {
-            Modifier.fillMaxSize()
+            Modifier
+                .fillMaxSize()
+                .background(homeGradientBrush())
         }
         val resolvedProfileName = profileName.trim()
         val nameRequiredError = createSubmitAttempted && resolvedProfileName.isBlank()
@@ -2305,7 +2333,8 @@ internal fun VoiceProfileManagementPanel(
         ) {
             Surface(
                 modifier = dialogSurfaceModifier,
-                color = MaterialTheme.colorScheme.background,
+                color = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onBackground,
             ) {
                 // ⚠ **마지막 단계(오프라인 준비)는 폼 골격을 쓰지 않는다**(2026-09-29 지시).
                 // 상단바 제목 없이 진행 블록을 화면 한가운데에, '백그라운드에서 계속' 을 화면
@@ -2800,8 +2829,14 @@ internal fun VoiceProfileManagementPanel(
                         }
                         // 확정 화면은 자기 자리(교체 줄 아래)에 오류를 그린다 — 여기서 한 번 더 그리지 않는다.
                         val previewShowsOwnMessage = currentStep == VoiceRegistrationStep.Preview && confirmNewVoice != null
+                        // 이 창의 문장은 전부 '안 됐다' 는 이유다(파일·녹음·권한·등록 거절) — 확정 화면의 오류 줄과 같은 빨간
+                        // `bodySmall` 이다(2026-11-22 두 앱 통일 — iOS `VoiceCloneUploadFlow.statusSection`). 흐린 글자면 힌트로 읽힌다.
                         if (localMessage != null && !previewShowsOwnMessage) {
-                            MutedText(localMessage.orEmpty())
+                            Text(
+                                text = localMessage.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                     }
@@ -2872,6 +2907,9 @@ internal fun VoiceProfileManagementPanel(
                                     },
                                     enabled = !voiceProfileBusy && !isRecording && !createPreparing &&
                                         (canSubmitRecord || canSubmitSingleFile),
+                                    // `다음` 과 같은 채움 한 벌이다(2026-11-22 두 앱 통일) — 예전에는 이것만 M3 기본색이라 잠기면
+                                    // 글자가 지워진 것처럼 보였다.
+                                    colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
@@ -2897,7 +2935,13 @@ internal fun VoiceProfileManagementPanel(
                                 // (2026-11-15 오너: "다시 만들기, 저장하기 버튼도 디자인 바꿔도 돼"). 예전에는 빨간 글자 텍스트 버튼과 넓은
                                 // 채움 버튼이라 iOS(같은 폭 두 버튼)와도 달랐다. iOS `VoicePreviewConfirmView.actions` 와 같다.
                                 OutlinedButton(
-                                    onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
+                                    onClick = {
+                                        confirmNewVoice?.let {
+                                            // 지워지면 창을 닫지 않고 음원 준비로 돌아간다(초안 효과의 `remakeRequested`).
+                                            remakeDraftId = it.id
+                                            onDeleteVoiceDraft(it.id)
+                                        }
+                                    },
                                     // 뒤로가기와 같은 일(초안 삭제)이라 같은 잠금을 쓴다(`confirmStepLocks`).
                                     enabled = !confirmLocks.working,
                                     modifier = Modifier.weight(1f),
@@ -2939,6 +2983,9 @@ internal fun VoiceProfileManagementPanel(
                                     enabled = !confirmLocks.working && !confirmPreviewEditing &&
                                         confirmPreviewCompleted && !tuningRendering &&
                                         tuningHeardToEnd(previewTuning, heardTunings),
+                                    // 잠긴 색은 앞 단계의 `다음`·`등록` 과 같은 한 벌이다(`wakerButtonColors` — M3 기본은 딥네이비
+                                    // 위에서 글자가 지워진 것처럼 보인다).
+                                    colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
@@ -2952,10 +2999,11 @@ internal fun VoiceProfileManagementPanel(
                                     // 지우는 중인데 저장한다고 하면 되돌릴 수 없는 일을 한 줄 안다.
                                     // 승격이 실제로 나갔을 때만(`promotedForPrerenderId`) 표시한다.
                                     if (voiceProfileBusy && promotedForPrerenderId != null) {
+                                        // 저장 중에는 버튼이 잠겨 있다 — 진행 표시는 잠긴 글자색을 따른다(iOS 도 onSurfaceVariant).
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(18.dp),
                                             strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            color = LocalContentColor.current,
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(stringResource(R.string.voices_confirm_new_keep_saving))

@@ -35,6 +35,10 @@ struct AlarmTalkSwitchStyle: ViewModifier {
 }
 
 /// 트랙·손잡이 색을 **둘 다** 우리가 정하는 스위치.
+///
+/// 모양은 안드로이드 M3 `Switch`(`AlarmTalkSwitch`)와 같다(2026-11-22 두 앱 통일) — 트랙 52×32, 손잡이 **꺼짐 16 / 켜짐 24**,
+/// 꺼짐 트랙은 `surfaceVariant` 에 `outline` 2 테두리, 켜짐 트랙은 테두리 없이 `primary`, 손잡이는 둘 다 흰색이고 그림자가 없다.
+/// 그전 iOS 는 시스템 스위치 크기(51×31 · 손잡이 27 고정 · 그림자)였다.
 private struct AlarmTalkToggleStyle: ToggleStyle {
     let palette: AlarmTalkPalette
     let isDark: Bool
@@ -51,31 +55,38 @@ private struct AlarmTalkToggleStyle: ToggleStyle {
     // 안드로이드를 이쪽으로 맞춘다(`ControlsAndPermissions.kt` 의 `AlarmTalkSwitch`).
     private var thumbColor: Color { .white }
 
+    /// 트랙 크기 — M3 `SwitchDefaults` 의 52×32.
+    private static let trackWidth: CGFloat = 52
+    private static let trackHeight: CGFloat = 32
+    /// 손잡이 지름 — 꺼짐 16 · 켜짐 24(M3). 손잡이 중심은 언제나 트랙 끝에서 16 안쪽이다.
+    private static let thumbOff: CGFloat = 16
+    private static let thumbOn: CGFloat = 24
+
     func makeBody(configuration: Configuration) -> some View {
-        HStack {
+        let thumb = configuration.isOn ? Self.thumbOn : Self.thumbOff
+        return HStack {
             configuration.label
             Spacer(minLength: 0)
             ZStack(alignment: configuration.isOn ? .trailing : .leading) {
                 Capsule()
                     .fill(configuration.isOn ? trackColor : palette.surfaceVariant)
+                    // 꺼짐만 테두리 — 트랙 **안쪽**으로 2(M3 꺼짐 트랙의 `outline` 2 테두리).
                     .overlay(
-                        Capsule().stroke(
+                        Capsule().strokeBorder(
                             configuration.isOn ? Color.clear : palette.outline,
-                            lineWidth: 1
+                            lineWidth: 2
                         )
                     )
-                    .frame(width: 51, height: 31)
+                    .frame(width: Self.trackWidth, height: Self.trackHeight)
+                // ⚠ **켜짐·꺼짐 크기가 다르다**(2026-11-22 — 안드로이드 M3 와 같게). 2026-08-10 에는 iOS 시스템 스위치처럼
+                //   27 고정이었고 "부풀었다 줄어드는 움직임이 낯설다" 고 적었지만, 두 앱의 스위치를 같은 물건으로 맞추기로 했다.
                 Circle()
                     .fill(thumbColor)
-                    .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
-                    // ⚠ **켜짐·꺼짐 크기가 같다.** iOS 시스템 스위치는 손잡이 지름이
-                    // 상태와 무관하게 27 이다(누르고 있는 동안만 옆으로 늘어난다).
-                    // 상태에 따라 20↔27 로 바꾸면 그건 Material 방식이라, 전환할 때마다
-                    // 손잡이가 부풀었다 줄어드는 낯선 움직임이 된다.
-                    .frame(width: 27, height: 27)
-                    .padding(.horizontal, 2)
+                    .frame(width: thumb, height: thumb)
+                    // 중심을 트랙 끝에서 16 안쪽에 둔다 — 꺼짐은 끝에서 8, 켜짐은 4 떨어진다.
+                    .padding(.horizontal, (Self.trackHeight - thumb) / 2)
             }
-            .frame(width: 51, height: 31)
+            .frame(width: Self.trackWidth, height: Self.trackHeight)
             .contentShape(Rectangle())
             .onTapGesture {
                 withAnimation(.easeInOut(duration: 0.18)) {

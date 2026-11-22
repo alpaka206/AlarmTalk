@@ -1092,7 +1092,7 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNil(vm.session, "401 은 세션 만료로 처리되어 signOut 되어야 한다")
-        XCTAssertEqual(vm.statusMessage, "세션이 만료됐어요. 다시 로그인해 주세요.")
+        XCTAssertEqual(vm.statusMessage, "로그인이 만료됐어요. 다시 로그인해 주세요.")
         XCTAssertNil(vm.lastNetworkError, "signOut 후 lastNetworkError 는 nil 로 초기화된다")
     }
 
