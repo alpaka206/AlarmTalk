@@ -1236,9 +1236,15 @@ internal fun AlarmEditorScreen(
                             ManualCreationRoute.PLAN_RULES -> Unit
                         }
                     }
+                    // 한도는 편집기 아래 글자가 아니라 **알럿**으로 말한다 — iOS 의 저장 실패 알럿("저장할 수 없어요")과 같다(2026-11-22
+                    // 오너 "밖에서 보여 주지 말고 … 보여 주는 방식 통일"). 대개는 직접 입력 창이 먼저 말한다(`ManualMessageDialog`) —
+                    // 여기 오는 것은 그 사이 다른 기기가 다 썼거나, 폰에 음성이 없어 다시 받기가 막힌 경우다.
+                    if (ttsErrorCode == "MANUAL_TTS_QUOTA_EXCEEDED" && !quotaAlertShown) {
+                        blockAlert = context.getString(R.string.editor_save_failed_title) to
+                            context.getString(R.string.editor_error_manual_tts_quota)
+                    }
                     audioMessage = when (ttsErrorCode) {
-                        "MANUAL_TTS_QUOTA_EXCEEDED" ->
-                            if (quotaAlertShown) null else context.getString(R.string.editor_error_manual_tts_quota)
+                        "MANUAL_TTS_QUOTA_EXCEEDED" -> null
                         // 나머지는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성
                         // 실패처럼 "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다.
                         else -> com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
@@ -2125,7 +2131,7 @@ internal fun AlarmEditorScreen(
                 },
                 manualRemaining = manualQuota?.remaining,
                 manualLimit = manualQuota?.limit,
-                manualChangeEnabled = AdRewardGate.canChangeManualText(
+                manualCreationAvailable = AdRewardGate.canChangeManualText(
                     freeVoiceTier,
                     manualQuota?.remaining,
                     manualQuota?.adReward,

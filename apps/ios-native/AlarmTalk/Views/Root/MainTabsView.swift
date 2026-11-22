@@ -195,7 +195,7 @@ struct MainTabsView: View {
             .task {
                 // DEBUG 전용 — 편집기 화면 확인 진입점.
                 if UIPreviewSeed.opensEditor, editorTarget == nil {
-                    editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil)
+                    editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: UIPreviewSeed.editorAlarmID)
                 }
             }
             .background(theme.homeGradient)

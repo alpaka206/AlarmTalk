@@ -4,15 +4,12 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -274,16 +271,6 @@ internal fun IosAlertField(
     modifier: Modifier = Modifier,
     placeholder: String? = null,
     enabled: Boolean = true,
-    singleLine: Boolean = true,
-    minHeight: Dp = 48.dp,
-    /// 모서리. 한 줄 칸은 캡슐이다.
-    ///
-    /// ⚠ **캡슐은 한 줄일 때만이다**(2026-08-20). 캡슐 반경은 999 라 실제 반경이 높이의
-    /// 절반으로 잘리는데, 직접 입력처럼 `minHeight = 108` 인 여러 줄 칸에서는 그게 **반경
-    /// 54** 가 되어 좌우가 통째로 반원이 된다 — 아래 실측 근거(h=48·r=24)는 한 줄 칸의
-    /// 것이고, 여러 줄에 그대로 쓰면 근거 없는 모양이 나온다. 여러 줄은 앱 표준 입력
-    /// 반경(`WakerInputShape`)을 쓴다.
-    shape: Shape = if (singleLine) WakerPillShape else WakerInputShape,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -292,7 +279,9 @@ internal fun IosAlertField(
         value = value,
         onValueChange = onValueChange,
         enabled = enabled,
-        singleLine = singleLine,
+        // ⚠ **한 줄이다 — 여러 줄 칸을 되살리지 말 것**(2026-11-22 오너 "빈칸 디자인도 통일"). iOS 시스템 알럿 입력칸은 한 줄이라
+        // 바꿀 수 없다. 직접 입력이 높이 108 의 여러 줄 상자였을 때 두 앱의 칸이 다른 물건처럼 보였다.
+        singleLine = true,
         keyboardOptions = keyboardOptions,
         textStyle = textStyle,
         cursorBrush = SolidColor(scheme.primary),
@@ -301,18 +290,18 @@ internal fun IosAlertField(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = minHeight)
+                    .heightIn(min = 48.dp)
                     // ⚠ **캡슐이다 — 8dp 같은 각진 값으로 되돌리지 말 것**(2026-08-11 실측).
                     // iOS `UIAlertController` 를 띄워 계층을 훑어 보니 입력칸 컨테이너는
                     // **h=48, cornerRadius=24** 즉 완전한 캡슐이었다(액션 버튼도 h=48·r=24,
-                    // 알럿 컨테이너는 r=34). 예전 주석은 "컨테이너(14)보다 작은 반경" 이라
-                    // 적었는데 **컨테이너가 14였던 적이 없다** — 34다. 근거가 틀렸으니
-                    // 거기서 나온 8도 틀렸다.
-                    .border(0.5.dp, scheme.onSurface.copy(alpha = 0.22f), shape)
-                    .background(scheme.surface.copy(alpha = 0.5f), shape)
+                    // 알럿 컨테이너는 r=34).
+                    // ⚠ **선 없이 채운다**(2026-11-22 iOS 27 시뮬레이터 실측 — 칸은 알럿 바탕보다 한 단계 밝게(라이트는 어둡게)
+                    // 채운 캡슐이고 테두리가 없다: 다크 #2A3244 → #41495D, 라이트 #E6EAEF → #C3C9D2). 예전의 0.5 선 + 바탕 50% 는
+                    // 아이폰 칸과 다른 물건이었다(오너 "빈칸 디자인도 통일").
+                    .background(scheme.onSurface.copy(alpha = 0.12f), WakerPillShape)
                     // 캡슐이라 좌우가 둥글게 파고들어, 10 이면 글자가 모서리에 닿는다.
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
+                contentAlignment = Alignment.CenterStart,
             ) {
                 if (value.isEmpty() && !placeholder.isNullOrBlank()) {
                     Text(

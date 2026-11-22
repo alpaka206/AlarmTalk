@@ -53,7 +53,7 @@ struct WeatherRegionPickerSheet: View {
         if let legacyLabel {
             return String(localized: "‘\(legacyLabel)’은(는) 목록에 없어요. 다시 골라 주세요.")
         }
-        return String(localized: "목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요.")
+        return String(localized: "목록에서 지역을 골라 주세요.")
     }
 
     /// 목록 높이 상한에서 뺄 몫 — 나라 세그먼트(+ 그 아래 간격), 안내 줄.

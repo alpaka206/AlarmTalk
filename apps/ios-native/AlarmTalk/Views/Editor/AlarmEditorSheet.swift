@@ -327,8 +327,9 @@ struct AlarmEditorSheet: View {
                     .accessibilityLabel(Text(String(localized: "반복 \(String(repeatSummary))")))
                 RepeatWeekdayChips(mask: $draft.repeatDaysMask)
                     .padding(.top, 10)
-                    // 아래 여백도 18(14 + 카드 4). 공휴일 줄이 붙으면 칩 → 그 줄 10(안드로이드 spacedBy 10)이고 그 줄이 18 을 맡는다.
-                    .padding(.bottom, draft.repeatDaysMask != 0 ? 10 : 14)
+                    // 아래 여백도 18(14 + 카드 4). 공휴일 줄이 붙으면 칩 → 그 줄 16 이고 그 줄이 18 을 맡는다 — 10 이면 줄이 요일 칩에
+                    // 붙어 칩의 일부처럼 보였다(2026-11-22 오너 "공휴일에는 끄기 위 간격"). 안드로이드 `RepeatSelector` 와 같다.
+                    .padding(.bottom, draft.repeatDaysMask != 0 ? 16 : 14)
                 // Android `ScheduleDetailsCard` 와 동일: 반복 요일이 하나라도 선택됐을 때만
                 // 공휴일off 토글을 노출한다(미선택 시 dimmed 가 아니라 통째로 숨김).
                 if draft.repeatDaysMask != 0 {
@@ -443,7 +444,7 @@ struct AlarmEditorSheet: View {
                 manualRemaining: manualQuota?.remaining,
                 manualLimit: manualQuota?.limit,
                 manualAdCredits: manualQuota?.adReward?.credits,
-                manualChangeEnabled: AdRewardGate.canChangeManualText(
+                manualCreationAvailable: AdRewardGate.canChangeManualText(
                     freeTier: planAccess == .free,
                     baseRemaining: manualQuota?.remaining,
                     adReward: manualQuota?.adReward,
@@ -566,7 +567,7 @@ struct AlarmEditorSheet: View {
             switch UIPreviewSeed.editorPane {
             case "voiceOutput": settingsPane = .voiceOutput
             case "alarmSound": settingsPane = .alarmSound
-            case "message": messagePaneOpen = true
+            case "message", "manual": messagePaneOpen = true
             default: break
             }
             // `-UIPreviewEditorAlert voice_missing|voice_unavailable|recording_missing|…`(저장 막힘 사유의 `usageReason`) 면 그 알럿을

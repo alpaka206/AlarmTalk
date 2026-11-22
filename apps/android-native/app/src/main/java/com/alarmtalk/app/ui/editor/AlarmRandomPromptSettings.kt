@@ -68,7 +68,9 @@ internal fun RandomPromptSettingsPane(
     manualRemaining: Int? = null,
     manualLimit: Int? = null,
     /** 직접 입력 문구의 '변경하기' 를 눌리게 둘까 — 새로 만들 길이 없으면 false(`AdRewardGate.canChangeManualText`). */
-    manualChangeEnabled: Boolean = true,
+    /** 이번 달 직접 입력 문구를 새로 만들 길이 있는가(`AdRewardGate.canChangeManualText`). 없으면 직접 입력 창이 칸 대신 그 사실을
+     *  말한다 — '변경하기' 를 회색으로 죽이지 않는다(2026-11-22 오너 "못하는 건 직접 입력 창에서, 밖에서 보여 주지 말고"). */
+    manualCreationAvailable: Boolean = true,
     /**
      * 이 목소리로 **실제로 고를 수 있는** 문구 종류(`EditorMessageContexts` 의 부분집합, 순서 유지).
      *
@@ -342,8 +344,6 @@ internal fun RandomPromptSettingsPane(
                     RandomPromptDetailRow(
                         title = stringResource(R.string.editorp_random_manual_title),
                         value = draftManualText,
-                        // 이번 달 더 만들 길이 없으면 회색(옆의 '직접 입력 (0/3)' 이 이유를 말한다).
-                        changeEnabled = manualChangeEnabled,
                         // 값만 고치는 자리다 — 취소해도 종류 선택은 그대로여야 하므로
                         // 되돌릴 자리를 비운다(위 `contextBeforeDialog` 주석).
                         onChange = {
@@ -497,6 +497,7 @@ internal fun RandomPromptSettingsPane(
             // 지금까지 담긴 문구로 연다(기존 알람의 문구든, 방금 이 화면에서 친 것이든).
             // 확인 없이 닫으면 입력한 내용은 그대로 폐기된다.
             initialText = draftManualText,
+            creationAvailable = manualCreationAvailable,
             onDismiss = {
                 manualDialogOpen = false
                 cancelContextSelection()
@@ -517,17 +518,32 @@ internal const val ManualMessageMaxLength = 200
 @Composable
 private fun ManualMessageDialog(
     initialText: String,
+    /** 이번 달 새로 만들 길이 있는가(`AdRewardGate.canChangeManualText`). */
+    creationAvailable: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
+    // ⚠ **이번 달 새로 만들 길이 없으면 칸 대신 그 사실을 이 창에서 말한다**(2026-11-22 오너 "못하는 건 직접 입력 창에서, 밖에서
+    // 보여 주지 말고"). '변경하기' 를 회색으로 죽이지 않고 편집기 아래 글자로 알리지도 않는다. 확인은 닫기와 같다 — 목록에서 고르다
+    // 열렸으면 고르던 종류를 되돌린다. iOS `MessageSettingsPane` 의 직접 입력 알럿과 같다.
+    if (!creationAvailable) {
+        IosAlertDialog(
+            title = stringResource(R.string.editor_msg_mode_manual),
+            message = stringResource(R.string.editor_error_manual_tts_quota),
+            onDismiss = onDismiss,
+            actions = listOf(
+                IosAlertAction(label = stringResource(R.string.auth_confirm), emphasized = true, onClick = onDismiss),
+            ),
+        )
+        return
+    }
     var draft by remember(initialText) { mutableStateOf(initialText) }
-    // 공용 알럿으로 통일한다. 다만 **이 입력만 여러 줄**이다 — 알람에서 들려줄 문구를 최대
-    // 200자까지 받으므로, 한 줄짜리 필드로 두면 쓰면서 앞이 안 보인다. 껍데기는 알럿이되
-    // 필드 높이만 남긴다.
+    // 공용 알럿 + **한 줄 캡슐 칸**이다 — iOS 시스템 알럿 입력칸과 같은 칸(2026-11-22 오너 "빈칸 디자인도 통일". 그전에는 200자를
+    // 다 보이게 높이 108 의 여러 줄 상자였다).
     IosAlertDialog(
         title = stringResource(R.string.editor_msg_mode_manual),
-        // 새 음성을 만드는 순간 횟수를 쓴다는 것을 **치기 전에** 말한다(`docs/spec/voice-and-message.md` §8 — 무료 3·플러스 30,
-        // 이 폰에 남아 있는 음성은 세지 않고, 서버에서 다시 받으면 1회다). 남은 횟수는 문구 목록의 '직접 입력 (2/3)' 이 보여 준다.
+        // 횟수를 쓴다는 것을 **치기 전에** 한 줄로 말한다(2026-11-22 오너 — 폰 안 재사용·다시 받기 설명은 뺐다. 규칙은
+        // `docs/spec/voice-and-message.md` §8). 남은 횟수는 문구 목록의 '직접 입력 (2/3)' 이 보여 준다.
         message = stringResource(R.string.editor_manual_charge_notice),
         onDismiss = onDismiss,
         actions = listOf(
@@ -547,12 +563,11 @@ private fun ManualMessageDialog(
         IosAlertField(
             value = draft,
             onValueChange = {
-                draft = sanitizeUserText(it, allowNewlines = true)
+                // 한 줄 칸이라 붙여 넣은 줄바꿈은 공백으로 바꾼다(지우면 앞뒤 낱말이 붙는다 — CLAUDE.md 「입력 규칙」).
+                draft = sanitizeUserText(it, allowNewlines = false)
                     .takeWithoutSplittingPairs(ManualMessageMaxLength)
             },
             placeholder = stringResource(R.string.editor_manual_input_placeholder),
-            singleLine = false,
-            minHeight = 108.dp,
         )
     }
 }
@@ -567,8 +582,6 @@ internal fun RandomPromptDetailRow(
     onChange: (() -> Unit)? = null,
     // 값 아래 작은 안내(예: 목록에 없는 옛 지역 — "목록에서 다시 골라 주세요").
     hint: String? = null,
-    // false 면 '변경하기' 를 흐리게 두고 누르지 못한다(직접 입력을 이번 달 더 만들 수 없을 때).
-    changeEnabled: Boolean = true,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -618,7 +631,7 @@ internal fun RandomPromptDetailRow(
                 }
             }
             if (onChange != null) {
-                TextButton(onClick = onChange, enabled = changeEnabled) {
+                TextButton(onClick = onChange) {
                     Text(
                         text = stringResource(R.string.editorp_random_detail_change),
                         // iOS 는 `bodyMedium.weight(.semibold)` = 14 SemiBold.

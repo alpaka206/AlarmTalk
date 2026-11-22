@@ -198,13 +198,14 @@
     <string name="editor_error_voice_alarm_login_required">음성 알람은 로그인 후 사용할 수 있어요.</string>
     <string name="editor_error_voice_generation_failed">음성 생성에 실패했어요.</string>
     <string name="editor_error_manual_tts_quota">이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요.</string>
+    <string name="editor_save_failed_title">저장할 수 없어요</string>
     <string name="editor_error_tts_request_in_progress">아직 음성을 만들고 있어요. 잠시 뒤 다시 저장해 주세요.</string>
     <string name="editor_error_voice_message_login_required">음성 알람은 로그인 후 사용할 수 있어요.</string>
     <string name="editor_error_weather_location_required">날씨가 들어간 문구는 지역을 골라 주세요.</string>
     <string name="editor_existing_voice_cache_used">기존 음성 캐시를 사용했어요.</string>
     <string name="editor_holiday_off_subtitle">대체 공휴일 및 임시 공휴일 포함</string>
     <string name="editor_holiday_off_title">공휴일에는 끄기</string>
-    <string name="editor_manual_input_placeholder">알람에서 들려줄 문구를 입력해 주세요</string>
+    <string name="editor_manual_input_placeholder">알람에서 읽어 줄 문구</string>
     <string name="editor_no_voice_profile">아직 사용할 목소리가 없어요.</string>
     <string name="editor_off">꺼짐</string>
     <string name="editor_plan_gate_login_title">로그인이 필요해요</string>
@@ -266,7 +267,7 @@
     <string name="editorp_cheer_vary_hint">최근에 준비한 문구는 잠시 쉬고, 다른 응원으로 준비해요.</string>
     <string name="editorp_cheer_pinned_hint">고른 문구로만 울려요.</string>
     <string name="editorp_random_manual_title">직접 입력 문구</string>
-    <string name="editor_manual_charge_notice">새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요.</string>
+    <string name="editor_manual_charge_notice">저장하거나 수정할 때 1회 차감돼요.</string>
     <string name="editorp_random_fortune_title">운세 정보</string>
     <string name="editorp_random_save_button">저장</string>
     <string name="editorp_random_title">문구</string>
@@ -290,7 +291,7 @@
     <string name="hs_settings_weather_region">지역</string>
     <string name="region_picker_legacy_hint">목록에서 다시 골라 주세요</string>
     <string name="region_picker_legacy_value_hint">‘%1$s’은(는) 목록에 없어요. 다시 골라 주세요.</string>
-    <string name="region_picker_hint">목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요.</string>
+    <string name="region_picker_hint">목록에서 지역을 골라 주세요.</string>
     <string name="legal_weather_attribution">날씨 정보: 기상청 · 気象庁 · 미국 기상청(NWS)의 예보를 바탕으로 AlarmTalk가 가공</string>
     <string name="settings_logout_confirm_title">로그아웃할까요?</string>
     <string name="settings_marketing_load_failed">불러오지 못했어요 · 다시 시도</string>

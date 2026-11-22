@@ -192,13 +192,14 @@
     <string name="editor_error_voice_alarm_login_required">Voice alarms are available after you sign in.</string>
     <string name="editor_error_voice_generation_failed">Voice generation failed.</string>
     <string name="editor_error_manual_tts_quota">You\'ve used up this month\'s custom-message creations. They refill next month.</string>
+    <string name="editor_save_failed_title">Can\'t save</string>
     <string name="editor_error_tts_request_in_progress">Still making this voice. Please save again in a moment.</string>
     <string name="editor_error_voice_message_login_required">Voice alarms are available after you sign in.</string>
     <string name="editor_error_weather_location_required">For phrases with weather, please choose a region.</string>
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>
     <string name="editor_holiday_off_subtitle">Includes substitute and temporary holidays</string>
     <string name="editor_holiday_off_title">Turn off on holidays</string>
-    <string name="editor_manual_input_placeholder">Enter the message to play in your alarm</string>
+    <string name="editor_manual_input_placeholder">Phrase to read out in the alarm</string>
     <string name="editor_no_voice_profile">You don\'t have any voices to use yet.</string>
     <string name="editor_off">Off</string>
     <string name="editor_plan_gate_login_title">Sign in required</string>
@@ -257,7 +258,7 @@
     <string name="editorp_cheer_vary_hint">Recently prepared lines take a short break, so a different one is set up next.</string>
     <string name="editorp_cheer_pinned_hint">Only the line you pick will play.</string>
     <string name="editorp_random_manual_title">Your message</string>
-    <string name="editor_manual_charge_notice">A new message makes a voice when you save, using 1 of this month\'s creations. Reusing a voice that\'s still on this phone doesn\'t count, but getting it again when it isn\'t on this phone uses 1.</string>
+    <string name="editor_manual_charge_notice">Saving or editing uses 1 creation.</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>
@@ -281,7 +282,7 @@
     <string name="hs_settings_weather_region">Region</string>
     <string name="region_picker_legacy_hint">Please choose again from the list</string>
     <string name="region_picker_legacy_value_hint">“%1$s” isn\'t on the list. Please choose again.</string>
-    <string name="region_picker_hint">Pick a region from the list. We don\'t use location permission.</string>
+    <string name="region_picker_hint">Pick a region from the list.</string>
     <string name="legal_weather_attribution">Weather data: forecasts from KMA (Korea), JMA (Japan) and the U.S. National Weather Service, processed by AlarmTalk</string>
     <string name="settings_logout_confirm_title">Log out?</string>
     <string name="settings_marketing_load_failed">Couldn\'t load · Tap to retry</string>

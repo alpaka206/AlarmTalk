@@ -194,6 +194,16 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 새 알람 대신 표본 알람을 연다 — `-UIPreviewEditorAlarm weekday|morning`(함께 `-UIPreviewEditor`). 반복 요일·공휴일 줄처럼
+    /// 기존 알람에서만 보이는 자리를 보려고 둔다.
+    static var editorAlarmID: String? {
+        #if DEBUG
+        return argValue("-UIPreviewEditorAlarm").map { LocalAlarmRecord.previewIDPrefix + $0 }
+        #else
+        return nil
+        #endif
+    }
+
     /// 목소리 등록 **마지막 화면**(생성·다운로드 진행률)을 바로 연다 —
     /// `-UIPreviewVoicePrep`. 화면 확인용.
     ///

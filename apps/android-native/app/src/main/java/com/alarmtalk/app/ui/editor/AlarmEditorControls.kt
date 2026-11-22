@@ -119,7 +119,9 @@ internal fun RepeatSelector(
         // 요일을 하나라도 고른 경우에만 노출한다.
         if (holidayEnabled) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                // 요일 칩 → 이 줄은 16(위 간격 10 + 6) — 10 이면 줄이 칩에 붙어 칩의 일부처럼 보였다(2026-11-22 오너 "공휴일에는 끄기
+                // 위 간격"). 요약 줄 → 칩은 한 덩어리라 10 그대로다. iOS `AlarmEditorSheet.repeatCard` 와 같다.
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {

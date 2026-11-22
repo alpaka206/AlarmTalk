@@ -6747,19 +6747,19 @@
         }
       }
     },
-    "목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요." : {
+    "목록에서 지역을 골라 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pick a region from the list. We don't use location permission."
+            "value" : "Pick a region from the list."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "リストから地域を選んでください。位置情報の権限は使いません。"
+            "value" : "リストから地域を選んでください。"
           }
         }
       }
@@ -11371,25 +11371,25 @@
         }
       }
     },
-    "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요." : {
+    "저장하거나 수정할 때 1회 차감돼요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A new message makes a voice when you save, using 1 of this month's creations. Reusing a voice that's still on this phone doesn't count, but getting it again when it isn't on this phone uses 1."
+            "value" : "Saving or editing uses 1 creation."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。このスマホに残っている音声はもう一度使っても回数を使いませんが、スマホにない音声をもう一度受け取ると1回使います。"
+            "value" : "保存または修正すると1回分を使います。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요."
+            "value" : "저장하거나 수정할 때 1회 차감돼요."
           }
         }
       }

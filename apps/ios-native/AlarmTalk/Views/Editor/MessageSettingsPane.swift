@@ -26,8 +26,9 @@ struct MessageSettingsPane: View {
     var manualLimit: Int?
     /// 무료가 기본분을 다 쓰고 남은 광고 보상 — 있으면 '(0/3)' 대신 보상 수를 말한다(안드로이드 `editorp_random_manual_ad_credits` 짝).
     var manualAdCredits: Int? = nil
-    /// 직접 입력 문구의 '변경하기' 를 눌리게 둘까 — 새로 만들 길이 없으면 false(`AdRewardGate.canChangeManualText`).
-    var manualChangeEnabled: Bool = true
+    /// 이번 달 직접 입력 문구를 새로 만들 길이 있는가(`AdRewardGate.canChangeManualText`). 없으면 직접 입력 창이 칸 대신 그 사실을
+    /// 말한다 — '변경하기' 를 회색으로 죽이지 않는다(2026-11-22 오너 "못하는 건 직접 입력 창에서, 밖에서 보여 주지 말고").
+    var manualCreationAvailable: Bool = true
     /// 저장된 날씨·운세 값(없으면 고르는 순간 입력창을 띄운다).
     let savedWeatherCountry: String
     let savedWeatherCity: String
@@ -282,6 +283,13 @@ struct MessageSettingsPane: View {
         // 화면 draft 에 반영돼 **'취소' 가 취소가 아니게 된다**(두 버튼 body 가 비어
         // 있어도 이미 값이 바뀐 뒤다). 알럿 전용 상태에 받아 '저장' 에서만 대입한다.
         .alert(String(localized: "직접 입력"), isPresented: $manualDialogOpen) {
+            // ⚠ **이번 달 새로 만들 길이 없으면 칸 대신 그 사실을 이 창에서 말한다**(2026-11-22 오너 "못하는 건 직접 입력 창에서").
+            // 확인은 닫기와 같다 — 목록에서 고르다 열렸으면 고르던 종류를 되돌린다. 안드로이드 `ManualMessageDialog` 와 같다.
+            if !manualCreationAvailable {
+                // 파란 채움 한 개 — 안드로이드 `IosAlertAction` 의 강조 버튼과 같은 모양(편집기의 다른 안내 알럿도 이렇게 띄운다).
+                Button(String(localized: "확인")) { cancelContextSelection() }
+                    .keyboardShortcut(.defaultAction)
+            } else {
             TextField(String(localized: "알람에서 읽어 줄 문구"), text: $manualAlertDraft)
             // 안드로이드 `AlarmRandomPromptSettings` 의 직접 입력 알럿과 같은 말('닫기').
             Button(String(localized: "닫기"), role: .cancel) { cancelContextSelection() }
@@ -301,11 +309,18 @@ struct MessageSettingsPane: View {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .isEmpty
             )
+            }
         } message: {
-            // 새 음성을 만드는 순간 횟수를 쓴다는 것을 **치기 전에** 말한다(`voice-and-message.md` §8 — 무료 3·플러스 30,
-            // 이미 만든 문구는 세지 않는다). 안드로이드 `editor_manual_charge_notice` 와 같은 문장.
-            Text(String(localized: "새 문구는 저장할 때 음성을 만들며 이번 달 1회를 써요. 이 폰에 남아 있는 음성은 다시 써도 횟수를 쓰지 않고, 폰에 없어 다시 받으면 1회를 써요."))
+            // 횟수를 쓴다는 것을 **치기 전에** 한 줄로 말한다(2026-11-22 오너 — 폰 안 재사용·다시 받기 설명은 뺐다. 규칙은
+            // `voice-and-message.md` §8). 안드로이드 `editor_manual_charge_notice`·`editor_error_manual_tts_quota` 와 같은 문장.
+            Text(manualCreationAvailable
+                 ? String(localized: "저장하거나 수정할 때 1회 차감돼요.")
+                 : String(localized: "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요."))
         }
+        #if DEBUG
+        // 화면 확인용 — `-UIPreviewEditorPane manual` 이면 직접 입력 창을 바로 연다(시뮬레이터에서 행을 누를 길이 없어서).
+        .task { if UIPreviewSeed.editorPane == "manual" { contextBeforeDialog = nil; manualDialogOpen = true } }
+        #endif
         .onChange(of: manualDialogOpen) { _, open in
             // 열 때만 현재 값으로 시드한다. 닫힐 때는 건드리지 않는다 —
             // '저장' 이 이미 반영했거나, '취소' 라 반영하지 않아야 한다.
@@ -350,8 +365,7 @@ struct MessageSettingsPane: View {
             PromptDetailCard(
                 title: String(localized: "문구"),
                 value: draftManualText.isEmpty ? String(localized: "아직 입력하지 않았어요") : draftManualText,
-                // 이번 달 더 만들 길이 없으면 회색(위 '직접 입력 (0/3)' 이 이유를 말한다).
-                changeEnabled: manualChangeEnabled,
+                // 언제나 눌린다 — 더 만들 길이 없으면 열린 창이 말한다(`manualCreationAvailable`).
                 onChange: {
                     contextBeforeDialog = nil
                     manualDialogOpen = true

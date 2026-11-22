@@ -192,13 +192,14 @@
     <string name="editor_error_voice_alarm_login_required">音声アラームはログイン後にご利用いただけます。</string>
     <string name="editor_error_voice_generation_failed">音声の生成に失敗しました。</string>
     <string name="editor_error_manual_tts_quota">今月の直接入力の文の作成回数を使い切りました。来月にまた補充されます。</string>
+    <string name="editor_save_failed_title">保存できません</string>
     <string name="editor_error_tts_request_in_progress">まだ音声を作成しています。少し待ってからもう一度保存してください。</string>
     <string name="editor_error_voice_message_login_required">音声アラームはログイン後にご利用いただけます。</string>
     <string name="editor_error_weather_location_required">天気を含む文には、地域を選んでください。</string>
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
     <string name="editor_holiday_off_subtitle">振替休日・臨時祝日を含む</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
-    <string name="editor_manual_input_placeholder">アラームで流す文を入力してください</string>
+    <string name="editor_manual_input_placeholder">アラームで読み上げる文言</string>
     <string name="editor_no_voice_profile">まだ使用できる声がありません。</string>
     <string name="editor_off">オフ</string>
     <string name="editor_plan_gate_login_title">ログインが必要です</string>
@@ -257,7 +258,7 @@
     <string name="editorp_cheer_vary_hint">最近用意した言葉は少しお休みして、別の応援を用意します。</string>
     <string name="editorp_cheer_pinned_hint">選んだ言葉だけが流れます。</string>
     <string name="editorp_random_manual_title">入力した文面</string>
-    <string name="editor_manual_charge_notice">新しい文は保存するときに音声を作成し、今月の作成回数を1回使います。このスマホに残っている音声はもう一度使っても回数を使いませんが、スマホにない音声をもう一度受け取ると1回使います。</string>
+    <string name="editor_manual_charge_notice">保存または修正すると1回分を使います。</string>
     <string name="editorp_random_fortune_title">占い情報</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>
@@ -281,7 +282,7 @@
     <string name="hs_settings_weather_region">地域</string>
     <string name="region_picker_legacy_hint">リストから選び直してください</string>
     <string name="region_picker_legacy_value_hint">「%1$s」はリストにありません。選び直してください。</string>
-    <string name="region_picker_hint">リストから地域を選んでください。位置情報の権限は使いません。</string>
+    <string name="region_picker_hint">リストから地域を選んでください。</string>
     <string name="legal_weather_attribution">天気情報：韓国気象庁・気象庁・米国国立気象局（NWS）の予報をもとにAlarmTalkが加工</string>
     <string name="settings_logout_confirm_title">ログアウトしますか？</string>
     <string name="settings_marketing_load_failed">読み込めませんでした · タップで再試行</string>

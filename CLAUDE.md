@@ -273,11 +273,9 @@
   2026-10-14 에 없앴다 — 아래 「유료 기능은 스토어 결제로만 연다」.)
 - **`IosAlertField` 를 M3 `OutlinedTextField` 로 바꾸지 말 것.** 시도했다가 되돌렸다 — M3 는
   최소 높이 56dp 라 알럿 안에서 비율이 깨진다(`IosAlertField` 는 48dp).
-- ⚠ **캡슐은 한 줄 칸에서만이다**(2026-08-20). `IosAlertField` 의 기본 모양은 `singleLine`
-  으로 갈린다 — 캡슐 반경(999)은 실제로 **높이의 절반**으로 잘리므로, 직접 입력처럼
-  `minHeight = 108` 인 여러 줄 칸에 그대로 쓰면 반경 54 짜리 좌우 반원이 된다. 실측 근거
-  (iOS `UIAlertController` 입력칸 h=48·r=24)는 **한 줄 칸의 것**이다. 여러 줄은
-  `WakerInputShape`(18).
+- ⚠ **입력칸은 한 줄 캡슐 하나다 — 여러 줄 칸을 되살리지 말 것**(2026-11-22 오너 "빈칸 디자인도 통일").
+  iOS 시스템 알럿 입력칸과 같다(실측 h=48·r=24, **테두리 없이** 알럿 바탕보다 한 단계 밝게 채움 — iOS 27).
+  직접 입력이 높이 108 의 여러 줄 상자(테두리 있음)였을 때 두 앱의 칸이 다른 물건처럼 보였다.
 - ⚠ **입력이 있는 알럿은 폼처럼 그린다**(2026-08-17). **입력칸은 글자 여백(30)이 아니라 버튼
   여백(16)** 을 쓰고(세로로 맞닿은 두 상자의 폭이 다르면 그 어긋남만 눈에 걸린다), 제목만 있어도
   왼쪽 정렬이다(입력칸 글자와 시작점을 맞춘다). 칸 아래 오류 줄도 왼쪽이다.
@@ -658,7 +656,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
   가 죽어 **토큰 수명(365일)이 다하는 날** 조용히 로그아웃된다. (90일은 수명이 아니라
   갱신을 시작하는 임계값이다 — `docs/spec/session-and-auth.md`.)
 - **화면 확인 모드**: `-UIPreviewSeed`(가짜 세션·알람·목소리) + `-UIPreviewTab
-  alarms|voices|menu` + `-UIPreviewEditor`(+ `-UIPreviewEditorPane voiceOutput|alarmSound|message`, `-UIPreviewEditorAlert voice_missing|voice_unavailable|…` — 저장 막힘 알럿) + `-UIPreviewAuthScreen methods|login|register` + `-UIPreviewRegisterStep code|rejected|verified|invalid`(가입 인증 줄 단계) + `-UIPreviewUpdateRequired`
+  alarms|voices|menu` + `-UIPreviewEditor`(+ `-UIPreviewEditorPane voiceOutput|alarmSound|message|manual`, `-UIPreviewEditorAlert voice_missing|voice_unavailable|…` — 저장 막힘 알럿, `-UIPreviewEditorAlarm weekday|morning` — 새 알람 대신 표본 알람) + `-UIPreviewAuthScreen methods|login|register` + `-UIPreviewRegisterStep code|rejected|verified|invalid`(가입 인증 줄 단계) + `-UIPreviewUpdateRequired`
   + `-UIPreviewConsentSheet voice_biometric`(목소리 등록 동의 시트 — 물을 민감 동의 유형을 쉼표로).
   + `-UIPreviewVoiceClone details`(목소리 등록 화면을 그 단계로 — `source`·`details`·`creating`, 함께 `-UIPreviewTab voices`).
   DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이
