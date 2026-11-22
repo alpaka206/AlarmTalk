@@ -489,11 +489,14 @@ private fun VoiceProfileSelector(
     preparingVoiceId: String?,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
-    // 정리 중이면 목록의 어느 것도 고른 것이 아니다 — 첫 목소리로 떨어뜨리지 않는다.
+    // ⚠ **고른 목소리가 목록에 없으면 아무것도 고르지 않은 것으로 그린다**(값 '목소리 선택', 시트에 체크 없음).
+    // 예전에는 목록의 첫 목소리로 떨어뜨려, 지운 목소리·쓸 수 없는 목소리를 쓰던 알람이 '시우' 가 골라진 것처럼 보였는데
+    // 저장을 누르면 "목소리를 골라주세요" 가 떴다(2026-11-22 오너 "기본으로 항상 골라져 있는 거 아냐?"). iOS 는 처음부터
+    // 자리표시자였다(`AlarmEditorSheet.voiceRowSubtitle`). 정리 중이면 위 `settlingName` 이 이름 그대로 '준비 중' 으로 말한다.
     val selectedOption = if (settlingName != null) {
         null
     } else {
-        options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
+        options.firstOrNull { it.id == selectedId }
     }
     // 알람음 행과 대칭: 제목 '목소리' + 값(선택된 목소리 / 꺼짐).
     // ⚠ **`editor_voice_output_title` 을 쓰지 말 것**(2026-08-16). 그건 '목소리 크기'

@@ -569,6 +569,21 @@ struct AlarmEditorSheet: View {
             case "message": messagePaneOpen = true
             default: break
             }
+            // `-UIPreviewEditorAlert voice_missing|voice_unavailable|recording_missing|…`(저장 막힘 사유의 `usageReason`) 면 그 알럿을
+            // 바로 띄운다 — 시스템 알럿이 한 줄·여러 줄 본문을 어떻게 정렬하는지 재 보려고 둔다.
+            switch UIPreviewSeed.editorAlert {
+            case nil: break
+            case "voice_unavailable":
+                validationAlert = ValidationAlertContent(
+                    title: String(localized: "목소리를 골라주세요"),
+                    message: String(localized: "고른 목소리를 지금은 쓸 수 없어요. 다른 목소리를 골라 주세요.")
+                )
+            case let key?:
+                let reasons: [EditorSaveBlockReason] = [.recordingMissing, .voiceMissing, .weatherLocationMissing, .fortuneInfoMissing, .messagePreparing]
+                if let reason = reasons.first(where: { $0.usageReason == key }) {
+                    validationAlert = ValidationAlertContent(title: reason.alertTitle, message: reason.alertMessage)
+                }
+            }
         }
         #endif
         .onAppear {
@@ -1019,7 +1034,7 @@ struct AlarmEditorSheet: View {
     ///  - 플랜 잠금·사용 불가 목소리 → **버튼을 죽이지 않는다**(2026-09-29). 편집기의
     ///    '삭제된 목소리' 배너를 걷어냈으므로 누르면 `saveFlow` 가 알럿으로 말한다
     ///    (`selectedVoiceUnusable` — 안드로이드 `SaveBlockReason.VOICE_UNAVAILABLE`).
-    ///  - 목소리 미선택 → 목소리 행이 "고르기" 로 비어 있음을 말하고, 목록이 없으면
+    ///  - 목소리 미선택 → 목소리 행이 "목소리 선택" 으로 비어 있음을 말하고, 목록이 없으면
     ///    '목소리 탭에서 만들기' 버튼이 해결 액션까지 갖고 있다.
     ///  - 녹음 미완료 → `RecordingCard` 자체가 CTA 다.
     ///  - 날씨 테마 지역 없음 / 문구 정보 미완 → 문구 행과 문구 화면의
@@ -1079,7 +1094,7 @@ struct AlarmEditorSheet: View {
             return bucket == .fortune ? .fortuneInfoMissing : .weatherLocationMissing
         }
 
-        // 말하는 자리: 목소리 행("고르기") + 목록이 비면 '목소리 탭에서 만들기'.
+        // 말하는 자리: 목소리 행("목소리 선택") + 목록이 비면 '목소리 탭에서 만들기'.
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return .voiceMissing }
         // 선택된 목소리가 더 이상 alarm 선택 대상이 아니면(삭제/미준비 등) 사용 불가.
         // 단, 기존 알람의 음원이 그대로 재사용 가능한 경우엔 막지 않는다(아래 생성 경로가 흡수).
@@ -1295,7 +1310,8 @@ struct AlarmEditorSheet: View {
     var voiceRowSubtitle: String {
         if voiceSourceMode == .localAudio { return String(localized: "직접 녹음") }
         if let settling = settlingSelectedVoiceName { return String(localized: "\(settling) · 준비 중") }
-        return selectedVoiceName ?? String(localized: "고르기")
+        // 고른 목소리가 목록에 없으면(지웠거나 지금 쓸 수 없음) 자리표시자다 — 안드로이드 `editor_voice_select` 와 같은 말.
+        return selectedVoiceName ?? String(localized: "목소리 선택")
     }
 
     /// 고른 목소리가 교체 정리 중이면 그 이름. 그 목소리는 고르기 목록에 없어(`voiceProfileOptions`) 예전에는 행이 '고르기' 로

@@ -176,6 +176,15 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 편집기를 열자마자 저장 막힘 알럿을 띄운다 — `-UIPreviewEditorAlert voice_missing|voice_unavailable|…`(함께 `-UIPreviewEditor`).
+    static var editorAlert: String? {
+        #if DEBUG
+        return argValue("-UIPreviewEditorAlert")
+        #else
+        return nil
+        #endif
+    }
+
     /// 실행하자마자 알람 편집기를 연다 — `-UIPreviewEditor`. 화면 확인용.
     static var opensEditor: Bool {
         #if DEBUG

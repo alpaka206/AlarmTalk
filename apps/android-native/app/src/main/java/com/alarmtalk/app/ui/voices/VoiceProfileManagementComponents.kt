@@ -101,14 +101,16 @@ internal fun VoiceProfileEditDialog(
             else -> null
         }
         if (nameErrorText != null) {
+            // 칸 아래 오류 줄은 **왼쪽**, 칸 안 글자와 같은 시작선(16)이다 — 입력 알럿은 폼이라 제목·본문·칸 글자가 모두 왼쪽인데
+            // 이 줄만 가운데면 한 모달에 시작점이 둘이 된다(2026-11-22 오너 "통일").
             Text(
                 text = nameErrorText,
                 color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center,
+                textAlign = TextAlign.Start,
                 style = IosAlertType.Message,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 6.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 6.dp),
             )
         }
     }

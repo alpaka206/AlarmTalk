@@ -278,12 +278,13 @@
   `minHeight = 108` 인 여러 줄 칸에 그대로 쓰면 반경 54 짜리 좌우 반원이 된다. 실측 근거
   (iOS `UIAlertController` 입력칸 h=48·r=24)는 **한 줄 칸의 것**이다. 여러 줄은
   `WakerInputShape`(18).
-- ⚠ **입력이 있는 알럿은 폼처럼 그린다**(2026-08-17). 순수 알럿과 두 가지가 다르다:
-  **입력칸은 글자 여백(30)이 아니라 버튼 여백(16)** 을 쓰고(세로로 맞닿은 두 상자의 폭이
-  다르면 그 어긋남만 눈에 걸린다), **제목·본문은 줄 수와 무관하게 왼쪽 정렬**이다(입력칸
-  글자는 언제나 왼쪽에서 시작하는데 그 위만 가운데면 한 모달에 시작점이 둘이 된다).
-  판정은 `content != null` 하나 — 순수 알럿은 예전 그대로(한 줄 가운데 / 여러 줄 왼쪽)다.
-  **iOS 는 여기만 따라오지 못한다** — 시스템 `.alert` 라 정렬을 못 바꾸고, 바꾸겠다고
+- ⚠ **입력이 있는 알럿은 폼처럼 그린다**(2026-08-17). **입력칸은 글자 여백(30)이 아니라 버튼
+  여백(16)** 을 쓰고(세로로 맞닿은 두 상자의 폭이 다르면 그 어긋남만 눈에 걸린다), 제목만 있어도
+  왼쪽 정렬이다(입력칸 글자와 시작점을 맞춘다). 칸 아래 오류 줄도 왼쪽이다.
+- ⚠ **정렬을 줄 수로 가르지 않는다 — 본문이 있으면 왼쪽, 제목 한 줄뿐이면 가운데**(2026-11-22
+  오너 "통일"). 아이폰(iOS 27) 시스템 알럿이 그렇다(시뮬레이터 실측 — `-UIPreviewEditorAlert`).
+  예전에는 iOS 26 실측(2026-08-11)대로 본문이 한 줄이면 가운데·여러 줄이면 왼쪽이라, 같은 제목의
+  알럿이 본문 길이 하나로 가운데·왼쪽을 오갔다. iOS 는 시스템 `.alert` 그대로 둔다 — 정렬을 바꾸겠다고
   껍데기를 새로 만들면 오히려 원본에서 멀어진다(위 「iOS 는 안드로이드를…」 절).
 - **버튼 2개는 가로, 3개 이상은 세로.** iOS UIAlertController 규칙 그대로.
 - **닫기(X)를 버튼과 같이 두지 말 것.** '건너뛰기'/'닫기' 와 같은 일을 하는 버튼이 둘이면
@@ -657,7 +658,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
   가 죽어 **토큰 수명(365일)이 다하는 날** 조용히 로그아웃된다. (90일은 수명이 아니라
   갱신을 시작하는 임계값이다 — `docs/spec/session-and-auth.md`.)
 - **화면 확인 모드**: `-UIPreviewSeed`(가짜 세션·알람·목소리) + `-UIPreviewTab
-  alarms|voices|menu` + `-UIPreviewEditor`(+ `-UIPreviewEditorPane voiceOutput|alarmSound|message`) + `-UIPreviewAuthScreen methods|login|register` + `-UIPreviewRegisterStep code|rejected|verified|invalid`(가입 인증 줄 단계) + `-UIPreviewUpdateRequired`
+  alarms|voices|menu` + `-UIPreviewEditor`(+ `-UIPreviewEditorPane voiceOutput|alarmSound|message`, `-UIPreviewEditorAlert voice_missing|voice_unavailable|…` — 저장 막힘 알럿) + `-UIPreviewAuthScreen methods|login|register` + `-UIPreviewRegisterStep code|rejected|verified|invalid`(가입 인증 줄 단계) + `-UIPreviewUpdateRequired`
   + `-UIPreviewConsentSheet voice_biometric`(목소리 등록 동의 시트 — 물을 민감 동의 유형을 쉼표로).
   + `-UIPreviewVoiceClone details`(목소리 등록 화면을 그 단계로 — `source`·`details`·`creating`, 함께 `-UIPreviewTab voices`).
   DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이

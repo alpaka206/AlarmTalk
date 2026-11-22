@@ -2,10 +2,6 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.border
@@ -139,8 +135,6 @@ internal fun IosAlertDialog(
 ) {
     if (tracksAsOpenModal) TrackOpenModal()
     val scheme = MaterialTheme.colorScheme
-    // 본문이 몇 줄로 그려졌는지. 정렬을 그 결과로 정한다(위 주석 참조).
-    var messageLineCount by remember(message) { mutableIntStateOf(0) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -187,23 +181,14 @@ internal fun IosAlertDialog(
                             ),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        // ⚠ **여러 줄 본문은 가운데가 아니라 왼쪽 정렬이다.**
-                        // iOS 알럿은 본문이 한 줄이면 가운데, **여러 줄이면 제목까지 왼쪽
-                        // 정렬**로 바뀐다(2026-08-11 실측 — 탈퇴 알럿의 여러 줄 본문이 왼쪽
-                        // 정렬이었다). 긴 문단을 가운데 정렬하면 줄마다 시작점이 달라 읽는
-                        // 눈이 매 줄 다시 왼쪽을 찾아야 한다.
-                        //
-                        // ⚠ **줄 수 기준을 3 으로 두지 말 것.** 알럿 폭이 기기마다 달라
-                        // 같은 문장이 아이폰에서 3줄, 갤럭시에서 2줄로 감긴다 — 3 으로 두면
-                        // 같은 알럿이 한쪽만 가운데 정렬로 뜬다(실제로 그랬다).
-                        // 판정은 **한 줄인가 아닌가**로만 한다.
-                        //
-                        // ⚠ **입력이 있는 알럿은 줄 수와 무관하게 왼쪽이다**(2026-08-17 지시).
-                        // 입력칸 안의 글자는 언제나 왼쪽에서 시작하는데 그 위의 제목·본문만
-                        // 가운데면, 한 모달 안에 시작점이 두 개가 된다. 알럿보다 **폼**에
-                        // 가까운 물건이라 폼처럼 왼쪽 한 줄로 세운다.
-                        val longMessage = messageLineCount >= 2
-                        val blockAlign = if (longMessage || content != null) TextAlign.Start else TextAlign.Center
+                        // ⚠ **본문이 있으면 제목·본문은 언제나 왼쪽이다 — 줄 수를 보지 않는다**(2026-11-22 오너 "어떤 건 가운데고
+                        // 어떤 건 왼쪽이야, 통일해"). 아이폰(iOS 27) 시스템 알럿이 그렇다: 본문이 한 줄이어도 왼쪽이고, **제목 한 줄만
+                        // 있는 확인 알럿**('로그아웃할까요?')만 가운데다(2026-11-22 시뮬레이터 실측 — `-UIPreviewEditorAlert`).
+                        // 예전에는 iOS 26 실측(2026-08-11)대로 본문이 한 줄이면 가운데·여러 줄이면 왼쪽이라, 같은 제목('목소리를
+                        // 골라주세요')의 알럿이 본문 길이 하나로 가운데·왼쪽을 오갔다. ⚠ 줄 수를 재서 정렬을 바꾸는 판정을 되살리지 말 것.
+                        // 입력이 있는 알럿은 폼이라 제목뿐이어도 왼쪽이다(2026-08-17 — 입력칸 글자와 시작점을 맞춘다).
+                        val titleOnly = message.isNullOrBlank() && errorMessage.isNullOrBlank() && content == null
+                        val blockAlign = if (titleOnly) TextAlign.Center else TextAlign.Start
                         if (!title.isNullOrBlank()) {
                             Text(
                                 text = title,
@@ -223,8 +208,6 @@ internal fun IosAlertDialog(
                                 textAlign = blockAlign,
                                 style = IosAlertType.Message,
                                 modifier = Modifier.fillMaxWidth(),
-                                // 줄 수는 그려 봐야 안다 — 재 보고 다음 배치에서 정렬을 정한다.
-                                onTextLayout = { messageLineCount = it.lineCount },
                             )
                         }
                         if (!errorMessage.isNullOrBlank()) {
