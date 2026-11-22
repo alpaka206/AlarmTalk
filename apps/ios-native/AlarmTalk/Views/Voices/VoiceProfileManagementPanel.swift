@@ -465,16 +465,10 @@ struct VoiceProfileManagementPanel: View {
                 // (2026-08-11 스크린샷 픽셀로 실측 — 눈으로 작아 보인 게 맞았다).
                 // 안드로이드 M3 `Button` 기본 높이 40dp 에 맞춘다.
                 Text(String(localized: "추가"))
-                    .padding(.vertical, 5)
-                    // 좌우도 라벨에 준다 — 세로와 같은 이유다(캡슐은 **라벨 크기**에 맞춰
-                    // 그려지므로 버튼 바깥 여백으로는 안 넓어진다). 2026-08-11 지적
-                    // "좌우 여백이 너무 없다" — 실측 폭 48pt 였다.
-                    .padding(.horizontal, 8)
             }
-            // labelLarge(14 · Medium) — 안드로이드 M3 `Button` 의 글자와 같다. 예전에는 SemiBold(600)였다.
-            .font(theme.typography.labelLarge)
-            .buttonStyle(.borderedProminent)
-            .tint(theme.palette.primary)
+            // 안드로이드 M3 `Button` + `wakerButtonColors()` 와 같은 알약 — 하늘색 바탕에 **남색 글자**(onPrimary), 높이 40, 좌우 24,
+            // labelLarge. 잠기면 surfaceVariant/onSurfaceVariant(2026-11-22 — 그전에는 시스템 `.borderedProminent` 라 글자가 흰색이었다).
+            .buttonStyle(VoiceAddButtonStyle())
             // ⚠ `.controlSize(.small)` 을 쓰지 말 것 — 높이가 28pt 안팎으로 떨어져
             // **최소 터치 타깃(44pt)을 밑돈다.** 섹션 헤더에 있다고 작게 만들 이유가
             // 없다. 이 버튼이 목소리를 만드는 **유일한 진입점**이다.
@@ -646,5 +640,22 @@ enum VoiceRowMenuAction: String, Identifiable {
         case .rename: return String(localized: "이름 수정")
         case .delete: return String(localized: "삭제")
         }
+    }
+}
+
+/// 목소리 탭 '추가' 알약 — 안드로이드 `VoiceProfileManagementPanel` 의 M3 `Button`(`wakerButtonColors()`)과 같은 값.
+private struct VoiceAddButtonStyle: ButtonStyle {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(theme.typography.labelLarge)
+            .foregroundStyle(isEnabled ? theme.palette.onPrimary : theme.palette.onSurfaceVariant)
+            .padding(.horizontal, 24)
+            .frame(height: 40)
+            .background(Capsule().fill(isEnabled ? theme.palette.primary : theme.palette.surfaceVariant))
+            .contentShape(Capsule())
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
     }
 }

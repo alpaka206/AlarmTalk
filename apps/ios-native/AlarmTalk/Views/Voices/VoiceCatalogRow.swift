@@ -58,6 +58,8 @@ struct VoiceCatalogRow<Below: View>: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!enabled)
+                    // 잠긴 행은 행 전체가 아니라 **버튼만** 흐리다 — 안드로이드 `IconButton(enabled = false)` 의 0.38 과 같다(2026-11-22).
+                    .opacity(enabled ? 1 : 0.38)
                     .accessibilityLabel("더보기")
                 } else {
                     // ⋮ 가 없는 행도 같은 폭을 비워 둔다 — 안 그러면 '듣기' 가 행마다
@@ -78,6 +80,7 @@ struct VoiceCatalogRow<Below: View>: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!enabled)
+                .opacity(enabled ? 1 : 0.38)
                 .accessibilityLabel(isPlaying ? String(localized: "정지") : String(localized: "듣기"))
             }
             .frame(minHeight: Self.contentHeight)
@@ -100,7 +103,6 @@ struct VoiceCatalogRow<Below: View>: View {
             // 길게 눌렀다 떼도 행 동작이다 — 안드로이드 `clickable` 은 길게 누른 뒤 떼어도 같은 동작을 한다.
             perform: { performRowAction() }
         )
-        .opacity(enabled ? 1 : 0.5)
     }
 
     /// 관리할 게 있는 행(내 목소리)은 관리 시트, 나머지는 미리듣기.
