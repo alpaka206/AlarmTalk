@@ -2749,7 +2749,16 @@ struct AlarmEditorSheet: View {
         // (서버는 시스템 보이스 라이브 생성을 허용한다).
         if draft.playMode != .alarmOnly, voiceSourceMode == .ttsProfile {
             guard await prepareSelectedBucketClipIfNeeded() else {
-                showSaveFailureAlert()
+                // 테마 문구를 폰에 받지 못했다(오프라인 등) — 실패 알럿 대신 **목소리 받기 화면**을 연다. 안드로이드 `saveEditor` 의
+                // `bindStockBucketClips` 실패 → `openClipPreparation` 과 같다(2026-11-22 두 앱 통일. 그전 iOS 는 "저장할 수 없어요"
+                // 알럿이었다). 그 화면이 다시 받고, 다 받으면 저절로 닫힌다 — 사용자는 저장을 다시 누른다. 받은 실패 문구는
+                // 비운다 — 같은 뷰모델을 목소리 탭도 읽어, 남겨 두면 그 탭에 엉뚱한 빨간 줄로 뜬다.
+                if let profileID = voiceStudio.selectedProfileID.nilIfBlank {
+                    voiceStudio.statusMessage = nil
+                    preparationVoiceID = profileID
+                } else {
+                    showSaveFailureAlert()
+                }
                 recordSaveBlocked("bucket_clip_unavailable")
                 return
             }

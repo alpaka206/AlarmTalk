@@ -270,6 +270,9 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   한다. 직접 입력이 비면 카드를 그리지 않는다(고르는 순간 입력창이 뜨고, 취소하면 종류가 되돌아간다). 2026-11-22 전 iOS 는
   제목 '문구'·빈 값 '아직 정하지 않았어요' 였고, 운세는 날짜만 있어도 `날짜 · 시간 · 성별` 로 줄였다. 안드로이드
   `RandomPromptDetailRow`(`fortuneInfoSummary`), iOS `PromptDetailCard`(`MessageSettingsPane` 의 `fortuneSummary`·`weatherSummary`).
+- **운세 입력의 드롭다운(연·월·일·태어난 시간)은 지금 고른 값을 표시한다** — 안드로이드는 그 항목을 강조색·굵게, iOS 는 시스템 메뉴의
+  체크 표시다(시스템 메뉴는 항목 색을 바꿀 수 없다 — 같은 사실을 그 플랫폼 문법으로 말한다). iOS 는 2026-11-22 전 표시가 없었다.
+  안드로이드 `ui/editor/AlarmFortuneSettings.kt` 의 `FortuneUnitDropdown`, iOS `FortunePromptInputFields.menuOption`.
 - **묶음 안 간격**(2026-11-22 두 앱 대조): '재생 방식' 제목 → 세그먼트 **10**, 세그먼트 → 목소리 카드 → 문구 카드 **12**,
   '세부 설정' 제목 → 카드 **10**. 바깥 섹션 사이 20 은 묶음 **사이**에만 쓴다 — iOS 는 묶음의 조각을 바깥 `VStack(spacing: 20)`
   에 낱개로 흘려 모두 20 으로 벌어져 있었다(`alarmModeSection`·`detailSettingsSection`).
@@ -343,6 +346,8 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 - **어디에·얼마나**: 화면 아래(하단 탭 위, ＋버튼 위) 가운데에 약 3초. **두 앱 모두 글자 폭만큼의 캡슐이고 아이콘이 없다**(2026-11-09
   오너 — iOS 모양으로 맞추고 앞의 ⓘ 는 뺐다. 안드로이드는 그전까지 아이콘 달린 스낵바였다). 보조 컨테이너 색·`labelLarge`.
   누르거나 화면을 옮겨도 막지 않는다. 스크린 리더에는 같은 문장을 알린다.
+  **움직임도 같다** — Material 스낵바의 것(0.8 배에서 커지며 0.15 초에 나타나고 0.075 초 만에 줄며 흐려진다, `FastOutSlowInEasing`).
+  iOS 는 2026-11-22 전 12pt 올라오며 0.28 초였다(`RingInNotice.swift` 의 `transition`). 동작 줄이기를 켜면 흐려지기만 한다.
 - **권한이 모자랄 때**: 안드로이드는 그래도 울리므로(CLAUDE.md 「알람 권한 3종」) 같은 문장을 띄운다. iOS 는 AlarmKit 권한이 없으면
   예약이 안 되므로 띄우지 않는다(헤드라인과 같은 판단).
 - 켜기가 실패해 켜지지 않은 경우에는 띄우지 않는다.

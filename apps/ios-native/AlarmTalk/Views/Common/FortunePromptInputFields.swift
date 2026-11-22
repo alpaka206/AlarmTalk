@@ -191,7 +191,7 @@ struct FortunePromptInputFields: View {
                 WeightedRow(weights: [1.2, 1, 1], spacing: 8) {
                     dropdown(display: yearText, isPlaceholder: yearValue == nil, hasError: birthDateError) {
                         ForEach(Self.selectableYears, id: \.self) { year in
-                            Button(FortunePromptInputFormat.yearLabel(year)) { setBirth(year: year) }
+                            menuOption(FortunePromptInputFormat.yearLabel(year), selected: yearValue == year) { setBirth(year: year) }
                         }
                     }
                     dropdown(
@@ -201,7 +201,7 @@ struct FortunePromptInputFields: View {
                         enabled: yearValue != nil
                     ) {
                         ForEach(1...12, id: \.self) { month in
-                            Button(FortunePromptInputFormat.monthLabel(month)) { setBirth(month: month) }
+                            menuOption(FortunePromptInputFormat.monthLabel(month), selected: monthValue == month) { setBirth(month: month) }
                         }
                     }
                     dropdown(
@@ -211,7 +211,7 @@ struct FortunePromptInputFields: View {
                         enabled: yearValue != nil && monthValue != nil
                     ) {
                         ForEach(1...daysInSelectedMonth, id: \.self) { day in
-                            Button(FortunePromptInputFormat.dayLabel(day)) { setBirth(day: day) }
+                            menuOption(FortunePromptInputFormat.dayLabel(day), selected: dayValue == day) { setBirth(day: day) }
                         }
                     }
                 }
@@ -229,7 +229,10 @@ struct FortunePromptInputFields: View {
                     hasError: birthTimeError
                 ) {
                     ForEach(FortunePromptInputFormat.timeChoices) { choice in
-                        Button(FortunePromptInputFormat.displayLabel(choice.label)) { birthTime = choice.value }
+                        menuOption(
+                            FortunePromptInputFormat.displayLabel(choice.label),
+                            selected: FortunePromptInputFormat.normalizedBirthTime(birthTime) == choice.value
+                        ) { birthTime = choice.value }
                     }
                 }
             }
@@ -363,6 +366,15 @@ struct FortunePromptInputFields: View {
                 .fontWeight(.semibold)
                 .foregroundStyle(hasError ? theme.palette.error : theme.palette.onSurface)
             content()
+        }
+    }
+
+    /// 드롭다운 항목 — **지금 고른 값에 표시**를 단다. 안드로이드 `FortuneUnitDropdown`(`ui/editor/AlarmFortuneSettings.kt`)은 고른 항목을 강조색·SemiBold 로
+    /// 그리는데, iOS 시스템 메뉴는 항목 색을 바꿀 수 없어 시스템 문법인 체크 표시로 같은 사실을 말한다(2026-11-22 두 앱 통일).
+    /// 메뉴 안의 `Toggle` 은 켜진 항목에 시스템 체크를 단다(손으로 그린 아이콘이 아니라 메뉴 항목의 선택 상태다).
+    private func menuOption(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Toggle(isOn: Binding(get: { selected }, set: { _ in action() })) {
+            Text(title)
         }
     }
 

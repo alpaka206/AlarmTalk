@@ -227,13 +227,15 @@ struct RingInNoticeHost: View {
         .floatingChromeShadow()
     }
 
-    /// 진입은 살짝 올라오며 감속하고, 퇴장은 그보다 빠르게 걷힌다(CLAUDE.md 「동작(애니메이션) 원칙」 — 퇴장이 더 빨라야 한다).
+    /// 안드로이드 스낵바(Material 3 `SnackbarHost` 기본)와 같은 움직임 — 0.8 배에서 커지며 0.15 초에 나타나고, 0.075 초 만에
+    /// 흐려져 걷힌다(퇴장이 더 빠르다 — CLAUDE.md 「동작(애니메이션) 원칙」). 2026-11-22 두 앱 통일(그전 iOS 는 12pt 올라오며 0.28 초).
     /// 동작 줄이기를 켰으면 움직이지 않고 나타나기만 한다.
     private var transition: AnyTransition {
-        let insertion: AnyTransition = reduceMotion ? .opacity : .offset(y: 12).combined(with: .opacity)
+        // 곡선은 안드로이드 `FastOutSlowInEasing`(0.4, 0, 0.2, 1) 이다. 걷힐 때도 0.8 배로 줄며 흐려진다(스낵바와 같다).
+        let shape: AnyTransition = reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity)
         return .asymmetric(
-            insertion: insertion.animation(.smooth(duration: 0.28)),
-            removal: .opacity.animation(.easeIn(duration: 0.18))
+            insertion: shape.animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.15)),
+            removal: shape.animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.075))
         )
     }
 }

@@ -502,7 +502,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 alreadyConfirmed: response.previewPlaybackConfirmed == true
             ))
         } catch {
-            return .failed(mapVoiceError(error))
+            return .failed(userFacingErrorMessage(error, fallback: String(localized: "미리듣기를 재생하지 못했어요.")))
         }
     }
 
@@ -516,12 +516,13 @@ final class VoiceStudioViewModel: ObservableObject {
             // 토큰 없이 왔으면 서버가 이미 기록해 둔 경우뿐이다 — 아니면 저장이 열리지 않으니 다시 받게 한다.
             return clip.alreadyConfirmed ? nil : String(localized: "미리듣기 확인에 실패했어요. 다시 들어 주세요.")
         }
-        guard let token = session?.token else { return String(localized: "로그인이 필요해요.") }
+        // 기록이 안 됐다 — 이유가 무엇이든(토큰 없음·네트워크) 다시 들어 달라고 말한다(안드로이드 `voices_preview_confirm_failed`).
+        guard let token = session?.token else { return String(localized: "미리듣기 확인에 실패했어요. 다시 들어 주세요.") }
         do {
             _ = try await api.confirmVoicePreviewPlayed(id: draft.id, playbackToken: playbackToken, token: token)
             return nil
         } catch {
-            return mapVoiceError(error)
+            return APIErrorMessages.message(for: error, fallback: String(localized: "미리듣기 확인에 실패했어요. 다시 들어 주세요."))
         }
     }
 
@@ -1017,7 +1018,7 @@ final class VoiceStudioViewModel: ObservableObject {
             preparedAlarm = prepared
             return prepared
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "미리듣기를 재생하지 못했어요."))
             return nil
         }
     }
@@ -1087,7 +1088,7 @@ final class VoiceStudioViewModel: ObservableObject {
             // 없는 고정 문구가 카드 아래에 한 줄 더 생긴다.
             statusMessage = nil
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "녹음을 시작할 수 없어요."))
         }
     }
 
@@ -1217,7 +1218,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 // `VoiceCloneUploadFlow.submitOutcome`). 서버는 아무것도 쓰지 않았다 — 이번 달 등록이 그대로라 남은 횟수는
                 // 다시 읽지 않는다.
                 noSpeechRejected = isNoSpeechRejection(error)
-                statusMessage = mapVoiceError(error)
+                statusMessage = mapVoiceError(error, fallback: String(localized: "목소리를 만들지 못했어요"))
             }
             return nil
         }
@@ -1345,7 +1346,7 @@ final class VoiceStudioViewModel: ObservableObject {
         } catch {
             if !answerRecorded { recordManualGenerationFailure(error) }
             lastGenerateErrorCode = serverErrorCode(of: error)
-            statusMessage = mapVoiceError(error)
+            statusMessage = mapVoiceError(error, fallback: String(localized: "음성 생성에 실패했어요."))
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             return nil
         }
@@ -1471,7 +1472,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 try target.play(url: url)
             }
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "미리듣기를 재생하지 못했어요."))
         }
     }
 
@@ -1487,7 +1488,7 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             try previewPlayer.play(url: url)
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "미리듣기를 재생하지 못했어요."))
         }
     }
 
@@ -1528,7 +1529,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 await refresh(session: session, force: true)
                 return true
             }
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "목소리 삭제에 실패했어요"))
             return false
         }
     }
@@ -1992,7 +1993,7 @@ final class VoiceStudioViewModel: ObservableObject {
             }
             await refresh(session: session, force: true)
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "정보 수정에 실패했어요"))
         }
     }
 

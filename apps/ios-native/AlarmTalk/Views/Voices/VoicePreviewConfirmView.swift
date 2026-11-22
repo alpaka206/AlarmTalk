@@ -740,8 +740,9 @@ struct VoicePreviewConfirmView: View {
             .disabled(saveDisabled)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 16)
+        // 위·아래 10 — 등록의 다른 단계(`VoiceCloneUploadFlow` 의 하단 버튼)와 안드로이드 등록 창 하단 줄(위 10 · 아래 10)과
+        // 같다(2026-11-22. 그전에는 이 화면만 아래 16 이라 단계를 넘을 때 버튼이 6 씩 오르내렸다).
+        .padding(.vertical, 10)
     }
 
     /// 두 하단 버튼이 **같은 자로** 그려지도록 모양을 한 곳에 둔다(위 주석 참조).
@@ -811,7 +812,7 @@ struct VoicePreviewConfirmView: View {
             await fetchPreview(thenPlay: .current)
         } catch {
             savingText = false
-            errorMessage = voice.mapVoiceError(error)
+            errorMessage = userFacingErrorMessage(error, fallback: String(localized: "문구를 수정하지 못했어요."))
         }
     }
 
@@ -921,7 +922,7 @@ struct VoicePreviewConfirmView: View {
             guard voice.isMonthlyLimitRejection(error) else {
                 // 다시 시도할 수 있는 실패(네트워크·5xx)와 사용자가 고칠 실패(유료·동의·미리듣기)는
                 // 이 화면 안에서 말한다.
-                errorMessage = voice.mapVoiceError(error)
+                errorMessage = voice.mapVoiceError(error, fallback: String(localized: "목소리를 만들지 못했어요"))
                 return
             }
             // ⚠ **월 등록 한도 거절은 흐름을 끝낸다**(스펙 voice-and-message §4-1 「월 등록 한도」 ③).

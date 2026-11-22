@@ -53,9 +53,6 @@ struct BillingPanel: View {
         case playOwnsRenewal
         /// 이미 유료인데 **어느 스토어가 갱신을 쥐었는지 아직 모른다**(응답 전).
         case renewalOwnerUnknown
-        /// 결제 직전의 조회(또는 상품 다시 받기)가 실패했다 — 진행하지 않고 다시 시도하게 한다
-        /// (안드로이드 `crossStoreRenewalBlocked` 의 `msg_gb_billing_info_load_failed` 와 같은 말).
-        case loadFailed
         var id: String { rawValue }
     }
 
@@ -202,12 +199,6 @@ struct BillingPanel: View {
                     message: Text(String(localized: "지금 이용권이 어느 스토어에서 갱신되는지 확인하고 있어요. 잠시 후 다시 시도해 주세요.")),
                     dismissButton: .cancel(Text(String(localized: "확인")))
                 )
-            case .loadFailed:
-                return Alert(
-                    title: Text(String(localized: "이용권 정보를 불러오지 못했어요")),
-                    message: Text(String(localized: "잠시 후 다시 시도해 주세요.")),
-                    dismissButton: .cancel(Text(String(localized: "확인")))
-                )
             }
         }
         .alert(
@@ -316,6 +307,12 @@ struct BillingPanel: View {
             .padding(.horizontal, 4)
     }
 
+    /// 결제 직전 조회(또는 상품 다시 받기)가 실패했다 — 진행하지 않고 위쪽 빨간 안내로 말한다. 안드로이드
+    /// `MainViewModelBillingActions` 의 `msg_gb_billing_info_load_failed` 와 같은 말·같은 자리다(2026-11-22 — 그전 iOS 는 알럿).
+    private func showLoadFailedToast() {
+        showToast(String(localized: "이용권 정보를 불러오지 못했어요"), .error)
+    }
+
     private func showToast(_ message: String, _ style: AuthToastStyle) {
         toast = BillingToast(message: message, style: style)
     }
@@ -376,7 +373,7 @@ struct BillingPanel: View {
     /// 시작 버튼을 눌렀을 때. **여기서 한 번, 결제 직전에 한 번** 본다.
     ///
     /// 상품을 아직 못 받았으면(첫 진입의 조회가 실패했거나 아직 안 끝났다) **지금 다시 받는다** — 그래도 없으면 결제로 갈 수
-    /// 없으니 "이용권 정보를 불러오지 못했어요" 알럿이다(2026-11-22 — 누를 수 없는 버튼 대신). 받은 뒤에 확인 알럿을 띄워야
+    /// 없으니 "App Store 결제를 시작하지 못했어요…" 를 위쪽 안내로 말한다(2026-11-22 — 누를 수 없는 버튼 대신, 안드로이드와 같은 문장). 받은 뒤에 확인 알럿을 띄워야
     /// 체험 조건(첫 결제일·금액)을 정확히 말한다.
     private func beginPurchase(tier: PlanTier) {
         guard !billingBusy else { return }
@@ -386,7 +383,9 @@ struct BillingPanel: View {
                 await subscriptions.fetchProducts()
                 billingTaskInFlight = false
                 guard subscriptions.product(for: plan) != nil else {
-                    purchaseBlock = .loadFailed
+                    // 결제 시트를 열 수 없다 — 안드로이드 `msg_gb_google_play_start_failed` 와 같은 문장·같은 자리(위쪽 빨간 안내)다
+                    // (스토어 이름만 다르다 — `SubscriptionManager.purchase` 의 같은 갈래와 같은 글자).
+                    showToast(String(localized: "App Store 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요."), .error)
                     return
                 }
                 presentPurchaseConfirmation(tier: tier)
@@ -425,7 +424,7 @@ struct BillingPanel: View {
     ///
     /// ⚠ **못 받아 오면 진행하지 않는다.** 여기서 캐시로 넘어가면 이 함수를 만든 이유가
     /// 사라진다 — 사용자는 다시 시도하면 되고, 잃는 것은 한 번의 탭이다. 그때는 "이용권 정보를 불러오지 못했어요"
-    /// 알럿으로 말한다('불러오는 중' 이 아니다 — 기다려도 저절로 풀리지 않는다).
+    /// 를 위쪽 안내로 말한다('불러오는 중' 이 아니다 — 기다려도 저절로 풀리지 않는다).
     ///
     /// 조회부터 결제 결과 반영까지 세 버튼을 잠근다(`billingBusy`) — 그 사이 복원·해지가 끼어들지 않게.
     ///
@@ -439,7 +438,7 @@ struct BillingPanel: View {
         //   배경 갱신에 켜면 애플이 느릴 때 일상 조회까지 같이 늦어진다.
         guard let preflight = await socialFeatures.refreshSubscriptionForPurchase(session: auth.session) else {
             if !Task.isCancelled, auth.session?.token == requestToken {
-                purchaseBlock = .loadFailed
+                showLoadFailedToast()
             }
             return
         }

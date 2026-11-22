@@ -1239,17 +1239,23 @@ internal fun AlarmEditorScreen(
                     // 한도는 편집기 아래 글자가 아니라 **알럿**으로 말한다 — iOS 의 저장 실패 알럿("저장할 수 없어요")과 같다(2026-11-22
                     // 오너 "밖에서 보여 주지 말고 … 보여 주는 방식 통일"). 대개는 직접 입력 창이 먼저 말한다(`ManualMessageDialog`) —
                     // 여기 오는 것은 그 사이 다른 기기가 다 썼거나, 폰에 음성이 없어 다시 받기가 막힌 경우다.
-                    if (ttsErrorCode == "MANUAL_TTS_QUOTA_EXCEEDED" && !quotaAlertShown) {
+                    if (ttsErrorCode == "MANUAL_TTS_QUOTA_EXCEEDED") {
+                        if (!quotaAlertShown) {
+                            blockAlert = context.getString(R.string.editor_save_failed_title) to
+                                context.getString(R.string.editor_error_manual_tts_quota)
+                        }
+                    } else if (error !is kotlin.coroutines.cancellation.CancellationException) {
+                        // 그 밖의 생성 실패도 **알럿**으로 말한다 — iOS 의 저장 실패 알럿("저장할 수 없어요" + 사유)과 같다(2026-11-22 두 앱
+                        // 통일). 예전에는 목소리 카드 안의 글자(`audioMessage`)였다 — 저장 버튼은 하단 고정이라 스크롤한 채 누르면 그 글자가
+                        // 화면 밖이었다(위 `blockAlert` 주석). 사유는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성 실패처럼
+                        // "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다. 새 생성이 옛 생성을 끊은 것(취소)은 실패가 아니다.
                         blockAlert = context.getString(R.string.editor_save_failed_title) to
-                            context.getString(R.string.editor_error_manual_tts_quota)
+                            (
+                                com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
+                                    ?: userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                                )
                     }
-                    audioMessage = when (ttsErrorCode) {
-                        "MANUAL_TTS_QUOTA_EXCEEDED" -> null
-                        // 나머지는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성
-                        // 실패처럼 "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다.
-                        else -> com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
-                            ?: userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
-                    }
+                    audioMessage = null
                 }
                 generating = false
                 generationJob = null

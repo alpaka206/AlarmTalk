@@ -545,10 +545,13 @@ final class SocialFeatureViewModel: ObservableObject {
         return "immediate"
     }
 
+    /// 해지 실패의 문구 — 결제 문구 표 → 공용 표(`APIErrorMessages`) → 화면 폴백. 안드로이드 `billingFailureMessage` 의
+    /// `apiErrorMessage(context, errorCode) ?: fallback` 와 같은 층이다(2026-11-22 두 앱 통일 — 그전 iOS 는 공용 표를 건너뛰어,
+    /// 같은 `RATE_LIMITED` 가 안드로이드는 "요청이 너무 많아요…", iOS 는 "해지에 실패했어요" 였다).
     static func billingErrorMessage(_ error: Error, fallback: String) -> String {
         billingFailureMessage(
             errorCode: extractServerErrorCode(from: error),
-            fallback: userFacingErrorMessage(error, fallback: fallback)
+            fallback: APIErrorMessages.message(for: error, fallback: fallback)
         )
     }
 

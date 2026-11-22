@@ -2125,7 +2125,18 @@ internal fun VoiceProfileManagementPanel(
         // 본문으로 새어 나오지 않게 `registrationWindowShown` 이 아니라 `showCreateForm` 으로 가른다. 그사이의 등록
         // 거절은 스낵바로 간다.
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
-            MutedText(localMessage.orEmpty())
+            // 미리듣기 준비 안내만 흐린 글자이고, 나머지(이름 변경·삭제·다시 시도·미리듣기 재생 실패)는 **빨간 글자**다 — iOS 목소리 탭
+            // '내 목소리' 아래 줄(`VoiceSectionMessage` 의 `isError`)과 같다(2026-11-22 두 앱 통일. 그전에는 실패도 회색이었다).
+            val text = localMessage.orEmpty()
+            if (text == stringResource(R.string.voices_greeting_preview_preparing)) {
+                MutedText(text)
+            } else {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
 
         VoiceCatalogGroup(

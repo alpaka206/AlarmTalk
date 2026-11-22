@@ -987,23 +987,6 @@
         }
       }
     },
-    "권한이 없어요. 로그인 상태를 확인해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You don't have permission. Please check that you're signed in."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "権限がありません。ログイン状態を確認してください。"
-          }
-        }
-      }
-    },
     "금" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1647,23 +1630,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "録音開始"
-          }
-        }
-      }
-    },
-    "녹음 중 오류가 발생했어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Something went wrong while recording."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "録音中にエラーが発生しました。"
           }
         }
       }
@@ -2908,23 +2874,6 @@
         }
       }
     },
-    "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't process the voice. Please try again in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "声を処理できませんでした。しばらくしてからもう一度お試しください。"
-          }
-        }
-      }
-    },
     "목요일" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3584,23 +3533,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "サーバーの応答を解析できませんでした。"
-          }
-        }
-      }
-    },
-    "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The server isn't responding. Please try again in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サーバーが応答しません。しばらくしてからもう一度お試しください。"
           }
         }
       }
@@ -4757,23 +4689,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "彼女"
-          }
-        }
-      }
-    },
-    "연결에 실패했어요. 다시 시도해 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connection failed. Please try again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接続に失敗しました。もう一度お試しください。"
           }
         }
       }
@@ -6642,23 +6557,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "アラームが読み上げる文言を入力するか、文章の画面で別の種類を選んでください。"
-          }
-        }
-      }
-    },
-    "처리 중 오류가 발생했어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Something went wrong while processing."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "処理中にエラーが発生しました。"
           }
         }
       }
@@ -13268,6 +13166,91 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "まだ使用できる声がありません。"
+          }
+        }
+      }
+    },
+    "목소리를 만들지 못했어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't create the voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声を作成できませんでした。"
+          }
+        }
+      }
+    },
+    "음성 생성에 실패했어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice generation failed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声の生成に失敗しました。"
+          }
+        }
+      }
+    },
+    "목소리 삭제에 실패했어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't delete the voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声の削除に失敗しました。"
+          }
+        }
+      }
+    },
+    "정보 수정에 실패했어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't update your info."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "情報の更新に失敗しました。"
+          }
+        }
+      }
+    },
+    "문구를 수정하지 못했어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't update the line."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フレーズを更新できませんでした。"
           }
         }
       }
