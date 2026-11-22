@@ -89,12 +89,20 @@
 | App Store | **불가능** | API 자체가 없다 → 409 `STORE_CANCEL_UNSUPPORTED` + `manage_url` 로 거절, **DB 무변경** |
 
 - ⚠ **애플 해지를 서버가 대신 해 주는 척하지 말 것.** 로컬만 취소하면 사용자는
-  권한을 잃은 채 Apple 에 계속 과금된다. 앱은 그 거절 코드를 받아
+  권한을 잃은 채 Apple 에 계속 과금된다. iOS 는 구독 응답의 `store_provider` 가 `apple` 이면 곧바로, 그 거절 코드를 받아도
   `AppStore.showManageSubscriptions` 시트를 연다 — **그게 앱 안의 유일한 해지 경로**다
   (없으면 심사 거절 사유이기도 하다).
+- **안드로이드에서 App Store 구독을 해지하려 하면 알럿 하나다**(2026-11-22) — 구독 응답의 `store_provider` 가 `apple` 이면
+  해지 시점을 묻지 않고 "App Store에서 결제한 이용권이에요 / 아이폰의 App Store 구독에서 해지해 주세요." [확인] 을 띄운다. 이
+  기기에서 열 관리 화면이 없다. `store_provider` 를 주지 않는 구버전 서버면 해지를 보내 보고, 409 `STORE_CANCEL_UNSUPPORTED` 를
+  받으면 같은 알럿이다. ⚠ 그 409 의 `manage_url`(애플 주소)을 'Google Play 열기' 알럿에 싣지 말 것 — 2026-11-22 전 안드로이드가
+  그렇게 열었다.
 - ⚠ **한 구독에 애플·구글이 섞여 있으면 통째로 거절한다.** 부분 해지는 상태를 갈라 놓는다.
 - Play 호출이 실패하면 502 + `manage_url`, **DB 무변경**. 이미 성공한 토큰이 있어도
-  재시도가 안전하다(이미 취소된 토큰 재시도는 성공으로 수렴).
+  재시도가 안전하다(이미 취소된 토큰 재시도는 성공으로 수렴). 두 앱 모두 그 502(`PLAY_CANCEL_FAILED`·`PLAY_REVOKE_FAILED`)에
+  알럿 "Google Play에서 직접 관리가 필요해요" [취소][Google Play 열기] 를 띄운다 — 안드로이드는 응답의 `manage_url`(없으면 상품
+  딥링크), iOS 는 Google Play 구독 목록 주소를 연다(iOS 의 API 오류 값은 `manage_url` 을 싣지 않는다). iOS 는 2026-11-22 전 이
+  실패에 아무 말도 하지 않았다. 해지 결과의 문장은 [plan-gates.md](plan-gates.md) 「이용권 화면」.
 
 ## 결제 실패 — 보류는 **권한만** 회수하고, 구독 행은 남는다
 
@@ -261,7 +269,7 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 | 최신 트랜잭션의 표식 | 결과 |
 | --- | --- |
 | 호출자 본인 | **호출자 것이다.** DB 에 다른 주인이 적혀 있어도, 그 주인의 기간이 남아 있어도 넘긴다 |
-| 살아 있는 다른 계정 | 403 `TRANSACTION_ACCOUNT_MISMATCH` — 그 계정의 구독이다 |
+| 살아 있는 다른 계정 | 403 `TRANSACTION_ACCOUNT_MISMATCH` — 그 계정의 구독이다. 앱은 "이 결제는 다른 계정으로 구매한 거예요. 그 계정으로 로그인해 주세요." (두 앱 — 안드로이드는 2026-11-22 전 기본 문장이었다) |
 | 이미 없는 계정 | 호출자가 이어받는다(탈퇴 뒤 재가입) |
 | 표식 없음 | 이미 우리 DB 에 묶인 체인의 재전송만 통과(기존 규칙) |
 
@@ -573,12 +581,15 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
   것처럼 보이는데**, StoreKit 제품은 이미 로드돼 살 수 있다. 그 틈이 정확히 이 게이트가
   막으려던 이중 청구다. **이미 유료인데 갱신 주인을 모르면 막고**, 그때 곧바로 다시 읽는다.
   무료 사용자는 막지 않는다 — 갱신을 쥔 스토어가 애초에 없다.
-- ⚠ **StoreKit 을 부르기 직전에 다시 본다.** 카드 탭에서 한 번만 보면, 확인 알럿이 떠
+- ⚠ **StoreKit 을 부르기 직전에 다시 본다.** 시작 버튼을 누를 때 한 번만 보면, 확인 알럿이 떠
   있는 사이 `plan_changed` 갱신으로 스냅샷이 Play 구독으로 바뀌어도(다른 기기에서 Play
-  결제) 그대로 결제가 나간다. 판정 함수는 하나이므로 두 자리에서 같은 것을 부른다.
-- 막고 나서 **무엇을 해야 하는지 말한다** — "Play 스토어 → 구독에서 먼저 해지하거나,
-  기간이 끝난 뒤에 다시" 다. 그냥 막으면 고장으로 읽힌다. 버튼은 죽이지 않고 누르면
-  이유를 말한다(편집기의 `SaveBlockReason` 과 같은 규약).
+  결제) 그대로 결제가 나간다. 판정 함수는 하나이므로 두 자리에서 같은 것을 부른다. **안드로이드도 두 자리에서 본다**
+  (2026-11-22 — 누를 때는 받아 둔 응답으로 `otherStoreOwnsRenewal`, 결제 직전에는 서버에 새로 물어 `crossStoreRenewalBlocked`.
+  그전 안드로이드는 결제 직전에만 봤다).
+- 막고 나서 **무엇을 해야 하는지 말한다** — 알럿 "{다른 스토어}에서 결제 중이에요" 가 "{다른 스토어} 구독에서 먼저 해지하거나,
+  기간이 끝난 뒤에 다시 시도해 주세요." 로 맺는다(두 앱 같은 문장, 스토어 이름만 반대 — 전문은 [plan-gates.md](plan-gates.md)
+  「이용권 화면」. 2026-11-22 전 iOS 는 "Play 스토어 → 구독에서…", 안드로이드는 알럿이 아니라 한 줄이었다). 그냥 막으면 고장으로
+  읽힌다. 버튼은 죽이지 않고 누르면 이유를 말한다(편집기의 `SaveBlockReason` 과 같은 규약).
 - **양방향이다**(코덱스 #733 6차부터). 판정이 `applyStoreEntitlement` 안에 있으므로 Play
   확정도 같은 함수를 탄다 — 애플 구독이 갱신 중이면 Play 구매가 막힌다.
   ⚠ **문구는 각 앱에서 '다른 스토어' 를 가리켜야 한다.** 판정이 `provider <> ?` 로 자기
@@ -686,8 +697,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 - 판정 범위는 **그 사용자의 활성 구독 전부**다. 해지는 하나라도 애플이면 거절하므로,
   최신 1건만 보면 예고가 어긋난다.
 - `null` 은 스토어 결제가 아니라는 뜻(옛 프로모 코드로 받은 구독 등)이거나 **구버전 서버**다. 어느 쪽이든
-  앱은 서버에 물어보고 `STORE_CANCEL_UNSUPPORTED` 를 받으면 관리 시트로 보낸다 —
-  안드로이드가 원래 그 하나만 쓴다.
+  앱은 서버에 물어보고 `STORE_CANCEL_UNSUPPORTED` 를 받으면 iOS 는 관리 시트로, 안드로이드는 위 「해지」의 App Store 알럿으로
+  보낸다. 안드로이드도 2026-11-22 부터 이 값을 읽는다(`apple` 이면 해지 시점을 묻지 않는다) — 그전에는 그 거절 코드 하나만 썼다.
 
 ## 기간 한정 개인 플랜 — **쓰지 않고, 읽을 때 계산한다** (2026-09-27)
 
@@ -1364,12 +1375,12 @@ D9(기간 중 커플·가족을 여는 자리의 보류 규칙)는 2026-10-20 �
       (없으면 free), iOS 는 `BillingPanel.currentTier`(`purchasedPlan` + 서버 구독 + StoreKit 등급).
       프로모만 쓰는 계정은 둘 다 free 다. 보류 행은 표시용 유료 근거가 아니라(`strongestPaidSubscription`)
       구독 응답만으로는 프로모 계정과 구별되지 않는다 — 그래서 `deletes_voices_at_end` 로 가른다.
-    - **카드가 없는 동안은 카드 위 한 줄이다(iOS).** iOS 는 스토어 상품을 기다리는 동안(스켈레톤)과
-      가져오기에 실패한 동안('다시 시도' — 오프라인 등) 플랜 카드를 한 장도 그리지 않는다. 그때 표의
-      첫 줄(프로모만) 계정도 문구를 **카드 위 한 줄로** 그리고, 카드가 그려지면 개인 카드로 옮긴다 —
-      문구가 어디에도 없는 순간을 만들지 않고, 두 자리에 동시에 두지도 않는다
-      (`PlanScreenCurrent.drawsPromoLineAboveList(cardsVisible:)`). 안드로이드는 카드를 언제나 그려서
-      (`SubscriptionPanel` 의 고정 목록) 이 갈래가 없다.
+    - **카드는 두 앱 모두 언제나 그린다**(2026-11-22 — [plan-gates.md](plan-gates.md) 「이용권 화면」). 그전 iOS 는 스토어 상품을
+      기다리는 동안(스켈레톤)과 가져오기에 실패한 동안('다시 시도' — 오프라인 등) 플랜 카드를 한 장도 그리지 않아, 그때만 표의
+      첫 줄(프로모만) 계정의 문구를 **카드 위 한 줄로** 옮겼다 — 문구가 어디에도 없는 순간을 만들지 않으려고. 이제 상품이 없어도
+      카드를 폴백 가격으로 그리므로 그 계정의 문구는 언제나 개인 카드의 상태 문구다. 판정 함수의 '카드가 없다' 갈래
+      (`PlanScreenCurrent.drawsPromoLineAboveList(cardsVisible:)`)는 테스트가 두 경우를 고정하려고 남겼고, 화면은
+      `cardsVisible: true` 로만 부른다. 안드로이드는 처음부터 카드를 언제나 그렸다(`SubscriptionPanel` 의 고정 목록).
     - ⚠ **'현재' 와 '결제 버튼 숨김' 을 한 값으로 묶지 말 것.** 산 이용권의 현재 카드에는 버튼이 없지만
       (다시 살 것이 없다), 프로모로 현재가 된 개인 카드에는 남는다 — 개인 결제는 기간 중에도 열려
       있고(끝난 뒤 이어 쓰려면 사야 한다), 버튼을 숨기면 살 길이 사라진다.
@@ -1474,7 +1485,7 @@ D9(기간 중 커플·가족을 여는 자리의 보류 규칙)는 2026-10-20 �
 | 종료 전환·스윕(D6·D10·D14~D16) | `lib/personal-promo-end.ts` `runPersonalPromoEnd`(스윕이 아무도 못 지우면 같은 실행에서 전환 · 첫날 뒤에는 전환 대상의 행만, 고정 꼬리 없음) · `transitionPersonalPromoEnd` · `promoEndDeleteAfter`(`max(약속 시각, 전환 + 24시간)` 정시 — `PROMO_END_MIN_NOTICE_MS`) · `promoEndRetentionDeadline` · `sweepDueRetentionInBulk`(`dueFrom` · `BulkSweepResult.failed`·`oldestDueUserPk`) · 묶음·예산 `PROMO_END_SWEEP_BATCH`·`PROMO_END_SWEEP_NOTIFY_MESSAGES`·`PROMO_END_RUN_BUDGET` · 경보 `isPromoEndAlertSlot`·`alertSlotOpenFor`·`PROMO_END_HOURLY_ALERT_STAGES`(셋 다 시간당 한 번, 맡은 크론만) · `notifyPromoEndTransitioned`; `index.ts` 의 `PERSONAL_PROMO_END_CRON` 분기 + 5분 틱 폴백; `wrangler.toml` 두 환경; 문장 공유 `billing-cancel.ts` `freeDowngradeWrites`·`paidVoiceRetentionUpsertStatement`·`paidEntitlementStatement`, `paid-voice-cleanup.ts` `deleteSensitiveVoiceDataForOwners` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 삭제 예고 문구 | `lib/fcm.ts` `personalPromoEndWarningBody` · `formatKstHour` → `sendBillingStateSignals(warningBodyFor)` | 기존 `voice_deletion_warning` 표시 | 기존 APNs alert |
 | 전역 클론 상한 500 | `lib/voice-slots.ts` `MAX_PROVIDER_CLONE_VOICES` | — | — |
-| 이용권 화면 — 프로모만 쓰는 계정은 개인 카드가 현재(D4) | — | `ui/billing/BillingPanels.kt` `planScreenCurrentOf`(`PlanScreenCurrent` — `isCurrent`·`showsPurchase`·`promoOnPersonalCard`·`promoLineAboveList`) → `SubscriptionPanel`(A안 — `PlusPlanHeroCard`·`FreePlanSummaryCard`, 아래 고정 영역의 시작 버튼이 `showsPurchase`); 결제 알럿은 산 이용권(`PlayPurchaseDialog` 의 `currentPlanKey`) | `Views/Common/PlanTier.swift` `PlanScreenCurrent.resolve`·`drawsPromoLineAboveList(cardsVisible:)`(카드가 없는 스켈레톤·가져오기 실패 동안은 카드 위 한 줄) → `BillingPanel.planScreen` · `PlusPlanHeroCard`(`statusText`)·`FreePlanSummaryCard`(접근성 컨테이너 `planCard.<key>`)·`BillingPanel.bottomBar`(`PlanPurchaseButton` — `showsPurchase`); 결제·전환 판정은 산 이용권(`BillingPanel.currentTier`) |
+| 이용권 화면 — 프로모만 쓰는 계정은 개인 카드가 현재(D4) | — | `ui/billing/BillingPanels.kt` `planScreenCurrentOf`(`PlanScreenCurrent` — `isCurrent`·`showsPurchase`·`promoOnPersonalCard`·`promoLineAboveList`) → `SubscriptionPanel`(A안 — `PlusPlanHeroCard`·`FreePlanSummaryCard`, 아래 고정 영역의 시작 버튼이 `showsPurchase`); 결제 알럿은 신규 구매 문구 하나(`PlayPurchaseDialog` — 산 이용권으로 가르던 전환 갈래와 그 인자 `currentPlanKey` 는 2026-10-21 커플·가족과 함께 지웠다) | `Views/Common/PlanTier.swift` `PlanScreenCurrent.resolve`·`drawsPromoLineAboveList(cardsVisible:)`(화면은 `cardsVisible: true` 로만 부른다 — 스켈레톤·가져오기 실패 카드는 2026-11-22 에 지웠다) → `BillingPanel.planScreen` · `PlusPlanHeroCard`(`statusText`)·`FreePlanSummaryCard`(접근성 컨테이너 `planCard.<key>`)·`BillingPanel.bottomBar`(`PlanPurchaseButton` — `showsPurchase`); 결제·전환 판정은 산 이용권(`BillingPanel.currentTier`) |
 | 이용권 화면의 프로모 문구(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer(result)` — 문을 지난 `EntitlementWrite.Applied` 만, `MainViewModel.saveSubscriptionSnapshot` 이 부른다) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
 | 종료 안내(D3·D4) | — | [gates-and-overlays.md](gates-and-overlays.md) 구현 지도 | 같은 곳 |
 | 목소리를 못 쓰게 되면 기본 목소리 — 잠금·울림·복원·확정(2026-09-29) | 바꾸지 않는다 — 서버에는 알람이 없다(2026-10-29 전에는 잠긴 행이 올라갈 때 무료 게이트·소유권 게이트의 시스템 갈래를 지났다) | `data/SystemVoices.kt`(`SUBSTITUTE_SYSTEM_VOICE_ID` — 미나) · `data/DefaultVoiceFallback.kt`(`pickDefaultSystemVoiceId`(이미 기본 목소리면 그대로, 아니면 미나)·`lostVoiceReplacedByDefault`·`lockSurvivesSave`(편집 저장이 잠금을 잇는가 ← `AlarmRepository.updateAlarm`)·`hasOwnVoiceAudio`·`defaultVoiceBucketFor`·`completeDefaultVoiceClips`(세트 완전성 — `expected_variants`)·`defaultVoiceClipSet`·`LockedPaidVoice`·`lockedToDefaultVoice`·`restoredFromLock`·`finalizedLock`·`isLegacyPlanLock`·`wasVoiceAlarmConvertedBySystem`) · `data/DefaultVoiceClipSource.kt`(`lockBinding`·`ringUri`) · `AlarmRepository.lockPaidAlarmTalks`·`unlockPaidAlarmTalks`·`degradeMatchingLocalOwnedVoiceAlarms`(확정 · 잠긴 행 제외)·`deleteAudioNoAlarmUses`(확정이 놓은 보관본 오디오 전부 — 키 없는 옛 파일은 경로로)·`sweepStaleAudioCache` · `AlarmDao.countByAudioCacheKey`(보관본도 참조) · `AlarmEntity.preLockVoiceJson`(Room 26→27) · 울림 `alarm/RingSoundDecision.kt` → `RingingService` · 목록 `AlarmListScreen`(이름) · 문구 `downgrade_notice_title`·`downgrade_notice_message`(원인과 무관한 한 문장, 2026-10-16) | `SystemVoices.swift`(`substituteSystemVoiceID` — 미나) · `DefaultVoiceSubstitute.swift`(`pickVoiceID`·`replacedLostVoice`·`LocalAlarmRecord.hasOwnVoiceAudio`·`LockedPaidVoice`·`completeClips`·`binding`·`locked`·`restored`·`finalized`·`substitutedForScheduling`·`fallbackClip`) · `LocalAlarmRecord.preLockVoice` · `LocalAlarmStore.countByAudioCacheKey`(보관본도 참조) · `DefaultVoiceSubstitute.saveKeepsLock`(같은 테마 클립 채우기·테마 없는 잠금에 편집기가 붙인 첫 테마는 편집 아님) · `AlarmVoicePlayer.playIfNeeded(for:url:)`(in-app 폴백은 판정 URL) · `SocialFeatureViewModel.applyFreePlanVoiceLock`(선별 `FreePlanLockSelection`)·`restorePaidVoiceAlarms`·`rescheduleIfEnabled`(켜진 알람만 다시 예약) · `VoiceStudioViewModel.finalizeDefaultVoiceLocks`(보관본 오디오 전부 + 구운 사본)·`degradeCustomMessageAlarms`(잠긴 행 제외) · `AlarmKitViewModel.defaultVoiceSubstitute` · `AlarmSoundResolver.plan`(1b) · `AlarmEditDraft`·`AlarmEditorSheet`(이어받기) · `AlarmsListView`(이름) · `RootView.downgradeNoticeMessage` + 카탈로그 |
@@ -1649,13 +1660,14 @@ App Store Connect 에는 URL 이 환경마다 하나다. 그래서 **운영 URL 
 | --- | --- | --- | --- |
 | 해지 — Play 성공 후에만 DB 변경 | `routes/billing-mutation.ts` `POST /cancel` | `MainViewModelBillingActions.cancelSubscription` | — |
 | 유효 구독 표시와 등급 재계산 일치 | `billing-query.ts`·`billing-cancel.ts`의 `strongestPaidSubscription` | 기존 구독 응답 소비 | 기존 구독 응답 소비 |
-| 해지 — 애플은 거절 | 같은 파일, `STORE_CANCEL_UNSUPPORTED` | `STORE_MANAGE_REQUIRED_CODES` | `SocialFeatureViewModel.cancelSubscription` → `BillingPanel.openAppStoreSubscriptionManagement` |
-| 해지 — **어느 스토어를 거치나** | `storeCancelProviderOf`(`lib/billing-cancel.ts`) → `GET /billing/subscription` 의 `store_provider` | 에러 코드로 판단(`STORE_MANAGE_REQUIRED_CODES`) | `BillingSubscription.storeProvider`(로컬 StoreKit 금지) |
-| 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 에러 문구 (`ApiErrorMessages`) | `BillingPanel.purchaseBlockReason` + 서버 409 |
+| 해지 — 애플은 거절 | 같은 파일, `STORE_CANCEL_UNSUPPORTED` | `MainViewModelBillingActions.cancelSubscription` 의 `STORE_CANCEL_UNSUPPORTED` 갈래 → `MainViewModel.billingAppStoreCancelNoticeOpen` → `AppStoreCancelNoticeDialog`(`ui/billing/BillingPanels.kt`) | `SocialFeatureViewModel.cancelSubscription`(`CancelOutcome.appStoreManagementRequired`) → `BillingPanel.startCancel` → `openAppStoreSubscriptionManagement` |
+| 해지 — Play 호출 실패(502, 무변경) → 'Google Play에서 직접 관리' 알럿 | 같은 파일, `PLAY_CANCEL_FAILED`·`PLAY_REVOKE_FAILED` + `manage_url` | `PLAY_MANAGE_REQUIRED_CODES` → `MainViewModel.billingPlayManageUrl` → `PlayStoreManageDialog` | `CancelOutcome.playManagementRequired` → `BillingPanel.showPlayManageAlert`(`playSubscriptionsURL` — `manage_url` 을 싣지 않는다) |
+| 해지 — **어느 스토어를 거치나** | `storeCancelProviderOf`(`lib/billing-cancel.ts`) → `GET /billing/subscription` 의 `store_provider` | `BillingSubscription.storeProvider`(`network/BillingApi.kt`, 2026-11-22) → `SubscriptionPanel` 의 해지 버튼(`apple` 이면 `AppStoreCancelNoticeDialog`) · 구버전 서버(null)는 위 `STORE_CANCEL_UNSUPPORTED` 갈래가 받는다; 회귀 `BillingParityRulesTest` | `BillingSubscription.storeProvider`(로컬 StoreKit 금지) |
+| 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 누를 때 `otherStoreOwnsRenewal` → `CrossStoreRenewalBlockDialog` · 결제 직전 `crossStoreRenewalBlocked` → `billingCrossStoreBlockOpen` · 서버 409 는 `billingFailureMessage` → `ApiErrorMessages` | `BillingPanel.purchaseBlockReason` + 서버 409 |
 | 환불 — 즉시 권한 회수 | `revokeAppleRefund` → `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) — 확정과 서버 알림(`REFUND`·`REVOKE`)이 같이 쓴다 | — | — |
 | 선물 폐지(2026-10-14) — 선물 상품 결제·환불 통보는 400 `UNKNOWN_PRODUCT`, 코드·원장·연결을 쓰지 않는다(옛 `revokeRefundedAppleGift`·발급 갈래는 지웠다) | `lib/apple-storekit.ts` `APPLE_PRODUCT_TO_PLAN_KEY`·`lib/play-subscriptions.ts` `googlePlanKeyFromProductId` 에서 빠짐 → `billing-apple.ts`·`billing-google.ts` 의 모르는 상품 검사; 표 `apple_gift_deliveries`(마이그레이션 117)는 #131 이 지웠다(2026-10-20) | 선물 상품을 조회·판매하지 않는다(`PlayBillingProducts.all` — 구독 셋) | 선물 상품을 조회·판매하지 않는다(`SubscriptionProduct` — 구독 셋). 남은 옛 트랜잭션은 확정 시도 뒤 끝낸다(`SubscriptionManager.replayUnfinishedTransactions`) |
 | 즉시 해지 중 새 유료 권한의 보관 정책 | `billing-mutation.ts` → `syncPaidVoiceRetention`(남은 유료 권한이면 기존 유예 삭제·응답 기한 null) | 기존 응답 소비 | 기존 응답 소비 |
-| 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
+| 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `otherStoreOwnsRenewal`(`ui/billing/BillingPanels.kt` — 누를 때와 결제 직전이 같은 판정) ← `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회 모두 실제 결제일 사용(선물도 그랬다 — 2026-10-14 폐지) | — | — |
 | 영구 탈퇴 시 결제 증빙만 가명으로 분리 보존(선물 연결 표는 #131 이 지웠다) | `lib/account-deletion.ts` `purgeUserAccount`(유예 파기); 증빙은 `pseudonymizeBillingForRetention` → `index.ts` 보존 기한 정리 | 기존 탈퇴 API 사용 | 기존 탈퇴 API 사용 |
@@ -1693,7 +1705,7 @@ App Store Connect 에는 URL 이 환경마다 하나다. 그래서 **운영 URL 
 | 구매-계정 바인딩 대조 | `lib/purchase-account-binding.ts` (confirm·RTDN 공용) | `billing/PlayBillingManager.kt` `setObfuscatedAccountId` | — |
 | 커밋 뒤 알림 묶음(토큰 조회 한 번·OAuth 한 번 · 보이는 예고 먼저) | `lib/billing-cancel.ts` `notifyBillingStateChanged` → `lib/fcm.ts` `sendBillingStateSignals`·`getPushTargetsForUsers`; 실측 `test/billing-apple-confirm-subrequests.test.ts` | — | — |
 | 애플 확정 — 체인의 현재 상태로 판정·소유자 결정 | `routes/billing-apple.ts` confirm(`fetchAppleSubscriptionStatus`) · `lib/store-billing.ts` `purchaserVerified` 이전; `test/billing-apple-chain-authority.test.ts`·`test/billing-apple-chain-transfer.test.ts` | — | `SubscriptionManager.syncWithBackend` (어느 트랜잭션을 올려도 같은 답) |
-| 다른 계정 소유 결제의 실패 안내 | confirm의 `TRANSACTION_OWNED_BY_OTHER_USER` | `MainViewModelBillingActions.billingFailureMessage` | `SubscriptionManager.syncWithBackend` → `ConfirmOutcome.rejection` → `purchase`; `SubscriptionConfirmationTests` |
+| 다른 계정 소유 결제의 실패 안내(409 `TRANSACTION_OWNED_BY_OTHER_USER` · 403 `TRANSACTION_ACCOUNT_MISMATCH` — 두 앱 같은 문장, 복원도 같은 길) | confirm의 `TRANSACTION_OWNED_BY_OTHER_USER`·`TRANSACTION_ACCOUNT_MISMATCH` | `MainViewModelBillingActions.billingFailureMessage`(화면 표 → `apiErrorMessage` → 기본 문장, 2026-11-22); 회귀 `BillingParityRulesTest` | `SubscriptionManager.syncWithBackend` → `ConfirmOutcome.rejection` → `purchase`·`restorePurchases`; `SubscriptionConfirmationTests` |
 | 변경 반영 푸시 | `lib/billing-cancel.ts` `notifyPlanChanged` → `lib/fcm.ts` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
 
 ## 의도된 플랫폼 차이
@@ -1701,4 +1713,5 @@ App Store Connect 에는 URL 이 환경마다 하나다. 그래서 **운영 URL 
 | 차이 | 이유 |
 | --- | --- |
 | iOS 해지는 시스템 시트로 나간다 | App Store Server API 에 해지가 없다 |
+| 안드로이드에서 App Store 구독을 해지하려 하면 알럿 하나로 끝난다(해지 시점을 묻지 않고 관리 화면도 열지 않는다) | 안드로이드 기기에는 열 수 있는 App Store 구독 관리 화면이 없다 — 아이폰에서 해지해야 한다(위 「해지」) |
 | 애플 서버 알림(V2)은 주인 없는 거래를 묶지 않는다 — 구글 RTDN 은 `linkedPurchaseToken` 으로 잇는다 | 애플 알림에는 주인을 가릴 근거가 `appAccountToken` 뿐이고, 그 판정은 확정 라우트 한 곳이다(「애플 서버 알림 V2」). 만료 재조회는 두 스토어 모두 안전망으로 남는다 |

@@ -281,12 +281,16 @@
 - **진행률은 하나다 — 생성 0~50%, 다운로드 50~100%**(2026-09-21 지시). 사용자에게는 '서버가
   만드는 중' 과 '폰이 받는 중' 이 두 가지 일이 아니라 "알람 음성이 준비되는 중" 하나다.
   단계마다 n/21 을 따로 세면 생성이 끝나는 순간 100%에서 0%로 **뒤로 간다**. 마지막 단계와
-  목소리 목록의 행이 **같은 값**을 쓰고, 숫자와 막대를 함께 보여 준다.
+  목소리 목록의 행이 **같은 값**을 쓰고, 숫자와 막대를 함께 보여 준다. 목록 행은 최대 120 폭의 막대 + '알람 음성 준비 중
+  n%' 다(안드로이드 `VoicePrerenderProgressLine`, iOS `VoicePrerenderStatusRow` — 안드로이드 행은 2026-11-22 전 스피너 알약에
+  숫자뿐이었다).
   - **세는 것만으로는 만들어지지도 받아지지도 않는다.** 등록 직후에는 앱이 서버 생성을
     직접 민다(`POST voice/{id}/prerender/advance`) — 5분 크론을 기다리지 않는다. 그 응답의
     `claim_stuck` 은 **'진행 없음' 이 아니다**(리스가 끝날 때까지 같은 개수가 온다). 무진전으로
     세면 구동을 3회 만에 접어 생성이 크론으로 넘어간다.
-  - **막대를 스피너와 번갈아 그리지 않는다.** 폭이 달라 화면이 깜박이고, 좁아졌다 넓어진다.
+  - **막대를 스피너와 번갈아 그리지 않는다.** 폭이 달라 화면이 깜박이고, 좁아졌다 넓어진다. 전체 개수를 아직 모르는
+    동안(서버 첫 응답 전)은 같은 자리·같은 폭의 **흐르는 막대**다(두 앱 — iOS 는 2026-11-22 전 0% 에 멈춘 막대였다,
+    `ClonePrerenderDrive.totalKnown`). 마지막 단계의 퍼센트는 28 SemiBold, 막대는 폭 78%·두께 8·surfaceVariant 트랙이다.
   - **한 목소리의 클립은 한 벌만 받는다**(2026-09-29 효율 감사 M4 — 안드로이드). 등록 직후
     구동이 도는 동안 목소리 탭은 그 목소리를 **따로 폴링하지도 받지도 않고**, 행에 구동의
     진행률을 그대로 그린다(마지막 단계와 **같은 값**). 예전에는 둘이 같은 클립을 동시에, 둘 다
@@ -294,7 +298,8 @@
     접혀 크론이 이어받은 경우엔 **목소리 탭 폴링이 유일한 신호**라 없애지 않는다.
     받기는 목소리마다 **한 번에 한 벌**(뒤에 온 쪽은 기다렸다가 빠진 것만 본다)이고, 빠진 것은
     캐시 디렉터리를 **한 번** 읽어 고르며(클립마다 두 번 묻지 않는다), **동시에 4개**씩 받는다.
-  - **화면은 좌우를 꽉 채운다**(배경도). 등록 마지막 화면만 그러지 않아 좌우가 비어 보였다.
+  - **화면은 좌우를 꽉 채운다**(배경도). 등록 마지막 화면만 그러지 않아 좌우가 비어 보였다. 등록 창의 배경은 다른 하위
+    전체화면과 같은 밤하늘 그라데이션이다(안드로이드는 2026-11-22 전 평면 배경이었다 — `homeGradientBrush`).
 - **끝났다고 또 말하지 않는다**(2026-09-21 지시). 준비가 끝나면 **아무 말 없이** 목록으로
   돌아간다 — "다 됐어요" 팝업도, 등록 직후의 '등록했어요' 안내도 두지 않는다. 그 문구는
   다음 화면이 이미 말하는 것을 한 번 더 말하는 데다, 아무도 지우지 않아 목소리 탭 맨 위에
@@ -307,7 +312,11 @@
     `현재 톤 듣기`)로 옮겼다(§4-3).
   - **하단은 편집기 하단과 같은 한 쌍이다** — `다시 만들기` 는 외곽선, `저장하기` 는 채움, 같은 폭·높이 40·간격 12(2026-11-15
     오너: "다시 만들기, 저장하기 버튼도 디자인 바꿔도 돼" — 예전에는 빨간 글자 버튼이라 두 앱 모양도 달랐다. 안드로이드
-    `EditorActionButtons`, iOS `EditorActionButtonStyle`).
+    `EditorActionButtons`, iOS `EditorActionButtonStyle`). 앞 단계의 `다음`·`등록` 도 같은 채움 한 벌이다(잠기면
+    surfaceVariant 바탕·onSurfaceVariant 글자 — 안드로이드 `wakerButtonColors`. 2026-11-22 전 iOS 는 시스템 `.borderedProminent`,
+    안드로이드 `등록`·`저장하기` 는 M3 기본 잠김 색이었다). `저장하기` 가 진행 표시 + '저장 중…' 으로 바뀌는 것은 등록 확정을
+    **실제로 보냈을 때뿐**이다 — 고친 문구를 '재생성' 하는 동안에는 그리지 않는다(안드로이드 `promotedForPrerenderId`, iOS
+    `promoting` — iOS 는 2026-11-22 전 재생성 중에도 '저장 중…' 이었다).
   - **톤 카드는 첫 미리듣기 준비가 끝난 뒤에 나타난다**(2026-11-15 오너: "목소리 등록 확인 화면 준비중일때는 톤 조절도
     완성되었을때 뜨게 해줘"). 준비 중에는 문구 카드('문구를 준비하고 있어요…')만 있다 — 그때 그리면 막대가 기본값에 있다가
     추천값으로 튄다. 준비가 실패로 끝나도 나타난다(그 듣기 버튼이 다시 받는 길이다). 한 번 나타나면 문구를 고쳐 다시 받는
@@ -318,6 +327,12 @@
     2026-10-08 사용자 지시로 뺐다.)
   - **월 등록 한도 경고**("이번 달에 만들 수 있는 목소리를 다 쓰게 돼요…")는 사용자 승인으로 뺐다 — 남은 횟수는 목소리
     탭 머리의 `생성 가능 n/m회` 가 말한다.
+  - **확정 화면을 떠나는 두 길은 가는 곳이 다르다**(2026-11-22 — 그전에는 안드로이드는 둘 다 목록으로, iOS 는 둘 다 음원 준비로
+    갔다). `다시 만들기` 는 초안을 지우고 **음원 준비(녹음)** 로 돌아간다 — 창은 그대로 두고 폼만 처음 상태로 비운다(아래 표의
+    "확인 스텝에서 `다시 만들기` 를 고르면 처음부터 다시 녹음한다"). 뒤로가기의 나가기 경고에서 `나가고 삭제` 를 고르면 초안을
+    지우고 창을 닫아 **목록**으로 나간다. 예전 안드로이드는 다시 만들려면 `추가` 부터 다시 눌러야 했고(지금 `remakeDraftId` →
+    `restartRegistrationFromSource`), 예전 iOS 는 나간다고 한 사람을 창 안에 붙잡았다(지금 `VoicePreviewConfirmView` 의
+    `onExited` → 목록, `onDiscarded` → 음원 준비).
 - **제자리 교체의 갱신 신호는 모든 프리셋 재렌더가 게시된 뒤에 보낸다**(`voice_share_changed` — 이름은 옛 앱
   때문에 그대로, 받는 곳은 목소리 주인의 기기뿐). 먼저 알리면 같은 message ID의 옛 클립을 다시 확정해 버린다.
   (2026-10-20 전에는 확정 단계에 공유 설정이 있었다 — 옛 앱이 보내는 `isShared`/`is_shared` 는 서버가 받고
@@ -478,8 +493,10 @@
 - 음원 준비·세부 정보·미리듣기 세 단계는 양쪽 모두 **공용 상단바 + 스크롤 본문 + 고정 하단 행동** 골격을 쓴다. 본문은 상단바 아래
   **24** 에서 시작한다 — 앱 전체 상단바가 같은 값을 갖는다(안드로이드 `WakerTopBarBottomGap`, iOS `WakerTopBar`. 2026-11-15
   오너: "상단 간격을 전체로 늘려서 공통으로 같도록 해줘 모든 곳에서" — 16 일 때 첫 칸·세그먼트가 뒤로가기 줄에 붙어 보였다).
-  화면마다 본문 위에 여백을 따로 더하지 않는다. 뒤로가기는 동그라미 없는 화살표 하나다(같은 날 — 누르는 범위는 그대로).
-  iOS 에서 시스템 내비게이션 바를 쓰는 하위 화면(설정·편집기 하위 화면 등)은 시스템이 그리는 뒤로가기·간격 그대로다.
+  화면마다 본문 위에 여백을 따로 더하지 않는다(안드로이드 이용권 화면은 2026-11-22 전 위 8 을 더 두어 첫 카드가 8 더 내려가
+  있었다). 뒤로가기는 동그라미 없는 화살표 하나다(같은 날 — 누르는 범위는 그대로).
+  iOS 에서 시스템 내비게이션 바를 쓰는 하위 화면(설정·동의 내역·오픈소스·문서·이용권·편집기 하위 화면)은 뒤로가기는 시스템
+  것 그대로이고, 본문은 그 바 아래 **24** 에서 시작한다(2026-11-22 — 그전에는 화면마다 12·16·20 이 섞였다).
   상단바는 `목소리 만들기`를 가운데 두고, 음원 준비에서는 목록으로 나가며 세부 정보에서는
   음원 준비로 돌아간다. 미리듣기·확정에서는 초안 삭제 경고를
   거친다. 같은 일을 하는 하단 `이전`이나 별도 X를 함께 두지 않는다.
@@ -491,6 +508,9 @@
   왜이렇게 붙어있어"). 칸 안에 떠 있는 M3 라벨을 쓰지 않는다 — 첫 칸 라벨이 상단바 쪽으로 올라가 붙어 보였고, 빈 칸만 라벨이
   칸 안에 들어가 칸마다 모양이 달랐다(안드로이드만 그랬다 — iOS·가입 화면은 처음부터 위 라벨이었다). 라벨은 12 · 굵게 · 흐린
   글자(안드로이드 `VoiceFieldLabel`, iOS `fieldLabel`), 라벨과 칸 사이 8, 묶음 사이 20. '알람을 읽어줄 언어' 도 같은 라벨이다.
+  이름·호칭 칸은 높이 56 이다. 이름을 비우고 `등록` 을 누르면 칸 테두리가 빨개지고 칸 아래 `꼭 입력해 주세요.` 한 줄로만
+  말한다 — 아래 안내 줄에 같은 이유를 또 띄우지 않는다(두 앱 — iOS 는 2026-11-22 전 '목소리 이름을 입력해 주세요.' 를 한 번
+  더 띄웠다). 이름을 이용권보다 먼저 본다.
 - ⚠ **마지막 단계(오프라인 준비)는 그 골격을 쓰지 않는다**(2026-09-29 지시). 상단바 제목
   `목소리 만들기` 를 두지 않고(뒤로가기도 없는 자리라 제목만 떠 있었다), 제목·안내·퍼센트·막대
   블록을 화면 **한가운데**(가로·세로)에, `백그라운드에서 계속` 을 화면 **맨 아래**(내비게이션
@@ -518,13 +538,23 @@
   `12초 이상 녹음해 주세요`로 이유를 말한다. 12초 전에 멈춘 경우 카드 제목도
   `12초 이상 녹음해 주세요`로 바뀌며, 유효한 녹음처럼 `녹음을 저장했어요`라고 말하지 않는다.
   재생·다시 녹음 버튼은 12초 이상 녹음이 준비된 뒤에만 나타나고, 짧은 녹음 상태에서는
-  마이크 버튼으로 바로 다시 시작한다.
+  마이크 버튼으로 바로 다시 시작한다. 녹음 중에는 상태 글자 `녹음 중`·강조색 경과 시간·레벨 막대 넷·맥동 링을 그린다(두 앱 —
+  iOS 는 2026-11-22 에 안드로이드 `RecordingLevelBars` 와 같게 더했다. 레벨은 녹음 카드만 본다 — `RecordingLevelMeter`).
+  - **파일도 같다** — 12초보다 짧은 파일을 고르면 빨간 줄로 나무라지 않고 하단 버튼이 `12초 이상인 파일을 선택해 주세요`
+    로 말한다. 자르기 카드(손잡이 위 시작·끝 시각, 막대 아래 `0:00`·총 길이, 폭을 채운 `미리듣기`/`정지` 외곽선 버튼)는
+    짧은 파일에도 그린다(2026-11-22 — 그전 iOS 는 짧은 파일에 빨간 줄을 띄우고 막대를 그리지 않았다). 고른 뒤 업로드 자리는
+    `재업로드` 한 줄로 줄어든다. 구간 미리듣기는 누르면 멈추고 다시 누르면 처음부터 트는 **정지**다 — `일시정지` 라고 쓰지
+    않는다(안드로이드는 2026-11-22 전 '일시정지' 였다).
 - 음원 준비의 `녹음/파일` 선택은 날씨 지역 시트의 나라 고르기(대한민국·일본·미국)와 **같은 세그먼트**다
-  (2026-11-15 오너). 두 칸은 같은 폭이고 칸 전체가 터치 영역이다 — 안드로이드 `EditorSegmentedSelector`,
-  iOS 시스템 `.segmented` 피커. 녹음 안내는 "너무 짧으면 목소리가 다르게 나올 수 있어요." 한 줄이다 —
-  "허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요." 는 2026-11-15 오너 지시로 지웠다.
+  (2026-11-15 오너). 두 칸은 같은 폭이고 칸 사이가 없으며(2026-11-22 — iOS 는 그전 4) 칸 전체가 터치 영역이다 — 안드로이드
+  `EditorSegmentedSelector`, iOS `AppSegmentedPicker`(2026-11-15 에 시스템 `.segmented` 에서 앱 세그먼트로 바꿨다). **녹음
+  중에는 잠근다**(두 앱 — iOS 는 2026-11-22 전 녹음 중에 '파일' 을 누르면 녹음이 말없이 끊겼다). 녹음 안내는 "너무 짧으면
+  목소리가 다르게 나올 수 있어요." 한 줄이다 — "허락받은 목소리인데 파일이 없다면 영상을 틀고 녹음해도 돼요." 는 2026-11-15
+  오너 지시로 지웠다.
 - 접힌 예시 대본은 카드 높이와 화살표가 함께 부드럽게 이어진다. 시스템의 동작 줄이기 설정을
-  존중하며, 전개 애니메이션이 끝날 때까지 입력을 막지 않는다.
+  존중하며, 전개 애니메이션이 끝날 때까지 입력을 막지 않는다. 녹음 갈래의 음원 준비는 페이지를 스크롤하지 않는다 — 펼친
+  대본은 남은 높이만큼만 차지하고 카드 안에서 스크롤해, 녹음 카드와 대본을 한 화면에서 함께 본다(두 앱
+  `scriptFillsRemainingHeight` — iOS 는 2026-11-22 에 맞췄다. 세로가 좁은 창은 페이지 스크롤 + 카드 높이 상한).
 - `내 목소리` 머리의 월 등록 한도는 **`생성 가능 n/m회`** 로 쓴다. `이번 달 n/m` 만
   쓰면 무엇을 세는지, 남은 횟수인지 사용한 횟수인지 알 수 없다. **무료(내 목소리를 쓸 수 없는 계정)는
   `생성 가능 0/0회`** 다(2026-11-15 오너 "생성 못하는 상태면 0/0회로 표시") — 만들 몫이 없다는 사실 그대로이고,
@@ -533,6 +563,25 @@
   독립인 조회이므로 새로고침을 시작할 때 함께 병렬로 요청해 추가 왕복을 만들지 않는다.
   **언제 다시 읽는지**는 아래 「월 등록 한도」에 있다 — 한 번 읽은 값을 프로세스가 끝날 때까지 들고
   있지 않는다.
+- **목소리 탭의 모양은 두 앱이 같다**(2026-11-22 두 앱 대조 — 아래는 iOS 를 안드로이드에 맞춘 것이다).
+  - 섹션 머리('내 목소리'·'기본 목소리')는 16 SemiBold, 머리 → 카드 12, 카드 → 다음 머리 12, 카드는 모서리 22·카드 테두리색이고
+    위아래 여백 없이 행이 제 여백을 갖는다. 탭 본문은 위 24·아래 32 다(더보기 탭도 같다). `추가` 는 M3 버튼과 같은 알약이다
+    (하늘색 바탕·남색 글자·높이 40 — iOS 는 그전 흰 글자의 시스템 버튼이었다).
+  - **행 전체가 눌린다**(빈 자리·진행 줄 포함) — 내 목소리는 관리 시트, 기본 목소리는 미리듣기. 잠긴 행은 행 전체가 아니라
+    ⋮·듣기 버튼만 흐리다(0.38).
+  - **만드는 중·지우는 중인 내 목소리는 이름 옆(행 끝)에 진행 알약만 둔다** — `만드는 중`·`삭제 중`(작은 스피너 + 굵은
+    작은 글자). 그동안 ⋮·듣기는 그리지 않는다 — 그 사이 이름을 바꾸거나 지우면 서버 상태와 어긋난 요청이 나간다. 만들지
+    못한 목소리는 **보통 행**이다(실패 줄을 따로 그리지 않는다). 안드로이드 `VoiceProfileRow`, iOS `VoiceProgressRow`
+    (지우는 중은 `deletingProfileID` — iOS 는 그전 '만드는 중'·'만들지 못했어요' 를 부제로 달고 지우는 중 표시가 없었다.
+    안드로이드 알약 글자는 그전 '생성 중' 이었다).
+  - **⋮ 관리 시트는 앱 바텀시트다**(안드로이드 `VoiceProfileMenuSheet`, iOS `SelectionSheet` — iOS 는 그전 시스템 액션시트).
+    제목은 목소리 이름, 항목은 `이 목소리로 새 알람 만들기`·`이름 수정`·`삭제`(빨간 글자)이고 취소 행은 없다 — 바깥 탭·
+    끌어내리기가 닫기다.
+  - **탭에서 한 일의 안내·실패 한 줄은 '내 목소리' 머리 바로 아래다**(안드로이드 `localMessage`, iOS `VoiceSectionCard.message`).
+    클론의 인사말 클립이 아직 없어 미리듣기를 못 할 때는 `이 목소리의 미리듣기를 준비 중이에요.` 를 흐린 글자로 쓴다(iOS 는 그전 탭
+    맨 위 빨간 줄에 '미리듣기를 준비하고 있어요. 잠시 뒤에 다시 눌러 주세요.' 였다 — 지금 `greetingPreviewNotice`). ⚠ 실패(이름
+    변경·삭제·다시 시도·미리듣기 재생)의 색은 아직 두 앱이 다르다 — iOS 는 빨간 글자(`statusMessage`, 2026-10-29 오너 "실패는 그
+    자리 빨간 글자"), 안드로이드는 안내와 같은 흐린 글자(`MutedText`)다.
 
 ### 월 등록 한도 — 다 썼으면 **초안부터 만들지 않는다** (2026-10-11)
 
@@ -598,6 +647,9 @@
   안내 줄, 확정 화면의 오류 줄). 확정 화면의 `다시 만들기`(초안 삭제)가 실패해 그 화면에 머무는
   안드로이드도 같은 줄에 쓴다(iOS 는 그 실패로 사용자를 붙잡지 않고 음원 준비로 넘어간다 — 초안은 서버가
   거둔다).
+  - 이 창의 문장은 전부 '안 됐다' 는 이유(파일·녹음·권한·등록 거절)라 **빨간 `bodySmall`** 로 같은 자리에 쓴다(두 앱 —
+    2026-11-22 전 안드로이드 음원 준비·세부 정보의 안내 줄은 흐린 글자라 힌트로 읽혔다. 안드로이드 `localMessage`, iOS
+    `VoiceCloneUploadFlow.statusSection`).
 - 창이 **그려져 있지 않을 때** 온 실패는 앱 스낵바로 간다 — 창 안의 줄에만 쓰면 **어디에도 안 보인다.** 여기서
   '열려 있다' 는 '열기로 했다' 가 아니라 **지금 그려져 있다** 는 뜻이다(안드로이드 `registrationWindowShown` —
   `shouldDrawRegistrationWindow`. `Dialog` 를 그리는 조건과 거절을 가르는 값이 하나다). 안드로이드에서 그런 때는 둘이다.
@@ -772,7 +824,10 @@
 판정이 도는 동안(디코딩, 길어도 1초 남짓) `다음` 을 잠근다. 그사이 녹음을 버리거나 새로 녹음했으면 지난 판정을 덮지 않는다.
 
 **멈춘 사정** — 끼어들어 멈춘 녹음은 **남긴다**(녹음 복구). 제대로 끝나지 않은 녹음은 품질이 괜찮아도 정상 완료본처럼
-조용히 넘기지 않고 같은 알럿으로 묻는다(그 알럿의 첫 줄이 사정을 말한다).
+조용히 넘기지 않고 같은 알럿으로 묻는다(그 알럿의 첫 줄이 사정을 말한다). 끼어들어 멈췄는데 12초가 안 되면 묻지 않는다 —
+카드 제목이 `12초 이상 녹음해 주세요` 로 바뀌고, 녹음 카드 아래 거절 줄(`rerecordReason`)에 "전화나 다른 앱 때문에 녹음이
+멈췄어요. 12초 이상 다시 녹음해 주세요." 를 쓴다 — 사용자가 멈춘 것이 아니다(두 앱 — 안드로이드는 2026-11-22 전 단계 맨 아래
+흐린 줄이라 대본을 펼친 채로는 화면 밖이었다. 안드로이드 `recording_interrupted_short`, iOS `reviewFinishedRecording`).
 
 | 플랫폼 | 사정 | 처리 |
 | --- | --- | --- |
@@ -1380,7 +1435,8 @@ iOS `Generated/WeatherRegions.generated.swift`)을 쓴다. 생성 파일을 손�
     옛 입력칸이 첫 낱말을 나라 칸으로 떼어 간 것이라 둘을 이어 붙인다("Birmingham England").
 - **지역 시트**: 위에 나라 세그먼트, 아래에 그 나라의 지역을 **3열 칩**으로(목록 순서, 2026-11-09 오너 — 고르기 시안 A).
   대한민국 17곳이 스크롤 없이 한 화면에 보이고 고른 칩이 강조 배경·테두리로 바로 보인다. 칩 높이는 같고(52) 긴 이름은 두 줄까지
-  감는다. 처음 보일 나라는 고른 지역의 나라, 없으면 **이 기기의 공휴일 국가**(없으면 기기 지역이 KR·JP·US 면 그 나라, 아니면
+  감고 그 너머는 말줄임이다 — **글자를 줄이지 않는다**(칩마다 글자 크기가 달라 목록이 들쭉날쭉해진다. iOS 는 2026-11-22 전 칩·나라
+  세그먼트 글자를 0.8~0.85 까지 줄였다). 시트 아래 여백은 20 이다. 처음 보일 나라는 고른 지역의 나라, 없으면 **이 기기의 공휴일 국가**(없으면 기기 지역이 KR·JP·US 면 그 나라, 아니면
   KR)다.
   - **나라 세그먼트는 제자리에 남고 목록만 스크롤한다** — 미국(69곳)을 내려가서 나라를 바꾸려고 맨 위로
     되돌아가지 않게.
@@ -1971,6 +2027,12 @@ AlarmKit 예약을 다시 만들 수 있다.
   더 한다. iOS 는 관문이 '문구가 지워져요' 알럿보다 먼저라 그 알럿도 이어서 뜬다). 저장·문구 종류에서 열렸으면 닫기만 한다(이어서
   할 일이 자리마다 다르다). 손으로 닫으면('백그라운드에서 계속') 붙이지 않는다. 등록 직후의 준비 화면은 원래 저절로 닫혔다
   (2026-09-21).
+- **편집기에서 여는 준비 페이지는 가운데 카드 대화창이다**(두 앱 — iOS 는 2026-11-22 전 아래에서 올라오는 시스템 시트였다).
+  어두운 스크림 위 모서리 28 카드에 퍼센트(36 · 굵기 400) → 막대 → 무엇을 기다리는지 → (실패면 '다시 시도하기') → 닫기가 한
+  덩어리로 선다 — 닫기는 상태 줄 바로 아래다. 닫기 글자는 흐린 글자색이다(강조색이면 '다시 시도하기' 와 무게가 같아진다 —
+  두 앱 2026-11-22). 바깥(스크림)을 누르면 손으로 닫은 것과 같다. 안드로이드는 편집기의 `Dialog` 안 `ClipPreparationScreen`, iOS
+  `ClipPreparationDialog`(띄운 화면 위에 얹는다 — 목소리 고르기 시트가 닫히는 그 순간에 열리는 일이 많아 프레젠테이션 둘이 겹치지
+  않게).
 - **백그라운드로 계속 받는다.** 페이지를 떠나거나 앱을 내려도 멈추지 않는다.
 - **진행률이 폰에서 실시간으로 보인다.**
   - 안드로이드: 진행률 알림(포그라운드 서비스 — 기본 목소리 받기 워커가 `dataSync` 타입으로 올린다)
@@ -2934,7 +2996,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 — 확인 못 한 마지막 공개본도 싣되 세지 않는다 | `StockClipManifestStore.loadPublishedWinner`(확인 → 읽기 → 재확인, `PublishedManifest.confirmed`)·`latestPublishedTicket`·`lastPublishedTicket` ← `syncStockClipsToPublished`(확인 못 한 superseded 는 실패, 싣기는 표 순서로); 회귀 `StockClipManifestWiringTest` | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 · 알람 관문 `DefaultVoiceGate`(IO) | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
-| 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
+| 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 · 목록 행은 막대 + 숫자 · 총량을 모르면 흐르는 막대 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness`(총량 `PrerenderDriveState.overallFraction` 이 null 이면 인디터미넌트) · 행 `VoicePrerenderProgressLine`(`ui/voices/VoiceProfileRowComponents.kt`) | `ClonePrerenderDrive`(`totalKnown`)·`ClipPreparationView.registrationPreparation`(`PreparationIndeterminateBar`)·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
 | 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다. 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 결은 문장 지시뿐 `prerenderClipPrompt` 의 `energyInstruction`(태그 없음, `lib/vertex-translate.ts`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
 | 클론 문구의 말투·내용 규칙(사투리 강도·아이는 이유 없이·운세는 가능성·일본어 가족 です・ます 거절(어체는 확정 문구가 먼저, 분석은 그다음 · 확정 문구와 생성 문구는 같은 끊기·같은 판정 · 호칭은 부름말 자리에서만 지운다 · 꼬리 걷고 서술어로)·어체는 끝 장식을 걷고 읽는다(일·한 — 문자 종류로, 끝을 늘인 작은 히라가나·얼굴 문자의 팔까지, 늘임은 띄어 쓸 때만 끊는다)·영어 직역 거절·한국어 어긋난 낱말 짝 거절·확정 문구의 끝 어미를 본뜨지 않음) | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt`(`speechStyleInstruction`·`humanReferenceInstruction`·`styleReferenceInstruction`(피할 끝말 `lastPhrase`)·`careKeepsVoice`·`childlikeInstruction`·끝의 `TIME OF DAY`·`DIALECT` 줄) · 검사 `prerenderRejectionReason` → `hasMixedKoreanRegister`(마디 끝 낱말 `koreanEndingEntries` — 끝 장식 `KO_TRAILING_DECORATION`, 확정 문구·생성 문구 공용)·`hasJapanesePoliteEnding`(문장 끊기 `japaneseSentenceEnds`(부름말 자리의 호칭만 지우기 — 앞뒤 경계 `japaneseVocativePattern`(`JA_EDGE`)·붙여 쓴 끝 호칭 `withoutGluedPoliteVocative`, 문장 끝 표시 `JA_SENTENCE_BREAK`(지운 웃음·괄호 덧말 자리 `JA_DECORATION_BREAK`), 끝 장식 `JA_SENTENCE_TRAILER`(가장자리 `JA_EDGE`·늘임 작은 글자 `JA_TRAILING_SMALL_KANA`), 낱말 안 늘임 `JA_INNER_ELONGATION` — 확정 문구·생성 문구·평가 도구 `scripts/eval-gemini-prompts.ts` 의 `jaPoliteEndings` 공용), 글자 웃음 `spokenForRegister`·괄호 덧말과 얼굴 문자의 팔 `withoutParentheticalAsides`(`PARENTHETICAL_ASIDE`, 일·한 공용), 문장 판정 `isJapanesePoliteSentence`(꼬리 `JA_PREDICATE_TAIL` 를 걷은 서술어 끝 `japanesePredicateEnd`, 정중형 아님 `JA_NOT_POLITE_PREDICATE`), 확정 문구의 어체 `japaneseReferenceRegister`(반말 판정 `isJapaneseCasualSentence` — 정중체에 가까운 끝 `JA_POLITE_LIKE_PREDICATE` 는 반말 아님), 허용 목록 `isConfirmedCloseRelationshipLabel`)·`hasAssumedMorning`·`hasEnglishLiteralCalque`·`hasKoreanCollocationError`(`lib/vertex-translate.ts`) · 운세 시드 `CLONE_CLIP_SEEDS`(`lib/stock-clips.ts`). 회귀 `vertex-translate.test.ts`「사전렌더 — 3.8 튜닝」·「사전렌더 — 마지막 튜닝 회차」·「hasJapanesePoliteEnding — 엄격한 허용 목록」(끝 장식은 '문장 끝에 붙인 마침표 변형·기호·이모지·글자 웃음은 걷고 읽는다…'·'낱말 안의 늘임은 지우고 읽는다…'·'늘임 작은 글자·얼굴 문자의 팔은 걷고…')·'확정 문구 끝의 이모지·기호·글자 웃음은 걷고 어체를 읽는다…'(한국어)·`prerender-clip-failure-reason.test.ts`(재시도 힌트) |
 | 확정 미리듣기 문구가 사투리 지시를 이긴다 | — (서버가 만든다) | — (서버가 만든다) | `prerenderClipPrompt` 의 `styleReference` 갈래(`dialectFollowsReference` → `speechStyleInstruction`·`humanReferenceInstruction`·끝의 `DIALECT` 줄) ← `stock-clips.ts` 가 `preview_text` 를 넘긴다. 회귀 `vertex-translate.test.ts`「확정 문구(STYLE REFERENCE)가 있으면 사투리 지시가 그것을 따른다」· 평가 `scripts/eval-gemini-prompts.ts`(프로필마다 `styleReference`, `*-stdref` 프로필) |
@@ -2987,8 +3049,12 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
 | 확정 화면 = 제목 아래 말투 안내 한 문장 · 문구 카드에 재생 버튼 없음 · 교체는 체크 없이 제목 크기 한 줄 · 월 한도 경고 없음 | `VoiceProfileManagementPanel` Preview(`replaceTargetVoice` → `voices_confirm_replace_body`, `voices_preview_edit_hint`); `VoiceRegistrationCopyTest` | `VoicePreviewConfirmView`(`registeredVoice`) · `Localizable.xcstrings` | — |
+| 확정 화면을 떠나는 길 — `다시 만들기` = 음원 준비로(창 유지) · `나가고 삭제` = 목록으로(창 닫기) · '저장 중…' 은 확정을 보냈을 때만(2026-11-22) | `VoiceProfileManagementPanel` 의 `remakeDraftId` → 초안 효과의 `restartRegistrationFromSource`(나머지는 `closeCreateDialog`) · `promotedForPrerenderId`; 회귀 `VoiceRegistrationFailureWiringTest.theRemakeGoesBackToTheSourceStepInsteadOfClosing` | `VoicePreviewConfirmView` 의 `discard(then:)` → `onDiscarded`(`VoicesPanelView` 의 `route = .clone`)·`onExited`(`route = .management`) · `savingText`·`promoting` | 초안 삭제 `DELETE /voice/:id?draftOnly=true` |
 | 생성 중 배치 — 상단바 없음 · 블록 화면 가운데 · 하단 행동 없음 | `VoiceProfileManagementPanel.kt` 의 `currentStep != VoiceRegistrationStep.Creating` 조건 · `bodyFillsHeight` | `VoiceCloneUploadFlow` 의 `registrationStep != .creating` 조건 · `creatingSection` | — |
 | 오프라인 준비 배치 — 제목 없음 · 블록 가운데 · '백그라운드에서 계속' 맨 아래 | `VoiceProfileManagementPanel.kt` `VoiceClipPreparationStep` | `ClipPreparationView.registrationPreparation`; `AlarmTalkUITests/VoicePreparationScreenshotUITests` | — |
+| 편집기의 준비 페이지 = 가운데 카드 대화창 · 실패면 '닫기' · 닫기 글자는 흐린 색 · 바깥 탭 = 닫기(2026-11-22) | `ui/editor/AlarmEditorScreen.kt` 의 `preparationVoiceId` → `Dialog` 안 `ui/voices/ClipPreparationScreen.kt` 의 `ClipPreparationScreen` | `Views/Voices/ClipPreparationView.swift` 의 `ClipPreparationDialog`(`.modifier` — `AlarmEditorSheet.dismissClipPreparation`·`finishClipPreparation`) | — |
+| 등록 창 실패 문장 = 빨간 `bodySmall` · 이름 빈 칸은 칸 아래 한 줄만 · 끼어든 짧은 녹음은 거절 줄 · 녹음 중 녹음/파일 잠금 · 짧은 파일도 자르기 막대(2026-11-22) | `VoiceProfileManagementPanel` 의 `localMessage`(등록 창 안에서는 빨간 글자 — 목소리 탭 본문에서는 `MutedText`)·`nameRequiredError`·`rerecordReason`(`recording_interrupted_short`)·`VoiceCaptureModeSelector(enabled = !isRecording)` · `ui/components/VoiceInputControls.kt` 의 `AudioCropRangeSelector` | `VoiceCloneUploadFlow` 의 `statusSection`·`nameRequiredError`·`fieldErrorLine`·`reviewFinishedRecording`·`sourceModeSection`(`.disabled(voice.recorder.isRecording)`)·`importAudioFile`·`fileCropCard`(`AudioCropThumbLabels`) | — |
+| 목소리 탭 — 진행 알약(만드는 중·삭제 중, 실패는 보통 행) · ⋮ 관리 바텀시트(취소 행 없음) · 안내·실패 한 줄은 '내 목소리' 머리 아래 · 행 전체가 눌린다 | `ui/voices/VoiceProfileRowComponents.kt` 의 `VoiceProfileRow`(`VoiceProgressMessage`)·`VoiceProfileMenuSheet` · `VoiceProfileManagementPanel` 의 `localMessage` | `Views/Voices/VoiceCatalogRow.swift` 의 `VoiceProgressRow`·`VoiceProgressPill`·`VoiceSectionCard.message`(`VoiceSectionMessage`) · `VoiceProfileManagementPanel` 의 `progressText(for:)`(`deletingProfileID`)·`rowMenuActions`(`SelectionSheet`)·`voiceTabMessage` ← `VoiceStudioViewModel.statusMessage`·`greetingPreviewNotice` | — |
 | 제자리 교체의 갱신 신호는 재렌더가 다 게시된 뒤 · 주인의 기기에만(`voice_share_changed` — 이름은 그대로) | `fcm/AlarmTalkMessagingService.kt` → `StockClipPrefetchWorker.enqueue` · `AppSignals.voiceShareChanged` → `AlarmTalkApp` 의 `loadStockClips(ManifestNeed.LATEST)` | `PushNotificationCoordinator` 의 `.voiceShareChanged` → `onVoiceChanged` | `lib/stock-clips.ts` 의 재렌더 완료 알림 → `lib/fcm.ts` `sendVoiceShareChangedPush`(주인 한 명) |
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
@@ -3031,7 +3097,7 @@ R2 파일·ElevenLabs 클론은 DB 트랜잭션 안에서 지울 수 없으므�
 | 계정 설정 `weather.region`(알맞으면 옛 글자로 덮고, 모르면 그 칸만 버리고, 없으면 옛 글자를 되짚는다 — 읽을 때도 같다) | 보낼 때 `toDynamicPromptSettings`(키를 글자에서 되짚어 싣는다), 받을 때 `toPromptPreferences`·`resolvedRegion`(키가 글자를 이긴다) | 보낼 때 `DynamicPromptPreferences.toSettings`, 받을 때 `DynamicPromptPreferences.from(settings:)` | `normalizeWeatherSetting`(`lib/dynamic-prompt-settings.ts`) → `WeatherRegions.normalizeSetting`, 회귀 `weather-region-settings.test.ts` |
 | 계정의 지역·사주 받아 적기(안 올라간 변경은 덮지 않고 다시 올린다 · 빈 묶음은 로컬 유지 · 멱등 · 로그아웃이 표시도 지운다) | `DynamicPromptPreferenceStore.adoptAccountSettings`·`markPushed`·`saveWeatherLocation`/`saveFortuneInfo`(표시) ← `MainViewModel.onAccountPromptSettingsReceived`(← `AlarmTalkApp` 의 `LaunchedEffect`, 축 `accountSettingsReceipt` = 응답 순번 `AuthSession.accountAnswerSeq`)·`SettingsScreen`(같은 축), 표시 내리기 `uploadDynamicPromptSettings`(보낸 세대가 그대로일 때만), 프로필 저장은 바꾼 칸만 지금 세션 위에(`AuthSessionStore.updateUserIfAlive` ← `saveProfileEdit`, 끝나면 확인 조회), 밀린 응답도 받아 적기 — 회귀 `AccountPromptSettingsAdoptionTest`·`PromptSettingsAnswerFenceTest`·`ProfileSaveKeepsAccountAnswerTest` | `DynamicPromptPreferences.adoptAccount`·`markPushed`·`saveLocalEdit`·`current`(`AccountPromptSettingsAdoption.swift`) ← `AlarmTalkApp` 의 계정 설정 관찰(`accountPromptSettingsKey` — 축에 `AuthViewModel.accountAnswerRevision`)·`SettingsView.loadPromptPreferences`(같은 축 `PromptObservation` ← `SettingsView.observation(of:)`, 고칠 때는 `editBase`)·`AlarmEditorSheet.savedPromptPreferences`, 표시 내리기 `AuthViewModel.updateProfile`(보낸 `sessionRevision` 이 그대로일 때만 — 바꾼 칸만 응답 뒤의 세션 위에, 끝나면 `refreshUser`), 떠날 때 `beginLeavingAccount` + 세션을 비운 뒤 다시 지우기 — 회귀 `AccountPromptSettingsAdoptionTests`(`editBase` 판정 — ⚠ 화면의 두 호출부 `onSelect`·`saveFortuneDraft` 는 SwiftUI 라 유닛 테스트가 닿지 않는다)·`AuthViewModelTests`(관찰 축·재로그인·로그아웃 창) | `PATCH /user/me` 의 `dynamic_prompt_settings`(`normalizeWeatherSetting`) |
 | 편집기 문구 화면 → 내 계정 설정(직접 입력 제외 · 서버 값과 다를 때만 올린다 · 표준 글자로 적는다 · 지역이 바뀔 때만 공휴일 국가) | `AlarmEditorScreen` 의 문구 결과 처리(`saveWeatherLocation`·`saveFortuneInfo` → `onUpdateDynamicPromptSettings`, `WeatherRegionHolidaySync.onRegionSaved`) | `AlarmEditorSheet.syncOwnPromptPreferences` ← 판정 `DynamicPromptPreferences.editorUpdate`(`EditorPromptPreferenceUpdate.swift`) — 회귀 `EditorPromptPreferenceUpdateTests` | — |
-| 지역 시트: 나라 세그먼트 고정 · 3열 칩 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 | `WeatherLocationDialog`(`scrollsContent = false`, `LazyVerticalGrid` + `WeatherRegionChip`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`, 3열 칩 `chip`) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
+| 지역 시트: 나라 세그먼트 고정 · 3열 칩 · 열 때 고른 지역으로 스크롤 · 나라를 바꾸면 맨 위 · 화면의 90% 까지 · 칩 글자는 줄이지 않고 두 줄 뒤 말줄임 | `WeatherLocationDialog`(`scrollsContent = false`, `LazyVerticalGrid` + `WeatherRegionChip`) ← `WakerSelectionSheet`(`ui/components/WakerModal.kt`) | `WeatherRegionPickerSheet`(`ScrollViewReader`, 3열 칩 `chip` — `minimumScaleFactor` 없음) ← `SheetScrollingContent.reservedHeight`·`BottomSheetMetrics.maxFraction` | — |
 | 날씨 출처 줄(약관 및 개인정보 처리 동의 화면 맨 아래 · ko·en·ja 같은 문장 · 2026-11-09 지역 시트에서 옮김) — **서버 토큰이 정확히 `"kma_jma_nws"` 일 때만**, 그 밖·확인 실패·응답 전은 숨김 | `ConsentHistoryScreen` 의 `if (showsWeatherAttribution(LocalWeatherAttribution.current))` ← 판정 `showsWeatherAttribution` ← `LocalWeatherAttribution`(`ui/editor/AlarmRandomPromptSettings.kt`, `MainActivity` 가 내려 준다) · 문장 `legal_weather_attribution`(`res/values{,-en,-ja}/strings.xml`, 그리는 자리는 이 하나) — 회귀 `WeatherAttributionTest` | `ConsentHistoryView.weatherAttributionLine` ← 판정 `WeatherAttribution.showsLine` · `Localizable.xcstrings` — 회귀 `WeatherAttributionTests` | — |
 | 날씨 출처 토큰 계약 — `GET /api/app/version` 의 `weather_attribution`(불투명 토큰 · 지금 `"kma_jma_nws"` — 원천 교체(#846)가 올렸다, 되돌리면 `null`) · 저장하지 않고 새로 묻지 않는다 · 확인이 실패하면 지운다 | `AppVersionResponse.weatherAttribution`(`network/AuthApi.kt`) → `MainViewModel.weatherAttribution` ← `checkAppVersion`(실패면 null) — 회귀 `WeatherAttributionTest` | `AppVersionResponse.weatherAttribution`(`AlarmTalkAPIModels.swift`) → `AppVersionGate.weatherAttribution` ← `checkAppVersion`(실패면 nil) — 회귀 `AppVersionGateTests`·`WeatherAttributionTests` | `WEATHER_ATTRIBUTION`(`lib/weather-attribution.ts`) → `GET /api/app/version`(`index.ts`) — 회귀 `app-version.test.ts`(필드가 실리고 `"kma_jma_nws"` · Open-Meteo 를 부르는 코드가 남아 있으면 `null` · 이 토큰을 말하는 동안 세 원천을 부르는 코드가 있다) |
 | 새 알람: 행에 옛 앱용 글자 + 요청에 `region` | 고를 때 `region.legacyCountry`/`legacyCity` 를 적고, 요청은 `weatherRegionFor(…)?.key` ← `AlarmRepository.resolveWeatherVariantForDraft`·`resolveDueCloneBucketVariants` — 회귀 `WeatherRegionRequestTest` | `WeatherRegions.storageLabels` ← `AlarmEditorSheet`, 요청은 `resolveAlias(…)?.key` ← `WeatherVariantSaveLookup`·`WeatherVariantRefreshService` — 회귀 `WeatherVariantOwnerScopeTests` | `GET /tts/prerender-variant` 의 `region` |

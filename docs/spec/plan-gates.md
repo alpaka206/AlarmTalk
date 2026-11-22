@@ -199,6 +199,67 @@ iOS 를 안드로이드(`editorVisibleVoiceProfiles`)에 맞췄다(`AlarmEditorS
 - 스토어 설정을 바꾸는 스크립트는 `.claude/release-tools/play-trial-create.mjs`·`asc-trial-create.mjs`(gitignore), 확인은
   `probe-trials.mjs`. ⚠ Play 오퍼는 `regionsVersion.version=2026/01` 이어야 기본 요금제의 모든 지역을 받는다.
 
+## 이용권 화면 — 카드는 언제나 그리고, 결과는 위쪽 안내로 말한다 (2026-11-22)
+
+두 앱을 맞대 보니 iOS 는 결제·복원 결과를 스크롤 맨 아래 사라지지 않는 각주로 적고, 해지 결과·조회 실패는 아예 말하지
+않았으며, 상품을 못 받으면 카드 대신 '다시 시도' 상자와 누를 수 없는 '결제하기' 를 그렸다. 안드로이드를 원본으로 맞췄다
+(배치는 위 「신규 1개월 무료」의 A안 그대로다).
+
+- **카드는 언제나 그린다.** 상품(가격·체험)을 받기 전이거나 못 받았어도 플러스·무료 카드를 그리고, 가격은 폴백(백엔드
+  `plans.price_krw` 의 3,900원 — 안드로이드 `billing_plan_monthly_price_fallback`, iOS `FallbackPlanPrice`)이다. iOS 의 스켈레톤·
+  가져오기 실패 카드(`BillingPlansSkeleton`·`BillingProductsErrorState`)는 지웠다 — 되살리지 않는다. 상품은 앱을 시작할 때와
+  **이용권 화면에 들어올 때마다** 다시 받는다(안드로이드는 2026-11-22 전 시작할 때 한 번이라, 그때 실패한 기기는 앱을 다시 켤
+  때까지 폴백 가격이었다). 못 받으면 받아 둔 값을 그대로 둔다.
+- **시작 버튼은 늘 눌린다** — 잠그는 것은 바쁠 때뿐이다(편집기의 `SaveBlockReason` 과 같은 규약). 누를 때 상품이 없으면 그때
+  다시 받고, 그래도 없으면 안드로이드는 "Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.", iOS 는 알럿
+  "이용권 정보를 불러오지 못했어요 / 잠시 후 다시 시도해 주세요." 다.
+- **바쁨은 하나다.** 결제 전 조회·결제·복원·해지가 도는 동안 시작·복원·해지 세 버튼을 함께 잠근다 — 따로 잠그면 결제 전 조회
+  사이에 복원·해지가 끼어든다. 버튼에 스피너는 두지 않는다(iOS 는 그전 시작·복원 버튼에 스피너가 있었다).
+- **플러스 카드의 상태 줄** — 플러스가 현재 이용권일 때 카드 안의 한 줄이다(두 앱 같은 판정·문장, 날짜는 카드의 `yyyy.MM.dd`).
+  프로모만 쓰는 계정은 프로모 한 줄([billing-lifecycle.md](billing-lifecycle.md) D4)이고, 산 이용권은 해지 예약 + 다음 플랜이면
+  "{날짜} 이후 {플랜} 이용권으로 변경돼요.", 해지 예약이면 "{날짜}까지 사용 후 종료돼요.", 그 밖에는 "{날짜}까지 사용할 수
+  있어요." 다(날짜를 모르면 "{플랜} 이용권으로 변경 예정이에요." · "현재 이용권이 종료 예정이에요." · "사용 중인 이용권이에요.").
+  iOS 는 2026-11-22 에 구독 응답의 `cancel_at_period_end`·`next_plan` 을 읽기 시작했다 — 그전에는 프로모 줄만 있었다.
+- **결과는 화면 위쪽 안내로 말하고 몇 초 뒤 걷는다**(안드로이드 `TopMessageHost`, iOS `AuthToastModifier` — 성공·오류·안내로 색을
+  가른다). ⚠ iOS 를 스크롤 맨 아래 각주로 되돌리지 않는다 — 사라지지 않았고, 화면이 길면 보이지도 않았다. 배경 재동기화(전경
+  복귀·`plan_changed`)의 실패는 띄우지 않는다 — 사용자가 누른 일의 결과만 말한다.
+
+  | 일 | 문장 |
+  | --- | --- |
+  | 결제 완료 | 이용권을 적용했어요 |
+  | 결제 보류 | 결제가 보류 중이에요. 결제 수단 승인이 끝나면 자동으로 적용돼요. |
+  | 결제 실패 | {스토어} 결제에 실패했어요. 잠시 후 다시 시도해 주세요. |
+  | 결제 시트를 사용자가 닫음 | **말하지 않는다** |
+  | 결제는 됐는데 서버가 확인하지 못함(네트워크·5xx) | 결제는 됐지만 이용권을 아직 확인하지 못했어요. 잠시 후 '이전 구매 복원'을 눌러 주세요. |
+  | 서버가 결제를 거절함 | 그 코드의 문장 — 화면 표 → 공용 표 → 기본 문장 차례([error-codes.md](error-codes.md) §4). 다른 계정: 409 `TRANSACTION_OWNED_BY_OTHER_USER` "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요" · 403 `TRANSACTION_ACCOUNT_MISMATCH` "이 결제는 다른 계정으로 구매한 거예요. 그 계정으로 로그인해 주세요." |
+  | 복원을 누름 | 구매를 확인하고 있어요… |
+  | 복원 — 서버가 이 계정에 붙였다 | 이용권을 적용했어요 |
+  | 복원 — 스토어에 활성 구독이 없다 | 복원할 구매가 없어요. 스토어 계정을 확인해 주세요. |
+  | 복원 — 스토어·서버에 닿지 못했다 | 이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요. |
+  | 해지 — 종료일에 / 지금 | 이번 이용 기간까지 그대로 쓸 수 있어요. 다음 결제는 없어요 / 이용권을 해지했어요 |
+  | 해지 실패 | 해지에 실패했어요(코드가 있으면 그 문장) |
+  | 화면에 들어올 때 구독 조회 실패 | 이용권 정보를 불러오지 못했어요 |
+
+  - ⚠ **복원 성공은 서버가 확인한 뒤에만 말한다.** 스토어가 돌려준 구매 개수로 "이전 구매 n건을 복원했어요" 라고 하지 않는다 —
+    그 구매가 다른 계정 것이면 서버가 붙이지 않는다(iOS 는 2026-11-22 전 그렇게 말했고, 다른 계정 표식이 박힌 구매는 세지 않아
+    "복원할 구매 내역이 없어요" 라고 했다). 이제 iOS 도 이 Apple ID 의 활성 구독을 **다른 계정 표식이 있어도** 서버에 보내 판정을
+    맡긴다 — 살아 있는 다른 계정이면 거절, 탈퇴로 없어진 계정이면 이 계정이 이어받는다([billing-lifecycle.md](billing-lifecycle.md)
+    「애플 결제 확정」). Apple ID 창을 닫았으면 말하지 않는다.
+  - ⚠ **'없음' 과 '못 물었다' 를 가른다.** 안드로이드는 2026-11-22 전 Play 연결·조회 실패를 0건으로 읽어 "복원할 구매가 없어요"
+    라고 했다 — Play 가 잠깐 안 붙었을 뿐인데 결제한 사람이 구독이 사라진 줄 안다.
+- **다른 스토어가 갱신 중이면 알럿으로 막는다 — 누르는 순간과 결제 직전, 두 번**(두 앱 — 판정은
+  [billing-lifecycle.md](billing-lifecycle.md) 「갱신을 쥔 스토어가 있으면 다른 스토어에서 새로 사지 못한다」). 제목 "{다른 스토어}에서
+  결제 중이에요", 본문 "지금 이용권은 {다른 스토어}로 자동 갱신되고 있어요. {이 스토어}로 결제하면 두 곳에서 함께 청구돼요.
+  {다른 스토어} 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요." [확인]. 안드로이드는 2026-11-22 전 결제
+  직전에만 보고 한 줄로 말했다. 결제 직전 조회가 실패하면 진행하지 않는다 — 안드로이드는 "이용권 정보를 불러오지 못했어요" 한 줄,
+  iOS 는 같은 제목의 알럿이다(iOS 의 "이용권 정보를 불러오는 중이에요" 알럿은 이미 유료인데 응답이 아직 없을 때만이다 — 2026-11-22
+  전에는 결제 직전 조회의 실패도 그 알럿이라, 기다려도 풀리지 않는데 기다리라고 했다).
+- **해지 알럿의 날짜는 "M월 d일"** 이다(기기 로케일의 월·일 — 체험 안내·기간 한정 플랜과 같은 꼴). 2026-11-22 전에는 안드로이드
+  "11/22", iOS "2026.12.09" 였다. 카드 상태 줄의 날짜는 그대로 `yyyy.MM.dd` 다. 스토어가 직접 해지해야 하는 경우(App Store 구독,
+  Google Play 해지 호출 실패)의 알럿은 [billing-lifecycle.md](billing-lifecycle.md) 「해지」.
+- 스토어 이름에는 조사를 붙여 쓴다 — "App Store에서"·"Google Play에서"·"Google Play로"·"구독에서"(2026-11-22 두 앱 — 그전에는
+  "App Store 에서"·"Play 스토어 → 구독에서" 가 섞였다).
+
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
@@ -217,8 +278,15 @@ iOS 를 안드로이드(`editorVisibleVoiceProfiles`)에 맞췄다(`AlarmEditorS
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
 | 진입 갱신 — 목소리·이용권(완결된 갱신만 · 60초 · 같은 계정·같은 앱 진입 · 보낼 때 적는다) | `ui/app/AlarmTalkApp.kt` 의 `lastTabRefreshAt`(키는 `tab to sessionEffectKey` — 계정 + 세션 세대라 규칙과 같다. ⚠ 표를 갱신 **전에** 적는다 — 실패 뒤 재시도 규칙은 아직 다르다) | `EntryRefreshFreshness` · `SocialFeatureViewModel.refreshOnEntry` · `VoiceStudioViewModel.refreshOnEntry` — 부르는 자리 `MainTabsView.refreshForSelectedTab`(알람 — 이용권만 · 목소리·더보기)·`MainTabsView.refreshAll`·`AlarmEditorSheet`·`BillingPanel` | — |
 | 알람 탭 진입 = 이용권만(알람 올리기 없음 — 2026-10-29 iOS 의 알람 탭 동기화 스로틀 `AlarmTabSyncThrottle`·`tabRefreshThrottleKey` 를 지웠다) | 같은 `lastTabRefreshAt` 의 `NativeTab.Alarms` → `refreshBilling`(+ 매니페스트 `loadStockClips(ManifestNeed.RECENT)`) | `MainTabsView.refreshForSelectedTab` 의 `.alarms` → `alarmKit.refreshAuthorizationState` · `socialFeatures.refreshOnEntry`(위 행의 창) | — |
-| 쓰기·푸시 뒤 이용권 + plan(`/auth/me` 한 번 — 끝까지 못 가면 사용자 새로고침) | — | `SocialFeatureViewModel.refreshAllThenUserIfIncomplete` — 부르는 자리 `plan_changed`(`AlarmTalkApp` 의 `onPlanChanged`)·`BillingPanel` 의 구매·복원·구독 관리 시트 닫힘 | — |
+| 쓰기·푸시 뒤 이용권 + plan(`/auth/me` 한 번 — 끝까지 못 가면 사용자 새로고침) | — | `SocialFeatureViewModel.refreshAllThenUserIfIncomplete` — 부르는 자리 `plan_changed`(`AlarmTalkApp` 의 `onPlanChanged`)·`BillingPanel` 의 구매·복원·구독 관리 시트 닫힘. 해지는 `BillingPanel.startCancel` 이 같은 규칙을 직접 본다(`entitlementSnapshotComplete` — 2026-11-22 전에는 해지 뒤 `/auth/me` 를 언제나 한 번 더 불렀다) | — |
 | 이용권 새로고침의 조회는 한꺼번에(쓰는 순서·가드는 그대로 · 수위·계정 표는 보내기 전에) | `MainViewModelBillingActions.refreshBillingData`(구독 하나) | `SocialFeatureViewModel.refreshAll`(`async let`); 회귀 `EntryRefreshFreshnessTests`(두 조회가 한꺼번에·표는 보내기 전에·구독 실패에도 계정 답을 이 진입의 결과로) | — |
+| 이용권 화면 — 카드는 언제나(폴백 가격) · 화면에 들어올 때 상품 다시 받기 · 시작 버튼은 늘 눌리고 누를 때 상품을 다시 받는다 | `ui/billing/BillingPanels.kt` 의 `SubscriptionPanel`(`planPriceLabel`) · `MainViewModelBillingActions.reloadPlayProducts` ← `AlarmTalkApp` 의 `NativeTab.Billing` 진입 · `billing/PlayBillingManager.kt` 의 `launchPurchase`(캐시에 없으면 조회) | `Views/Settings/BillingPanel.swift` 의 `beginPurchase`(상품이 없으면 `fetchProducts` → 그래도 없으면 `PurchaseBlockReason.loadFailed`) · `Views/Settings/BillingPanelComponents.swift` 의 `PlanPurchaseButton`·`FallbackPlanPrice` | `plans.price_krw`(폴백 숫자의 출처) |
+| 바쁨 하나(시작·복원·해지를 함께 잠근다 · 스피너 없음) | `MainViewModel.billingBusy` | `BillingPanel.billingBusy`(`billingTaskInFlight`·`socialFeatures.isBusy`·`subscriptions.isPurchasing`) | — |
+| 플러스 카드 상태 줄 | `SubscriptionPanel` 의 `currentStatusText`(`billing_status_*`) | `BillingPanel.currentStatusText`·`subscriptionStatusText` ← `BillingSubscription.cancelAtPeriodEnd`·`BillingSubscriptionResponse.nextPlan`; 회귀 `PurchaseBlockReasonTests` | `GET /billing/subscription` 의 `cancel_at_period_end`·`next_plan` |
+| 결과는 위쪽 안내(결제·복원·해지·조회 실패 · 사용자가 닫은 결제는 말하지 않음 · 배경 재동기화 실패는 띄우지 않음) | `MainViewModel.message` → `TopMessageHost`(종류 `ui/app/SnackbarSeverity.kt`) | `BillingPanel` 의 `toast` → `.authToast(style:)`(`AuthToastStyle`) ← `PurchaseResult.userMessage`·`RestoreResult.userMessage`·`SocialFeatureViewModel.CancelOutcome`·`SocialFeatureViewModel.refreshFailureMessage`; 회귀 `SubscriptionManagerTests`·`BillingLocalizationTests` | — |
+| 복원 — 서버가 확인해야 성공 · '없음' 과 '못 물었다' 를 가른다 | `PlayBillingManager.restorePurchases`(못 물으면 null) → `restoreResultMessageRes` · 보낸 것은 `confirmGooglePurchase`(`UserRestore`); 회귀 `BillingParityRulesTest` | `SubscriptionManager.restorePurchases`(`RestoreResult` — `.restored`·`.nothingToRestore`·`.cancelled`·`.failure`, 다른 계정 표식도 보낸다 → `syncWithBackend`) → `BillingPanel.restorePurchases` | `POST /billing/google/confirm`·`POST /billing/apple/confirm` |
+| 다른 스토어 갱신 — 누를 때·결제 직전 알럿 | `ui/billing/BillingPanels.kt` 의 `otherStoreOwnsRenewal` → `CrossStoreRenewalBlockDialog`(누를 때 `showCrossStoreBlock` · 결제 직전 `crossStoreRenewalBlocked` → `MainViewModel.billingCrossStoreBlockOpen`) | `BillingPanel.presentPurchaseConfirmation`·`confirmAndPurchase` → `purchaseBlock`(`playOwnsRenewal` · 조회 실패 `loadFailed`) | `store_renewal_providers` |
+| 해지 알럿의 날짜 "M월 d일" | `ui/billing/BillingPanelHelpers.kt` 의 `formatPassDay`(← `formatPersonalPromoDay`); 회귀 `BillingParityRulesTest` | `Views/Settings/BillingPanelComponents.swift` 의 `formatPassDay`(← `PersonalPromo.dayLabel`) | — |
 
 ## 관련 규약 (다른 문서)
 

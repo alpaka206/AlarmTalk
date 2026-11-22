@@ -251,9 +251,15 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 
 ⚠ **공용 표는 '아무 데서나' 가 아니라 정해진 자리에서 불린다.** 일반 오류 헬퍼
 (`userFacingError` / `userFacingErrorMessage`)는 코드를 보지 않는다 — 표를 부르는 자리는
-**로그인 · TTS 생성 · 목소리 등록 · 목소리 승격 · 이메일 인증 확인 · 가입 · 비밀번호 재설정 확정**
-일곱이고, 두 앱이 같은 일곱이다. 여기를 늘릴 때는 **양쪽을 같이** 늘린다(한쪽만 늘리면 같은 실패가 두 앱에서
+**로그인 · TTS 생성 · 목소리 등록 · 목소리 승격 · 이메일 인증 확인 · 가입 · 비밀번호 재설정 확정 · 결제 확인**(스토어 결제를
+서버가 거절했을 때) 여덟이고, 두 앱이 같은 여덟이다. 여기를 늘릴 때는 **양쪽을 같이** 늘린다(한쪽만 늘리면 같은 실패가 두 앱에서
 다르게 읽힌다). (가족 알람 보내기·이용권 나가기 두 자리는 2026-10-20 그 기능과 함께 지웠다.)
+- 결제 확인은 iOS 가 먼저 불렀고(`SubscriptionManager.syncWithBackend`), 안드로이드가 2026-11-22 에 맞췄다(`billingFailureMessage` —
+  그 화면의 표 → 공용 표 → 기본 문장). 그전 안드로이드는 공용 표를 건너뛰어 문장이 정해진 코드(`CROSS_STORE_RENEWAL_ACTIVE`·
+  `RATE_LIMITED` 등)도 기본 문장으로 뭉갰다.
+- ⚠ **해지 실패는 아직 두 앱이 다르다.** 안드로이드 해지는 같은 `billingFailureMessage` 라 공용 표를 거치지만, iOS 해지
+  (`SocialFeatureViewModel.billingErrorMessage`)는 화면 표 → 기본 문장이라 거치지 않는다. 맞출 때는 iOS 해지가 공용 표를 부르게 하고 이
+  줄을 지운다.
 
 ⚠ **코드를 확인하는 세 자리 — 이메일 인증 확인 · 가입 · 비밀번호 재설정 확정 — 은 2026-10-11 에 더했다.**
 셋 다 서버가 같은 판정(`checkEmailVerificationCode`)으로 인증 코드를 본다
@@ -275,7 +281,7 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 것은 비워 두고 폴백에 맡긴다 — 억지로 채우면 알아들을 수 없는 말만 늘어난다.
 
 **`VOICE_CLONE_NO_SPEECH`(2026-10-11) 는 두 공용 표에 같은 문장으로 있다**(ko·en·ja — 문장은
-[voice-and-message.md](voice-and-message.md) §4-1 「말소리가 없으면 등록하지 않는다」). 닿는 자리는 위 일곱 중
+[voice-and-message.md](voice-and-message.md) §4-1 「말소리가 없으면 등록하지 않는다」). 닿는 자리는 위 여덟 중
 **목소리 등록** 하나다. 등록 창(화면 층)은 이 코드의 문장을 바꾸지 않고 **띄울 자리와 다음 단계**만 정한다 — 음원
 준비로 돌아가 녹음을 버리고 그 단계에 문장을 띄운다. 스토어의 1.2.10 은 이 코드를 몰라 각자의 폴백 문장이고,
 두 앱이 다르게 끝난다(그 절이 받아들인 차이다). **iOS** 는 세부 정보 단계에 `목소리를 처리하지 못했어요. 잠시 후 다시
@@ -289,7 +295,7 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 "이번 달 목소리 생성 한도를 모두 사용했어요" 로 말하고 있었고, **회귀 테스트가 그 틀린
 문구를 지키고 있었다**(2026-09-07 정정).
 
-⚠ **맞추는 범위는 '위 일곱 자리에 닿을 수 있는 코드' 다 — 목록 전체가 아니다.** 표를 부르지
+⚠ **맞추는 범위는 '위 여덟 자리에 닿을 수 있는 코드' 다 — 목록 전체가 아니다.** 표를 부르지
 않는 경로의 코드는 표에 있어도 아무도 읽지 않으므로, 한쪽에만 있다고 반대편에 베껴 넣지
 않는다. 지금 그런 것이 둘 있다: `AUTH_EMAIL_TAKEN`·`AUTH_EMAIL_SOCIAL`
 (`network/ApiErrorMessages.kt`)은 이미 가입된 주소의 409(`routes/auth.ts`)다. 정상 흐름에서 그 409 를
@@ -358,4 +364,5 @@ Android는 `UserFacingException`(원인 예외 안의 것도 포함), iOS는 `Ap
 | 코드 → 문구(목소리 화면) | `ui/main/MainViewModelVoiceActions.kt` | `VoiceStudioViewModel+ErrorMapping.swift` | — |
 | 말소리 없음 `VOICE_CLONE_NO_SPEECH` — 공용 표의 같은 문장(ko·en·ja) · 사용자가 고칠 수 있는 400 이지만 경보(§3 — 늘면 전사 고장) | `network/ApiErrorMessages.kt` 의 `VOICE_CLONE_NO_SPEECH` → `msg_voice_clone_no_speech`(`res/values{,-en,-ja}/strings.xml`) ← `ui/main/MainViewModelVoiceActions.kt` 의 등록 실패 갈래(화면 층은 자리만 정한다 — `RegistrationFailureSurface.ReRecord`, [voice-and-message.md](voice-and-message.md) 구현 지도) · 회귀 `VoiceRegistrationFailureWiringTest`(`theNoSpeechSentenceIsOneTableEntryInThreeLanguages`·`theNoSpeechSentenceSaysTheSameThingAsTheIosCatalog`) | `APIErrorMessages.swift` 의 `VOICE_CLONE_NO_SPEECH`(`Localizable.xcstrings` en·ja) ← `VoiceStudioViewModel+ErrorMapping.swift` 의 `localizedVoiceMessage(forCode:)`(기본 갈래가 공용 표) · 폴백 목록 `knownErrorCodes` · 회귀 `AlarmTalkTests/VoiceLocalizationTests` 의 `noSpeechRejectionCopy` | `routes/voice-profile.ts` 의 `POST /clone` → `checkCloneSpeech` → `jsonError(c, 400, 'VOICE_CLONE_NO_SPEECH', …)` · 경보 `ALERTING_ERROR_CODES`(`packages/shared/src/schemas/error-codes.ts`) ← `middleware/errorCode.ts` · 회귀 `test/error-codes.test.ts`(경보 목록에 있다)·`test/voice-clone-speech-gate.test.ts`(몸통) |
 | 코드 → 문구(로그인 화면) | `ui/main/MainViewModelAuthActions.kt` 의 login 갈래 | `AuthViewModel.loginErrorMessage` | — |
+| 코드 → 문구(결제 확인 — 화면 표 → 공용 표 → 기본 문장 · 해지는 아직 다르다, §4) | `ui/main/MainViewModelBillingActions.kt` 의 `billingFailureMessage` ← `confirmGooglePurchase`·`cancelSubscription` · 회귀 `BillingParityRulesTest` | `SubscriptionManager.syncWithBackend`(`APIErrorMessages.message(for:)`) · 해지는 `SocialFeatureViewModel.billingErrorMessage`(공용 표 없음) | `routes/billing-apple.ts`·`routes/billing-google.ts`·`routes/billing-mutation.ts` |
 | 코드 → 문구(이메일 인증 확인·가입·비밀번호 재설정 확정 — '맞지 않아요' 는 `AUTH_EMAIL_CODE_INVALID` 일 때만) | `ui/main/MainViewModelAuthActions.kt` 의 `emailCodeFailureMessage(context, error, fallback)`(표 → 화면 폴백) ← `confirmEmailVerification`(폴백 `api_error_server`)·`register`(`duplicateEmailMessage` 다음, 폴백 `msg_register_failed`)·`confirmPasswordReset`(폴백 `msg_password_reset_failed`) · 회귀 `EmailCodeFailureMessageTest`(Robolectric, ko·en·ja) | `AuthViewModel.emailCodeErrorMessage(for:fallback:)`(`loginErrorMessage(for:)` 의 형제 — `nonisolated static`) ← `verifyEmailCode`·`performRegisterWithEmail`·`confirmPasswordReset` · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests` | `routes/auth.ts` 의 `checkEmailVerificationCode`(`/email-code/verify`·`/register`·`/password-reset/confirm` 공용) — 규칙은 [session-and-auth.md](session-and-auth.md) 「이메일 인증 코드」 |

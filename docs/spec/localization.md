@@ -62,6 +62,13 @@ Android 스낵바의 색(성공·오류·안내)은 문구의 글자가 아니�
 
 영어·일본어 앱 화면의 브랜드는 `AlarmTalk`이다. 언어 선택지는 `한국어`·`English`·`日本語`처럼
 각 언어의 자기 이름으로 쓴다. 영어 문장 안의 플랜 이름도 대문자로 쓴다.
+더보기 '앱 언어' 행의 값도 **지금 화면이 쓰는 언어**의 자기 이름이다 — '시스템 기본' 이라고 쓰지 않는다(지금 무슨 언어인지가
+보이지 않는다). 기기 언어가 앱이 가진 세 언어 밖이면 화면이 그리는 언어의 이름이다(두 앱 — 안드로이드는 2026-11-22 전 앱별
+언어를 고르지 않았으면 '시스템 기본' 이었다).
+
+영어의 남은 시간은 짧은 단위다 — "Rings in 9 hr, 21 min." · "1 day, 3 hr" · "2 days"(일만 단수·복수가 갈린다. 안드로이드 ICU
+`MeasureFormat` 의 SHORT 와 iOS 카탈로그가 같은 글자다). iOS 는 2026-11-22 전 "9 hours 21 minutes" 꼴에 단수를 가르지 못해
+"1 minutes" 가 나왔다.
 
 약관·개인정보처리방침 웹 링크는 현재 앱 언어의 경로를 쓴다(ko·en·ja, 그 밖은 ko).
 동의 화면의 번들 문서와 동의 버전 계약은 그대로다.
@@ -174,6 +181,8 @@ Shared의 키는 두 타깃에 있어야 한다. 한글이 포함됐는지를 �
 | 공통 오류 코드 | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` |
 | 스낵바 색은 문구 종류로 | `ui/app/SnackbarSeverity.kt`의 `SnackbarSeverities` · `SnackbarSeverityTest` | (스낵바 색 구분 없음) |
 | 언어 선택지 자기 이름 | `voices_lang_ko`·`voices_lang_en`·`voices_lang_ja` | 목소리 등록 화면의 언어 선택지(후속 연결) |
+| 더보기 '앱 언어' 값 = 지금 화면 언어의 자기 이름('시스템 기본' 없음) | `ui/home/HomeComponents.kt` 의 `MenuTabPanel`(`appVoiceLanguageOf`) | `Views/Settings/MenuView.swift` 의 `appLanguageLabel` |
+| 영어 남은 시간은 짧은 단위(일만 단수·복수) | `ui/home/HomeComponents.kt` 의 `remainingDurationLabel`(`MeasureFormat` SHORT) | `NextAlarmHeadline.remainingLabel`(`remaining.days.hours` + `Localizable.xcstrings` 의 `%lld일` 복수형 변형) |
 | 관계는 목록에 표시하지 않는다(입력·저장·전송만) | 목소리 탭 `VoiceProfileRowComponents.kt`(보조 줄 없음)·편집기 `VoiceAudioCard.kt`의 `ownedVoiceDetail`·알람 행 `AlarmListScreen.kt`의 `voiceName` | `ownVoiceOptionDetail`·`alarmRowVoiceName`(`LocalizedDisplay.swift`) · `VoiceLocalizationTests` |
 | 저장값과 기본 목소리의 표시 | `fortuneValueLabel`·`systemVoiceDisplayName` | `FortunePromptInputFormat.displayLabel`·`systemVoiceDisplayName`·`VoiceRelationshipPreset.displayLabel` |
 | 약관 웹 링크의 앱 언어 | 설정 화면의 언어별 경로 | `LegalLinks`(후속 화면에서 채택) |

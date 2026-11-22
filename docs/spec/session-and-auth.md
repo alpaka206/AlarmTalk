@@ -125,6 +125,20 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
 | 전 기기 로그아웃 · 비밀번호 재설정 | `token_epoch` +1 → 옛 토큰 전부 `TOKEN_REVOKED` |
 | 탈퇴 | 계정 삭제 + **알람 전부 끄기**(같은 규칙) |
 
+**로그아웃은 로컬 세션을 먼저 비운다 — 서버 뒷정리는 뒤에서 한다**(두 앱 — 안드로이드는 2026-11-22 에 iOS 에 맞췄다).
+확인하면 알람을 끄고 세션을 비워 화면이 곧바로 닫힌다. 그 뒤에 푸시 해제 → 서버 폐기(`/auth/logout`, `token_epoch` +1)를
+한다 — 네트워크 실패가 로그아웃을 되돌리지 않는다(최선 노력). 안드로이드는 구글·카카오 계정의 로그인 기억도 이 뒷정리에서 지운다
+(서버 왕복보다 먼저 — 다음 로그인의 계정 고르기가 바로 뜨게). 예전 안드로이드는 그 왕복을 다 기다린 뒤에 비워, 느린 망에서는
+로그아웃이 멈춘 것처럼 보였다.
+- ⚠ **푸시 해제가 폐기보다 먼저다.** 폐기가 먼저면 해제가 401 로 죽어, 로그아웃한(또는 공유) 기기에 그 계정의 푸시가 계속 온다.
+  두 요청 모두 떠나는 세션의 토큰을 직접 싣는다. 늦은 폐기 때문에 돌아오는 401 은 이미 비운 세션이라 버린다(안드로이드는 비우면서
+  세대가 올라 세대 문에서, iOS 는 실패한 토큰을 지금 세션과 대조해 — 「의도된 플랫폼 차이」 첫 줄).
+- ⚠ **세션을 받는 요청(로그인·가입·구글·카카오·Apple)은 앞선 뒷정리가 끝난 뒤에 보낸다.** 늦게 처리된 `/auth/logout` 이
+  `token_epoch` 를 올리면 **같은 계정으로 방금 받은 세션이 죽는다**(안드로이드 `awaitServerSignOutCleanup` — `serverSignOutCleanup`
+  을 기다린다, iOS `serializeAuthServerMutation` — 로그인 요청 자체를 같은 줄에 태운다).
+- 끊긴 뒷정리를 다음 실행이 이어서 하는 것은 iOS 뿐이다(`PendingSignOutStore` — 서버 정리에 쓸 토큰을 세션을 비우기 전에 따로
+  적는다). 안드로이드는 남겨 두는 표시가 없어, 뒷정리 도중 프로세스가 죽으면 그 회차의 푸시 해제·폐기는 하지 않은 채로 남는다.
+
 ⚠ **네트워크 실패·5xx 를 세션 만료로 읽지 말 것.** 401 만 만료다. `/auth/me` 는 앱을
 열 때마다 도는 자리라 여기서 잘못 판정하면 피해가 크다 — 그래서 백엔드도 DB 장애를
 401 이 아니라 **503** 으로 낸다.
@@ -243,6 +257,11 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
   채라 응답 쪽 떠나기가 물러서기 때문이다.
   iOS 는 신청 성공 갈래도 그 떠나기와 **같은 작업 하나**로 정리한다(`leaveAccountForPendingDeletion` — 겹친 호출은 그 끝을
   기다린다). 따로 돌면 먼저 끝난 쪽이 화면 잠금을 풀어, 다시 로그인한 새 세션의 알람에 다른 쪽이 닿는다.
+- **신청이 도는 동안은 다시 누를 수 없고, 접수 안내는 로그아웃된 첫 화면에 곧바로 뜬다**(2026-11-22). 안드로이드는 확인 창을 연 채
+  버튼을 잠근다(`DeleteAccountConfirmDialog` 의 `busy`). iOS 는 시스템 알럿이 누르는 순간 닫혀 그 자리가 없어, 더보기의 `회원 탈퇴`
+  행을 잠그고 꺾쇠 자리에 진행 표시를 그린다(`auth.isBusy`). 접수 안내("회원 탈퇴가 접수됐어요…" 등 `signOut(message:)` 의 문장)는
+  랜딩 위쪽 토스트다 — iOS 는 그전 랜딩이 그 안내를 그리지 않아 로그인 화면에 들어가야 보였다(`RootView` 의 `LandingView`
+  `.authToast`). 안드로이드는 로그인 전 화면도 같은 위쪽 안내 자리다(아래 「거절 뒤에 할 일이 화면에 있어야 한다」).
 - **옛 앱(1.2.13 이하)이 백그라운드에서 받는 것은 이 PR 전과 같다** — develop 도 유예 계정의 보호 라우트를 전부 403
   ACCOUNT_PENDING_DELETION 으로 막았고, 옛 워커는 그 403 에서 멈춘다(알람은 떼지 않는다). 옛 앱이 알람까지 정리하게 만들
   서버 응답은 없다 — 1.2.14 게재 뒤 `minSupported` 로 막는다(오너 결정). 미들웨어를
@@ -516,7 +535,7 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 
 ### 문장은 코드(error_code)로 고른다
 
-세 자리 모두 공용 표를 부른다([error-codes.md](error-codes.md) §4 — 표를 부르는 일곱 자리).
+세 자리 모두 공용 표를 부른다([error-codes.md](error-codes.md) §4 — 표를 부르는 여덟 자리).
 
 | 서버의 답 | 말하는 것 | 사용자가 할 일 |
 | --- | --- | --- |
@@ -642,7 +661,9 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | 칸·버튼 높이 52(칸·주 버튼·간편 로그인·인증 받기·확인) | — | `ui/auth/LandingScreen.kt` 의 `AuthControlHeight` · 칸은 `AuthOutlinedField`(Material 칸이 스스로 거는 56 을 피해 같은 부품으로 직접 짰다) · 회귀 `AuthControlHeightTest.kt`(그려서 잰다) | `Views/Auth/AuthBackdrop.swift` 의 `AuthControlHeight` |
 | 가입 인증 버튼은 이메일 칸 옆(인증 받기 → 다시 받기 → ✓ 인증됨) | — | `ui/auth/AuthScreen.kt` `EmailVerifyButton` | `LoginView.emailVerifyButton` |
 | 코드 줄 바로 아래 안내, 거절 문장은 그 자리에 대신 · 칸 아래 문장은 칸 왼쪽 끝 · 꺼진 버튼은 한 번만 흐린다 | — | `ui/auth/AuthScreen.kt` 의 `AuthCodeConfirmRow(error)`·`AuthTextField` 의 오류 줄 | `LoginView.verificationCodeRow`·`PasswordResetView` 의 코드 묶음 · `Views/Components/GradientCta.swift` 의 `AuthPlainButtonStyle` · 화면 확인 `-UIPreviewRegisterStep code\|rejected\|verified\|invalid` |
-| 인증 화면의 안내는 위쪽 토스트(안내 3초·오류 5초 · 칸에 붙은 오류는 그대로) | — | `ui/app/AlarmTalkAppHelpers.kt` `TopMessageHost` ← `AlarmTalkApp` 의 로그인 전 갈래 | `Views/Auth/AuthToast.swift` `AuthToastModifier` ← `LoginView`·`PasswordResetView` |
+| 인증 화면의 안내는 위쪽 토스트(안내 3초·오류 5초 · 칸에 붙은 오류는 그대로) | — | `ui/app/AlarmTalkAppHelpers.kt` `TopMessageHost` ← `AlarmTalkApp` 의 로그인 전 갈래 | `Views/Auth/AuthToast.swift` `AuthToastModifier` ← `LoginView`·`PasswordResetView` · 로그아웃 순간의 안내(탈퇴 접수 등)는 `RootView` 의 `LandingView`(2026-11-22) |
+| 로그아웃 — 로컬 세션 먼저, 서버 뒷정리(푸시 해제 → 폐기 · 구글·카카오)는 뒤에서 · 세션을 받는 요청은 뒷정리 뒤에(2026-11-22) | `/auth/logout`(`token_epoch` +1) | `ui/main/MainViewModelAuthActions.kt` 의 `logout`(`clearSignedInSession` → `MainViewModel.serverSignOutCleanup`) · `awaitServerSignOutCleanup` ← `login`·`register`·`finishGoogleLogin`·`finishKakaoLogin` · 회귀 `SignOutWindowOpensBeforeServerCallTest` | `AuthViewModel.signOutExplicitly` → `serializeAuthServerMutation`(`runServerSignOutCleanup`) · 끊긴 뒷정리는 `PendingSignOutStore` |
+| 탈퇴 신청 중 잠금 | — | `ui/home/HomeComponents.kt` 의 `DeleteAccountConfirmDialog`(`busy`) | `Views/Settings/MenuView.swift` 의 `SettingsValueButton(showsProgress:)` ← `auth.isBusy` |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로(첫 진입만 — `refreshAppSessionNow` 의 `rollToken`·`sessionTokenToSave`) | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
 | 화면 효과의 세션 키 = 계정 + 세대(토큰 아님) | — | `network/AuthSessionStore.kt` `SessionEffectKey`·`sessionEffectKey` → `AlarmTalkApp` 의 세션 효과·탭 스로틀 | 알람·목소리·더보기 탭 모두 `EntryRefreshFreshness`(계정 + 앱 진입). 알람 탭 동기화 스로틀의 키 `MainTabsView.tabRefreshThrottleKey`(탭 + 계정)는 2026-10-29 알람 올리기와 함께 지웠다 |
