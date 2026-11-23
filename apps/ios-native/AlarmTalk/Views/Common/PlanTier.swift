@@ -33,9 +33,6 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
         return tier.localizedDisplayLabel(bundle: bundle)
     }
 
-    /// 백엔드 plan key (소문자).
-    var apiKey: String { rawValue }
-
     /// 현재 플랜이 `required` 이상의 권한을 가지는지. 개인 > 무료.
     func meetsOrExceeds(_ required: PlanTier) -> Bool {
         Self.tierOrder[self] ?? 0 >= Self.tierOrder[required] ?? 0
@@ -72,12 +69,10 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
     /// ⚠ **4단을 빼지 말 것**(2026-09-27). 예전에는 구독 응답이 **도착하기 전에만**
     /// `users.plan` 을 봤다. 그래서 서버가 "본인 구독 없음(`subscription: null`)" 으로 답하는
     /// 순간 `users.plan` 의 유료값이 통째로 버려졌다 — 판정기는 유료라고 하는데 편집기·등록
-    /// 제출·이용권 화면은 무료로 그렸다. 구독 행 없이 `users.plan` 으로 유료를 주는 계정
-    /// (기간 한정 개인 플랜 등)이 전부 그 틈에 빠진다.
+    /// 제출·이용권 화면은 무료로 그렸다. 구독 행 없이 `users.plan` 으로 유료를 주는 계정이
+    /// 전부 그 틈에 빠진다.
     ///
-    /// - Parameter userPlan: 서버가 준 `users.plan`. 세션 사용자가 있으면
-    ///   `bestKnown(serverSubscription:storeTier:user:)` 를 쓴다 — 기간 한정 개인 플랜이
-    ///   붙은 계정은 이 값만으로 보류 규칙을 지킬 수 없다(계산값 `plus` 라서).
+    /// - Parameter userPlan: 서버가 준 `users.plan`(원시 plan).
     static func bestKnown(
         serverSubscription: BillingSubscriptionResponse?,
         storeTier: PlanTier = .free,
@@ -107,95 +102,29 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
     }
 
     /// 세션 사용자로 등급을 본다. 편집기·목소리 등록처럼 **쓸 수 있는가** 를 묻는 자리가 쓴다.
-    ///
-    /// 기간 한정 개인 플랜(`personalPromo`)이 붙은 계정은 두 규칙을 더 지킨다:
-    ///  - **기간 중에는 보류 규칙을 그대로 둔다**(2026-09-27 리뷰). 프로모가 있다 = 원시
-    ///    plan 이 free 다. 그래서 남은 구독 행은 보지 않고 스토어와 계산값(개인)만 후보다.
-    ///  - **끝난 뒤의 낡은 캐시**(`PersonalPromo.isStale`)는 계산값 `plus` 를 버리고, **활성
-    ///    구독 행이 이긴다** — 판정기(`PaidVoiceGate.resolve`)와 같은 순서다. 프로모 뒤에
-    ///    결제한 사람을 프로모 날짜로 잠그지 않는다.
-    ///
-    /// ⚠ 이용권 화면(**무엇을 샀는가**)은 이걸 쓰지 않는다 — `purchasedPlan` 을 넘긴다
-    /// (`BillingPanel.currentTier`). 프로모는 산 이용권이 아니다.
     static func bestKnown(
         serverSubscription: BillingSubscriptionResponse?,
         storeTier: PlanTier = .free,
-        user: AuthUser?,
-        now: Date = Date()
+        user: AuthUser?
     ) -> PlanTier {
-        guard let promo = user?.personalPromo else {
-            return bestKnown(serverSubscription: serverSubscription, storeTier: storeTier, userPlan: user?.plan)
-        }
-        if promo.isStale(at: now) {
-            // 계산값은 끝났다 — plan 을 모르는 것으로 두면 활성 행이 있으면 행이, 없으면 무료다.
-            return bestKnown(serverSubscription: serverSubscription, storeTier: storeTier, userPlan: nil)
-        }
-        // 기간 중 — 원시 free 라 남은 행으로 올리지 않는다(보류 규칙). 계산값만 후보다.
-        let computed = PlanTier.from(user?.plan)
-        return (tierOrder[computed] ?? 0) > (tierOrder[storeTier] ?? 0) ? computed : storeTier
+        bestKnown(serverSubscription: serverSubscription, storeTier: storeTier, userPlan: user?.plan)
     }
 }
 
-/// 이용권 화면의 **'현재 이용권' 카드**와 기간 한정 개인 플랜 문구의 자리.
-///
-/// 규칙은 `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」 D4 「이용권 화면의 프로모 문구」 이고,
-/// 안드로이드 `PlanScreenCurrent`(`ui/billing/BillingPanels.kt` 의 `planScreenCurrentOf`)와 **같은 입력에
-/// 같은 답**을 낸다.
-///
-/// 프로모가 이 계정의 **유일한 이용권**일 때만 개인 카드가 현재가 된다 — 산 이용권이 없고(`free`),
-/// 보류 행도 없다. 그 밖(산 이용권·보류 행·프로모 없음/끝남)은 예전 그대로다 — 현재 카드는 산
-/// 이용권, 프로모는 카드 위 한 줄.
-///
-/// ⚠ **여기 답으로 결제를 가르지 말 것.** 결제 차단(`BillingPanel.purchaseBlockReason`)은 산 이용권
-/// (`BillingPanel.currentTier`)으로만 가른다 — 프로모는 산 이용권이 아니다.
+/// 이용권 화면의 **'현재 이용권' 카드**와 결제 버튼. 현재 카드는 산 이용권이다(`BillingPanel.currentTier`).
 struct PlanScreenCurrent: Equatable {
     /// '현재 이용권' 뱃지·강조를 다는 카드.
     let currentTier: PlanTier
-    /// 프로모가 이 계정의 **유일한** 이용권이라 개인 카드가 현재가 됐다 — 그 카드의 상태 문구가
-    /// 프로모 한 줄이고, 결제 버튼은 남는다(산 이용권이 아니다).
-    let promoOnPersonalCard: Bool
-    /// 프로모 한 줄을 카드 목록 **위에** 그린다 — 프로모가 있는데 개인 카드에 앉지 않는 계정(산 이용권·
-    /// 보류 행). 예전 그대로다. `promoOnPersonalCard` 와 동시에 참이 되지 않는다.
-    let promoLineAboveList: Bool
 
     func isCurrent(_ tier: PlanTier) -> Bool { tier == currentTier }
 
-    /// 결제 버튼 — 무료 카드엔 없고, **산** 현재 이용권 카드에도 없다(다시 살 것이 없다).
-    /// 프로모로 현재가 된 개인 카드에는 **있다** — '현재' 와 '결제 버튼 숨김' 은 다른 질문이다.
+    /// 결제 버튼 — 무료 카드엔 없고, 현재 이용권 카드에도 없다(다시 살 것이 없다).
     func showsPurchase(_ tier: PlanTier) -> Bool {
-        tier != .free && (!isCurrent(tier) || promoOnPersonalCard)
+        tier != .free && !isCurrent(tier)
     }
 
-    /// 프로모 문구를 카드 목록 **위에** 그리는가 — 플랜 카드가 지금 그려지는지(`cardsVisible`)까지 본다.
-    ///
-    /// iOS 는 스토어 상품을 기다리는 동안(`BillingPlansSkeleton`)과 가져오기에 실패한 동안
-    /// (`BillingProductsErrorState` — 오프라인 등)에는 플랜 카드를 **한 장도** 그리지 않는다. 그때
-    /// `promoOnPersonalCard` 만 보면 문구가 앉을 개인 카드가 없어 **어디에도 보이지 않는다** — 그래서
-    /// 카드가 없는 동안은 카드 위 한 줄로 되돌린다. 카드가 그려지면 다시 개인 카드의 상태 문구다
-    /// (두 자리에 동시에 보이지 않는다). 안드로이드는 카드를 언제나 그려서 이 갈래가 없다
-    /// (`SubscriptionPanel` 의 `options.forEach`) — 스펙 D4.
-    func drawsPromoLineAboveList(cardsVisible: Bool) -> Bool {
-        promoLineAboveList || (promoOnPersonalCard && !cardsVisible)
-    }
-
-    /// - Parameters:
-    ///   - purchasedTier: 산 이용권 — 예전에 현재 카드를 고르던 값 그대로(`BillingPanel.currentTier`).
-    ///   - promoActive: 이용권 화면에 보일 프로모가 **지금** 살아 있다(끝나지 않았고 마지막 날을 읽을 수 있다).
-    ///   - hasHeldSubscriptionRow: 그 프로모의 `deletesVoicesAtEnd == false` — 원시 free 인데 `active`
-    ///     구독 행이 남은 계정(결제 보류 등). 보류 행은 구독 응답에 실리지 않아 이 값이 아니면 프로모
-    ///     계정과 구별되지 않는다. 키를 모르는 서버는 `true`(보류 아님)로 읽힌다(`PersonalPromo.init(from:)`).
-    static func resolve(
-        purchasedTier: PlanTier,
-        promoActive: Bool,
-        hasHeldSubscriptionRow: Bool
-    ) -> PlanScreenCurrent {
-        let promoIsOnlyPlan = promoActive
-            && purchasedTier == .free
-            && !hasHeldSubscriptionRow
-        return PlanScreenCurrent(
-            currentTier: promoIsOnlyPlan ? .personal : purchasedTier,
-            promoOnPersonalCard: promoIsOnlyPlan,
-            promoLineAboveList: promoActive && !promoIsOnlyPlan
-        )
+    /// - Parameter purchasedTier: 산 이용권(`BillingPanel.currentTier`).
+    static func resolve(purchasedTier: PlanTier) -> PlanScreenCurrent {
+        PlanScreenCurrent(currentTier: purchasedTier)
     }
 }

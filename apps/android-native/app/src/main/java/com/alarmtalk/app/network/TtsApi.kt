@@ -50,9 +50,7 @@ data class TtsGenerateResponse(
 
 /** 직접 입력 문구 만들기 월 한도 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). */
 data class ManualQuotaResponse(
-    @SerializedName("plan_key") val planKey: String? = null,
     val limit: Int = 0,
-    val used: Int = 0,
     val remaining: Int = 0,
     /** 무료일 때만 온다 — 광고 보상 현황(`docs/spec/ad-rewards.md`). 옛 서버·유료면 null. */
     @SerializedName("ad_reward") val adReward: AdRewardStatus? = null,
@@ -63,25 +61,12 @@ data class AdRewardStatus(
     val credits: Int = 0,
     /** 이번 달 광고로 더 받을 수 있는 횟수(열린 예약을 뺀 값). */
     @SerializedName("remaining_grants") val remainingGrants: Int = 0,
-    @SerializedName("monthly_limit") val monthlyLimit: Int = 0,
     /** 끝까지 봤는데 아직 서버 확인(SSV)이 오지 않은 광고 수 — '보상을 확인하고 있어요' 를 말한다. */
     val pending: Int = 0,
     /** 지금 새 광고를 볼 수 있는가(서버의 운영 스위치·이번 달 자리·열린 세션). 옛 서버면 false. */
     @SerializedName("can_watch") val canWatch: Boolean = false,
-    /** 못 보면 왜인지 — `disabled`·`monthly_limit`·`session_open`. */
-    @SerializedName("unavailable_reason") val unavailableReason: String? = null,
     /** 이번 달 상한이면 다음 자리가 생기는 시각(ISO-8601, 다음 달 1일 0시 KST). */
     @SerializedName("next_grant_at") val nextGrantAt: String? = null,
-)
-
-data class TtsMessage(
-    val id: String,
-    val text: String = "",
-    val category: String? = null,
-    @SerializedName("audio_url") val audioUrl: String? = null,
-    @SerializedName("voice_profile_id") val voiceProfileId: String? = null,
-    @SerializedName("voice_name") val voiceName: String? = null,
-    @SerializedName("created_at") val createdAt: String? = null,
 )
 
 data class TtsMessageAudioResponse(
@@ -137,7 +122,6 @@ data class ExpectedVariantCounts(
 data class StockClip(
     @SerializedName("message_id") val messageId: String,
     @SerializedName("voice_profile_id") val voiceProfileId: String,
-    @SerializedName("voice_name") val voiceName: String? = null,
     val category: String? = null,
     val language: String? = null,
     // 같은 (보이스·카테고리·언어) 안의 문구 순서. 버킷 회전은 이 순서대로 재생한다.
@@ -162,7 +146,8 @@ data class StockClip(
     @SerializedName("rendered_for_current_voice") val renderedForCurrentVoice: Boolean? = null,
     /**
      * 이 클립이 속한 **테마(버킷)** — 스펙 voice-and-message §5-4 「매니페스트 표지」. `cheer_v2` 카테고리는 테마 `cheer`
-     * 다. 옛 서버는 주지 않는다 — 그때는 카테고리가 테마다(`data.bucketTheme`). 셋 다 nullable 인 이유는 위와 같다(Gson).
+     * 다. 옛 서버는 주지 않는다 — 그때는 카테고리가 테마다(`data/CheerVariety.kt` 의 `StockClip.bucketTheme`). 셋 다 nullable 인
+     * 이유는 위와 같다(Gson).
      */
     val theme: String? = null,
     /** 묶음 항목 ID(`cheer_v2_05`). 날씨·약·운세처럼 묶음이 없으면 null. */

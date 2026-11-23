@@ -24,7 +24,8 @@ struct NextAlarmHeadline: View {
 
     var body: some View {
         Text(statusText)
-            .font(.title2.weight(.bold))
+            // 안드로이드 `HomeHeader` 와 같은 headlineSmall(24) · Bold 다(2026-11-22 전 iOS 만 시스템 글꼴 `.title2` 22).
+            .font(.pretendard(.bold, size: 24, relativeTo: .title2))
             .foregroundStyle(isWarning ? theme.palette.error : theme.palette.onBackground)
             // 이 헤더는 리스트 밖에 고정돼 있어 높이가 곧 목록에서 뺏는 화면이다.
             // 좁은 화면 + 큰 글꼴에서 세 줄로 번지지 않게 상한을 둔다.
@@ -70,7 +71,8 @@ struct NextAlarmHeadline: View {
             // 올림이라 1분 미만은 "1분 후에 울려요" 가 된다 — 틀린 말도 아니다.
             return "\(Self.remainingLabel(seconds: remaining)) 후에 울려요."
         }
-        return hasAnyAlarm ? "알람이 모두 꺼져 있어요." : "아직 알람이 없어요."
+        // 안드로이드 `hs_status_inactive`·`hs_status_no_alarm` 과 같은 문장이다.
+        return hasAnyAlarm ? "모든 알람이 꺼져 있어요." : "아직 알람이 없어요."
     }
 
     /// "13시간 40분" / "2일 5시간" — 분 단위 올림, **상위 두 단위만** 노출.
@@ -86,9 +88,12 @@ struct NextAlarmHeadline: View {
         let hours = totalMinutes % (24 * 60) / 60
         let minutes = totalMinutes % 60
         if days > 0 {
-            return hours > 0
-                ? String(localized: "\(days)일 \(hours)시간")
-                : String(localized: "\(days)일")
+            // 일과 시간을 따로 번역해 잇는다 — 영어는 '일' 만 단수·복수가 갈린다("1 day, 3 hr" / "2 days, 3 hr" — 안드로이드
+            // ICU 짧은 형식과 같다). 한 문장 키("%lld일 %lld시간")로 두면 앞 숫자만 복수형으로 고를 수 없었다.
+            let dayPart = String(localized: "\(days)일")
+            guard hours > 0 else { return dayPart }
+            let hourPart = String(localized: "\(hours)시간")
+            return String(localized: "remaining.days.hours", defaultValue: "\(dayPart) \(hourPart)")
         }
         if hours > 0 {
             return minutes > 0

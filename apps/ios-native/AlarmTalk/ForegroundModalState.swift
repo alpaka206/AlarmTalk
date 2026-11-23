@@ -1,13 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// **시스템 권한 팝업이 떠 있거나 곧 뜰 수 있는가** — 우리 안내 알럿이 그 위·아래에 겹치지
-/// 않게 하려고 둔다(`docs/spec/gates-and-overlays.md` 「개인 플랜 종료 안내」).
+/// **시스템 권한 팝업이 떠 있거나 곧 뜰 수 있는가** — 루트의 안내 판정(`RootView.overlayKey`)이 이 값이
+/// 바뀔 때 다시 돈다.
 ///
 /// 왜 장면 상태(`scenePhase`)만으로는 모자라나: 팝업이 **뜬 뒤에는** 장면이 비활성이 되어
 /// 알 수 있지만, 요청을 보낸 뒤 팝업이 뜨기까지의 틈에는 여전히 활성이다. 메인 탭은
-/// 차단 게이트가 풀리는 **바로 그 순간** 알림 권한을 묻는데(`MainTabsView`), 같은 순간
-/// 종료 안내도 판정되므로 둘이 함께 떴다(신규 가입·재설치에서 결정적으로 재현되는 순서다).
+/// 차단 게이트가 풀리는 **바로 그 순간** 알림 권한을 묻는다(`MainTabsView`).
 ///
 /// 규칙: 권한을 묻는 호출은 `track` 으로 감싼다. 판정은 `isPending` 하나다.
 @MainActor
@@ -20,7 +19,7 @@ final class SystemPermissionPrompts: ObservableObject {
     /// 이미 답한 사용자는 설정 조회만 하고 곧바로 끝난다.
     @Published private(set) var notificationRequestSettled = false
 
-    /// 권한 요청이 떠 있거나 곧 뜰 수 있다 — 안내를 미룬다.
+    /// 권한 요청이 떠 있거나 곧 뜰 수 있다.
     var isPending: Bool { inFlight > 0 || !notificationRequestSettled }
 
     /// 권한 요청 하나를 감싼다. 끝나면(허용·거부·실패 모두) 세던 것을 내린다.
@@ -39,8 +38,8 @@ final class SystemPermissionPrompts: ObservableObject {
 /// 창에 **다른 모달**이 떠 있는지 UIKit 에 묻는다.
 ///
 /// SwiftUI 는 이미 무언가를 띄운 화면 위에 루트의 `.alert` 를 올리지 못한다 — 경고 한 줄만
-/// 남기고 **조용히 건너뛴다.** 그러면 상태는 '떠 있음' 인데 화면에는 없어, 그 상태가 다른
-/// 안내까지 막는다(2026-09-27 리뷰). 시트·전체 화면 커버(우리 바텀시트 포함 —
+/// 남기고 **조용히 건너뛴다.** 그러면 상태는 '떠 있음' 인데 화면에는 없다(2026-09-27 리뷰).
+/// 시트·전체 화면 커버(우리 바텀시트 포함 —
 /// `bottomSheet`·`formSheet` 는 `fullScreenCover` 다)·알럿·확인 대화상자는 전부
 /// 모달 표시라 여기 잡힌다.
 @MainActor
@@ -52,19 +51,11 @@ enum ModalPresentationProbe {
     }
 
     /// 떠 있는 것 중에 알럿이 있는가 — 방금 띄운 안내가 **실제로 보이는지** 확인할 때 쓴다.
-    /// `title` 을 주면 **그 제목의** 알럿만 센다.
-    ///
-    /// ⚠ 프로모 종료 안내는 제목으로 가려야 한다(Codex #803). 안내를 세운 직후 다른 알럿이 먼저 뜨면
-    /// SwiftUI 는 안내를 조용히 버리는데, '아무 알럿' 만 보면 그 남의 알럿을 안내가 보인 것으로 읽고
-    /// 이 진입을 끝낸다 — 사용자는 안내를 한 번도 못 봤다. SwiftUI `.alert` 는 제목을 그대로
-    /// `UIAlertController.title` 에 싣는다.
-    static func isShowingAlert(titled title: String? = nil) -> Bool {
+    static func isShowingAlert() -> Bool {
         guard let root = rootViewController() else { return false }
         var current = firstPresented(from: root)
         while let presented = current {
-            if let alert = presented as? UIAlertController, title == nil || alert.title == title {
-                return true
-            }
+            if presented is UIAlertController { return true }
             current = presented.presentedViewController
         }
         return false

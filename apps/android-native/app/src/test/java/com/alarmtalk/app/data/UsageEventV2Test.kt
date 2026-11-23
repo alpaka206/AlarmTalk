@@ -108,6 +108,30 @@ class UsageEventV2Test {
         assertNull(payload.props)
     }
 
+    /**
+     * **옛 빌드가 큐에 남긴 행도 막힘 없이 풀린다.** 큐는 종류를 문자열 그대로 들고 있어 이 빌드가 모르는 종류도 읽다가
+     * 죽지 않고, 칸은 이 빌드가 아는 것만 남는다 — 없앤 칸(추가 음성팩의 칸 등)은 보낼 때 빠진다. 없앤 종류는 서버가
+     * 받고 버린다(shared `usage-event.ts` 의 은퇴 목록) — 거절하면 그 배치가 큐 맨 앞에서 영원히 다시 간다.
+     */
+    @Test
+    fun `옛 빌드가 남긴 행은 모르는 칸을 빼고 그대로 보낸다`() {
+        val row = UsageEventEntity(
+            id = attempt,
+            type = "retired_kind",
+            occurredAtMillis = 0L,
+            userId = "u1",
+            schemaVersion = 2,
+            appVersion = "40",
+            propsJson = """{"surface":"editor","retired_field":"retired-value","is_first":true}""",
+        )
+        val payload = UsageEventUploadWorker.toPayload(row)
+        assertEquals("retired_kind", payload.type)
+        val json = Gson().toJson(UsageEventBatchRequest(listOf(payload)))
+        val props = JsonParser.parseString(json).asJsonObject["events"].asJsonArray[0].asJsonObject["props"].asJsonObject
+        assertEquals(setOf("surface", "is_first"), props.keySet())
+        assertEquals("editor", props["surface"].asString)
+    }
+
     @Test
     fun `2판 행은 props 객체로 풀어 보내고 null 칸은 빠진다`() {
         val row = UsageEventEntity(

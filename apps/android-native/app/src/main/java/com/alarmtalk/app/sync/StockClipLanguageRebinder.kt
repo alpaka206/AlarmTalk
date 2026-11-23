@@ -406,9 +406,6 @@ object StockClipLanguageRebinder {
         legacyHints: Map<String, String> = emptyMap(),
     ): Boolean {
         if (resolvedBucketId(alarm, legacyHints) == null) return false
-        // ⚠ **추가 팩 알람은 다시 묶지 않는다**(`docs/spec/voice-packs.md` §2). 팩은 언어 하나이고 기본 목소리 매니페스트에
-        //   없다 — 여기서 보면 언어가 달라서·키가 매니페스트에 없어서 언제나 '낡음' 으로 읽힌다.
-        if (com.alarmtalk.app.data.isVoicePackVoiceId(alarm.voiceProfileId)) return false
         if (alarm.playMode == AlarmPlayModes.ALARM_ONLY) return false
         if (alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return false
         val bound = decodeBucketClipKeys(alarm.bucketClipKeysJson)
@@ -493,20 +490,18 @@ object StockClipLanguageRebinder {
      *   `#110` 이 프리셋을 은퇴시킨 뒤 아직 게시(`publish:stock`)하지 않은 구간에서는
      *   매니페스트가 **성공적으로 비어 있다** — 그때 false 를 돌려주면 옛 목소리를 물고
      *   있는 알람이 그대로인데도 차단 화면이 안 뜬다.
-     *   그래서 판정 근거를 [manifestFetched] 로 **호출부가 명시**한다. 못 받았으면
-     *   판정하지 않는다(네트워크가 죽은 것을 '교체 완료' 로 쓰면 안 된다).
+     *   그래서 이 함수는 매니페스트를 **실제로 받은 뒤에만** 부른다(지금 부르는 자리는
+     *   `StockClipPrefetchWorker` 의 받은 뒤 갈래 하나다). 못 받은 회차는 판정하지 않는다 —
+     *   네트워크가 죽은 것을 '교체 완료' 로 쓰면 안 된다(`StockReplacementStatus.report` 가 앞 판정을 지킨다).
      */
     suspend fun hasPendingReplacement(
         context: Context,
         clips: List<StockClip>,
         language: String,
-        /** 이번 회차에 매니페스트를 **실제로 받았는가.** 못 받았으면 판정하지 않는다. */
-        manifestFetched: Boolean,
         legacyHints: Map<String, String> = emptyMap(),
         /** 지금 로그인한 계정. 남의 알람 때문에 이 계정을 가두지 않는다. */
         callerUserId: String? = null,
     ): Boolean = withContext(Dispatchers.IO) {
-        if (!manifestFetched) return@withContext false
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
         AlarmDatabase.getInstance(context).alarmDao().getAllAlarms().any {
             ownedBy(it, callerUserId) &&

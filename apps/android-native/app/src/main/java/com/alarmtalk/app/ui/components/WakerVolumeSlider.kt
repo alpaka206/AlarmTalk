@@ -3,6 +3,9 @@ package com.alarmtalk.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -84,6 +87,9 @@ internal fun WakerStepSlider(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     onValueChangeFinished: (() -> Unit)? = null,
+    // 채움을 시작할 값 — null 이면 왼쪽 끝부터(음량처럼). 값이 있으면 그 값부터 손잡이까지 양쪽으로 채우고 그 자리에 눈금을
+    // 둔다(목소리 높이의 '원래' — 높아졌는지 낮아졌는지가 채움 방향으로 보인다, 2026-11-15).
+    fillOrigin: Float? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val span = valueRange.endInclusive - valueRange.start
@@ -127,21 +133,32 @@ internal fun WakerStepSlider(
             } else {
                 0f
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(CircleShape)
-                    .background(inactive),
-            ) {
+            if (fillOrigin != null) {
+                OriginFilledTrack(
+                    fraction = fraction.coerceIn(0f, 1f),
+                    originFraction = ((fillOrigin - state.valueRange.start) /
+                        (state.valueRange.endInclusive - state.valueRange.start)).coerceIn(0f, 1f),
+                    active = active,
+                    inactive = inactive,
+                    tick = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                        .fillMaxWidth()
                         .height(4.dp)
                         .clip(CircleShape)
-                        .background(active)
-                        .align(Alignment.CenterStart),
-                )
+                        .background(inactive),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(active)
+                            .align(Alignment.CenterStart),
+                    )
+                }
             }
         },
         colors = SliderDefaults.colors(
@@ -149,4 +166,48 @@ internal fun WakerStepSlider(
             inactiveTrackColor = inactive,
         ),
     )
+}
+
+/**
+ * 기준값에서 손잡이까지만 채우는 트랙 — [WakerStepSlider] 의 `fillOrigin`. 트랙(4)·채움 색은 기본 트랙과 같고, 기준값 자리에
+ * 세로 눈금(2×12)을 둔다.
+ */
+@Composable
+private fun OriginFilledTrack(
+    fraction: Float,
+    originFraction: Float,
+    active: androidx.compose.ui.graphics.Color,
+    inactive: androidx.compose.ui.graphics.Color,
+    tick: androidx.compose.ui.graphics.Color,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(12.dp)) {
+        val start = minOf(originFraction, fraction)
+        val end = maxOf(originFraction, fraction)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(CircleShape)
+                .background(inactive)
+                .align(Alignment.Center),
+        )
+        Box(
+            modifier = Modifier
+                .offset(x = maxWidth * start)
+                .width(maxWidth * (end - start))
+                .height(4.dp)
+                .clip(CircleShape)
+                .background(active)
+                .align(Alignment.CenterStart),
+        )
+        Box(
+            modifier = Modifier
+                .offset(x = maxWidth * originFraction - 1.dp)
+                .width(2.dp)
+                .height(12.dp)
+                .clip(CircleShape)
+                .background(tick)
+                .align(Alignment.CenterStart),
+        )
+    }
 }

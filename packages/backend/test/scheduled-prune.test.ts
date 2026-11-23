@@ -26,7 +26,6 @@ vi.mock('../src/lib/weather-region-daily', () => ({
   refreshWeatherRegionDaily: vi.fn(),
 }));
 vi.mock('../src/lib/fcm', () => ({
-  sendAlarmPush: vi.fn().mockResolvedValue(undefined),
   notifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
 }));
 

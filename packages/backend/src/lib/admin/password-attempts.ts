@@ -26,7 +26,7 @@ export async function chargeAdminPasswordAttempt(db: Client, keyHash: string, no
   return charged.rows.length > 0;
 }
 
-/** 맞는 비밀번호였다 — 센 것을 지운다. 그래서 맞는 비밀번호로 클립 수만큼 부르는 스크립트(`import-voice-pack.ts`)가 막히지 않는다. */
+/** 맞는 비밀번호였다 — 센 것을 지운다. 그래서 맞는 비밀번호로 여러 번 부르는 스크립트(Basic)가 막히지 않는다. */
 export async function clearAdminPasswordAttempts(db: Client, keyHash: string): Promise<void> {
   await db.execute({ sql: 'DELETE FROM admin_password_attempts WHERE key_hash = ?', args: [keyHash] });
 }

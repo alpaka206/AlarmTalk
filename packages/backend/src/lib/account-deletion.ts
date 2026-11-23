@@ -55,8 +55,7 @@ export async function requestAccountDeletion(
             SET deletion_status = 'pending_deletion',
                 deletion_requested_at = ?,
                 deletion_purge_at = ?,
-                token_epoch = token_epoch + 1,
-                updated_at = datetime('now')
+                token_epoch = token_epoch + 1
             WHERE (google_id = ? OR id = ?)${eligibility}`,
       args: [now.toISOString(), purgeAt.toISOString(), userKey, userKey],
     });
@@ -129,8 +128,7 @@ export async function cancelPendingDeletionOnSignIn(
               SET deletion_status = 'active',
                   deletion_requested_at = NULL,
                   deletion_purge_at = NULL,
-                  token_epoch = token_epoch + 1,
-                  updated_at = datetime('now')
+                  token_epoch = token_epoch + 1
               WHERE ${condition}`,
         args,
       },
@@ -458,11 +456,6 @@ export async function purgeUserAccount(
       sql: `DELETE FROM user_app_presence WHERE user_id = ?`,
       args: [userPk],
     });
-    // 관리자 기간 지급 기록(#134) — 탈퇴하면 함께 지운다.
-    writes.push({
-      sql: `DELETE FROM plan_grants WHERE user_id = ?`,
-      args: [userPk],
-    });
     // 직접 입력의 같은 요청 표식(#135).
     writes.push({
       sql: `DELETE FROM manual_tts_requests WHERE user_id = ?`,
@@ -520,10 +513,6 @@ export async function purgeUserAccount(
     });
     writes.push({
       sql: `DELETE FROM voice_prerender_queue WHERE owner_user_id IN (?, ?)`,
-      args: userIds,
-    });
-    writes.push({
-      sql: `DELETE FROM voice_draft_attempt_usage WHERE owner_user_id IN (?, ?)`,
       args: userIds,
     });
     writes.push({

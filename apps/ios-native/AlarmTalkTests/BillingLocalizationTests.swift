@@ -37,28 +37,22 @@ struct BillingLocalizationTests {
                 == (language == "en" ? "Pay" : "決済する"))
     }
 
-    @Test("영어 구매 복원 결과는 한 건과 여러 건을 구분한다")
-    func restoredPurchaseCount() throws {
+    /// 복원 결과는 서버가 확인한 결과를 말한다(2026-11-22 — 스토어 개수로 'n건 복원' 이라고 하지 않는다).
+    /// 문장은 안드로이드 `msg_gb_plan_applied`·`billing_restore_none` 의 번역과 같다.
+    @Test("복원 결과 문장은 안드로이드와 같은 번역이다")
+    func restoreResultTranslations() throws {
         let english = try bundle("en")
-        #expect(RestoreResult.restored(count: 1).localizedUserMessage(bundle: english) == "Restored 1 purchase.")
-        #expect(RestoreResult.restored(count: 3).localizedUserMessage(bundle: english) == "Restored 3 purchases.")
+        #expect(RestoreResult.restored.localizedUserMessage(bundle: english) == "Your plan has been applied.")
+        #expect(RestoreResult.nothingToRestore.localizedUserMessage(bundle: english) == "No purchases to restore. Check your store account.")
+        let japanese = try bundle("ja")
+        #expect(RestoreResult.restored.localizedUserMessage(bundle: japanese) == "プランを適用しました。")
+        #expect(RestoreResult.nothingToRestore.localizedUserMessage(bundle: japanese) == "復元できる購入がありません。ストアのアカウントをご確認ください。")
     }
 
-    @Test("복원 결과의 건수는 서식 인자로 유지된다", arguments: ["en", "ja"])
+    @Test("결제 확인 실패 문장은 번역이 있다", arguments: ["en", "ja"])
     func formatArguments(language: String) throws {
         let bundle = try bundle(language)
         let failedVerification = "결제를 확인하지 못했어요. '이전 구매 복원'을 눌러 다시 시도해 주세요."
         #expect(bundle.localizedString(forKey: failedVerification, value: nil, table: nil) != failedVerification)
-        let restore = bundle.localizedString(forKey: "이전 구매 %lld건을 복원했어요.", value: nil, table: nil)
-        #expect(String(format: restore, 3).contains("3"))
-        #expect(!restore.contains("이전 구매"))
-    }
-
-    /// 이용권 새로고침 오류는 '무엇: 왜' 한 줄이다(`SocialFeatureViewModel.scopedRefreshErrorMessage`).
-    @Test("이용권 새로고침 오류의 '라벨: 이유' 서식은 언어와 무관하다", arguments: ["en", "ja"])
-    func scopedRefreshErrorFormat(language: String) throws {
-        let bundle = try bundle(language)
-        let scoped = bundle.localizedString(forKey: "%1$@: %2$@", value: nil, table: nil)
-        #expect(String(format: scoped, "Plan", "Error") == "Plan: Error")
     }
 }

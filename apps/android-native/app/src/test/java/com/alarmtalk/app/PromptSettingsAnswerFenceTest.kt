@@ -71,7 +71,6 @@ class PromptSettingsAnswerFenceTest {
             user = user.copy(plan = "plus", dynamicPromptSettings = seoul),
             provider = "email",
             rolledToken = null,
-            userFetchedAtMillis = System.currentTimeMillis(),
             dynamicPromptSettingsOverride = tokyo,
         )
 
@@ -84,7 +83,7 @@ class PromptSettingsAnswerFenceTest {
      * **이름만 고친 저장은 계정 설정을 되쓰지 않는다**(Codex #837 검증). 예전 저장은 요청 **전에** 잡아 둔 세션의
      * 복사본이라, 그 사이 올리기·`/auth/me` 가 적은 새 지역(도쿄)을 옛 지역(서울)으로 되돌렸다 — 그러면 받아 적기가 그
      * 옛 값을 기기와 공휴일 국가에 적는다. 이제 프로필 저장은 저장소가 지금 세션을 같은 락 안에서 읽어 **바꾼 칸만** 얹는다
-     * (`updateUserIfAlive` — plan·프로모 등 나머지 칸은 `ProfileSaveKeepsAccountAnswerTest`).
+     * (`updateUserIfAlive` — plan 등 나머지 칸은 `ProfileSaveKeepsAccountAnswerTest`).
      */
     @Test
     fun 다른_칸만_고친_저장은_저장소의_지금_계정_설정을_지킨다() {
@@ -98,7 +97,6 @@ class PromptSettingsAnswerFenceTest {
             user = before.copy(dynamicPromptSettings = tokyo),
             provider = login.provider,
             rolledToken = null,
-            userFetchedAtMillis = login.userFetchedAtMillis,
         )
 
         // 닉네임 응답 — 이름만 바꾼다.
@@ -128,7 +126,7 @@ class PromptSettingsAnswerFenceTest {
     @Test
     fun 올리기가_끝나면_표시를_내리기_전에_울타리를_세우고_갱신은_그_울타리를_거친다() {
         val upload = bodyOf("private suspend fun MainViewModel.uploadDynamicPromptSettings(")
-        val fence = upload.indexOf("promptSettingsAnswerFence = personalPromoLedger.latestRequestSeq()")
+        val fence = upload.indexOf("promptSettingsAnswerFence = accountRequestLedger.latestRequestSeq()")
         val pushed = upload.indexOf("dynamicPromptStore.markPushed(")
         assertTrue("올리기가 울타리를 세우지 않는다.", fence >= 0)
         assertTrue("울타리는 표시를 내리기(`markPushed`) 전에 세운다.", pushed > fence)

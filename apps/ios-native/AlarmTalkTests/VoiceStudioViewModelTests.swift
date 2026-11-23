@@ -114,7 +114,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
             "톤은 목소리를 등록할 때만 정할 수 있어요."
         )
         let err = APIError.server(status: 409, message: "VOICE_PITCH_LOCKED: pitch is fixed", errorCode: nil)
-        XCTAssertEqual(VoiceStudioViewModel().mapVoiceError(err), "톤은 목소리를 등록할 때만 정할 수 있어요.")
+        XCTAssertEqual(VoiceStudioViewModel().mapVoiceError(err, fallback: "목소리를 만들지 못했어요"), "톤은 목소리를 등록할 때만 정할 수 있어요.")
     }
 
     /// 공용 표는 **모르는 코드에 문구를 지어내지 않는다** — nil 을 주고 화면이 폴백을 쓴다.
@@ -130,19 +130,20 @@ final class VoiceStudioViewModelTests: XCTestCase {
         )
     }
 
-    func test_localizedVoiceMessage_unknownCodeUsesFallback() {
-        XCTAssertEqual(
-            VoiceStudioViewModel.localizedVoiceMessage(forCode: "MYSTERY_CODE"),
-            "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
-        )
+    /// 목소리 화면도 공용 표도 정하지 않은 코드는 nil 이다 — 부르는 자리의 폴백이 받는다(2026-11-22 두 앱 통일. 그전에는
+    /// "목소리를 처리하지 못했어요" 를 지어내 자리의 폴백을 가렸다).
+    func test_localizedVoiceMessage_unknownCodeIsNil() {
+        XCTAssertNil(VoiceStudioViewModel.localizedVoiceMessage(forCode: "MYSTERY_CODE"))
     }
 
-    // MARK: - APIError.server -> mapVoiceError
+    // MARK: - APIError.server -> mapVoiceError (공용 표를 부르는 세 자리 — TTS 생성·목소리 등록·목소리 승격)
+
+    private let siteFallback = "음성 생성에 실패했어요."
 
     func test_mapVoiceError_picksUpServerErrorCode() {
         let vm = VoiceStudioViewModel()
         let err = APIError.server(status: 403, message: "Voice features require a paid plan.", errorCode: "VOICE_FEATURE_REQUIRES_PAID_PLAN")
-        XCTAssertEqual(vm.mapVoiceError(err), PaidGateCopy.message)
+        XCTAssertEqual(vm.mapVoiceError(err, fallback: siteFallback), PaidGateCopy.message)
     }
 
     func test_mapVoiceError_jsonInMessageFallback() {
@@ -151,7 +152,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let raw = "{\"error\":\"slot\",\"error_code\":\"VOICE_SLOT_EXHAUSTED\"}"
         let err = APIError.server(status: 403, message: raw, errorCode: nil)
         XCTAssertEqual(
-            vm.mapVoiceError(err),
+            vm.mapVoiceError(err, fallback: siteFallback),
             "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
         )
     }
@@ -160,59 +161,33 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let vm = VoiceStudioViewModel()
         // JSON 디코드 실패하지만 message 안에 known code substring 이 있는 경우.
         let err = APIError.server(status: 400, message: "raw: VOICE_PROFILE_NOT_FOUND detected", errorCode: nil)
-        XCTAssertEqual(vm.mapVoiceError(err), "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요.")
+        XCTAssertEqual(vm.mapVoiceError(err, fallback: siteFallback), "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요.")
     }
 
-    func test_mapVoiceError_genericServer500() {
+    /// 코드가 없으면 **오류 종류가 아니라 그 자리의 폴백**이다 — 안드로이드 `userFacingError(error, fallback)` 와 같다(2026-11-22 두 앱
+    /// 통일). 그전에는 5xx·401·403·연결 끊김을 가려 "서버가 응답하지 않아요"·"권한이 없어요"·"네트워크가 불안정해요" 로 말했다.
+    /// 서버 문장은 한글이어도 보이지 않는다(스펙 error-codes §4 — 서버 문장은 두 앱 모두 표시하지 않는다).
+    func test_mapVoiceError_codelessFailuresUseTheSiteFallback() {
         let vm = VoiceStudioViewModel()
-        let err = APIError.server(status: 500, message: "internal", errorCode: nil)
-        XCTAssertEqual(vm.mapVoiceError(err), "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.")
-    }
-
-    func test_mapVoiceError_nonKoreanServerMessageUsesFallback() {
-        let vm = VoiceStudioViewModel()
-        let err = APIError.server(status: 400, message: "durationMs must be a positive integer", errorCode: nil)
-        XCTAssertEqual(vm.mapVoiceError(err), "처리 중 오류가 발생했어요.")
-    }
-
-    func test_mapVoiceError_koreanServerMessageUsesFallback() {
-        let vm = VoiceStudioViewModel()
-        let err = APIError.server(status: 400, message: "음성 길이를 확인하지 못했어요.", errorCode: nil)
-        XCTAssertEqual(vm.mapVoiceError(err), "처리 중 오류가 발생했어요.")
-    }
-
-    func test_mapVoiceError_koreanForbiddenServerMessageUsesFallback() {
-        let vm = VoiceStudioViewModel()
-        // 코드가 없으면 상태별 화면 폴백을 쓴다.
-        let err = APIError.server(status: 403, message: "유료 이용권에서 사용할 수 있어요.", errorCode: nil)
-        XCTAssertEqual(vm.mapVoiceError(err), "권한이 없어요. 로그인 상태를 확인해 주세요.")
-    }
-
-    func test_mapVoiceError_unauthorized() {
-        let vm = VoiceStudioViewModel()
-        let err = APIError.server(status: 401, message: "no token", errorCode: nil)
-        XCTAssertEqual(vm.mapVoiceError(err), "권한이 없어요. 로그인 상태를 확인해 주세요.")
-    }
-
-    func test_mapVoiceError_urlError() {
-        let vm = VoiceStudioViewModel()
-        let err = URLError(.notConnectedToInternet)
-        XCTAssertEqual(vm.mapVoiceError(err), "네트워크가 불안정해요. 잠시 후 다시 시도해 주세요.")
+        let failures: [Error] = [
+            APIError.server(status: 500, message: "internal", errorCode: nil),
+            APIError.server(status: 400, message: "durationMs must be a positive integer", errorCode: nil),
+            APIError.server(status: 400, message: "음성 길이를 확인하지 못했어요.", errorCode: nil),
+            APIError.server(status: 403, message: "유료 이용권에서 사용할 수 있어요.", errorCode: nil),
+            APIError.server(status: 401, message: "no token", errorCode: nil),
+            APIError.invalidResponse,
+            URLError(.notConnectedToInternet),
+        ]
+        for failure in failures {
+            XCTAssertEqual(vm.mapVoiceError(failure, fallback: siteFallback), siteFallback, "\(failure)")
+        }
     }
 
     func test_mapVoiceError_recorderError() {
         let vm = VoiceStudioViewModel()
         XCTAssertEqual(
-            vm.mapVoiceError(VoiceRecorderError.microphoneDenied),
+            vm.mapVoiceError(VoiceRecorderError.microphoneDenied, fallback: siteFallback),
             VoiceRecorderError.microphoneDenied.errorDescription
-        )
-    }
-
-    func test_mapVoiceError_invalidResponse() {
-        let vm = VoiceStudioViewModel()
-        XCTAssertEqual(
-            vm.mapVoiceError(APIError.invalidResponse),
-            "서버 응답을 해석하지 못했어요."
         )
     }
 
@@ -379,7 +354,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
         // 본문에만 코드가 실린 응답도 같은 갈래다 — 문구를 고를 때와 같은 방법으로 읽는다.
         let inBody = APIError.server(status: 429, message: "VOICE_MONTHLY_CHANGE_LIMIT_REACHED: used", errorCode: nil)
         XCTAssertTrue(vm.isMonthlyLimitRejection(inBody))
-        XCTAssertEqual(vm.mapVoiceError(inBody), APIErrorMessages.message(for: "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"))
+        XCTAssertEqual(vm.mapVoiceError(inBody, fallback: "목소리를 만들지 못했어요"), APIErrorMessages.message(for: "VOICE_MONTHLY_CHANGE_LIMIT_REACHED"))
 
         let others: [Error] = [
             // 같은 429 라도 기다리면 풀리는 것은 흐름을 끝내지 않는다.
@@ -533,11 +508,11 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let rejection = APIError.server(status: 400, message: "No speech", errorCode: "VOICE_CLONE_NO_SPEECH")
         XCTAssertTrue(vm.isNoSpeechRejection(rejection))
         XCTAssertFalse(vm.isMonthlyLimitRejection(rejection), "다시 녹음하면 되는 거절에 흐름을 끝낸다")
-        XCTAssertEqual(vm.mapVoiceError(rejection), Self.noSpeechSentence)
+        XCTAssertEqual(vm.mapVoiceError(rejection, fallback: "목소리를 만들지 못했어요"), Self.noSpeechSentence)
 
         let inBody = APIError.server(status: 400, message: "VOICE_CLONE_NO_SPEECH: transcript too short", errorCode: nil)
         XCTAssertTrue(vm.isNoSpeechRejection(inBody))
-        XCTAssertEqual(vm.mapVoiceError(inBody), Self.noSpeechSentence)
+        XCTAssertEqual(vm.mapVoiceError(inBody, fallback: "목소리를 만들지 못했어요"), Self.noSpeechSentence)
 
         let others: [Error] = [
             // 같은 400 이라도 녹음을 버릴 이유가 아닌 것들.
@@ -805,7 +780,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
 
         // 자리 — 녹음 카드 **바로** 아래(힌트·예시 대본보다 앞), 파일 고르기 **바로** 아래.
         let source = try AppSourceText.region(
-            of: flow, from: "private var sourceSection: some View {", to: "private var scriptSection: some View {"
+            of: flow, from: "private var sourceSection: some View {", to: "private func scriptSection(fillsHeight: Bool) -> some View {"
         )
         func lineAfter(_ anchor: String) throws -> Substring {
             let end = try XCTUnwrap(source.range(of: anchor), "음원 준비 단계에서 못 찾았다: \(anchor)").upperBound
@@ -824,7 +799,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let started = try XCTUnwrap(onRecord.range(of: "await voice.startRecording()"), "녹음 버튼이 녹음을 시작하지 않는다")
         let clearedOnRecord = try XCTUnwrap(onRecord.range(of: "rerecordReason = nil"), "녹음을 다시 시작해도 이유가 남는다")
         XCTAssertLessThan(started.lowerBound, clearedOnRecord.lowerBound, "녹음을 시작하기도 전에 이유를 걷는다")
-        let imported = try AppSourceText.region(of: flow, from: "private func importAudioFile(", to: "} catch {")
+        let imported = try AppSourceText.region(of: flow, from: "private func importAudioFile(", to: "private func preparedFileAudio(")
         XCTAssertTrue(imported.contains("rerecordReason = nil"), "파일을 새로 가져와도 이유가 남는다")
         let modeChange = try AppSourceText.region(of: flow, from: ".onChange(of: sourceMode)", to: "private func goBack()")
         XCTAssertTrue(modeChange.contains("rerecordReason = nil"), "녹음·파일 방식을 바꿔도 이유가 남는다")

@@ -21,7 +21,7 @@ type ExecuteCall = { sql: string; args: (string | number | null)[] };
  *
  * libSQL 은 이런 문을 실행 전에 거절하므로, 라우트가 통째로 죽는다(500). 실제로
  * Apple 로그인 조건을 걷어내면서 `WHERE google_id = ? OR id = ?` 로 줄인 뒤 args 의
- * 세 번째 값을 안 지운 곳이 세 군데 있었고(fcm.getTokensForUser · DELETE /user/me ·
+ * 세 번째 값을 안 지운 곳이 세 군데 있었고(옛 fcm.getTokensForUser — 2026-11-23 삭제 · DELETE /user/me ·
  * purgeUserAccount 고아 가드), 타입 검사로는 걸리지 않았다.
  *
  * 실행 시점의 sql 은 IN 절 생성기까지 전개된 최종 문자열이라 `?` 를 그대로 세면 된다.

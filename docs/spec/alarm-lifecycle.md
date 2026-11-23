@@ -103,14 +103,16 @@
 
 ### 1-2. 목록과 재예약은 **소유자**로 거른다
 
-`ownerUserId == null || ownerUserId == 현재 계정` 인 것만 보이고, 그것만 다시 건다.
+`ownerUserId == null || ownerUserId == 현재 계정` 인 것만 보이고, 그것만 다시 건다. ＋버튼·빈 상태 카드도 같은 목록으로
+판정한다(iOS `MainTabsView` 는 2026-11-22 전 거르지 않은 전체로 ＋를 띄워, 다른 계정의 알람만 남은 기기에서 빈 카드와 ＋가 함께
+떴다).
 
 (2026-10-29 전에는 **서버 전송**도 현재 계정 소유 행만 허용했다 — 후보 선택과 요청 직전에 같은 소유자 규칙을 확인하고,
 소유자 미기록 로컬 행은 로드 완료 뒤 다른 계정의 자동 만료 표시나 미완료 로그아웃이 없을 때만 현재 계정에 귀속해
 보냈다. 알람을 서버로 올리지 않게 되어 그 전송째 지웠다 — 아래 「서버에는 알람이 없다」.)
 
 로컬 저장소의 첫 로드가 끝나기 전 빈 배열은 **실제 빈 목록이 아니다.** 알람 화면은 이때
-"알람이 없어요"를 그리지 않고 로드 완료를 기다린다. 네트워크를 기다리는 규칙이 아니라
+"아직 알람이 없어요."를 그리지 않고 로드 완료를 기다린다. 네트워크를 기다리는 규칙이 아니라
 Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 
 - 소유자 미기록(옛 행)은 **현재 계정 것으로 본다** — 저장소의 다른 파괴적 경로
@@ -282,7 +284,7 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 | 복구가 **취소됐다**(iOS 백그라운드 실행 시간 만료 · 안드로이드 코루틴 취소) | **표시하지 않는다**(켠 채 멈춘다) | 시스템이 시간을 거둔 것이지 예약이 실패한 게 아니다. iOS `schedule` 은 취소되면 방금 만든 예약을 되돌리고 false 를 돌려주고, 안드로이드는 취소 예외가 안쪽 Room 쓰기에서 `runCatching` 에 잡힌다 — 그걸 실패로 읽어 끄면 멀쩡한 알람이 꺼진다. iOS 는 `Task.isCancelled` 면 멈추고, 안드로이드는 `CancellationException` 을 다시 던진다. 다음 복구가 이어서 건다(Codex #984, 회귀 `HolidayCountryRescheduleTest`) |
 | iOS: AlarmKit 권한이 없어 실패했다 | **표시하지 않는다**(켠 채 둔다) | 홈 헤드라인("권한이 꺼져 있어 알람이 울리지 않아요.")이 말하고, 권한이 돌아오면 다음 복구가 그대로 다시 건다 — 끄면 그 복구가 막힌다. 안드로이드는 정확한 알람 권한이 없어도 던지지 않고 비정확 폴백으로 건다 |
 | 복구가 예약을 기다리는 사이 **사용자가 껐거나 지웠다** | **쓰지 않는다**(알림도 없다) | 실패가 아니다 — iOS `schedule` 은 바뀐 행을 보면 예약을 되돌리고 false 를 돌려준다. 낙인을 찍으면 방금 끈 사람에게 "다시 켜 주세요" 라고 말한다(Codex #984). iOS `AlarmKitViewModel.recoveryFailureTurnsOff`, 안드로이드는 복구와 켜고 끄기가 같은 잠금(`restoreMutex`)이라 겹치지 않는다 |
-| 켜기를 시도했다 실패해서 **되돌려 껐다** | **쓰지 않는다** | 그 자리에서 이미 알렸다. 낙인만 남는다(iOS `markFailed` 는 꺼진 행에 새기지 않는다) |
+| 켜기를 시도했다 실패해서 **되돌려 껐다** | **쓰지 않는다** | 그 자리에서 이미 알렸다 — 화면 위쪽 빨간 안내 "알람 상태 변경에 실패했어요"(두 앱, 끄기·삭제 실패도 같은 자리 — iOS 는 2026-11-22 전 목록 맨 위 회색 줄이었다, `AlarmsListView` 의 `failureToast`). 낙인만 남는다(iOS `markFailed` 는 꺼진 행에 새기지 않는다) |
 | 서버 동기화 실패(2026-10-29 에 알람 올리기를 지워 더는 생기지 않는다) | **쓰지 않는다** | 다음 회차가 재시도했다 — 사용자가 할 일이 없었다 |
 | 무료 강등으로 알람음이 됐다 | **쓰지 않는다** | 알람은 정상 작동 중이다(1회성 모달이 알린다) |
 
@@ -462,7 +464,8 @@ OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체
 
 v1.3 W06(#950)이 홈 알람 목록 위에 다음 알람의 상태 카드(권한 부족·기본 목소리 받는 중·날씨 갱신 실패·등록 목소리 이용 종료 예정·준비됨)를
 두었는데, 출시 전에 오너가 지웠다("알람 목록 위에 뜨는 다음 알람 그거 최악이야 지워"). 홈은 1.2.16 과 같다 — 남은 시간 헤드라인 아래에
-**알람이 있는데 권한이 모자랄 때만** 권한 배너 하나를 둔다(안드로이드 `AlarmPermissionWarningBanner`). 카드가 하던 목소리 받는 중·날씨·이용
+**알람이 있는데 권한이 모자랄 때만** 권한 배너 하나를 두었다 — 그 배너도 2026-11-16 에 지웠다(안드로이드는 권한 3종이 없으면
+앱에 들어가지 못하는 진입 게이트가 대신한다 — `CLAUDE.md` 「알람 권한 3종이 없으면 앱에 들어가지 못한다」). 카드가 하던 목소리 받는 중·날씨·이용
 종료 안내는 홈에서 따로 말하지 않는다.
 
 ⚠ **iOS 에는 그 배너도 없다**(2026-11-09 오너). iOS 는 권한이 없으면 정말 울리지 않아 헤드라인이 이미 "권한이 꺼져 있어 알람이 울리지
@@ -498,7 +501,7 @@ v1.3 W06(#950)이 홈 알람 목록 위에 다음 알람의 상태 카드(권한
 | 1-2 떠날 때 소유자 새기기 | — | `AlarmRepository.claimUnownedAlarmsFor` | `LocalAlarmStore.claimUnownedAlarms` ← `AuthViewModel.onSessionEndClaimAlarms` |
 | 1-2 자동 만료 계정 기록 | — | `network/AuthSessionStore.kt` 의 `sessionExpiredOwnerUserId` | `SessionExpiryStore` |
 | 1-2 로그인 시 남의 예약 취소 | — | `AlarmRepository.cancelAlarmsNotOwnedBy` | `AlarmKitViewModel.cancelScheduledAlarmsNotOwnedBy` |
-| 1-1 중복 시각 판정도 소유자로 | — | (해당 없음 — DAO 가 이미 소유자 조건) | `LocalAlarmStore.conflictingAlarms` · `requireUniqueTime` |
+| 1-1 중복 시각 판정도 소유자로 | — | (해당 없음 — DAO 가 이미 소유자 조건) | `LocalAlarmStore.conflictingAlarms` |
 | 1-5 삭제는 취소 먼저 | — | `AlarmRepository.deleteAlarmLocked` | `AlarmKitViewModel.cancel(record:store:)` |
 | 1-6 `.failed` 낙인 규칙 | — | `AlarmRepository` 의 두 `AlarmStates.FAILED` 자리 | `LocalAlarmStore.markFailed` 의 `enabled` 가드 |
 | 1-6 행 경고 문구 | — | `ui/components/ControlsAndPermissions.alarmRowNotice` | `Views/Alarms/AlarmRow.rowNotice` |

@@ -152,7 +152,7 @@ final class AlarmSoundAcousticProbe: XCTestCase {
                 schedule: .fixed(Date().addingTimeInterval(leadSeconds)),
                 attributes: AlarmAttributes<AlarmTalkMetadata>(
                     presentation: AlarmPresentation(alert: alert),
-                    metadata: AlarmTalkMetadata(localAlarmID: "loop-probe", label: "반복 확인"),
+                    metadata: AlarmTalkMetadata(label: "반복 확인"),
                     tintColor: AlarmTalkTheme.primary
                 ),
                 sound: .named(name)
@@ -193,7 +193,7 @@ final class AlarmSoundAcousticProbe: XCTestCase {
         )
         let attributes = AlarmAttributes<AlarmTalkMetadata>(
             presentation: AlarmPresentation(alert: alert),
-            metadata: AlarmTalkMetadata(localAlarmID: "acoustic-probe", label: "음량 측정"),
+            metadata: AlarmTalkMetadata(label: "음량 측정"),
             tintColor: AlarmTalkTheme.primary
         )
         _ = try await AlarmManager.shared.schedule(

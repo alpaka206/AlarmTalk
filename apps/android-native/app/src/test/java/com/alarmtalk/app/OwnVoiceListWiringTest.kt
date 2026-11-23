@@ -46,7 +46,7 @@ class OwnVoiceListWiringTest {
             "승격이 신선한 목록·그 목록의 계정을 확인하지 않는다.",
             promote.contains("if (!voiceProfilesLoadedFresh || authSession?.user?.id != owner) return"),
         )
-        assertTrue(promote.contains("val serverAnswered = subscriptionAnsweredThisRun && planAnsweredEntry > 0L"))
+        assertTrue(promote.contains("val serverAnswered = subscriptionAnsweredThisRun && planAnsweredThisRun"))
         assertTrue("서버 답 전에 이용권을 판정한다 — 저장해 둔 판정으로 미나를 확정하면 되돌릴 수 없다.", promote.contains("!serverAnswered -> null"))
         assertTrue("행 쓰기가 저장소의 락을 지나지 않는다.", promote.contains("repository.settleFormerReceivedAlarm(alarmId, owner)"))
     }
@@ -61,7 +61,7 @@ class OwnVoiceListWiringTest {
 
         val auth = withoutLineComments(readSource("ui/main/MainViewModelAuthActions.kt"))
         val refresh = functionBody(auth, "internal suspend fun MainViewModel.refreshAppSessionNow(")
-        val applied = refresh.indexOf("personalPromoLedger.recordPlanApplied(accountRequest)")
+        val applied = refresh.indexOf("accountRequestLedger.recordPlanApplied(accountRequest)")
         assertTrue("`/auth/me` 의 plan 반영 표시를 못 찾았다.", applied >= 0)
         assertTrue("`/auth/me` 의 plan 을 반영한 뒤 승격을 다시 보지 않는다.", refresh.indexOf("promoteFormerReceivedAlarms(id)") > applied)
 

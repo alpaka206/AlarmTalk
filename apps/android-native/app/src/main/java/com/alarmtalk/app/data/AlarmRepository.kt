@@ -565,10 +565,7 @@ class AlarmRepository(
         stopRingingIfThisAlarm(alarmId)
         val cacheKey = current.audioCacheKey
         alarmDao.delete(current)
-        // 받은 추가 팩의 클립은 알람이 없어도 팩이 쥔다 — 팩 지우기·개정 정리·기한 대체가 놓는다(코덱스 #960).
-        if (cacheKey == null || cacheKey !in VoicePackStore(context).heldClipCacheKeysOnDevice()) {
-            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
-        }
+        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         Log.i(TAG, "Deleted alarm id=$alarmId")
         recordAlarmEvent(UsageEvents.ALARM_DELETED, current)
         // ⚠ **오디오가 실제로 사라졌을 때만** '비사용중' 으로 적는다. 같은 캐시 키를 쓰는
@@ -903,39 +900,7 @@ class AlarmRepository(
                 // 시스템 스톡 버킷/보이스는 영구라 보존. 클론(비-system) 보이스는 단일클립·버킷 모두
                 // 접근권 상실(제공자취소·삭제) 시 강등 대상.
                 !isSystemVoiceId(alarm.voiceProfileId) &&
-                // ⚠ **추가 팩 목소리는 `GET /voice` 에 원래 없다**(`docs/spec/voice-packs.md` §1). 목록에 없다고 강등하면
-                //   받은 팩 알람이 목록을 새로 받을 때마다 미나로 바뀐다. 팩은 게시 끝 기한으로만 바꾼다
-                //   ([degradeAlarmsUsingVoicePack]).
-                !isVoicePackVoiceId(alarm.voiceProfileId) &&
                 alarm.voiceProfileId !in accessibleVoiceIds
-        }
-
-    /**
-     * **게시가 끝나 기한이 지난 추가 팩**(또는 사용자가 지운 팩)의 목소리를 쓰는 알람을 기본 목소리 **미나**로 바꾼다
-     * (`docs/spec/voice-packs.md` §5-3·§7). 같은 테마의 미나 클립을 묶고, 그 팩 클립 파일은 다른 알람이 안 쓰면 지운다 —
-     * 모양은 목소리를 잃은 알람과 같다(`billing-lifecycle.md` 「목소리를 못 쓰게 되면」).
-     *
-     * @param expectedOwnerUserId 받은 팩 목록의 계정. 지금 계정이 아니면 아무것도 하지 않는다(남의 알람을 바꾸지 않는다).
-     */
-    suspend fun degradeAlarmsUsingVoicePack(voiceId: String, expectedOwnerUserId: String): Int {
-        if (!isVoicePackVoiceId(voiceId)) return 0
-        return degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm -> alarm.voiceProfileId == voiceId }
-    }
-
-    /**
-     * 놓아준 캐시 키 중 **어떤 알람도 쓰지 않는 것만** 지운다 — 추가 팩을 지우거나 개정이 바뀌어 옛 클립을 놓을 때.
-     * 다른 계정의 알람이 아직 물고 있으면 남긴다(그 계정이 돌아오면 자기 목록으로 정리한다).
-     */
-    suspend fun releaseUnusedAudio(keys: Set<String>): Unit = restoreMutex.withLock {
-        deleteAudioNoAlarmUses(keys)
-    }
-
-    /** 그 팩 목소리를 쓰는 지금 계정의 알람 수 — 지우기 전에 묻는 알럿의 숫자다. */
-    suspend fun countAlarmsUsingVoice(voiceId: String, userId: String?): Int =
-        alarmDao.getAllAlarms().count { alarm ->
-            alarm.voiceProfileId == voiceId &&
-                alarm.voiceSource == VoiceSources.TTS_PROFILE &&
-                (alarm.ownerUserId.isNullOrBlank() || alarm.ownerUserId == userId)
         }
 
     /**
@@ -1191,10 +1156,6 @@ class AlarmRepository(
                 stillReferenced.addAll(snapshot.referencedCacheKeys())
                 alarmAudioFileName(snapshot.localAudioUri)?.let(stillReferencedFiles::add)
             }
-        }
-        // 받은 추가 팩(어느 계정이든)이 쥔 클립도 남긴다 — 팩을 놓는 쪽은 목록에서 먼저 빼고 부른다(코덱스 #960).
-        if (keys.any { it.startsWith(VOICE_PACK_CACHE_KEY_PREFIX) }) {
-            stillReferenced.addAll(VoicePackStore(context).heldClipCacheKeysOnDevice())
         }
         keys.filter { it.isNotBlank() && it !in stillReferenced }.forEach { key ->
             alarmAudioStore.deleteCachedAudio(key)
@@ -2451,8 +2412,8 @@ internal fun AlarmEntity.isManualMessageAlarm(): Boolean =
  *
  * ⚠ **같은 문구가 그대로 붙어 있으면 null 이다.** 문구는 그대로인데 오디오만 다시 만든
  * 경우까지 해제로 적으면, 해제와 붙임이 **같은 밀리초**에 찍힐 수 있고(둘은 각각 기록된다)
- * 업로드 정렬은 시각 하나뿐이라 순서가 뒤집힌다. 그때 서버의 `in_use_updated_at <= ?` 가
- * 늦게 온 해제를 이기게 해서, **붙어 있는 문구가 비사용중으로** 뒤집힌다.
+ * 사용 기록의 정렬은 시각 하나뿐이라 순서가 뒤집힌다 — 기록을 읽는 쪽이 늦게 온 해제를 마지막 사실로 읽어
+ * **붙어 있는 문구를 비사용중으로** 본다(`docs/spec/usage-events.md` §5).
  */
 internal fun manualMessageReleasedByEdit(current: AlarmEntity, updated: AlarmEntity): String? {
     // ⚠ **판정은 `current`(놓는 쪽) 로 한다.** `updated` 로 하면 직접 입력 → 테마 편집에서

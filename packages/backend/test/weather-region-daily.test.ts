@@ -130,7 +130,7 @@ const asExecutor = (db: Client) => db as unknown as DbExecutor;
 async function rowsOf(db: Client, key?: string) {
   const result = await db.execute({
     sql: `SELECT region_key, target_date, variant_index, weather_code, temp_max, temp_min, precip_prob, precip_sum,
-                 dust_level, computed_at FROM weather_region_daily_official ${key ? 'WHERE region_key = ?' : ''}
+                 computed_at FROM weather_region_daily_official ${key ? 'WHERE region_key = ?' : ''}
           ORDER BY region_key, target_date`,
     args: key ? [key] : [],
   });
@@ -140,7 +140,7 @@ async function rowsOf(db: Client, key?: string) {
 async function insertRow(db: Client, key: string, date: string, computedAt: string, extra: Partial<Record<string, number>> = {}) {
   await db.execute({
     sql: `INSERT INTO weather_region_daily_official (region_key, target_date, variant_index, weather_code, temp_max, temp_min,
-            precip_prob, precip_sum, dust_level, computed_at) VALUES (?, ?, ?, 0, ?, ?, 0, 0, NULL, ?)`,
+            precip_prob, precip_sum, computed_at) VALUES (?, ?, ?, 0, ?, ?, 0, 0, ?)`,
     args: [key, date, extra.variant ?? 4, extra.max ?? 25, extra.min ?? 15, computedAt],
   });
 }
@@ -342,8 +342,8 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
       ['2026-10-03', 3, 22, 11, 30],
       ['2026-10-04', 3, 23, 14, 30],
     ]);
-    // 먼지는 끈다 — NULL. 계산 시각은 이 틱.
-    expect(seoul.every((r) => r.dust_level === null && r.computed_at === EVENING.toISOString())).toBe(true);
+    // 계산 시각은 이 틱. (먼지는 원천을 쓰지 않아 칸이 없다 — #152.)
+    expect(seoul.every((r) => r.computed_at === EVENING.toISOString())).toBe(true);
     db.close();
   });
 
@@ -414,10 +414,10 @@ describe('refreshWeatherRegionDaily — 실제 libSQL', () => {
       regions: [region('jp-tokyo'), region('us-denver')],
     });
     const tokyo = await rowsOf(db, 'jp-tokyo');
-    expect(tokyo.map((r) => [r.target_date, r.weather_code, r.precip_sum, r.dust_level])).toEqual([
-      ['2026-10-02', 61, null, null],
-      ['2026-10-03', 0, null, null],
-      ['2026-10-04', 3, null, null],
+    expect(tokyo.map((r) => [r.target_date, r.weather_code, r.precip_sum])).toEqual([
+      ['2026-10-02', 61, null],
+      ['2026-10-03', 0, null],
+      ['2026-10-04', 3, null],
     ]);
     expect(Number(tokyo[0]!.variant_index)).toBe(idx('rain'));
     // 덴버는 아침 슬롯(06:05 MDT) — 오늘~+3. 강수량은 +2 까지 숫자, +3 은 QPF 지평 너머라 NULL(재지 않음).

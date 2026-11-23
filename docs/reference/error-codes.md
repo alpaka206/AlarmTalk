@@ -201,7 +201,6 @@
 | `VOICE_AND_TEXT_REQUIRED` | voice_profile_id·text 필요 | 400 | `routes/tts.ts` |
 | `TEXT_TOO_LONG` | 텍스트 200자 초과 | 400 | `routes/tts.ts` |
 | `INVALID_CATEGORY` | TTS 카테고리 허용 밖 | 400 | `routes/tts.ts` |
-| `RANDOM_CATEGORY_REQUIRED` | 랜덤 TTS 는 프리셋 카테고리 필요 | 400 | `routes/tts.ts` |
 | `VOICE_PROFILE_NOT_READY` | 음성 프로필 준비 안 됨(processing) | 400 | `routes/tts.ts` |
 | `FREE_PLAN_PRESET_ONLY` | 무료 플랜은 스톡 보이스+프리셋 문구만 | 403 | `routes/tts.ts` |
 | `BASIC_VOICE_PRESET_ONLY` | 유료라도 기본(시스템) 목소리는 프리셋 문구만 | 403 | `routes/tts.ts` |

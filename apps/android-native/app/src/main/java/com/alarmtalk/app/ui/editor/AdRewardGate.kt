@@ -11,7 +11,7 @@ import com.alarmtalk.app.network.AdRewardStatus
  * 이 판정은 서버가 셀 것이 없다고 답한 뒤(429 `MANUAL_TTS_QUOTA_EXCEEDED`)의 갈래다.
  */
 internal enum class ManualCreationRoute {
-    /** 플러스·스토어 체험·관리자 지급 — 월 30회 규칙. 광고를 권하지 않는다. */
+    /** 플러스·스토어 체험 — 월 30회 규칙. 광고를 권하지 않는다. */
     PLAN_RULES,
 
     /** 무료 월 기본분(3회)이 남았다. */

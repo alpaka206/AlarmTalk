@@ -61,9 +61,8 @@ object UsageEvents {
     const val REWARD_PENDING = "reward_pending"
     const val REWARD_GRANTED = "reward_granted"
     const val REWARD_SPENT = "reward_spent"
-    // 콘텐츠 — `content_selected`·`pack_selected` 는 저장 성공(`recordContentSelected`·`recordPackSelected`)이 적는다.
+    // 콘텐츠 — `content_selected` 는 저장 성공(`recordContentSelected`)이 적는다.
     const val CONTENT_SELECTED = "content_selected"
-    const val PACK_SELECTED = "pack_selected"
     const val PAYWALL_VIEWED = "paywall_viewed"
     const val STORE_PURCHASE_VERIFIED = "store_purchase_verified"
     const val ENTITLEMENT_CHANGED = "entitlement_changed"

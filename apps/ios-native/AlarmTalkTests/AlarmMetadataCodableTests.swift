@@ -11,10 +11,8 @@ final class AlarmMetadataCodableTests: XCTestCase {
 
     func test_시각이_왕복에서_살아남는다() throws {
         let original = AlarmTalkMetadata(
-            localAlarmID: "a",
             label: "아침",
             playMode: "voice_only",
-            voiceCacheKey: "k",
             alarmKitID: UUID().uuidString,
             voiceText: "일어나",
             hour: 7,
@@ -33,6 +31,7 @@ final class AlarmMetadataCodableTests: XCTestCase {
     }
 
     /// 옛 레코드(시각 필드가 없던 시절)는 그대로 읽혀야 한다 — 그때는 시계 없이 폴백한다.
+    /// 지금은 빠진 `localAlarmID` 가 든 옛 예약도 같이 읽힌다(모르는 키는 무시한다).
     func test_시각이_없는_옛_레코드도_읽힌다() throws {
         let json = Data(#"{"localAlarmID":"a","label":"아침"}"#.utf8)
 

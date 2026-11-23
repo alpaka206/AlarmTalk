@@ -7,7 +7,6 @@ import com.alarmtalk.app.data.HolidayCountryPreferenceStore
 import com.alarmtalk.app.data.WeatherCountry
 import com.alarmtalk.app.data.WeatherRegionHolidaySync
 import com.alarmtalk.app.data.WeatherRegions
-import com.alarmtalk.app.data.resolvedRegion
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -170,11 +169,12 @@ class WeatherRegionPickerTest {
             DynamicPromptSettings(weather = DynamicPromptWeatherSettings(country = "일본", city = "도쿄", region = " jp-tokyo ")),
         )
         assertEquals("jp-tokyo", normalized.weather.region)
-        assertEquals("jp-tokyo", normalized.weather.resolvedRegion()?.key)
+        assertEquals("jp-tokyo", normalized.toPromptPreferences().weatherRegion?.key)
         // 옛 서버(키 없음)는 글자를 되짚는다.
         assertEquals(
             "kr-busan",
-            DynamicPromptWeatherSettings(country = "대한민국", city = "부산").resolvedRegion()?.key,
+            DynamicPromptSettings(weather = DynamicPromptWeatherSettings(country = "대한민국", city = "부산"))
+                .toPromptPreferences().weatherRegion?.key,
         )
     }
 
@@ -275,7 +275,9 @@ class WeatherRegionPickerTest {
     fun 계정_지역이_없거나_못_되짚으면_공휴일_국가를_건드리지_않는다() = runTest {
         val store = HolidayCountryPreferenceStore(context)
         store.setCountry("US")
-        val legacy = DynamicPromptWeatherSettings(country = "영국", city = "런던").resolvedRegion()
+        // main 이 넘기는 값과 같은 길(`promptStore.read(userId).weatherRegion`)로 만든다.
+        val legacy = DynamicPromptSettings(weather = DynamicPromptWeatherSettings(country = "영국", city = "런던"))
+            .toPromptPreferences().weatherRegion
         WeatherRegionHolidaySync.onAccountRegionReceived(store, USER_A, legacy)
         assertEquals("US", store.read())
         // 지역이 없어도 **기회는 그 계정이 가져간다** — 아직 정하지는 않았다.

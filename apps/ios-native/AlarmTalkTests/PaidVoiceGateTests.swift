@@ -96,7 +96,7 @@ final class PaidVoiceGateTests: XCTestCase {
         XCTAssertTrue(PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snapshot(nil, userPlan: "family")))
         XCTAssertFalse(
             PaidVoiceGate.shouldDowngrade(record: paidVoiceAlarm(), snapshot: snapshot(nil, userPlan: "plus")),
-            "구독 행 없이 users.plan 으로 유료인 계정(기간 한정 개인 플랜 등)은 쓴다"
+            "구독 행 없이 users.plan 으로 유료인 계정은 쓴다"
         )
     }
 
@@ -172,6 +172,33 @@ final class PaidVoiceGateTests: XCTestCase {
             .personal,
             "스토어가 유효하다고 하면 서버의 free 로 뒤집지 않는다"
         )
+    }
+
+    /// 회귀: 서버가 "본인 구독 없음" 으로 답해도 `users.plan` 의 유료값을 믿는다.
+    /// 예전에는 응답이 **도착하기 전에만** `users.plan` 을 봐서 여기서 무료가 됐다.
+    func test_bestKnown_trustsPaidUserPlanWhenServerSaysNoSubscription() {
+        let noSubscription = BillingSubscriptionResponse(subscription: nil, plan: nil)
+        XCTAssertEqual(PlanTier.bestKnown(serverSubscription: noSubscription, userPlan: "plus"), .personal)
+        // 가족 이용권은 없어졌다 — 남은 원시값(`users.plan = family`)은 유료가 아니다.
+        XCTAssertEqual(PlanTier.bestKnown(serverSubscription: noSubscription, userPlan: "family"), .free)
+        XCTAssertEqual(PlanTier.bestKnown(serverSubscription: noSubscription, userPlan: "free"), .free)
+        XCTAssertEqual(PlanTier.bestKnown(serverSubscription: nil, userPlan: "plus"), .personal, "응답 전")
+        let user = AuthUser(id: "u1", email: "a@example.com", plan: "plus")
+        XCTAssertEqual(PlanTier.bestKnown(serverSubscription: noSubscription, user: user), .personal, "세션 사용자도 같은 답")
+    }
+
+    /// **추가 음성팩을 없앤 뒤의 옛 팩 목소리 알람**(내부 시험 기기에만 있다) — 그 목소리 id 는 이제 기본 목소리가 아니다.
+    /// 무료 계정이면 예약할 때 기본 목소리로 바뀐다(유료 계정은 접근권 대조가 바꾼다 — `InaccessibleVoiceReconcileTests`).
+    func test_retiredPackVoiceAlarm_isNotFree_andDowngradesForFreePlan() {
+        var record = paidVoiceAlarm()
+        record.voiceProfileId = "70000000-0000-4000-9100-0000000000aa"
+        record.audioCacheKey = "pack_clip-1"
+        record.bucketId = "cheer"
+        XCTAssertFalse(PaidVoiceGate.usesFreeSystemVoice(record))
+        XCTAssertFalse(record.isStockVoiceClip)
+        XCTAssertTrue(record.isPaidVoiceForDowngrade)
+        XCTAssertTrue(PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot(nil, userPlan: "free")))
+        XCTAssertFalse(PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot(nil, userPlan: "plus")))
     }
 
     /// 무료 시스템 보이스는 애초에 강등 대상이 아니다 — 무료 플랜에서도 쓸 수 있다.

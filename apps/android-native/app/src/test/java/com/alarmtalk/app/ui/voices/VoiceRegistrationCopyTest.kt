@@ -130,17 +130,22 @@ class VoiceRegistrationCopyTest {
     }
 
     @Test
-    fun `톤 카드는 제목과 두 듣기 버튼뿐이다`() {
+    fun `톤 카드는 시안 A 문구를 쓴다`() {
+        // 2026-11-15 오너 "톤 조절은 a로 해도 돼" — 값은 말로, 막대 아래 `낮게 · 원래 · 높게`, 버튼은 `원래 목소리`·`바꾼 목소리`.
+        // 제목은 2026-10-08 에 정한 `톤 조절` 그대로다(시안의 '목소리 높이' 는 그전 이름).
         assertEquals("톤 조절", value("values", "voices_tuning_title"))
         assertEquals("Tone", value("values-en", "voices_tuning_title"))
         assertEquals("トーン調整", value("values-ja", "voices_tuning_title"))
-        assertEquals("원본 듣기", value("values", "voices_tuning_listen_original"))
-        assertEquals("Play original", value("values-en", "voices_tuning_listen_original"))
-        assertEquals("元の声を聞く", value("values-ja", "voices_tuning_listen_original"))
-        assertEquals("현재 톤 듣기", value("values", "voices_tuning_listen_current"))
-        assertEquals("Play current tone", value("values-en", "voices_tuning_listen_current"))
-        assertEquals("今のトーンで聞く", value("values-ja", "voices_tuning_listen_current"))
-        // 값 표시("−1.5 반음")는 그대로 둔다.
+        assertEquals("원래 목소리", value("values", "voices_tuning_listen_original"))
+        assertEquals("Original voice", value("values-en", "voices_tuning_listen_original"))
+        assertEquals("元の声", value("values-ja", "voices_tuning_listen_original"))
+        assertEquals("바꾼 목소리", value("values", "voices_tuning_listen_current"))
+        assertEquals("Adjusted voice", value("values-en", "voices_tuning_listen_current"))
+        assertEquals("調整した声", value("values-ja", "voices_tuning_listen_current"))
+        // 값은 말로 보인다 — 숫자("−1.5 반음")는 읽어 주기에만 남는다.
+        assertEquals("조금 높게", value("values", "voices_tuning_word_slightly_higher"))
+        assertEquals("원래", value("values", "voices_tuning_origin"))
+        assertEquals("추천", value("values", "voices_tuning_suggested_tag"))
         assertEquals("%1\$s 반음", value("values", "voices_tuning_pitch_value"))
         for (dir in dirs) {
             for (removed in listOf(
@@ -157,5 +162,38 @@ class VoiceRegistrationCopyTest {
                 assertNull("$dir 에 $removed 가 되살아났다", value(dir, removed))
             }
         }
+    }
+
+    @Test
+    fun `등록 동의 시트 본문은 문장마다 한 줄이고 부연과 겹치지 않는다`() {
+        // 2026-11-15 오너 — 네 문장 한 덩어리를 문장마다 한 줄로 나누고, 체크 부연과 겹치던 두 가지(쓰이는 곳·지우면 함께
+        // 삭제)는 본문 한 곳에만 둔다. 고지 내용은 그대로다(법무 문서 consent-and-permission-copy §2).
+        for (dir in dirs) {
+            val body = value(dir, "voice_consent_body")!!
+            assertFalse("$dir/voice_consent_body", body.contains('\n'))
+            assertEquals("$dir 본문 줄 수", 4, body.split("\\n").size)
+        }
+        assertEquals(
+            "음성 프로필은 언제든 삭제할 수 있고, 지우면 목소리도 함께 삭제돼요.",
+            value("values", "voice_consent_body")!!.split("\\n").last(),
+        )
+        val desc = value("values", "voices_register_biometric_desc")!!
+        assertEquals("목소리는 개인을 식별·재현할 수 있는 생체정보로 처리돼요.", desc.split("\\n").first())
+        assertFalse("부연이 쓰이는 곳을 다시 말한다", desc.contains("음성 프로필 생성"))
+        assertFalse("부연이 삭제를 다시 말한다", desc.contains("삭제"))
+    }
+
+    @Test
+    fun `가입 동의 화면 버튼은 등록 동의 시트와 같은 확인이다`() {
+        // 2026-11-15 오너 "확인으로 통일해" — '동의하고 시작하기'·'계속하기' 두 갈래를 지웠다. 동의는 체크가 한다.
+        for (dir in dirs) {
+            assertNull("$dir 에 auth_consent_agree_and_start 가 되살아났다", value(dir, "auth_consent_agree_and_start"))
+            assertNull("$dir 에 auth_consent_continue 가 되살아났다", value(dir, "auth_consent_continue"))
+        }
+        val screen = File("src/main/java/com/alarmtalk/app/ui/auth/ConsentScreen.kt").readText()
+        assertTrue("가입 동의 화면이 auth_confirm 을 쓰지 않는다", screen.contains("R.string.auth_confirm"))
+        val sheet = File("src/main/java/com/alarmtalk/app/ui/components/VoiceConsentSheet.kt").readText()
+        assertTrue("등록 동의 시트가 auth_confirm 을 쓰지 않는다", sheet.contains("R.string.auth_confirm"))
+        assertEquals("예: 엄마, 친구", value("values", "voicesr_relationship_placeholder"))
     }
 }

@@ -9,12 +9,13 @@ import SwiftUI
 ///   3. 알람 미리듣기 카드 — 30바 파형 + 재생 버튼. 번들 mp3 가 없으면 버튼이 비활성된다.
 ///   4. 하단 진입 버튼 하나 — [시작하기].
 ///
-/// 소셜(Apple) 로그인은 이 화면에 두지 않고 로그인 화면 안에만 노출한다(Android 가
-/// Google 을 AuthScreen 안에만 두는 것과 동일). NavigationStack 의 destination 으로
-/// `LoginView` 를 push 한다.
+/// '시작하기' 는 로그인 수단 고르기(`AuthMethodsView` — 카카오·Apple·이메일로 계속하기)를 push 한다(2026-11-22 오너).
+/// 안드로이드도 같다(`AuthRoute.Methods`).
 struct LandingView: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
+    @State private var showMethods = false
+    /// DEBUG 화면 확인용 — `-UIPreviewAuthScreen login|register|reset` 은 고르기 화면을 건너뛰고 이메일 화면을 바로 연다.
     @State private var navigateToLogin: LoginMode?
     /// DEBUG 화면 확인용 — `-UIPreviewAuthScreen consent`.
     @State private var previewConsent = false
@@ -45,7 +46,7 @@ struct LandingView: View {
 
                                 Color.clear.frame(height: 10)
 
-                                Text(String(localized: "매일 아침, 그 목소리가 새로운 한마디로 깨워드려요."))
+                                Text(String(localized: "날씨부터 운세까지, 원하는 목소리로 일어나세요."))
                                     .font(theme.typography.bodyMedium)
                                     .foregroundStyle(AuthSceneColors.textDim)
 
@@ -64,11 +65,10 @@ struct LandingView: View {
 
                 Color.clear.frame(height: 18)
 
-                // 안드로이드는 CTA 가 **하나**다(LandingScreen.kt:194-198). 로그인/회원가입
-                // 갈래는 로그인 화면 하단 전환 행에서 고른다 — 첫 화면에서 두 개를 물으면
-                // 아직 계정이 있는지도 모르는 사람에게 결정을 강요하게 된다.
+                // 안드로이드처럼 CTA 는 **하나**다(`ui/auth/LandingScreen.kt`). 로그인/회원가입을 첫 화면에서 묻지 않는다 —
+                // 아직 계정이 있는지도 모르는 사람에게 결정을 강요하게 된다. 다음 화면은 수단 고르기(`AuthMethodsView`)다.
                 GradientCta(title: "시작하기") {
-                    navigateToLogin = .login
+                    showMethods = true
                 }
             }
             .padding(.horizontal, 22)
@@ -79,13 +79,18 @@ struct LandingView: View {
         .task {
             // DEBUG 전용 — 화면 확인 진입점. 릴리스에서는 authScreen 이 항상 nil.
             switch UIPreviewSeed.authScreen {
+            case "methods": showMethods = true
             case "login": navigateToLogin = .login
             case "register": navigateToLogin = .register
+            case "reset": navigateToLogin = .login
             // 동의 화면은 실제로는 가입/로그인 뒤에만 뜨는데, 그러려면 서버 왕복과
             // '동의 기록이 없는 계정' 이 필요해 화면 확인이 번거로웠다. 여기서 바로 연다.
             case "consent": previewConsent = true
             default: break
             }
+        }
+        .navigationDestination(isPresented: $showMethods) {
+            AuthMethodsView()
         }
         .navigationDestination(item: $navigateToLogin) { mode in
             LoginView(initialMode: mode)
@@ -97,9 +102,7 @@ struct LandingView: View {
                 collect: ["age14", "terms", "privacy", "overseas_transfer", "voice_biometric", "marketing"],
                 optional: ["voice_biometric", "marketing"],
                 isReconsent: false,
-                onAgree: { _ in },
-                onOpenTerms: {},
-                onOpenPrivacy: {}
+                onAgree: { _ in }
             )
         }
         #endif

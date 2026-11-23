@@ -12,7 +12,7 @@ vi.mock('../src/lib/audio-retention', () => ({
 vi.mock('../src/lib/billing-cancel', () => ({
   processSubscriptionExpiry: vi.fn().mockResolvedValue(undefined),
 }));
-// 경보가 실제로 Sentry 에 닿는지 본다(1분 크론 경보 자리 — 리뷰).
+// 경보가 실제로 Sentry 에 닿는지 본다.
 const captureException = vi.hoisted(() => vi.fn());
 vi.mock('toucan-js', () => ({
   Toucan: class {
@@ -21,12 +21,6 @@ vi.mock('toucan-js', () => ({
       fn({ setTags: () => undefined, captureException });
     setTag = () => undefined;
   },
-}));
-const runPersonalPromoEnd = vi.hoisted(() => vi.fn().mockResolvedValue({ transitioned: [], sweep: null }));
-const isPromoEndAlertSlot = vi.hoisted(() => vi.fn(() => false));
-vi.mock('../src/lib/personal-promo-end', () => ({
-  runPersonalPromoEnd,
-  isPromoEndAlertSlot,
 }));
 vi.mock('../src/lib/account-deletion', () => ({
   purgeUserAccount: vi.fn().mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
@@ -50,7 +44,6 @@ vi.mock('../src/lib/apple-revoke', () => ({
 const unlinkKakaoUser = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('../src/lib/kakao-oauth', () => ({ unlinkKakaoUser }));
 vi.mock('../src/lib/fcm', () => ({
-  sendAlarmPush: vi.fn().mockResolvedValue(undefined),
   notifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -77,7 +70,6 @@ import worker from '../src/index';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  isPromoEndAlertSlot.mockReturnValue(false);
 });
 
 describe('scheduled() — 계정 파기 격리', () => {
@@ -213,49 +205,5 @@ describe('scheduled() — 계정 파기 격리', () => {
     const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
     expect(vi.mocked(notifyDowngradedAlarms)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![3]).toContain('m1');
-  });
-
-  // 1분 크론은 **기간 한정 개인 플랜 종료 전용**이다 — 분과 무관하게 그 일만 하고, 자기 예산(~50 subrequest)을 통째로 쓴다.
-  // (탈퇴 등급 통지 대기열이 홀수 분을 나눠 쓰던 시절이 있었다 — 커플·가족 이용권과 함께 2026-10-20 에 없앴다.)
-  it.each(['2026-10-01T00:01:00.000Z', '2026-10-01T00:02:00.000Z', '2026-10-01T00:03:00.000Z'])(
-    '1분 크론(%s) — 언제나 개인 플랜 종료 작업만 돈다',
-    async (at) => {
-      await worker.scheduled(
-        { scheduledTime: new Date(at).getTime(), cron: '* * * * *' } as never,
-        { TURSO_DATABASE_URL: 'mock', TURSO_AUTH_TOKEN: 'mock', PASSWORD_PEPPER: 'pep' } as never,
-      );
-
-      expect(runPersonalPromoEnd).toHaveBeenCalledTimes(1);
-      expect(runPersonalPromoEnd.mock.calls[0]![3]).toMatchObject({ role: 'dedicated' });
-      // 5분 틱의 일(계정 파기 조회 등)은 하지 않는다.
-      expect(executeMock).not.toHaveBeenCalled();
-      expect(withWriteTransaction).not.toHaveBeenCalled();
-    },
-  );
-
-  it('1분 크론 — 종료 작업이 던져도 던지지 않고, 경보는 시간당 자리에서만 올린다', async () => {
-    const env = {
-      TURSO_DATABASE_URL: 'mock',
-      TURSO_AUTH_TOKEN: 'mock',
-      PASSWORD_PEPPER: 'pep',
-      SENTRY_DSN: 'https://k@o.ingest.sentry.io/1',
-    } as never;
-    runPersonalPromoEnd.mockRejectedValueOnce(new Error('turso down'));
-    await expect(
-      worker.scheduled(
-        { scheduledTime: new Date('2026-10-01T05:03:00.000Z').getTime(), cron: '* * * * *' } as never,
-        env,
-      ),
-    ).resolves.toBeUndefined();
-    // 경보 자리가 아니면 로그만 — 1분마다 경보가 쌓이지 않는다.
-    expect(captureException).not.toHaveBeenCalled();
-
-    isPromoEndAlertSlot.mockReturnValue(true);
-    runPersonalPromoEnd.mockRejectedValueOnce(new Error('turso down'));
-    await worker.scheduled(
-      { scheduledTime: new Date('2026-10-01T06:00:00.000Z').getTime(), cron: '* * * * *' } as never,
-      env,
-    );
-    expect(captureException).toHaveBeenCalledTimes(1);
   });
 });

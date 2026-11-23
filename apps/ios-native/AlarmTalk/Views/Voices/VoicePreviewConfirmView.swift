@@ -32,20 +32,34 @@ struct VoicePreviewConfirmView: View {
     let draft: VoiceProfile
     /// 저장(승격) 완료 — 부모가 목록으로 돌린다.
     let onSaved: (String) -> Void
-    /// 다시 만들기 — 부모가 등록 폼으로 되돌린다.
+    /// 다시 만들기 — 부모가 등록 폼(음원 준비)으로 되돌린다. 스펙 §4-1 "다시 만들기를 고르면 처음부터 다시 녹음한다".
     let onDiscarded: () -> Void
+    /// 나가기 경고의 '나가고 삭제' — 부모가 등록 창을 닫고 목록으로 돌린다(안드로이드 `draftExitWarningOpen` 의 '나가기' 는
+    /// 초안을 지우고 `closeCreateDialog` 한다). 음원 준비로 돌아가면 나간다고 한 사람을 창 안에 붙잡아 둔다.
+    let onExited: () -> Void
     /// 저장이 **월 등록 한도**로 거절됐다 — 부모가 등록 창을 닫는다(이유는 닫힌 뒤의 알럿이 말한다).
     let onMonthlyLimitRejected: () -> Void
 
     @State private var previewText: String = ""
     @State private var editing = false
     @State private var editDraft = ""
-    /// 문구 고치기·등록 확정 요청 중. 톤 카드를 잠근다.
-    @State private var saving = false
+    /// 고친 문구를 보내는 중('재생성'). 톤 카드를 잠근다.
+    @State private var savingText = false
+    /// 등록 확정('저장하기')을 보내는 중 — **이때만** 하단 `저장하기` 가 진행 표시 + '저장 중…' 이다. 문구 재생성 중에
+    /// 그렇게 그리면 저장하지 않았는데 저장한다고 말한다(안드로이드는 승격이 실제로 나갔을 때만 — `promotedForPrerenderId`).
+    @State private var promoting = false
+    /// 문구 저장·등록 확정 중 하나라도 도는 중(잠금표의 `saving`).
+    private var saving: Bool { savingText || promoting }
     /// 등록 확정·초안 삭제 요청 중(서버 쓰기).
     @State private var busy = false
     /// 첫 미리듣기 요청이 끝났는지. 빈 문자열을 로딩과 실패로 구분한다.
     @State private var previewAttempted = false
+    /// 톤 카드를 그리는가 — 첫 미리듣기 준비가 **끝난 뒤**에만 그린다(2026-11-15 오너: "목소리 등록 확인 화면 준비중일때는 톤
+    /// 조절도 완성되었을때 뜨게 해줘"). 받는 동안 그리면 막대가 기본값에 있다가 추천값으로 튄다. 실패로 끝나도 그린다 — 그때는
+    /// 톤 카드의 듣기 버튼이 다시 받는 길이다. 한 번 켜면 다시 받는 동안에도 끄지 않는다. 안드로이드 `confirmToneCardShown` 과 같다.
+    @State private var tuningCardShown = false
+    /// 잰 추천값 — 지금 값이 이것이면 톤 카드 제목 줄에 `추천` 을 단다(시안 A). 안드로이드 `tuningSuggestion`.
+    @State private var suggestedPitchSt: Double?
     /// 서버가 청취(끝까지 들음)를 기록했는가. 문구를 고치면 `false` 로 되돌린다.
     @State private var listened = false
     @State private var errorMessage: String?
@@ -81,6 +95,8 @@ struct VoicePreviewConfirmView: View {
     @State private var renderingTuning = false
     /// 이 화면이 떠났는가 — 떠난 뒤 끝난 준비(받기·재기·굽기)가 소리를 내지 않게.
     @State private var viewGone = false
+    /// 막대 아래 글자 줄의 높이 — 11pt 글자 한 줄(글자 크기 설정을 따라 커진다).
+    @ScaledMetric(relativeTo: .caption2) private var scaleLabelHeight: CGFloat = 16
 
     // MARK: 잠금표 — 안드로이드 `ui/voices/VoicePreviewConfirmRules.kt` 의 `confirmStepLocks` 와 같은 표다(한쪽만 고치면 같은
     // 순간에 두 폰이 다르게 잠긴다). 판정은 `Self.locks`.
@@ -141,7 +157,9 @@ struct VoicePreviewConfirmView: View {
                     }
 
                     previewCard
-                    tuningCard
+                    if tuningCardShown {
+                        tuningCard.transition(.opacity)
+                    }
                     replaceNotice
 
                     // 이 화면의 오류(재생·청취 확인·문구 저장·등록 실패)는 교체 줄 바로 아래에 오류 색으로
@@ -181,9 +199,11 @@ struct VoicePreviewConfirmView: View {
         }
         .alert(String(localized: "나가면 임시 목소리가 삭제돼요"), isPresented: $exitWarningOpen) {
             Button(String(localized: "나가고 삭제"), role: .destructive) {
-                Task { await discard() }
+                Task { await discard(then: onExited) }
             }
-            Button(String(localized: "계속 만들기"), role: .cancel) {}
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `VoiceProfileManagementPanel` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+            Button(String(localized: "계속 만들기")) {}
+                .keyboardShortcut(.defaultAction)
         } message: {
             Text(String(localized: "지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요."))
         }
@@ -195,13 +215,21 @@ struct VoicePreviewConfirmView: View {
     private var previewCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             if editing {
+                // 입력칸 — 글자 16(bodyLarge), surface 74% 채움 · outlineVariant 테두리 · 모서리 18. 안드로이드는 같은 자리에
+                // `OutlinedTextField`(minLines 2 · `wakerOutlinedTextFieldColors`)를 둔다. 카드 테두리색이 아니라 입력칸 색이다.
                 TextEditor(text: $editDraft)
                     .frame(minHeight: 72)
-                    .font(theme.typography.bodyMedium)
+                    .font(theme.typography.bodyLarge)
                     .scrollContentBackground(.hidden)
                     .padding(10)
-                    .background(theme.palette.surface.opacity(0.74))
-                    .outlinedButtonShape()
+                    .background(
+                        theme.palette.surface.opacity(0.74),
+                        in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                            .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                    )
                     .onChange(of: editDraft) { _, new in
                         // ⚠ **이 글자는 TTS 가 읽는다** — 제어문자·제로폭이 그대로 들어가면
                         // 낭독이 망가진다. 줄바꿈은 지우지 않고 공백으로 바꾼다(안드로이드
@@ -214,21 +242,21 @@ struct VoicePreviewConfirmView: View {
                         if cleaned != new { editDraft = cleaned }
                     }
 
+                // 반반 폭 두 버튼 — '취소' 는 외곽선(카드 테두리색 · 글자 onSurface), '재생성' 은 채움. 안드로이드 문구 고치기의
+                // `OutlinedButton` + `Button`(둘 다 `weight(1f)` · `WakerButtonShape`)과 같다. 예전에는 시스템 버튼이라 글자 폭만큼만
+                // 그려졌다.
                 HStack(spacing: 8) {
                     Button(String(localized: "취소")) {
                         editing = false
                         editDraft = ""
                     }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(PreviewEditCancelButtonStyle())
                     .disabled(saving)
 
-                    Button(saving ? String(localized: "재생성 중…") : String(localized: "재생성")) {
+                    Button(savingText ? String(localized: "재생성 중…") : String(localized: "재생성")) {
                         Task { await savePreviewText() }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(theme.palette.primary)
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(EditorActionButtonStyle(kind: .filled))
                     .disabled(working || editDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             } else {
@@ -264,9 +292,10 @@ struct VoicePreviewConfirmView: View {
             theme.palette.surface,
             in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
         )
+        // 카드 테두리색 — 안드로이드 문구 카드의 `wakerCardBorder()`.
         .overlay(
             RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                .stroke(theme.palette.cardBorder, lineWidth: 1)
         )
     }
 
@@ -276,37 +305,48 @@ struct VoicePreviewConfirmView: View {
     /// 2026-10-08 사용자 지시로 뺐다). 범위·눈금은 서버와 같다(`VoiceTuning.pitchRange`). 막대는 추천값에서 시작하고,
     /// 원본과의 비교는 `원본 듣기` 가 한다(0 도 0.5 눈금이라 막대로 맞출 수 있다). 막대에서 손을 떼면 그 높이로 구워
     /// (PSOLA — 몸집은 그대로) 처음부터 한 번 다시 튼다.
+    /// **톤 조절** 카드(시안 A '말로 쓴 막대' — 2026-11-15 오너 "톤 조절은 a로 해도 돼"). 제목 줄은 `톤 조절`(2026-10-08 이름 그대로) · 값을
+    /// **말로**(`pitchWord`) · 추천값 그대로면 작은 `추천`. 막대는 '원래(0)' 에서 손잡이까지만 채우고(`WakerStepSlider` 의 `origin`), 아래 한
+    /// 줄에 `낮게 · 원래 · 높게`. 버튼은 `원래 목소리`·`바꾼 목소리`. 안드로이드 `ui/voices/VoiceTuningCard.kt` 의 `VoiceTuningCard` 와 같다.
+    /// (2026-10-08 에 뺀 '추천값' 줄·'0으로' 버튼은 되살리지 않는다 — 작은 `추천` 표시만 둔다.)
     private var tuningCard: some View {
-        let label = Self.tuningValueText(tuning.pitchSt)
-        // 줄 간격·값 글자 굵기는 안드로이드 `ui/voices/VoiceTuningCard.kt` 의 `VoiceTuningCard` 와 같다.
+        let words = Self.pitchWord(tuning.pitchSt)
+        let spoken = Self.tuningValueText(tuning.pitchSt)
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(String(localized: "톤 조절"))
                     .font(theme.typography.titleSmall)
                     .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.onSurface)
                 Spacer(minLength: 8)
-                Text(verbatim: label)
+                Text(verbatim: words)
                     .font(theme.typography.bodyMedium)
                     .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.primary)
-                    .monospacedDigit()
-            }
-            Slider(
-                value: Binding(
-                    get: { tuning.pitchSt },
-                    set: { tuning = VoiceTuning(pitchSt: $0, source: .user).normalized() }
-                ),
-                in: VoiceTuning.pitchRange,
-                step: VoiceTuning.step,
-                onEditingChanged: { editing in
-                    if !editing { sliderReleased() }
+                if let suggestedPitchSt, suggestedPitchSt == tuning.pitchSt {
+                    // 11(labelSmall) — 안드로이드 `VoiceTuningCard` 와 같다.
+                    Text(String(localized: "추천"))
+                        .font(theme.typography.labelSmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
-            )
-            .tint(theme.palette.primary)
-            .disabled(toneCardLocked)
-            .accessibilityLabel(String(localized: "톤 조절"))
-            .accessibilityValue(label)
+            }
+            VStack(spacing: 2) {
+                WakerStepSlider(
+                    value: Binding(
+                        get: { tuning.pitchSt },
+                        set: { tuning = VoiceTuning(pitchSt: $0, source: .user).normalized() }
+                    ),
+                    range: VoiceTuning.pitchRange,
+                    step: VoiceTuning.step,
+                    origin: 0,
+                    accessibilityLabel: String(localized: "톤 조절"),
+                    // 읽어 주기는 말과 숫자를 함께 — "조금 높게, +1.5 반음".
+                    accessibilityValue: "\(words), \(spoken)",
+                    onEditingEnded: { sliderReleased() }
+                )
+                .disabled(toneCardLocked)
+                tuningScaleLabels
+            }
             // 두 버튼은 번갈아 들으라고 둔 것이다(2026-10-08 사용자) — 같은 폭으로 나란히.
             HStack(alignment: .top, spacing: 8) {
                 previewButton(.original)
@@ -319,10 +359,49 @@ struct VoicePreviewConfirmView: View {
             theme.palette.surface,
             in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
         )
+        // 카드 테두리색 — 안드로이드 `VoiceTuningCard` 의 `wakerCardBorder()`.
         .overlay(
             RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                .stroke(theme.palette.cardBorder, lineWidth: 1)
         )
+    }
+
+    /// 막대 아래 한 줄 — 왼쪽 끝 `낮게`, '원래(0)' 눈금 바로 아래 `원래`, 오른쪽 끝 `높게`. `원래` 의 가로 자리는 막대가 손잡이
+    /// 반지름(10)만큼 들여 그리는 트랙 위의 같은 비율이다(안드로이드 `TuningScaleLabels`).
+    private var tuningScaleLabels: some View {
+        let range = VoiceTuning.pitchRange
+        let originFraction = (0 - range.lowerBound) / (range.upperBound - range.lowerBound)
+        return GeometryReader { geo in
+            let inset = WakerStepSlider.thumbSize / 2
+            let track = max(geo.size.width - WakerStepSlider.thumbSize, 1)
+            ZStack(alignment: .topLeading) {
+                Text(String(localized: "낮게"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(String(localized: "높게"))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                Text(String(localized: "원래"))
+                    .fixedSize()
+                    .position(x: inset + track * originFraction, y: geo.size.height / 2)
+            }
+            // 11(labelSmall) — 안드로이드 `TuningScaleLabels` 와 같다.
+            .font(theme.typography.labelSmall)
+            .foregroundStyle(theme.palette.onSurfaceVariant)
+        }
+        .frame(height: scaleLabelHeight)
+        .accessibilityHidden(true)
+    }
+
+    /// 높이를 **말로** — 0 은 `원래 높이`, ±2 까지 `조금`, ±4 까지 그냥, 그 너머는 `많이`(안드로이드 `pitchWordRes` 와 같은 경계).
+    static func pitchWord(_ value: Double) -> String {
+        switch value {
+        case 0: return String(localized: "원래 높이")
+        case ..<(-4): return String(localized: "많이 낮게")
+        case ..<(-2): return String(localized: "낮게")
+        case ..<0: return String(localized: "조금 낮게")
+        case ...2: return String(localized: "조금 높게")
+        case ...4: return String(localized: "높게")
+        default: return String(localized: "많이 높게")
+        }
     }
 
     /// 톤 카드 안 하단의 듣기 버튼 하나 — 안드로이드 `ui/voices/VoiceTuningCard.kt` 의 `TuningListenButton` 과 같은 모양이다.
@@ -330,7 +409,7 @@ struct VoicePreviewConfirmView: View {
     /// 굽는 동안은 그 자리에 진행 표시다. 다시 누르면 멈춘다. 라벨은 번역이 길면 두 줄로 흐른다 — 줄이지 않는다(CLAUDE.md
     /// 「글자 크기가 자리를 넘칠 때」 — 줄바꿈으로 흐를 수 있는 자리다).
     private func previewButton(_ kind: VoiceTonePreview.Kind) -> some View {
-        let title = kind == .original ? String(localized: "원본 듣기") : String(localized: "현재 톤 듣기")
+        let title = kind == .original ? String(localized: "원래 목소리") : String(localized: "바꾼 목소리")
         let active = activePreviewKind == kind
         let preparing = active && (fetching || renderingTuning)
         let enabled = !toneCardLocked
@@ -359,7 +438,8 @@ struct VoicePreviewConfirmView: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: AlarmTalkControl.height)
             .background(active ? accent.opacity(0.12) : Color.clear, in: shape)
-            .overlay(shape.stroke(active ? accent : theme.palette.outlineVariant, lineWidth: 1))
+            // 쉴 때는 카드 테두리색 — 안드로이드 `TuningListenButton` 의 `wakerCardBorder()`.
+            .overlay(shape.stroke(active ? accent : theme.palette.cardBorder, lineWidth: 1))
             .contentShape(shape)
         }
         .buttonStyle(.plain)
@@ -537,6 +617,7 @@ struct VoicePreviewConfirmView: View {
             VoiceTuningAnalyzer.measure(url: url, maxSeconds: 30)
         }.value
         let suggestion = VoiceTuningAnalyzer.suggest(preview: preview, source: sourceMeasurement)
+        suggestedPitchSt = suggestion.pitchSt
         if tuning.source == .suggested {
             tuning = suggestion
         }
@@ -610,90 +691,61 @@ struct VoicePreviewConfirmView: View {
     ///   따로 갖고 있어서, 옆의 `.plain` 버튼과 같은 `minHeight` 를 줘도 실제로는 다르게
     ///   그려진다(실기기에서 두 번 어긋났다). 그래서 **둘 다 `.plain`** 으로 두고 배경·
     ///   테두리·높이를 이 파일에서 직접 같은 값으로 그린다 — 다른 것은 **색뿐**이다.
+    /// 편집기 하단(`EditorActionBar` 의 `EditorActionButtonStyle`)과 같은 한 쌍 — `다시 만들기` 는 테두리, `저장하기` 는 채움, 같은 폭·
+    /// 높이 40·간격 12(2026-11-15 오너: "다시 만들기, 저장하기 버튼도 디자인 바꿔도 돼"). 예전에는 빨간 글자 상자와 채움 상자(높이 52)
+    /// 였다. 안드로이드 Preview 단계 하단과 같다.
     private var actions: some View {
-        // ⚠ **폭을 SwiftUI 분배에 맡기지 않는다**(2026-09-19 실기기: 높이도 폭도 어긋났다).
-        //   `maxWidth: .infinity` 는 글자 길이에 따라 두 버튼이 다르게 나뉠 수 있다.
-        //   남은 폭에서 간격을 빼고 **반으로 나눈 값**을 두 버튼에 그대로 준다.
-        GeometryReader { geo in
-            let gap: CGFloat = 10
-            let each = max((geo.size.width - gap) / 2, 0)
-            HStack(spacing: gap) {
-                actionButton(
-                    title: "다시 만들기",
-                    foreground: theme.palette.error,
-                    background: theme.palette.surface,
-                    border: theme.palette.outlineVariant,
-                    width: each,
-                    disabled: working
-                ) { Task { await discard() } }
-
-                // ⚠ **끝까지 듣기 전에는 저장할 수 없다.** 서버도 재생 토큰 없이는 승격을
-                // 거부하므로, 여기서 열어 두면 눌러도 실패하는 버튼이 된다.
-                // ⚠ **지금 톤(막대 값)을 끝까지 들어야** 저장이 열린다 — 바꾼 높이를 굽거나 트는 중에 저장하면 듣지
-                // 않은 값이 등록되어 그 목소리의 모든 알람에 구워진다(Codex #870). 판정은 `VoiceTonePreview.canSave`.
-                // ⚠ **문구 입력칸이 열린 동안·고친 문구를 보내는 동안도 잠근다**(잠금표 — `working`·`editing`). 입력칸이
-                // 열린 채 저장하면 친 문구가 말없이 버려지고, 보내는 중이면 들은 기록이 아직 옛 문구의 것이다.
-                // 교체는 따로 묻지 않는다 — 이미 등록된 목소리가 있으면 저장이 곧 교체다(`replaceNotice`).
-                let saveDisabled = working || editing || !VoiceTonePreview.canSave(
-                    listenConfirmed: listened,
-                    rendering: renderingTuning,
-                    hearing: hearing,
-                    slider: tuning
-                )
-                actionButton(
-                    title: saving ? "저장 중…" : "저장하기",
-                    foreground: theme.palette.onPrimary,
-                    background: saveDisabled
-                        ? theme.palette.primary.opacity(0.4)
-                        : theme.palette.primary,
-                    border: .clear,
-                    width: each,
-                    disabled: saveDisabled
-                ) { Task { await promote() } }
+        // ⚠ **끝까지 듣기 전에는 저장할 수 없다.** 서버도 재생 토큰 없이는 승격을 거부하므로, 여기서 열어 두면 눌러도 실패하는
+        // 버튼이 된다. ⚠ **지금 톤(막대 값)을 끝까지 들어야** 저장이 열린다 — 바꾼 높이를 굽거나 트는 중에 저장하면 듣지 않은
+        // 값이 등록되어 그 목소리의 모든 알람에 구워진다(Codex #870). 판정은 `VoiceTonePreview.canSave`.
+        // ⚠ **문구 입력칸이 열린 동안·고친 문구를 보내는 동안도 잠근다**(잠금표 — `working`·`editing`). 입력칸이 열린 채 저장하면
+        // 친 문구가 말없이 버려지고, 보내는 중이면 들은 기록이 아직 옛 문구의 것이다. 교체는 따로 묻지 않는다 — 이미 등록된
+        // 목소리가 있으면 저장이 곧 교체다(`replaceNotice`).
+        let saveDisabled = working || editing || !VoiceTonePreview.canSave(
+            listenConfirmed: listened,
+            rendering: renderingTuning,
+            hearing: hearing,
+            slider: tuning
+        )
+        return HStack(spacing: 12) {
+            Button {
+                Task { await discard(then: onDiscarded) }
+            } label: {
+                Text(String(localized: "다시 만들기"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-        }
-        // GeometryReader 는 높이를 스스로 정하지 못한다 — 버튼 높이로 고정한다.
-        .frame(height: Self.actionButtonHeight)
-        .padding(.horizontal, 20)
-        .padding(.top, 10)
-        .padding(.bottom, 16)
-    }
+            .buttonStyle(EditorActionButtonStyle(kind: .outlined))
+            .disabled(working)
 
-    /// 하단 버튼 높이. 두 버튼이 **같은 값**을 쓰는 유일한 출처다.
-    private static let actionButtonHeight: CGFloat = 52
+            Button {
+                Task { await promote() }
+            } label: {
+                if promoting {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(theme.palette.onSurfaceVariant)
+                        Text(String(localized: "저장 중…"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                } else {
+                    Text(String(localized: "저장하기"))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .buttonStyle(EditorActionButtonStyle(kind: .filled))
+            .disabled(saveDisabled)
+        }
+        .padding(.horizontal, 16)
+        // 위·아래 10 — 등록의 다른 단계(`VoiceCloneUploadFlow` 의 하단 버튼)와 안드로이드 등록 창 하단 줄(위 10 · 아래 10)과
+        // 같다(2026-11-22. 그전에는 이 화면만 아래 16 이라 단계를 넘을 때 버튼이 6 씩 오르내렸다).
+        .padding(.vertical, 10)
+    }
 
     /// 두 하단 버튼이 **같은 자로** 그려지도록 모양을 한 곳에 둔다(위 주석 참조).
-    private func actionButton(
-        title: LocalizedStringKey,
-        foreground: Color,
-        background: Color,
-        border: Color,
-        width: CGFloat,
-        disabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(theme.typography.bodyMedium.weight(.semibold))
-                .foregroundStyle(foreground)
-                // 글자가 길어도 상자를 넓히지 않는다 — 두 버튼이 같은 폭이어야 한다.
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(width: width, height: Self.actionButtonHeight)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            background,
-            in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(border, lineWidth: 1)
-        )
-        .disabled(disabled)
-    }
-
     // MARK: - 서버
 
     /// 서버 미리듣기를 받는다(예전 재생 버튼과 같은 요청) — 받으면 재서 추천값을 정하고, `kind` 가 있으면 곧바로 그
@@ -718,12 +770,16 @@ struct VoicePreviewConfirmView: View {
             fetching = false
             pendingPlayKind = nil
             errorMessage = message
+            // 실패로 끝나도 톤 카드를 그린다 — 그 듣기 버튼이 다시 받는 길이다.
+            withAnimation(.easeOut(duration: 0.2)) { tuningCardShown = true }
         case .ready(let clip):
             // 소리가 날 때 글자도 같이 보인다(2026-09-19 지시) — 재고 굽는 틈은 짧다.
             if !clip.text.isEmpty { previewText = clip.text }
             await prepareTuning(for: clip.url)
             fetching = false
             install(clip)
+            // 추천값을 잰 뒤라 막대가 튀지 않는다 — 이제 톤 카드를 그린다.
+            withAnimation(.easeOut(duration: 0.2)) { tuningCardShown = true }
             let next = pendingPlayKind
             pendingPlayKind = nil
             // 받는 사이 화면을 떠났으면 틀지 않는다 — 화면 밖에서 소리가 난다(Codex #870).
@@ -737,7 +793,7 @@ struct VoicePreviewConfirmView: View {
         guard let token = auth.session?.token else { return }
         let text = editDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !working else { return }
-        saving = true
+        savingText = true
         // 옛 문구의 재생은 멈춘다 — 이후 재생은 수정본 기준이어야 한다.
         stopPreview()
         do {
@@ -746,7 +802,7 @@ struct VoicePreviewConfirmView: View {
                 previewText: text,
                 token: token
             )
-            saving = false
+            savingText = false
             previewText = normalized
             editing = false
             editDraft = ""
@@ -755,8 +811,8 @@ struct VoicePreviewConfirmView: View {
             discardClip()
             await fetchPreview(thenPlay: .current)
         } catch {
-            saving = false
-            errorMessage = voice.mapVoiceError(error)
+            savingText = false
+            errorMessage = userFacingErrorMessage(error, fallback: String(localized: "문구를 수정하지 못했어요."))
         }
     }
 
@@ -773,9 +829,9 @@ struct VoicePreviewConfirmView: View {
         ) else { return }
         // 이미 등록된 목소리가 있으면 이 저장은 **언제나 교체**다 — 체크하지 않는다(2026-10-08 사용자).
         let replacing = registeredVoice != nil
-        saving = true
+        promoting = true
         busy = true
-        defer { saving = false; busy = false }
+        defer { promoting = false; busy = false }
         do {
             let promoted = try await AlarmTalkAPI.shared.promoteVoiceDraft(
                 id: draft.id,
@@ -866,7 +922,7 @@ struct VoicePreviewConfirmView: View {
             guard voice.isMonthlyLimitRejection(error) else {
                 // 다시 시도할 수 있는 실패(네트워크·5xx)와 사용자가 고칠 실패(유료·동의·미리듣기)는
                 // 이 화면 안에서 말한다.
-                errorMessage = voice.mapVoiceError(error)
+                errorMessage = voice.mapVoiceError(error, fallback: String(localized: "목소리를 만들지 못했어요"))
                 return
             }
             // ⚠ **월 등록 한도 거절은 흐름을 끝낸다**(스펙 voice-and-message §4-1 「월 등록 한도」 ③).
@@ -884,7 +940,9 @@ struct VoicePreviewConfirmView: View {
         }
     }
 
-    private func discard() async {
+    /// 초안을 지우고 `next` 로 간다 — '다시 만들기' 는 음원 준비로(`onDiscarded`), 나가기 경고의 '나가고 삭제' 는 목록으로
+    /// (`onExited`).
+    private func discard(then next: () -> Void) async {
         guard !busy, let token = auth.session?.token else { return }
         // 받는 중이던 미리듣기·미뤄 둔 다시 듣기도 거둔다 — 지우는 초안의 소리를 내지 않는다(`startPreview` 도 `busy` 를 본다).
         pendingPlayKind = nil
@@ -895,6 +953,36 @@ struct VoicePreviewConfirmView: View {
         // 실패해도 되돌아간다 — 초안은 서버가 정리하고, 여기 갇히는 게 더 나쁘다.
         try? await AlarmTalkAPI.shared.deleteVoiceDraft(id: draft.id, token: token)
         await voice.refresh(session: auth.session, force: true)
-        onDiscarded()
+        next()
+    }
+}
+
+/// 확정 화면 문구 고치기의 '취소' — 반 폭 외곽선 버튼(카드 테두리색 · 글자 onSurface · 높이 40 · 모서리 18 · labelLarge).
+/// 안드로이드 `OutlinedButton`(`wakerCardBorder()` · `wakerOutlinedButtonColors()`)과 같다.
+/// 옆의 '재생성'(`EditorActionButtonStyle` 채움)과 같은 자로 그린다.
+private struct PreviewEditCancelButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PreviewEditCancelButtonBody(label: configuration.label, isPressed: configuration.isPressed)
+    }
+}
+
+private struct PreviewEditCancelButtonBody: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
+    let label: ButtonStyleConfiguration.Label
+    let isPressed: Bool
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+        label
+            .font(theme.typography.labelLarge)
+            // 잠겨도 글자는 읽히게 한 단계만 낮춘다(안드로이드 `wakerOutlinedButtonColors` 의 비활성 색).
+            .foregroundStyle(isEnabled ? theme.palette.onSurface : theme.palette.onSurfaceVariant)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .overlay(shape.strokeBorder(theme.palette.cardBorder, lineWidth: 1))
+            .opacity(isPressed ? 0.8 : 1)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
     }
 }

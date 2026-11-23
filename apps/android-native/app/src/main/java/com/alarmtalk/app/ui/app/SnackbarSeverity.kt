@@ -79,11 +79,12 @@ internal object SnackbarSeverities {
         R.string.msg2_billing_fail_free_not_billable,
         R.string.msg2_billing_fail_user_not_found,
         R.string.msg2_billing_fail_transaction_owned_by_other_user,
+        R.string.msg2_billing_fail_transaction_account_mismatch,
         R.string.msg_gb_google_play_start_failed,
         R.string.msg_cross_store_renewal_active,
         R.string.msg_gb_payment_confirm_failed_retry,
-        R.string.msg_gb_payment_confirm_failed,
         R.string.msg_gb_subscription_cancel_failed,
+        R.string.billing_restore_failed,
         R.string.r3misc_billing_already_owned,
         R.string.r3misc_billing_purchase_failed,
         // 목소리·오디오
@@ -125,9 +126,6 @@ internal object SnackbarSeverities {
         R.string.api_error_ad_reward_unavailable,
         R.string.api_error_voice_limit_reached,
         R.string.api_error_voice_not_ready,
-        // 추가 음성팩 — 받지 못했다·지금 받을 수 없다(`docs/spec/voice-packs.md`).
-        R.string.voice_pack_download_failed,
-        R.string.voice_pack_not_available,
         R.string.api_error_voice_cloning_failed,
         R.string.api_error_invalid_voice_pitch,
         R.string.api_error_voice_pitch_locked,
@@ -159,6 +157,7 @@ internal object SnackbarSeverities {
         R.string.msg_email_required,
         R.string.msg_verification_code_six_digits_required,
         R.string.msg_register_all_fields_required,
+        R.string.msg_reset_all_fields_required,
         R.string.msg_register_verify_email_first,
         R.string.msg_voice_name_required,
         // 하기 전에 필요한 것 — 권한·이용권·동의
@@ -179,7 +178,6 @@ internal object SnackbarSeverities {
         R.string.billing_restore_none,
         R.string.msg_voice_replacement_settling,
         R.string.msg_verification_code_debug,
-        R.string.r3app_update_downloaded,
         // 알려 주는 것 — 방금 켠 알람이 언제 우는지(`docs/spec/alarm-editor.md` §7, 화면 아래 호스트). 저장이 끝났다는
         // 성공 표시가 아니라 정보다.
         R.string.hs_status_ring_in,

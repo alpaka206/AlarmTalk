@@ -56,8 +56,7 @@ class RemoteAlarmSyncWorker(
             session.user.id.takeIf { it.isNotBlank() }?.let { userId ->
                 val written = EntitlementWriter(applicationContext)
                     .write(AccessTicket(userId, startGeneration), "background account check") {
-                        // plan 과 프로모 종료 시각·받은 시각은 한 벌이다(`AccessSnapshot.withServerUser`).
-                        it.withServerUser(me.user, fetchedAt)
+                        it.withServerUser(me.user)
                     }
                 if (written != EntitlementWrite.Applied) {
                     Log.i(TAG, "Background plan record skipped: session changed mid-run")

@@ -125,43 +125,6 @@ internal fun AlarmTalkCheckbox(
     )
 }
 
-/**
- * 알람 홈용 슬림 권한 경고 배너. 탭하면 권한 게이트가 열려 바로 요청/설정으로 잇는다.
- *
- * 문구를 밖에서 받는다 — 권한이 없을 때 결과가 두 가지라서다(아예 안 울림 / 늦게 울림).
- * 껍데기는 하나로 두고 말만 바꾼다.
- */
-@Composable
-internal fun AlarmPermissionWarningBanner(
-    textResId: Int,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    OutlinedCard(
-        onClick = onClick,
-        shape = WakerTileShape,
-        border = wakerCardBorder(),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(
-                Icons.Outlined.ErrorOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(20.dp),
-            )
-            Text(
-                text = stringResource(textResId),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-    }
-}
-
 /** "7:30" 12시간제(분 0패딩) — 리스트 시각 표시용(오전/오후는 별도 표기). */
 private fun alarmRowClockLabel(hour: Int, minute: Int): String {
     val hour12 = hour % 12

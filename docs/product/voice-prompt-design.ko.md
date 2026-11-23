@@ -10,8 +10,8 @@
 목소리 알람 앱. 짧은 알람 문구를 Vertex Gemini(`gemini-3.8-flash` — 코드 상수 `VERTEX_MODEL` 하나로 정한다. Flash-Lite 는 블라인드 판정에서 품질이 떨어져 쓰지 않는다)로 생성하고 ElevenLabs `eleven_v4_turbo`(코드 상수 `TTS_MODEL_ID`)로
 합성한다. 2026-09-30 부터 **태그 없이** 문장만 합성한다(§4.5). 경쟁사 알라미가 게임/미션으로 "무조건 깨움"을 판다면 우리는 **음성** 경험으로 차별화한다.
 
-라이브 동적 생성은 현재 **기본 OFF**다(`GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`). 켜지 않으면 스톡 클립/로컬
-폴백만 나간다. 켜기 전 조건은 §5.
+라이브 동적 생성은 없다 — `/tts/generate` 가 2026-09-23 부터 `random` 을 400 `RANDOM_TTS_RETIRED` 로 막았고, 그 생성기와
+스위치(`GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`)는 2026-11-23 에 지웠다. Gemini 문구는 사전렌더·등록 미리듣기뿐이다. 되살린다면 그 전 조건은 §5.
 
 ## 2. 설계 근거 (외부 연구)
 
@@ -27,7 +27,7 @@
 
 ## 3. 파이프라인
 
-`generateDynamicAlarmTextWithVertex`(동적 모드) 또는 `generatePrerenderClipText`(클론 사전렌더)로 문구를
+`generatePrerenderClipText`(클론 사전렌더·등록 미리듣기)로 문구를
 만들고(모델이 태그를 내면 `stripAllTags` 로 벗긴다) → `lib/elevenlabs.ts` 가 `eleven_v4_turbo` 로 그 문장 그대로 합성한다.
 사용자 직접입력/번역 경로만 `prepareAlarmTextWithVertex` 를 탄다 — 같은 언어는 Gemini 를 부르지 않고, 번역할 때만 부른다.
 
@@ -87,7 +87,7 @@ user prompt 에는 가변 데이터(모드·관계·언어 블록·날씨 신호
   텐션을 **올리는** 태그만 크게 먹으며(129→205Hz) **누르는** 태그는 거의 안 먹었다(스펙 `voice-and-message.md` §10).
   태그가 '차분을 망치는' 쪽으로만 효과가 있으니 쓰지 않는다. 결은 문장 모양으로 전한다 — 경쾌는 짧고 통통 튀는
   문장·가벼운 느낌표, 차분은 고른 문장·느낌표 거의 없이·신나는 낱말 없이(끝은 분명히 깨운다).
-- **프롬프트에서 태그 지시를 전부 뺐다** — `DYNAMIC_SYSTEM_INSTRUCTION`·`dynamicAlarmTextPrompt`·`prerenderClipPrompt`
+- **프롬프트에서 태그 지시를 전부 뺐다** — `DYNAMIC_SYSTEM_INSTRUCTION`·`prerenderClipPrompt`
   (`WORDS ONLY`)·번역 `alarmTextPrompt`(대괄호를 새로 넣지 말 것). few-shot 예시의 대괄호도 뺐다(§4.9).
 - **모델이 그래도 대괄호를 내면 벗긴다**(`stripAllTags`) — 거절하지 않는다. 지운 자리는 문장부호 앞에 공백을
   남기지 않는다. 태그 모양이 아닌 대괄호(`[다정하게]`)와 소괄호 지문(`(웃으며)`)은 벗길 수 없어 HARD 로 막는다.
@@ -136,7 +136,7 @@ user prompt 에는 가변 데이터(모드·관계·언어 블록·날씨 신호
 
 ## 5. Gemini 실반영 전 게이트
 
-`GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true` 로 켜기 전에 확인해야 하는 것 — 아래는 코드로 확정할 수 없고
+라이브 동적 생성을 되살리기 전에 확인해야 하는 것(생성기와 스위치는 2026-11-23 에 지웠다) — 아래는 코드로 확정할 수 없고
 사람이 듣고 판단해야 하는 **가설**이다.
 
 1. **현지인 MOS**: KO/JA 원어민 각 10~20명, 샘플 8~12개. 자연스러움·관계 적절성·기상 의욕 평균 ≥ 3.8/5.

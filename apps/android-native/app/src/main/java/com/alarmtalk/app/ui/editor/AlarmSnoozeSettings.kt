@@ -130,13 +130,9 @@ internal fun SnoozeOptionSection(
     // 목록에 붙어 있었다.
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (title != null) {
-            Text(
-                text = title,
-                // iOS `EditorSectionTitle` = `titleSmall`(14) **bold**.
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
-            )
+            // 편집기 구역 제목과 같은 한 벌이다(`EditorSectionTitle` — titleSmall·SemiBold·흐린 색). iOS `EditorSectionTitle` 도
+            // 2026-11-15 에 이 값으로 맞췄다 — 예전 이 자리의 Bold·onSurface 는 그 전의 iOS 값이었다(2026-11-22 두 앱 통일).
+            EditorSectionTitle(title)
         }
         Surface(
             // 다행 그룹 박스가 형제 단일 행 패널(18)보다 작은 14 를 쓰던 radius 역전 해소.
@@ -175,38 +171,6 @@ internal fun SnoozeRadioRow(
             // iOS `RadioRow` 는 `bodyLarge`(16) **regular** 다 — 굵게 두면 목록이
             // 전부 강조돼 지금 고른 항목이 안 도드라진다(체크로만 구분한다).
             style = MaterialTheme.typography.bodyLarge,
-        )
-    }
-}
-
-/**
- * 잠긴 선택지 행 — 고를 수는 없지만 **목록에서 감추지도 않는다**. 무료 사용자에게 기능이
- * 존재한다는 것 자체를 보여주고, 누르면 호출부가 이용권 안내를 띄운다.
- * 선택 점 대신 자물쇠를 두어 "선택 안 됨"과 "잠김"을 눈으로 구분한다.
- */
-@Composable
-internal fun SnoozeLockedRow(
-    label: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .heightIn(min = 56.dp)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // ⚠ **라디오 점(18dp)보다 크게 둔다**(2026-08-15 지시 "자물쇠 좀 더 크게").
-        // 같은 크기면 잠긴 행인지 안 잠긴 행인지 한눈에 안 갈린다.
-        FeatureLockBadge(size = 24.dp, iconSize = 14.dp)
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = label,
-            // iOS `RadioRow` 는 `bodyLarge`(16) **regular** 다 — 굵게 두면 목록이
-            // 전부 강조돼 지금 고른 항목이 안 도드라진다(체크로만 구분한다).
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

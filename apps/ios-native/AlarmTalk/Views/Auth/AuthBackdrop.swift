@@ -57,23 +57,32 @@ enum AuthSceneColors {
     /// `AuthTextMuted` — 보조 설명.
     static let textMuted = Color.white.opacity(0x99 / 255.0)
 
-    /// `AuthErrorText` / `AuthNoticeText` — 이 화면은 고정 다크라 테마 error/primary 대신
-    /// 밝은 고정색을 쓴다. **성공 안내를 오류색으로 그리지 말 것**(iOS 가 그러고 있었다).
+    /// `AuthErrorText` — 이 화면은 고정 다크라 테마 error 대신 밝은 고정색을 쓴다.
+    /// **성공 안내를 오류색으로 그리지 말 것**(iOS 가 그러고 있었다).
     static let error = Color.hex(0xFFB4AB)
-    static let notice = Color.hex(0xA8C8FF)
 
     /// `GlassFill` / `GlassBorder` — 씬 위 글라스 카드.
     static let glassFill = Color.white.opacity(0x21 / 255.0)
     static let glassBorder = Color.white.opacity(0x2E / 255.0)
 
-    /// `BrandCtaStart` → `BrandCtaEnd` — 인증 4개 화면이 공유하는 주 버튼 그라데이션.
-    static let ctaStart = Color.hex(0x3D74FF)
-    static let ctaEnd = Color.hex(0x45B4F5)
+    /// `TextOnBrandAccent` — 주 버튼(`GradientCta`)의 하늘색 바탕(`accent`) 위 남색 글씨. 대비 11.6:1.
+    static let onAccent = Color.hex(0x0A1428)
 
     fileprivate static let sceneTop = Color.hex(0x1A2A52)
     fileprivate static let sceneMid = Color.hex(0x0E1938)
     fileprivate static let sceneBottom = Color.hex(0x070C1D)
 }
+
+/// 인증 화면군의 입력 칸·버튼 높이 하나 — 칸, 주 버튼(`GradientCta`), 카카오·Apple, 인증 받기·확인이 모두 이 값이다.
+/// 2026-11-22 오너("버튼 높이 안드로이드·아이폰 다른 것도 적절한 크기로 통일")로 52 로 맞췄다. 그전에는 한 화면에 칸 46·
+/// 간편 로그인 52·주 버튼 56 이 섞였고 안드로이드는 전부 56 이었다. 실제 서비스는 44~54 였고 애플 기본 버튼 44pt 보다 넉넉하다.
+/// 안드로이드 `ui/auth/LandingScreen.kt` 의 `AuthControlHeight` 와 같은 값이다.
+let AuthControlHeight: CGFloat = 52
+
+/// 고르기 화면 버튼의 아이콘과 글자 사이 — 아이콘은 글자 **바로 앞**에 붙고 둘이 한 덩어리로 가운데 선다(2026-11-22 오너).
+/// Apple 버튼은 시스템 버튼이라 그 모양만 있어 카카오·이메일을 거기에 맞췄고, 간격도 시스템 버튼에 가깝게 8 이다.
+/// 안드로이드 `ui/auth/AuthMethodsScreen.kt` 의 `AuthSignInIconGap` 은 구글 가이드의 로고 뒤 여백 10 이다.
+let AuthSignInIconGap: CGFloat = 8
 
 /// 인증 폼 화면(로그인·가입·비밀번호 재설정·약관 동의) 공통 배경 —
 /// 은은한 네이비 그라데이션 + 상단 브랜드 글로우. 안드로이드 `AuthScreen.kt:70-100`.
@@ -121,7 +130,7 @@ struct AuthBackdrop<Content: View>: View {
             Text("좋아하는 \(Text("목소리").foregroundColor(AuthSceneColors.accent))로\n깨어나는 아침")
                 .font(.system(size: 32, weight: .bold))
                 .foregroundStyle(AuthSceneColors.text)
-            Text("매일 아침, 그 목소리가 새로운 한마디로 깨워드려요.")
+            Text("날씨부터 운세까지, 원하는 목소리로 일어나세요.")
                 .foregroundStyle(AuthSceneColors.textDim)
             Spacer().frame(height: 40)
         }

@@ -72,7 +72,7 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
     목소리 프리페치 워커. 둘 다 `/auth/me` 를 늘 부르지만(프리페치는 plan 을 지금 받아야 하고,
     안드로이드 주기 워커는 회차마다 계정을 확인한다 — 아래 「탈퇴 유예」) 받은 토큰은 이 판정을
     거쳐서만 저장한다 — 예전에는 콜드 스타트마다 진입 갱신이 방금 굴린 토큰을 한 번 더 굴렸다.
-  - **굴리지 않는다**: 백그라운드에서 돌아올 때의 `/auth/me`(plan·프로모만 받는다), 프로필·계정 설정
+  - **굴리지 않는다**: 백그라운드에서 돌아올 때의 `/auth/me`(plan 만 받는다), 프로필·계정 설정
     저장 뒤의 확인 조회(아래 「프로필 저장은 바꾼 칸만 세션에 적는다」 — iOS 는 굴린다, 그 토큰이 옛 답을 가른다), **Play 자동
     정합화 뒤의 갱신**(H4). 정합화는 앱 시작·알람 탭 진입마다 도는 구독 재확인에서 오는데,
     거기서 굴리면 토큰을 키로 쓰던 탭 효과가 다시 돌아 또 정합화하는 고리가 생겼다(Play 로
@@ -87,12 +87,12 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
 **쓰는 순간의 세션** 위에 얹는다. 요청 **전에** 잡아 둔 세션의 사본을 다시 저장하지 않는다(2026-10-05).
 
 - 사본을 저장하면 요청이 도는 사이 다른 경로가 적은 값을 되돌린다 — `/auth/me`(진입·복귀 갱신, `plan_changed`,
-  다른 기기 결제)가 적은 plan·프로모·받은 시각, 다른 기기에서 바꾼 이름, 계정 설정 올리기가 적은 지역·사주. 다음 `/auth/me` 까지 세션(디스크 포함)에 남는다. plan 은 plan 답만
-  쓴다([billing-lifecycle.md](billing-lifecycle.md) 「plan·프로모 쓰기의 순번 가드」의 프로필 저장 항목).
+  다른 기기 결제)가 적은 plan, 다른 기기에서 바꾼 이름, 계정 설정 올리기가 적은 지역·사주. 다음 `/auth/me` 까지 세션(디스크 포함)에 남는다. plan 은 plan 답만
+  쓴다([billing-lifecycle.md](billing-lifecycle.md) 「plan 답의 순번 가드」의 프로필 저장 항목).
 - 토큰도 저장소의 것을 지킨다(Codex #665 P2 — 그 사이 굴러간 토큰을 옛 것으로 덮지 않는다). 세션이 그 사이
   끝났거나 다른 계정이 됐으면 아무것도 적지 않는다(위 「저장 직전에 세션을 다시 확인한다」).
 - 안드로이드는 읽기·확인·쓰기를 세션 쓰기 락 안에서 한 덩어리로 한다(`AuthSessionStore.updateUserIfAlive` ←
-  `MainViewModelAuthActions` 의 `saveProfileEdit`). 바꾼 칸이 무엇이든 plan·프로모는 저장소의 짝으로 다시
+  `MainViewModelAuthActions` 의 `saveProfileEdit`). 바꾼 칸이 무엇이든 plan 은 저장소의 값으로 다시
   박는다. iOS 는 `MainActor` 라 응답을 기다린 **뒤에** 읽은 세션 위에 얹는다(`AuthViewModel.updateProfile`).
 - 저장이 끝나면 **확인 조회**를 한 번 한다 — 저장 **전에** 떠난 `/auth/me` 가 옛 이름을 싣고 늦게
   와도, 확인 조회가 그 뒤에 덮거나(옛 답이 먼저 온 경우) 옛 답이 순번에 밀려 버려진다(확인 조회가 먼저 온 경우 —
@@ -101,7 +101,7 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
   가르는 에폭이다.
   - ⚠ **iOS 에서 옛 답이 먼저 오면 토큰이 이미 굴러 있다**(2026-10-05 리뷰). 서버는 `/auth/me` 마다 토큰을 굴리므로
     (`routes/auth.ts`), 확인 조회의 답은 보낸 토큰이 지금 세션 토큰과 달라 '토큰만 구른 같은 로그인' 갈래
-    (`isTokenRolledWithinSignIn`)로 온다. 그 갈래도 밀리지 않은 답이면 plan·프로모와 함께 **프로필 칸(이름·계정
+    (`isTokenRolledWithinSignIn`)로 온다. 그 갈래도 밀리지 않은 답이면 plan 과 함께 **프로필 칸(이름·계정
     설정 — 울타리는 따른다)까지** 지금 토큰 위에 적는다(`AuthViewModel.applyAccountAnswerOnRolledToken` — 토큰·
     탈퇴 유예만 지금 세션 것). 예전에는 그 갈래가 짝만 적어, 저장도 확인 조회도 성공했는데 옛 이름이 다음
     `/auth/me` 까지 남았다. 안드로이드는 토큰이 아니라 세대로 가르므로(`saveSessionIfAlive`) 같은 경우에 응답 전체를 쓴다.
@@ -124,6 +124,20 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
 | 로그아웃(이 기기) | 로컬 세션 삭제 + **알람 전부 끄기**([alarm-lifecycle.md](alarm-lifecycle.md) 1-1) |
 | 전 기기 로그아웃 · 비밀번호 재설정 | `token_epoch` +1 → 옛 토큰 전부 `TOKEN_REVOKED` |
 | 탈퇴 | 계정 삭제 + **알람 전부 끄기**(같은 규칙) |
+
+**로그아웃은 로컬 세션을 먼저 비운다 — 서버 뒷정리는 뒤에서 한다**(두 앱 — 안드로이드는 2026-11-22 에 iOS 에 맞췄다).
+확인하면 알람을 끄고 세션을 비워 화면이 곧바로 닫힌다. 그 뒤에 푸시 해제 → 서버 폐기(`/auth/logout`, `token_epoch` +1)를
+한다 — 네트워크 실패가 로그아웃을 되돌리지 않는다(최선 노력). 안드로이드는 구글·카카오 계정의 로그인 기억도 이 뒷정리에서 지운다
+(서버 왕복보다 먼저 — 다음 로그인의 계정 고르기가 바로 뜨게). 예전 안드로이드는 그 왕복을 다 기다린 뒤에 비워, 느린 망에서는
+로그아웃이 멈춘 것처럼 보였다.
+- ⚠ **푸시 해제가 폐기보다 먼저다.** 폐기가 먼저면 해제가 401 로 죽어, 로그아웃한(또는 공유) 기기에 그 계정의 푸시가 계속 온다.
+  두 요청 모두 떠나는 세션의 토큰을 직접 싣는다. 늦은 폐기 때문에 돌아오는 401 은 이미 비운 세션이라 버린다(안드로이드는 비우면서
+  세대가 올라 세대 문에서, iOS 는 실패한 토큰을 지금 세션과 대조해 — 「의도된 플랫폼 차이」 첫 줄).
+- ⚠ **세션을 받는 요청(로그인·가입·구글·카카오·Apple)은 앞선 뒷정리가 끝난 뒤에 보낸다.** 늦게 처리된 `/auth/logout` 이
+  `token_epoch` 를 올리면 **같은 계정으로 방금 받은 세션이 죽는다**(안드로이드 `awaitServerSignOutCleanup` — `serverSignOutCleanup`
+  을 기다린다, iOS `serializeAuthServerMutation` — 로그인 요청 자체를 같은 줄에 태운다).
+- 끊긴 뒷정리를 다음 실행이 이어서 하는 것은 iOS 뿐이다(`PendingSignOutStore` — 서버 정리에 쓸 토큰을 세션을 비우기 전에 따로
+  적는다). 안드로이드는 남겨 두는 표시가 없어, 뒷정리 도중 프로세스가 죽으면 그 회차의 푸시 해제·폐기는 하지 않은 채로 남는다.
 
 ⚠ **네트워크 실패·5xx 를 세션 만료로 읽지 말 것.** 401 만 만료다. `/auth/me` 는 앱을
 열 때마다 도는 자리라 여기서 잘못 판정하면 피해가 크다 — 그래서 백엔드도 DB 장애를
@@ -173,7 +187,7 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 - **철회는 자격증명 로그인에서만**(이메일 `/auth/login`·`/auth/google`·`/auth/apple`·`/auth/kakao` — `cancelPendingDeletionOnSignIn`).
   토큰 갱신(`GET /auth/me`)은 철회하지 않는다 — 사람이 자격증명을 다시 넣은 순간만 '계속 쓰겠다' 로 읽는다.
   비밀번호가 틀린 로그인은 아무것도 바꾸지 않는다. ⚠ **철회는 응답이 다 준비된 뒤 마지막 쓰기다**(코덱스 #904) —
-  토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면 안 된다.
+  토큰 서명·계정 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면 안 된다.
   ⚠ **로그인이 처음 읽은 그 상태에 묶는다**(첫 조회의 `deletion_requested_at`·`token_epoch`). active 로 읽은 로그인이
   끝나기 전에 다른 기기가 새로 낸 신청을 조용히 철회하면, 신청한 사람은 성공을 받았는데 파기 예약만 사라진다. 그 사이
   신청·전 기기 로그아웃으로 상태나 세대가 바뀌었으면(`superseded`) 로그인을 실패로 돌린다 — 서명한 토큰을 곧바로 쓸 수
@@ -243,6 +257,11 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
   채라 응답 쪽 떠나기가 물러서기 때문이다.
   iOS 는 신청 성공 갈래도 그 떠나기와 **같은 작업 하나**로 정리한다(`leaveAccountForPendingDeletion` — 겹친 호출은 그 끝을
   기다린다). 따로 돌면 먼저 끝난 쪽이 화면 잠금을 풀어, 다시 로그인한 새 세션의 알람에 다른 쪽이 닿는다.
+- **신청이 도는 동안은 다시 누를 수 없고, 접수 안내는 로그아웃된 첫 화면에 곧바로 뜬다**(2026-11-22). 안드로이드는 확인 창을 연 채
+  버튼을 잠근다(`DeleteAccountConfirmDialog` 의 `busy`). iOS 는 시스템 알럿이 누르는 순간 닫혀 그 자리가 없어, 더보기의 `회원 탈퇴`
+  행을 잠그고 꺾쇠 자리에 진행 표시를 그린다(`auth.isBusy`). 접수 안내("회원 탈퇴가 접수됐어요…" 등 `signOut(message:)` 의 문장)는
+  랜딩 위쪽 토스트다 — iOS 는 그전 랜딩이 그 안내를 그리지 않아 로그인 화면에 들어가야 보였다(`RootView` 의 `LandingView`
+  `.authToast`). 안드로이드는 로그인 전 화면도 같은 위쪽 안내 자리다(아래 「거절 뒤에 할 일이 화면에 있어야 한다」).
 - **옛 앱(1.2.13 이하)이 백그라운드에서 받는 것은 이 PR 전과 같다** — develop 도 유예 계정의 보호 라우트를 전부 403
   ACCOUNT_PENDING_DELETION 으로 막았고, 옛 워커는 그 403 에서 멈춘다(알람은 떼지 않는다). 옛 앱이 알람까지 정리하게 만들
   서버 응답은 없다 — 1.2.14 게재 뒤 `minSupported` 로 막는다(오너 결정). 미들웨어를
@@ -279,10 +298,10 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 끄고 로그아웃할 수 있다. 표시 해제 뒤 저장 전에 종료되면 저장된 pending 세션이 남아
 다음 조회에서 복구를 다시 완료한다. 다른 계정의 표시는 보존한다.
 ⚠ **복구 저장은 준비를 기다린 뒤의 세션 위에 만든다**(2026-10-05). 탈퇴 상태만 `active` 로 바꾸고 나머지는
-**그때의** 세션 것이다 — 기다리기 **전에** 잡은 사본을 저장하면, 준비를 기다리는 사이 반영된 plan·프로모(결제 전
+**그때의** 세션 것이다 — 기다리기 **전에** 잡은 사본을 저장하면, 준비를 기다리는 사이 반영된 plan(결제 전
 조회·세션 밖 `/auth/me` 처럼 토큰을 굴리지 않고 plan 을 쓰는 답)를 되돌린다(위 「프로필 저장은 바꾼 칸만 세션에
 적는다」와 같은 뿌리). `/auth/me` 로 복구를 확인한 경로는 그 응답을 기다린 뒤 **다시 다듬는다** — 밀린 답이면
-plan·프로모는 지금 세션의 짝, 계정 설정 울타리 이하면 설정도 지금 세션의 것(`AuthViewModel.reconcileAccountAnswer`
+plan 은 지금 세션의 짝, 계정 설정 울타리 이하면 설정도 지금 세션의 것(`AuthViewModel.reconcileAccountAnswer`
 — 일반 조회와 같은 규칙).
 이 순서로 로컬 복구 상태를 확정한 뒤 동기 완료 훅으로 APNs 토큰을 다시 요청한다. 해제는 서버에서
 성공했지만 응답만 유실된 경우에도 같은 토큰을 POST해야 한다. 기기 토큰과 소유자는 남겨
@@ -365,8 +384,9 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
   오류 -101)는 성공으로 본다. ⚠ 어드민 키가 없으면 끊지 못하고 경보만 남는다 — 그 회원번호는 파기로 사라져 다음 틱이 다시
   끊을 수 없다.
 - **앱의 로그아웃·탈퇴 신청·자동 만료는 기기의 카카오 토큰만 버린다**(연결 끊기가 아니다).
-- 화면: 로그인·가입 모두 **간편 로그인이 맨 위**다(카카오 → 안드로이드는 구글 / iOS 는 Apple). 카카오 버튼은 카카오 디자인
-  가이드대로 노랑 바탕·검정 말풍선·글자 '카카오 로그인' 하나·모서리 12 다. 가입 화면에서도 글자를 바꾸지 않는다.
+- 화면: 간편 로그인은 '시작하기' 다음 **로그인 수단 고르기** 화면의 맨 위다(카카오 → 안드로이드는 구글 / iOS 는 Apple →
+  이메일로 계속하기 — 아래 「로그인 화면」, 2026-11-22). 카카오 버튼은 카카오 디자인 가이드대로 노랑 바탕·검정 말풍선·글자
+  '카카오 로그인' 하나·모서리 12 다. 로그인과 가입을 함께 받는 화면이어도 글자를 바꾸지 않는다.
 - **연결 해제 웹훅**(2026-11-14 — `routes/kakao-webhook.ts` → `lib/kakao-unlink.ts`, `GET`·`POST /api/kakao/unlink`). 카카오는
   우리 서비스 **밖에서** 연결이 끊기면(카카오계정 설정의 '연결된 서비스 관리', 카카오계정 탈퇴, 관리자 처리) 이 주소를 부른다.
   우리가 연결 끊기 API 로 끊은 경우(위 파기)에는 오지 않는다.
@@ -393,11 +413,69 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 - 말풍선 심볼은 카카오 공식 리소스(디자인 리소스 다운로드의 Kakao Login.zip, 2026-08 판)의 경로를 그대로 쓴다. 색은 디자인
   가이드대로 심볼 #000000 · 글자 #000000 85%(공식 이미지는 둘 다 #191919 지만 직접 만드는 버튼의 기준은 가이드다).
 
+## 로그인 화면 — 수단을 먼저 고르고, 이메일은 다음 화면 (2026-11-22)
+
+오너: "저 디자인이 맞나? 진짜 앱들 로그인 페이지를 찾아와(추론 말고)" → 아래 조사 → "해봐".
+
+- **순서**: 랜딩 '시작하기' → **로그인 수단 고르기**(제목 '로그인/회원가입') — `카카오 로그인` → 안드로이드 `Google로 계속하기` /
+  iOS `Apple로 계속하기` → `이메일로 계속하기`. 이메일을 고르면 **이메일 로그인**으로 가고, 거기 아래 '회원가입'·'비밀번호 찾기' 로 간다.
+  - 카카오·구글·Apple 은 처음이면 곧 가입이라 고르기 화면에 가입 갈래가 따로 없다.
+  - 예전(2026-11-14~22)에는 로그인·가입 화면 맨 위에 간편 로그인을 두고 그 아래 '또는 이메일로' 구분선과 이메일 칸을 한 화면에
+    펼쳤다. 간편 로그인을 고를 사람에게도 이메일 칸이 보였고, 이메일 쪽은 간편 버튼 밑으로 밀려 있었다.
+- **이메일 로그인**: 이메일·비밀번호 두 칸은 **칸 안 안내 글자만** 쓴다(칸 위 이름표 없음). 로그인 버튼 바로 아래 한 줄이
+  `비밀번호 찾기 | 회원가입` 이다 — 둘은 같은 무게다. 예전에는 '비밀번호를 잊으셨나요? 비밀번호 찾기' 와 '처음 사용하시나요?
+  회원가입' 두 줄로 떨어져 있었다.
+- **가입·재설정**: 칸이 여럿이라 이름표를 **칸 위**에 둔다 — 글자를 치면 안내 글자가 사라져 어느 칸인지 남지 않는다. 가입 아래는
+  '이미 계정이 있나요? 로그인'. 가입 버튼 글자는 두 앱 모두 '회원가입'(iOS 만 '계정 만들기' 였다).
+- **높이 하나 — 52**: 입력 칸·주 버튼·간편 로그인 버튼·`인증 받기`·코드 줄 `확인` 이 모두 같은 높이다(두 앱 같은 값). 그전에는
+  안드로이드가 전부 56, iOS 는 한 화면에 46·52·56 이 섞여 있었다. 글꼴을 아주 키우면 그만큼만 자란다.
+- **세 버튼의 무게**: 같은 높이·모서리 12. 카카오(다른 버튼을 카카오보다 눈에 띄게 두지 않는다)·Apple('Apple로 로그인' 을 다른 로그인
+  버튼보다 작게 두지 않는다)·Google(다른 간편 로그인만큼은 눈에 띄게) 가이드를 함께 지킨다 — 이메일은 칸과 같은 옅은 유리 바탕이다.
+- **아이콘은 글자 바로 앞**, 둘을 한 덩어리로 가운데 둔다(2026-11-22 오너 "애플만 아이콘이 붙어 있는 게 맞아?"). iOS 의 Apple 버튼은
+  시스템 버튼(`SignInWithAppleButton`)이라 로고가 글자 옆에 붙는 모양만 있다 — 나머지를 그쪽에 맞췄다. 카카오 가이드는 "심볼은 좌측
+  정렬하거나, 레이블과 함께 가운데 정렬할 수 있습니다", 구글 버튼도 로고 가운데 정렬을 둔다. 간격은 안드로이드 10(구글 가이드의 로고
+  뒤 여백)·iOS 8(Apple 시스템 버튼에 가깝게).
+  - 반대로(아이콘을 모두 왼쪽 끝에) 맞추려면 Apple 버튼을 직접 그려야 한다. HIG 가 허용하지만("align logos across multiple sign-in
+    buttons") Apple Design Resources 의 로고 파일만 써야 하고 심사가 직접 그린 버튼을 따로 본다 — 그래서 택하지 않았다.
+  - Apple 버튼 글자 크기는 시스템이 높이에 맞춰 정한다(52 에서 약 20pt). 카카오·이메일(17pt)보다 조금 크다 — 바꿀 수 없다.
+- **간격**: 제목 줄 아래 첫 칸까지 32(줄 아래 24 + 8), 칸 사이 14, 주 버튼 위 18(14 + 4) — 두 앱 같다. 재설정은 칸 사이 12, 주 버튼
+  위 16.
+- **인증 줄**(가입·재설정): 이메일 칸 옆 버튼(`인증 받기` → `다시 받기` → `✓ 인증됨`)과 코드 줄 [칸][`확인`] 이 모두 52 다. 코드 줄
+  **바로 아래(6)** 가 안내 '메일로 받은 6자리 코드를 입력해 주세요.' 이고, 거절·다시 받기 실패 문장은 **그 자리에 대신** 선다(작은
+  글씨·오류색 — 안내와 오류를 둘 다 띄우지 않는다). 코드 줄이 없을 때의 실패 문장은 이메일 줄 바로 아래다. 2026-11-22 전에는
+  안드로이드만 안내를 화면 간격(14) 밖에 두고 오류를 그 아래 큰 글씨로 하나 더 띄웠다.
+- **칸 아래 문장**(형식 오류·로그인 실패·비밀번호 불일치·코드 안내)은 칸 **왼쪽 끝**에서 시작한다 — 위 이름표와 같은 줄이다. 예전에는
+  안드로이드만 Material 칸 안쪽 여백(16)만큼 들여 썼다.
+- **꺼진 버튼은 한 번만 흐린다**: 외곽선 버튼 글자 55%, 주 버튼 전체 0.6. `✓ 인증됨` 은 눌리지 않을 뿐 '마친 상태' 라 강조색 그대로다.
+  iOS 의 `.plain` 버튼 모양은 꺼질 때 글자를 한 번 더 흐려 `✓ 인증됨` 까지 바랬다 — 인증 화면 버튼은 `AuthPlainButtonStyle` 을 쓴다.
+- **제목 줄**: 고르기·로그인·가입·재설정이 같은 줄이다(원형 뒤로가기 + 위쪽 가운데 제목, 스크롤 밖). 재설정만 달랐다(안드로이드는
+  왼쪽 큰 제목이 폼과 함께 스크롤, iOS 는 시스템 바).
+
+### 근거 — 2026-11-22 조사
+
+- **앱 캡처 10개 중 7개가 '수단 먼저, 이메일 입력은 다음 화면'** 이었다: 여기어때·야놀자·요기요·오늘의집·배달의민족·리멤버·클래스101.
+  3개는 입력 칸 먼저·간편 로그인 아래였다: KREAM·밀리의서재·웨이브(2021~2022 캡처). 요기요·여기어때는 원문을 직접 열어 확인했고,
+  나머지 여덟은 Codex 조사가 모은 캡처 출처다. 캡처 당시 화면이라 지금 버전과 다를 수 있다.
+- **여기어때(2023 공식 기술 블로그)**: 카카오가 로그인의 75% 를 넘는데 버튼이 작았고, 5% 미만인 이메일이 가장 큰 자리였다 → 간편
+  버튼을 키우고 이메일은 가입·로그인을 한 버튼으로 합쳐 주목도를 낮췄다 → 로그인 전환율 +27%.
+- **웹 로그인 다섯 곳을 직접 열어 쟀다**(무신사·오늘의집·컬리·쿠팡·클래스101 — 앱과 다를 수 있다): 칸 34~54, 버튼 40~54, 모서리 4~12.
+  **다섯 곳 모두 칸 위 이름표가 없다.** 찾기·가입은 로그인 버튼 근처 한 줄이다. 가입 화면 인증 버튼은 컬리가 칸 옆(44, 외곽선),
+  오늘의집이 칸 아래 꽉 찬 폭(44, 연회색)이다.
+- 출처: [여기어때](https://techblog.gccompany.co.kr/ux-designer가-데이터를-만나면-26918c14ae0d) ·
+  [요기요](https://product-designer.tistory.com/entry/간편로그인-기획-시-주의해야하는-사항) · [야놀자](https://seonyeon.tistory.com/464) ·
+  [오늘의집 앱](https://brunch.co.kr/@jiwoomaster/11) · [배민](https://easybaemin.com/ko/basic/2/) · [KREAM](https://wwit.design/2021/04/29/kream/) ·
+  [밀리의서재·리멤버](https://brunch.co.kr/@bommade/35) · [웨이브](https://naraon.tistory.com/541) ·
+  [클래스101](https://docs.channel.io/classmate/ko/articles/비밀번호-잊었을-때-e6290ec2) ·
+  가이드 [카카오](https://developers.kakao.com/docs/ko/kakaologin/design-guide) ·
+  [Apple](https://developer.apple.com/design/human-interface-guidelines/sign-in-with-apple) ·
+  [Google](https://developers.google.com/identity/branding-guidelines) · [네이버](https://developers.naver.com/docs/login/bi/bi.md)
+
 ## 이메일 인증 코드 — 가입과 비밀번호 재설정 (2026-10-11)
 
 가입과 비밀번호 재설정은 메일로 보낸 **6자리 코드**로 주소의 주인을 확인한다. 판정은 서버 한 곳
 (`routes/auth.ts` 의 `checkEmailVerificationCode`)이고, 인증 확인(`POST /auth/email-code/verify`)·가입
-(`POST /auth/register`)·재설정 확정(`POST /auth/password-reset/confirm`) 셋이 **같은 판정**을 지난다.
+(`POST /auth/register`)·재설정 확인(`POST /auth/password-reset/verify`, 2026-11-16)·재설정 확정
+(`POST /auth/password-reset/confirm`) 넷이 **같은 판정**을 지난다(용도만 가입 / 재설정으로 갈린다).
 숫자는 `lib/email-verification.ts` 가 유일 출처다.
 
 | 규칙 | 값 | 서버의 답 |
@@ -457,11 +535,11 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 
 ### 문장은 코드(error_code)로 고른다
 
-세 자리 모두 공용 표를 부른다([error-codes.md](error-codes.md) §4 — 표를 부르는 일곱 자리).
+세 자리 모두 공용 표를 부른다([error-codes.md](error-codes.md) §4 — 표를 부르는 여덟 자리).
 
 | 서버의 답 | 말하는 것 | 사용자가 할 일 |
 | --- | --- | --- |
-| `AUTH_EMAIL_CODE_INVALID` | 인증 코드가 맞지 않아요. 다시 확인해 주세요. | 다시 친다 / 다시 받는다 |
+| `AUTH_EMAIL_CODE_INVALID` | 인증 코드가 맞지 않아요. | 다시 친다 / 다시 받는다 |
 | `AUTH_EMAIL_CODE_EXPIRED` | 인증 코드가 만료됐어요. 다시 받아 주세요. | 다시 받는다 |
 | `AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED` | 인증 코드를 너무 많이 틀렸어요. 다시 받아 주세요. | 다시 받는다 |
 | 그 밖의 코드(`RATE_LIMITED`·`INTERNAL_ERROR` 등) | 표의 그 문장 | 그 문장대로 |
@@ -516,9 +594,20 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 - **가입 화면 — `POST /auth/register` 가 코드를 거절했을 때**(위 셋): **'인증 완료' 상태를 내린다**(`✓ 인증됨` → `다시 받기`).
   코드 줄과 다시 받기가 돌아온다. 예전에는 '이메일 인증 완료' 인 채로 다시 받기가 꺼져 있었다 — 안드로이드는 그
   주소로는 프로세스가 죽을 때까지 풀리지 않았다(코드를 받은 지 10분이 지난 뒤 가입 버튼을 누르면 그렇게 된다).
-- **재설정 화면**: 코드를 보낸 뒤에도 요청 버튼이 `인증 코드 다시 받기` 로 **눌린다**(가입 화면과 같은 말).
-  코드 칸은 비운 채 남긴다. 예전에는 한 번 보내면 '코드를 보냈어요' 로 잠겨, 다시 받으려면 화면을 나갔다
-  와야 했다.
+- **재설정 화면은 가입 화면과 같은 순서·같은 부품이다**(2026-11-16 오너: "인증 코드 받고 확인한 다음에 넘어가게",
+  "비밀번호 찾기에는 비밀번호 확인 일치가 왜 없어"). 이메일 칸 옆 `인증 받기` → (보낸 뒤) `다시 받기` → 코드 줄
+  [코드][확인] → (확인되면) `✓ 인증됨` 과 함께 새 비밀번호·**비밀번호 확인**·규칙 세 줄 → `비밀번호 변경`. 제목 아래
+  안내 문장은 두지 않는다.
+  - 확인(`POST /auth/password-reset/verify`)은 코드를 **쓰지 않는다** — 소모는 확정이 성공할 때다. 확정이 같은 코드를
+    한 번 더 판정하므로, 확인 뒤 10분이 지나 만료로 거절되면 `✓ 인증됨` 을 내리고 코드 줄과 `다시 받기` 를 돌려준다.
+    비밀번호 계정이 아니면 확인도 확정과 같은 `AUTH_EMAIL_CODE_INVALID` 다(확인은 통과했는데 확정이 거절하는 갈래가 없다).
+  - ⚠ **서버 먼저.** 이 확인을 부르는 앱은 그 라우트가 운영 서버에 올라간 **뒤에** 낸다 — 옛 서버면 404 라 재설정이
+    통째로 막힌다.
+  - 보낸 뒤에도 `다시 받기` 로 **눌린다**(가입 화면과 같은 말). 예전에는 한 번 보내면 '코드를 보냈어요' 로 잠겨,
+    다시 받으려면 화면을 나갔다 와야 했다. 보냈다는 안내는 두 앱 모두 "인증 코드를 보냈어요. 메일을 확인해 주세요." 다
+    (iOS 는 2026-11-16 까지 '재설정 코드를…' 이었다).
+  - 비밀번호를 **찾아 주는** 화면이 아니다 — 서버에는 비밀번호 원문이 없다(`lib/password.ts` — SHA-256 사전 해시 +
+    pepper 뒤 bcrypt). 재설정이 성공하면 `token_epoch` 가 올라 모든 기기의 세션이 끊긴다.
 - **가입 화면 — 다시 받기가 실패했을 때**: 코드 줄을 **닫지 않는다.** 실패 문장은 인증 묶음의 인라인 오류
   자리(코드 줄 아래)에 둔다 — 다시 받기를 누르는 사람은 대개 방금 "…다시 받아 주세요" 를 읽은 사람이다. 닫으면
   코드 줄과 그 답을 함께 잃고, 답은 화면 맨 아래 상태 줄(키패드 뒤)로 간다. iOS 가 2026-10-11 까지 그랬다 —
@@ -567,8 +656,14 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | 카카오 로그인(우리 앱의 토큰 · 인증된 이메일만 · 회원번호 먼저 · 이메일 덮어쓰지 않음 · 401/500) | `lib/kakao-oauth.ts` `verifyKakaoAccessToken` ← `routes/auth.ts` `POST /kakao` · 회귀 `test/kakao-oauth.test.ts`·`test/auth-kakao-route.test.ts` | `ui/auth/KakaoLogin.kt` `loginWithKakao` → `ui/main/MainViewModelAuthActions.kt` `finishKakaoLogin` · 회귀 `KakaoLoginWiringTest.kt` | `KakaoSignIn.swift` `signIn` → `AuthViewModel.loginWithKakao` |
 | 카카오 연결 해제 웹훅(대표 어드민 키 · 언제나 200 · 카카오로만 가입한 계정만 탈퇴 유예 · 회원번호 그대로) | `routes/kakao-webhook.ts` → `lib/kakao-unlink.ts` `handleKakaoUnlink` → `lib/account-deletion.ts` `requestAccountDeletion` · 회귀 `test/kakao-unlink-webhook.test.ts` | — | — |
 | 탈퇴 파기 뒤 카카오 연결 끊기(커밋 뒤 · 어드민 키 · -101 은 성공) | `index.ts` 유예 파기 → `lib/kakao-oauth.ts` `unlinkKakaoUser` · 회귀 `test/scheduled-purge-isolation.test.ts` | 기기 토큰만 버림 `signOutKakao` | 기기 토큰만 버림 `KakaoSignIn.discardDeviceToken` |
+| 로그인 수단 먼저(시작하기 → 카카오·구글/Apple·이메일로 계속하기 → 이메일 로그인) | — | `ui/auth/AuthMethodsScreen.kt` `AuthMethodsScreen` ← `AlarmTalkApp` 의 `AuthRoute.Methods` · 회귀 `KakaoLoginWiringTest.kt` | `Views/Auth/LoginView.swift` 의 `AuthMethodsView` ← `LandingView` 의 `showMethods` · UI 테스트 `SignUpFlowUITests`(CI 밖) |
+| 이메일 로그인은 칸 안 안내 글자만 · 가입·재설정은 칸 위 이름표 · 로그인 아래 `비밀번호 찾기 \| 회원가입` 한 줄 | — | `ui/auth/AuthScreen.kt` 의 `AuthTextField(placeholderOnly)`·`AuthLoginLinksRow` | `VocaTextField`·`VocaSecureField`(`placeholderOnly`) · `LoginView.loginLinksRow` |
+| 칸·버튼 높이 52(칸·주 버튼·간편 로그인·인증 받기·확인) | — | `ui/auth/LandingScreen.kt` 의 `AuthControlHeight` · 칸은 `AuthOutlinedField`(Material 칸이 스스로 거는 56 을 피해 같은 부품으로 직접 짰다) · 회귀 `AuthControlHeightTest.kt`(그려서 잰다) | `Views/Auth/AuthBackdrop.swift` 의 `AuthControlHeight` |
 | 가입 인증 버튼은 이메일 칸 옆(인증 받기 → 다시 받기 → ✓ 인증됨) | — | `ui/auth/AuthScreen.kt` `EmailVerifyButton` | `LoginView.emailVerifyButton` |
-| 인증 화면의 안내는 위쪽 토스트(안내 3초·오류 5초 · 칸에 붙은 오류는 그대로) | — | `ui/app/AlarmTalkAppHelpers.kt` `TopMessageHost` ← `AlarmTalkApp` 의 로그인 전 갈래 | `Views/Auth/AuthToast.swift` `AuthToastModifier` ← `LoginView`·`PasswordResetView` |
+| 코드 줄 바로 아래 안내, 거절 문장은 그 자리에 대신 · 칸 아래 문장은 칸 왼쪽 끝 · 꺼진 버튼은 한 번만 흐린다 | — | `ui/auth/AuthScreen.kt` 의 `AuthCodeConfirmRow(error)`·`AuthTextField` 의 오류 줄 | `LoginView.verificationCodeRow`·`PasswordResetView` 의 코드 묶음 · `Views/Components/GradientCta.swift` 의 `AuthPlainButtonStyle` · 화면 확인 `-UIPreviewRegisterStep code\|rejected\|verified\|invalid` |
+| 인증 화면의 안내는 위쪽 토스트(안내 3초·오류 5초 · 칸에 붙은 오류는 그대로) | — | `ui/app/AlarmTalkAppHelpers.kt` `TopMessageHost` ← `AlarmTalkApp` 의 로그인 전 갈래 | `Views/Auth/AuthToast.swift` `AuthToastModifier` ← `LoginView`·`PasswordResetView` · 로그아웃 순간의 안내(탈퇴 접수 등)는 `RootView` 의 `LandingView`(2026-11-22) |
+| 로그아웃 — 로컬 세션 먼저, 서버 뒷정리(푸시 해제 → 폐기 · 구글·카카오)는 뒤에서 · 세션을 받는 요청은 뒷정리 뒤에(2026-11-22) | `/auth/logout`(`token_epoch` +1) | `ui/main/MainViewModelAuthActions.kt` 의 `logout`(`clearSignedInSession` → `MainViewModel.serverSignOutCleanup`) · `awaitServerSignOutCleanup` ← `login`·`register`·`finishGoogleLogin`·`finishKakaoLogin` · 회귀 `SignOutWindowOpensBeforeServerCallTest` | `AuthViewModel.signOutExplicitly` → `serializeAuthServerMutation`(`runServerSignOutCleanup`) · 끊긴 뒷정리는 `PendingSignOutStore` |
+| 탈퇴 신청 중 잠금 | — | `ui/home/HomeComponents.kt` 의 `DeleteAccountConfirmDialog`(`busy`) | `Views/Settings/MenuView.swift` 의 `SettingsValueButton(showsProgress:)` ← `auth.isBusy` |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로(첫 진입만 — `refreshAppSessionNow` 의 `rollToken`·`sessionTokenToSave`) | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
 | 화면 효과의 세션 키 = 계정 + 세대(토큰 아님) | — | `network/AuthSessionStore.kt` `SessionEffectKey`·`sessionEffectKey` → `AlarmTalkApp` 의 세션 효과·탭 스로틀 | 알람·목소리·더보기 탭 모두 `EntryRefreshFreshness`(계정 + 앱 진입). 알람 탭 동기화 스로틀의 키 `MainTabsView.tabRefreshThrottleKey`(탭 + 계정)는 2026-10-29 알람 올리기와 함께 지웠다 |
@@ -579,7 +674,7 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | 저장·메모리 세션 수렴 | — | `MainViewModel`의 세션 저장소 관찰 | `AuthViewModel.absorbStoredSession`·`handleUnauthorized` |
 | 전경 push의 첫 인증 실패 중단 — **없다**(2026-10-29 알람 올리기를 지웠다. 401 은 통신 계층이 한 곳에서 받는다 — 아래 「401 중앙 처리」) | — | — | — |
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration`·`saveSessionIfAlive` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
-| 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·프로모·받은 시각·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서) |
+| 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서) |
 | 다시 로그인하면 탈퇴 철회 · 신청은 모든 기기 세션·푸시 등록을 끊는다 · 유예 세션은 끝난 세션 · 파기 직전 재확인 | `lib/account-deletion.ts` 의 `cancelPendingDeletionOnSignIn` ← `routes/auth.ts` 의 `/login`·`/google`·`/apple`·`/kakao` · `routes/user.ts` 의 `POST /me/deletion`(`token_epoch + 1`·`push_tokens` 삭제, 한 트랜잭션) · `lib/fcm.ts` 의 `sendAccountDeletionRequestedPush`(신청 커밋 뒤) · `index.ts` 파기 트랜잭션의 재확인(유예 + 기한)·커밋 뒤 애플 연결 해제 · `middleware/auth.ts`·`/auth/me` 는 유예면 끊긴 토큰에도 403 · 회귀 `test/sign-in-cancels-deletion.test.ts`·`test/scheduled-purge-isolation.test.ts`·`test/auth-pending-deletion.test.ts` | `ui/main/MainViewModelAuthActions.kt` 의 `checkAccountStatus` → `leaveAccountForPendingDeletion`(알람까지 끄는 떠나기) · 워커 `sync/SyncWorkerFailure.kt` 의 `endWorkerSession` → `leaveAccountAfterPendingDeletion`(백그라운드판) · `fcm/AlarmTalkMessagingService.kt` 의 `account_deletion_requested` → `RemoteAlarmSyncScheduler.runOnce`(→ `RemoteAlarmSyncWorker` 의 계정 확인 `GET /auth/me`) · 유예 화면 없음 | `AuthViewModel.refreshUser` → `leaveAccountForPendingDeletion` · 탈퇴 신청 뒤 `onServerRemovedPushRegistration`(기기 쪽 등록 기록만, 등록과 같은 줄 — `invalidateRegistration`) · `PushNotificationCoordinator` 의 `accountDeletionRequested` → `refreshUser` · 회귀 `PushRegistrationRecoveryTests`(`test_invalidationQueuesBehindAnInFlightRegistration`·`test_accountDeletionRequestedSignalAsksTheServerAgain`) · `RootView` 에 유예 게이트 없음 |
 | 탈퇴 복구 저장은 준비 뒤의 세션 위에(1.2.13 이하에서 올라온 유예 세션) | — (철회는 로그인 — `cancelPendingDeletionOnSignIn`. 철회 라우트는 2026-10-16 에 지웠다) | — (유예 화면·철회 버튼을 2026-10-15 에 지웠다) | `AuthViewModel.completeAccountRecovery`(기다린 뒤 `latest` · `/auth/me` 경로는 `reconcileAccountAnswer` 로 다시 다듬기) · 회귀 `AuthViewModelTests` |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
@@ -592,7 +687,7 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | 인증 코드 판정(가장 새 것 하나 — 같은 초면 나중에 넣은 것 · 10분 · 틀린 5번 → 429 — 상한 확인과 세기는 한 문장이고 맞는 코드도 지난다(+0) · 다시 받기 60초·하루 10번은 보내지 않는 성공 · 간격은 가장 새 코드만 붙잡는다 · 상한에 닿았거나 쓴 코드는 간격을 붙잡지 않는다 · 쓰면 그 주소·용도의 쓰지 않은 코드가 모두 죽는다) | `routes/auth.ts` 의 `checkEmailVerificationCode`(`/email-code/verify`·`/register`·`/password-reset/confirm` 공용 — 읽기는 `ORDER BY created_at DESC, rowid DESC`, 대조 뒤 상한 확인과 세기는 `UPDATE … SET attempts = attempts + ? WHERE id = ? AND attempts < ?` 한 문장 — 0행이면 맞는 코드도 429)·`shouldSkipEmailCodeSend`(`/email-code`·`/password-reset` 공용 — 간격·하루 상한. 간격은 쓰지 않은 줄 가운데 판정과 같은 순서의 가장 새 것 하나만 본다)·`consumeEmailVerificationCodes`(`/register`·`/password-reset/confirm` 이 성공한 뒤 — 주소·용도의 쓰지 않은 줄 전부를 UPDATE 한 문장으로. 인증 확인은 부르지 않는다) · 숫자는 `lib/email-verification.ts`(`EMAIL_VERIFICATION_TTL_SECONDS`·`EMAIL_VERIFICATION_MAX_ATTEMPTS`·`EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS`·`EMAIL_VERIFICATION_DAILY_CAP`) · `test/auth.test.ts`(「다시 받기 간격」 — 상한에 닿은 코드·쓴 코드는 10초 만에도 새 코드, 4번 틀린 코드는 간격을 붙잡는다, 하루 상한은 그대로 · 「코드를 쓰면…」 — 소모 문장의 대상·인자 · 「POST /auth/email-code/verify」 — 상한 문장의 인자(틀리면 +1, 맞으면 +0)·0행이면 맞는 코드도 429) · `test/auth-email-code-consume.test.ts`(진짜 SQLite — 새 코드로 마친 뒤 앞 코드는 400, 다른 용도·주소의 코드는 그대로, 인증 확인은 쓰지 않는다) · `test/auth-email-code-attempts.test.ts`(진짜 SQLite — 읽은 뒤 상한이 찬 틀린 코드·맞는 코드는 429·횟수 5 그대로 / 같은 순간 열 번 틀리면 400 다섯·429 다섯 / 네 번 틀린 뒤 인증 확인과 가입이 둘 다 통과 / 같은 순간 두 번 보낸 다시 받기의 앞 코드는 간격을 붙잡지 않는다) | 응답 소비 | 응답 소비 |
 | 인증 코드 거절 문장은 코드로('맞지 않아요' 는 `AUTH_EMAIL_CODE_INVALID` 만) | 세 라우트가 `errorBody(check.code, …)` 로 같은 코드를 낸다 | `ui/main/MainViewModelAuthActions.kt` 의 `emailCodeFailureMessage` ← `confirmEmailVerification`·`register`·`confirmPasswordReset` · 회귀 `EmailCodeFailureMessageTest` | `AuthViewModel.emailCodeErrorMessage(for:fallback:)` ← `verifyEmailCode`·`performRegisterWithEmail`·`confirmPasswordReset` · 가입 화면은 `LoginView` 의 코드 줄 아래에 그린다 · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests` |
 | 거절된 숫자를 칸에 남기지 않는다(거절 셋 · 다시 받기 성공 → 코드 칸 비우기 · 판정은 코드로 · 겹친 확인은 버린다) | — | `isEmailCodeRefusal(errorCode)`(`ui/main/MainViewModelAuthActions.kt`) → `MainViewModel.emailCodeFieldClearTick` ← 위 세 함수의 거절 갈래 + `requestEmailVerification`·`requestPasswordReset` 의 성공 갈래 → `AuthScreen`·`PasswordResetScreen` 의 `codeFieldClearTick`(바뀌면 칸을 비운다) · `confirmEmailVerification` 의 `authBusy` 가드 · 회귀 `EmailCodeFailureMessageTest`(비우는 판정표). ⚠ 화면 배선은 자동 테스트가 없다 — 실기기로 본다 | `AuthViewModel.isEmailCodeRefusal(_:)`·`emailCodeFieldClearTick`(게시 값 — 세 거절 갈래와 `requestEmailVerification`·`requestPasswordReset` 의 성공에서 올린다) → `LoginView`·`PasswordResetView` 의 `.onChange`(코드 칸 비우기) · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests`(비우는 판정표 · 뷰모델이 문장을 세우고 신호를 올리는 배선 — 다섯 요청을 `EmailCodeAPIProviding` 으로 주입한다). ⚠ 화면이 그 신호로 칸을 비우는 것은 UI 테스트의 몫이고 CI 에서 돌지 않는다 — 실기기로 본다 |
-| 거절 뒤에 다시 확인·다시 받기가 화면에 있다(가입 거절 → '인증 완료' 내리기 · 재설정은 보낸 뒤에도 다시 받기 · 가입의 다시 받기가 실패해도 코드 줄은 남고 실패는 인라인) | `/register` 가 코드를 다시 판정한다(`checkEmailVerificationCode`) | `register` 의 거절 갈래가 `registerEmailVerified = null` · `PasswordResetScreen` 의 요청 버튼(보낸 뒤 `auth_email_verify_resend` 로 눌린다) · 회귀 `EmailCodeFailureMessageTest` · `requestEmailVerification` 의 실패 갈래는 `registerEmailVerificationSentTo` 를 건드리지 않고(코드 줄 유지) 문장을 `registerError`(인증 묶음 아래 인라인)에 둔다 — 이 갈래는 자동 테스트가 없다 | `LoginView` 가 `emailCodeFieldClearTick` 에서 `verificationCompleted = false` · `PasswordResetView.sendCodeButton`(보낸 뒤 `인증 코드 다시 받기` 로 눌린다) · `LoginView.verifyEmailRow` 는 요청이 **성공할 때만** `verificationSent = true`(실패로 코드 줄을 닫지 않는다) · 실패 문장은 `AuthViewModel.requestEmailVerification` 이 `emailCodeError` 에 둔다(코드 줄 아래 — 코드 줄이 없으면 '이메일 인증' 버튼 아래, 하단 `statusMessage` 가 아니다) · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests`(다시 받기 실패 → 인라인 문장 · 칸 그대로). ⚠ 코드 줄이 남는 화면 배선은 자동 테스트가 없다 — 실기기로 본다 |
+| 거절 뒤에 다시 확인·다시 받기가 화면에 있다(가입 거절 → '인증 완료' 내리기 · 재설정은 보낸 뒤에도 다시 받기 · 가입의 다시 받기가 실패해도 코드 줄은 남고 실패는 인라인) | `/register` 가 코드를 다시 판정한다(`checkEmailVerificationCode`) | `register` 의 거절 갈래가 `registerEmailVerified = null` · `PasswordResetScreen` 의 `EmailVerifyButton`(보낸 뒤 `다시 받기` 로 눌린다) · 회귀 `EmailCodeFailureMessageTest` · `requestEmailVerification` 의 실패 갈래는 `registerEmailVerificationSentTo` 를 건드리지 않고(코드 줄 유지) 문장을 `registerError`(인증 묶음 아래 인라인)에 둔다 — 이 갈래는 자동 테스트가 없다 | `LoginView` 가 `emailCodeFieldClearTick` 에서 `verificationCompleted = false` · `PasswordResetView` 의 `AuthEmailVerifyButton`(보낸 뒤 `다시 받기` 로 눌린다) · `LoginView.verifyEmailRow` 는 요청이 **성공할 때만** `verificationSent = true`(실패로 코드 줄을 닫지 않는다) · 실패 문장은 `AuthViewModel.requestEmailVerification` 이 `emailCodeError` 에 둔다(코드 줄 아래 — 코드 줄이 없으면 '이메일 인증' 버튼 아래, 하단 `statusMessage` 가 아니다) · 회귀 `AlarmTalkTests/EmailCodeErrorMessageTests`(다시 받기 실패 → 인라인 문장 · 칸 그대로). ⚠ 코드 줄이 남는 화면 배선은 자동 테스트가 없다 — 실기기로 본다 |
 | 인증 코드는 ASCII 숫자 여섯 자(앱 1차 · 서버 2차) | `packages/shared/src/schemas/auth.ts` 의 `normalizeVerificationCode`(앞뒤 공백을 걷고 세 숫자 블록을 ASCII 로 — 코드 안의 글자(가운데 공백·하이픈·글자·세 블록 밖의 숫자)는 손대지 않아 `AUTH_VALIDATION_FAILED`) → `EmailVerificationCodeSchema`(변환 뒤 6자리 검사 — 세 요청 스키마가 함께 쓴다) · 회귀 `packages/shared/test/schemas.test.ts`·`test/auth.test.ts`(아라비아-인도 숫자로 친 맞는 코드는 200, 틀린 코드는 횟수를 센다 — 인증 확인·가입·재설정 확정 셋 다) | `ui/components/CodeRedeemField.kt` 의 `sanitizeVerificationCode` ← `AuthScreen`·`PasswordResetScreen` 의 코드 칸 · 회귀 `InputSanitizerTest` · 강제 `scripts/check-input-sanitizers.py`(`ui/auth/` 의 `onValueChange` 가 `isDigit`·`take(6)` 이면 이 함수를 불러야 한다) | `InputSanitizer.sanitizeVerificationCode` ← `LoginView`·`PasswordResetView` 의 코드 칸(키보드 `.asciiCapableNumberPad`) · 회귀 `AlarmTalkTests/InputSanitizerTests` · 강제 `scripts/check-input-sanitizers.py`(`Views/Auth/` 의 `.onChange`·`set:` 가 `isNumber`·`prefix(6)` 이면 이 함수를 불러야 한다) |
 | 인증 메일(ko·en·ja 한 통 · '가장 최근 코드만' 한 줄 · 가입은 제목에 코드, 재설정은 제목에 코드 없음) | `lib/email-verification.ts` 의 `buildEmailVerificationMail`·`buildPasswordResetMail`(제목·text·html 을 만드는 순수 함수) ← `sendEmailVerificationCode`·`sendPasswordResetCode` · 회귀 `test/email-verification-mail.test.ts` | — | — |
 | 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` · `ColdStartRequestKeysTest.kt` · `EntryRefreshKeepsTokenTest.kt` | `SessionTokenRenewalTests.swift` |

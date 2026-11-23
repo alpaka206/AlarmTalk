@@ -1,7 +1,5 @@
 package com.alarmtalk.app
 
-import com.alarmtalk.app.alarm.AlarmStreamVolume
-import com.alarmtalk.app.alarm.VoiceVolumeRamp
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -20,13 +18,14 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height as androidxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height as androidxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,14 +33,17 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -52,9 +54,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.alarmtalk.app.ads.RewardedAdFlow
+import com.alarmtalk.app.ads.RewardedAds
+import com.alarmtalk.app.ads.RewardedWatchResult
+import com.alarmtalk.app.ads.findHostActivity
+import com.alarmtalk.app.alarm.AlarmStreamVolume
+import com.alarmtalk.app.alarm.VoiceVolumeRamp
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioLimits
-import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
@@ -63,26 +70,21 @@ import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.DynamicPromptPreferenceStore
 import com.alarmtalk.app.data.DynamicPromptPreferences
-import com.alarmtalk.app.data.isSystemVoiceId
-import com.alarmtalk.app.data.isVoicePackVoiceId
-import com.alarmtalk.app.data.clipCacheKey
-import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
-import com.alarmtalk.app.network.apiErrorCode
-import com.alarmtalk.app.network.ManualQuotaResponse
-import com.alarmtalk.app.ads.RewardedAds
-import com.alarmtalk.app.ads.RewardedAdFlow
-import com.alarmtalk.app.ads.RewardedWatchResult
-import com.alarmtalk.app.ads.findHostActivity
+import com.alarmtalk.app.data.isSystemVoiceId
+import com.alarmtalk.app.data.toDynamicPromptSettings
+import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.DynamicPromptSettings
+import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.VoiceProfile
+import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.trimmedOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -352,12 +354,8 @@ internal fun AlarmEditorScreen(
     val appVoiceLanguage = remember(configuration) {
         val lang = configuration.locales.get(0)?.language
             ?: java.util.Locale.getDefault().language
-        supportedAppVoiceLanguage(lang)
+        com.alarmtalk.app.data.appVoiceLanguageOf(lang)
     }
-    // **고른 목소리의 클립 언어** — 기본 목소리는 앱 언어, 추가 팩은 그 팩의 언어 하나다(`docs/spec/voice-packs.md` §2).
-    // 기본 목소리에서는 [appVoiceLanguage] 와 언제나 같다. 팩에서 앱 언어로 거르면 팩 클립이 하나도 안 잡혀 테마를 못 고른다.
-    val fixedVoiceClipLanguage = com.alarmtalk.app.data.voicePackLanguageOf(stockClips, editor.voiceProfileId)
-        ?: appVoiceLanguage
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
     val legacyNicknameKeys = remember(appContext) { com.alarmtalk.app.data.LegacyNicknameKeyStore(appContext) }
@@ -422,6 +420,9 @@ internal fun AlarmEditorScreen(
 
     /** 아직 못 받은 목소리를 골랐을 때 띄우는 준비 화면 — 그 목소리 id(닫혀 있으면 null). */
     var preparationVoiceId by remember { mutableStateOf<String?>(null) }
+    // 준비 화면을 **목소리 고르기**가 열었는가 — 그렇다면 다 받는 순간 그 목소리를 붙인다(2026-11-15 오너: "고른 목소리도 바로
+    // 붙게 해줘"). 저장·문구 종류가 연 준비 화면은 닫기만 한다(이어서 할 일이 자리마다 다르다).
+    var preparationAppliesVoice by remember { mutableStateOf(false) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     // 목소리 선택 시트의 '들어보기' — 온보딩/목소리 탭과 같은 재생기를 그대로 쓴다
     // (기본 목소리는 내장 인사말이라 네트워크 없이도 즉시 난다).
@@ -597,8 +598,9 @@ internal fun AlarmEditorScreen(
      * 준비 페이지를 연다. [needsClipPreparation] 이 true 인 **모든** 자리는 이걸 부른다 —
      * 막기만 하고 보내지 않으면 사용자가 할 수 있는 일이 없다.
      */
-    fun openClipPreparation(profileId: String) {
+    fun openClipPreparation(profileId: String, appliesVoiceWhenReady: Boolean = false) {
         preparationVoiceId = profileId
+        preparationAppliesVoice = appliesVoiceWhenReady
         // 고르려던 목소리를 먼저 받는다 — 고른 것은 다 받기 전까지 적용하지 않는다(지금 목소리가 그대로 남는다).
         onPrioritizeVoice(profileId)
         onPrepareClipsFor()
@@ -640,8 +642,7 @@ internal fun AlarmEditorScreen(
             }
         }
         clips.forEachIndexed { index, clip ->
-            // 기본 목소리는 `stock_`, 추가 팩은 `pack_` 이다(`docs/spec/voice-packs.md` §7) — 한 함수가 고른다.
-            val cacheKey = clip.clipCacheKey()
+            val cacheKey = "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
             // ⚠ **캐시 확인은 IO 에서 한다**(2026-09-29). 이 함수는 테마를 누르는 순간 메인에서
             //   불린다 — 클립마다 파일을 뒤지면 그동안 화면이 멎는다.
             // 길이는 **대표(첫 클립)만** 잰다 — 편집기에 박히는 오디오는 대표 하나이고, 나머지는
@@ -969,12 +970,6 @@ internal fun AlarmEditorScreen(
             openClipPreparation(profileId)
             return
         }
-        // 추가 팩 목소리로는 직접 입력을 만들 수 없다(`docs/spec/voice-packs.md` §1) — 테마를 고르지 않았으면 여기서 말한다.
-        // 서버는 그 목소리를 모르므로(404) 요청을 보내지 않는다.
-        if (isVoicePackVoiceId(profileId) && !editor.hasMessageKindChoice()) {
-            audioMessage = context.getString(R.string.voice_pack_manual_unavailable)
-            return
-        }
         // 문구가 글자까지 똑같으면 서버를 부르지 않고 전에 만든 오디오를 그대로 쓴다.
         // (대기 없음 + 직접 입력 월 한도 안 깎임 + 오프라인에서도 저장됨.)
         //
@@ -1228,14 +1223,26 @@ internal fun AlarmEditorScreen(
                             ManualCreationRoute.PLAN_RULES -> Unit
                         }
                     }
-                    audioMessage = when (ttsErrorCode) {
-                        "MANUAL_TTS_QUOTA_EXCEEDED" ->
-                            if (quotaAlertShown) null else context.getString(R.string.editor_error_manual_tts_quota)
-                        // 나머지는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성
-                        // 실패처럼 "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다.
-                        else -> com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
-                            ?: userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                    // 한도는 편집기 아래 글자가 아니라 **알럿**으로 말한다 — iOS 의 저장 실패 알럿("저장할 수 없어요")과 같다(2026-11-22
+                    // 오너 "밖에서 보여 주지 말고 … 보여 주는 방식 통일"). 대개는 직접 입력 창이 먼저 말한다(`ManualMessageDialog`) —
+                    // 여기 오는 것은 그 사이 다른 기기가 다 썼거나, 폰에 음성이 없어 다시 받기가 막힌 경우다.
+                    if (ttsErrorCode == "MANUAL_TTS_QUOTA_EXCEEDED") {
+                        if (!quotaAlertShown) {
+                            blockAlert = context.getString(R.string.editor_save_failed_title) to
+                                context.getString(R.string.editor_error_manual_tts_quota)
+                        }
+                    } else if (error !is kotlin.coroutines.cancellation.CancellationException) {
+                        // 그 밖의 생성 실패도 **알럿**으로 말한다 — iOS 의 저장 실패 알럿("저장할 수 없어요" + 사유)과 같다(2026-11-22 두 앱
+                        // 통일). 예전에는 목소리 카드 안의 글자(`audioMessage`)였다 — 저장 버튼은 하단 고정이라 스크롤한 채 누르면 그 글자가
+                        // 화면 밖이었다(위 `blockAlert` 주석). 사유는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성 실패처럼
+                        // "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다. 새 생성이 옛 생성을 끊은 것(취소)은 실패가 아니다.
+                        blockAlert = context.getString(R.string.editor_save_failed_title) to
+                            (
+                                com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
+                                    ?: userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                                )
                     }
+                    audioMessage = null
                 }
                 generating = false
                 generationJob = null
@@ -1351,10 +1358,10 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    LaunchedEffect(fixedVoiceClipLanguage, editor.playMode, editor.voiceSource, editor.voiceRandomPrompt) {
+    LaunchedEffect(appVoiceLanguage, editor.playMode, editor.voiceSource, editor.voiceRandomPrompt) {
         if (editor.playMode != AlarmPlayModes.ALARM_ONLY && editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
-            if (editor.voiceLanguage != fixedVoiceClipLanguage) {
-                editor.voiceLanguage = fixedVoiceClipLanguage
+            if (editor.voiceLanguage != appVoiceLanguage) {
+                editor.voiceLanguage = appVoiceLanguage
                 editor.clearTtsMeta()
             }
         }
@@ -1383,7 +1390,7 @@ internal fun AlarmEditorScreen(
     // ⚠ **`editor.voiceRandomContext` 가 키에 있어야 한다**(2026-09-02). 문구 목록을 하나로
     //   합친 뒤로 스톡 클립 목소리도 다섯 종류를 고를 수 있는데, 고른 종류가 키에 없으면
     //   이 효과가 다시 돌지 않아 **방금 고른 운세가 붙지 않는다.**
-    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, fixedVoiceClipLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
+    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
         if (usesStockClips && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
@@ -1395,7 +1402,7 @@ internal fun AlarmEditorScreen(
                 val manualChosen = editor.hasTypedManualText()
                 if (manualChosen) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
-                if (editor.voiceLanguage != fixedVoiceClipLanguage) editor.voiceLanguage = fixedVoiceClipLanguage
+                if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
                 // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
                 // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
                 // 막기 위해, 허용 버킷으로 해석된 상태가 아니면 잔재를 먼저 비운다(Codex #599).
@@ -1405,7 +1412,7 @@ internal fun AlarmEditorScreen(
                 // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
                 val profileId = editor.voiceProfileId
                 if (!profileId.isNullOrBlank()) {
-                    val buckets = freeBucketsFor(stockClips, profileId, fixedVoiceClipLanguage, expectedVariants)
+                    val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage, expectedVariants)
                     // 새 알람은 마지막에 고른 테마를 이어받는다 — 이게 없으면 매번 FreeBucketOrder
                     // 첫 값(약)으로 돌아가, 날씨로 바꿔 저장해도 다음 알람이 다시 약이 된다.
                     // 기존 알람은 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). 날씨는 도시가
@@ -1671,7 +1678,7 @@ internal fun AlarmEditorScreen(
         editor.selectedBucket = null
         // 여기서는 기억하지 않는다 — 문구를 눌러만 보고 알람을 저장하지 않은 것까지 다음 알람의
         // 기본값이 되면 안 된다. 기록은 저장 성공 시(rememberMessageChoiceUsed) 한 곳에서만 한다.
-        editor.voiceLanguage = fixedVoiceClipLanguage
+        editor.voiceLanguage = appVoiceLanguage
         editor.voiceText = ""
         editor.voiceWeatherCountry = result.weatherCountry
         editor.voiceWeatherCity = result.weatherCity
@@ -1808,9 +1815,22 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    val navigationBarFill = MaterialTheme.colorScheme.background
+    val navigationBarInset = contentPadding.calculateBottomPadding()
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // 다른 탭·하위 화면과 같은 밤하늘 그라데이션이다(CLAUDE.md 디자인 토큰 — `homeGradientBrush` 는 모든 탭과 하위
+            // 전체화면). 2026-11-15 전까지 편집기만 칠하지 않아 단색 배경이었고, iOS 편집기와 휠 숫자 색이 달라 보였다.
+            .background(homeGradientBrush())
+            // 아래 시스템 내비게이션 바 자리는 하단 버튼 줄과 같은 색으로 칠한다 — iOS 는 버튼 줄 색이 홈 막대 자리까지
+            // 이어진다. 그라데이션 끝색이 비치면 버튼 줄과 이음매가 생긴다(2026-11-15 A32 3버튼 실측).
+            .drawBehind {
+                val inset = navigationBarInset.toPx()
+                if (inset > 0f) {
+                    drawRect(navigationBarFill, topLeft = Offset(0f, size.height - inset), size = Size(size.width, inset))
+                }
+            }
             // ⚠ **입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시).
             // 스크롤 컨테이너가 탭을 소비하므로 **뒤에 깐 레이어로는 닿지 않는다** —
             // 부모에 걸어 Final 패스에서 '아무도 소비하지 않은 탭' 만 받는다
@@ -1925,7 +1945,8 @@ internal fun AlarmEditorScreen(
                                     lastManualText = lastManualText,
                                 )
                             },
-                            onOpenClipPreparation = { profileId -> openClipPreparation(profileId) },
+                            // 목소리 고르기에서 연 준비 화면 — 다 받으면 이 목소리를 붙인다(`preparationAppliesVoice`).
+                            onOpenClipPreparation = { profileId -> openClipPreparation(profileId, appliesVoiceWhenReady = true) },
                             editor = editor,
                                 voiceProfiles = visibleVoiceProfiles,
                                 settlingVoiceProfileIds = settlingVoiceProfileIds,
@@ -2103,7 +2124,7 @@ internal fun AlarmEditorScreen(
                 },
                 manualRemaining = manualQuota?.remaining,
                 manualLimit = manualQuota?.limit,
-                manualChangeEnabled = AdRewardGate.canChangeManualText(
+                manualCreationAvailable = AdRewardGate.canChangeManualText(
                     freeVoiceTier,
                     manualQuota?.remaining,
                     manualQuota?.adReward,
@@ -2126,7 +2147,7 @@ internal fun AlarmEditorScreen(
                 //   기본 목소리는 서버에 구워 둔 카테고리만 나온다. 시딩이 끝나면 앱을
                 //   고치지 않아도 나타난다(`freeBucketsFor` 가 매니페스트와 교차한다).
                 availableContexts = if (usesStockClips) {
-                    freeBucketsFor(stockClips, editor.voiceProfileId, fixedVoiceClipLanguage, expectedVariants)
+                    freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage, expectedVariants)
                         .mapNotNull { randomPromptContextForBucket(it) }
                 } else {
                     // 기상 인사(`wake`)는 기본 목소리 전용 클립이다 — 클론의 같은 자리는 '기본 인사말'(preset)이다
@@ -2146,13 +2167,12 @@ internal fun AlarmEditorScreen(
                 }.orEmpty(),
                 // ⚠ **직접 입력을 잠그지 않는다**(2026-10-26). 무료도 기본 목소리로 월 3회 만들고, 다 쓰면 광고 보상이다 —
                 // 입력·편집은 막지 않고, 새로 만들어야 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(스펙 voice-and-message
-                // §8, ad-rewards §1). 잠긴 행이 열던 광고 게이트는 그 429 자리로 옮겼다.
-                manualLocked = false,
-                // 추가 팩 목소리는 직접 입력을 쓸 수 없다 — 그 화자로 아무 문장이나 합성할 권한이 없다(`docs/spec/voice-packs.md` §1).
-                manualAvailable = !isVoicePackVoiceId(editor.voiceProfileId),
+                // §8, ad-rewards §1). 잠긴 행이 열던 광고 게이트는 그 429 자리로 옮겼다(잠금 인자와 잠긴 행은 2026-11-23 에 지웠다).
                 manualRewardCredits = AdRewardGate.credits(freeVoiceTier, manualQuota?.adReward),
                 selectManualRequest = selectManualRequest,
-                onSaveSettings = ::applyRandomPromptSettings,
+                // 람다로 넘긴다 — `applyRandomPromptSettings` 는 콤포지션마다 새로 만드는 `clipGate` 와 키가 걸린
+                // `appVoiceLanguage`·`editor` 를 캡처한다(CLAUDE.md 「Compose 콜백에 지역 함수 참조를 넘기지 않는다」).
+                onSaveSettings = { applyRandomPromptSettings(it) },
             )
 
             "voice_output" -> VoiceOutputSettingsPane(
@@ -2324,14 +2344,24 @@ internal fun AlarmEditorScreen(
         // 내 목소리는 떠 있는 동안 3초마다 다시 센다 — 그 목소리가 다 준비되면 멈춘다(실패로는 멈추지 않는다 — 스펙
         // voice-and-message 「준비 페이지의 3초 폴링」). 예전에는 열 때 한 번만 세어, 연 순간의 퍼센트에 멈춰 있었다.
         LaunchedEffect(voiceId, preparedNow) {
+            // 다 받으면 **저절로 닫는다** — '준비됐어요'·'완료' 를 따로 보여 주지 않는다(2026-11-15 오너: "목소리 받기 · 준비됨 /
+            // 이거 없이 다 되면 자동으로 닫히도록"). 고른 목소리는 지금처럼 적용하지 않은 채다 — 다시 고르면 이제 바로 붙는다.
+            // 관문과 이 화면은 같은 매니페스트(`stockClips`)로 세므로, 닫은 뒤 관문이 또 막지 않는다.
+            if (preparedNow) {
+                // 목소리 고르기에서 열었으면 그 목소리를 붙인다 — 다시 고를 필요가 없다(2026-11-15 오너: "고른 목소리도 바로 붙게").
+                // 확인 알럿(직접 입력 문구가 지워지는 경우)은 고를 때 이미 지났다(`VoiceAudioCard.pendingVoiceSwitch` 가 관문보다 먼저다).
+                if (preparationAppliesVoice) editor.selectTtsVoice(voiceId, lastMessageContext, lastManualText)
+                preparationAppliesVoice = false
+                preparationVoiceId = null
+                return@LaunchedEffect
+            }
             while (!preparedNow && !isSystemVoiceId(voiceId)) {
                 kotlinx.coroutines.delay(3000)
                 onPrepareClipsFor()
             }
         }
-        // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
-        TrackOpenModal()
-        androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null }) {
+        // 손으로 닫으면('백그라운드에서 계속'·바깥 탭) 고른 목소리를 붙이지 않는다 — 지금 목소리가 그대로 남는다.
+        androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null; preparationAppliesVoice = false }) {
             androidx.compose.material3.Surface(
                 shape = WakerDialogShape,
                 color = MaterialTheme.colorScheme.surface,
@@ -2341,7 +2371,7 @@ internal fun AlarmEditorScreen(
                     // 때문에 100% 에 닿지 못한 채 멈춘다(코덱스 #952). 그 목소리가 목록에 아직 없으면 전부를 보여 준다.
                     voices = shownReadiness,
                     onRetry = onRetryClipRenders,
-                    onDismiss = { preparationVoiceId = null },
+                    onDismiss = { preparationVoiceId = null; preparationAppliesVoice = false },
                     modifier = Modifier.padding(vertical = 32.dp),
                 )
             }
@@ -2394,8 +2424,6 @@ internal fun editorFreeVoiceTier(
         userPlan = authSession.user.plan,
         storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
-        // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
-        userPlanPromo = authSession.planPromoStamp(),
     ).isEntitledOptimistic()
 
 /** 편집기가 보여 주고 고를 수 있는 목소리 — 무료면 기본 목소리만. */

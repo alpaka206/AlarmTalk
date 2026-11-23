@@ -76,18 +76,10 @@ internal fun AlarmListScreen(
     subscriptionResponse: BillingSubscriptionResponse?,
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
     storeEntitledNow: Boolean,
-    /**
-     * 이용권 화면에 보일 프로모(`MainViewModel.planScreenPersonalPromo`) — 계정 응답과 구독 응답 중
-     * **나중에 받은 답**의 것. 여기서 세션·구독 응답을 OR 로 다시 고르지 말 것. 개인 카드에 앉을지
-     * 카드 위 한 줄일지는 이용권 화면이 정한다(`planScreenCurrentOf`).
-     */
-    planScreenPersonalPromo: com.alarmtalk.app.network.PersonalPromo?,
     voiceDraftQuotaExhausted: Boolean = false,
     // 이번 달 목소리 생성 쿼터(추가 버튼 옆 '남은/전체' 표시).
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
-    onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
-    // 목소리 등록 화면의 인라인 동의 항목에 그대로 넘긴다.
-    sensitiveConsentMissing: List<String> = emptyList(),
+    onCreateVoiceProfile: (VoiceProfileCreationDraft) -> Boolean,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     /** 카테고리별 완전한 세트 크기(서버 제공). 앱에 개수를 박지 않는다. */
@@ -122,15 +114,12 @@ internal fun AlarmListScreen(
     voiceRegistrationFailure: VoiceRegistrationFailure? = null,
     onVoiceRegistrationFailureShown: () -> Unit = {},
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
-    // 목소리 탭 '추가 팩' 섹션 — 목소리 패널에 그대로 넘긴다(`docs/spec/voice-packs.md` §7).
-    voicePacks: VoicePackPanelState = VoicePackPanelState(),
     planPrices: Map<String, String>,
     /** 플랜 key → 지금 받을 수 있는 무료 체험 기간(ISO 8601). 없으면 빈 표. */
     planTrials: Map<String, String> = emptyMap(),
     onPurchasePlay: (android.app.Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onRestorePurchases: () -> Unit,
-    permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
     /** 목소리 탭의 '이 목소리로 새 알람 만들기' — 그 목소리를 처음 고른 새 알람 편집기를 연다. */
     onCreateAlarmWithVoice: (String) -> Unit = {},
@@ -141,8 +130,6 @@ internal fun AlarmListScreen(
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
-    /** 배너에서 곧장 그 권한 요청/설정으로 보낸다(모달을 거치지 않는다). */
-    onRequestAlarmPermission: (PermissionTarget) -> Unit = {},
     // 선택 모드 진입/이탈을 알린다 — 상위 Scaffold 가 ＋ FAB 를 감추는 데 쓴다.
     onAlarmSelectionModeChange: (Boolean) -> Unit = {},
 ) {
@@ -255,10 +242,6 @@ internal fun AlarmListScreen(
             onPurchasePlay = onPurchasePlay,
             onCancelSubscription = onCancelSubscription,
             onRestorePurchases = onRestorePurchases,
-            personalPromo = planScreenPersonalPromo,
-            // 관리자 기간 지급의 끝 — 구독 응답이 있으면 그 값, 없으면 계정 응답의 값.
-            planGrantEndsAt = subscriptionResponse?.planGrant?.endsAt
-                ?: authSession?.user?.planGrant?.endsAt,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -310,7 +293,6 @@ internal fun AlarmListScreen(
                         voiceDraftQuotaExhausted = voiceDraftQuotaExhausted,
                         authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
-                        sensitiveConsentMissing = sensitiveConsentMissing,
                         onGenerateTts = onGenerateTts,
                         stockClips = stockClips,
                         expectedVariants = expectedVariants,
@@ -325,7 +307,6 @@ internal fun AlarmListScreen(
                         voiceRegistrationFailure = voiceRegistrationFailure,
                         onVoiceRegistrationFailureShown = onVoiceRegistrationFailureShown,
                         onRegistrationWindowOpenChange = onRegistrationWindowOpenChange,
-                        voicePacks = voicePacks,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         voiceDraftQuota = voiceDraftQuota,
                         voicePrefetchProgress = voicePrefetchProgress,
@@ -349,30 +330,8 @@ internal fun AlarmListScreen(
                         EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
                     }
                 }
-                // 권한 안내는 '이미 알람이 있는데 권한이 모자란' 경우에만. 새 유저에겐 홈에서
-                // 미리 조르지 않는다 — 알람 만들기 시점에 요청한다.
-                // 헤드라인이 이미 '안 울린다'를 말했으므로, 배너는 같은 말을 반복하지 않고
-                // 각각 **왜 그런지 / 무엇을 하면 되는지**를 말한다.
-                // ⚠ 이 자리에 있던 '다음 알람 상태 카드'(v1.3 W06)는 2026-11-09 오너가 지웠다 — 권한 부족은 다시 이 배너 하나가 말한다.
-                permissions.firstMissingAlarmTarget()?.takeIf { hasAnyAlarm }?.let { missing ->
-                    item {
-                        AlarmPermissionWarningBanner(
-                            // 헤드라인(남은 시간/경고)과 붙어 있으면 한 덩어리로 읽힌다.
-                            // 목록 기본 간격(16)에 더해 한 칸 더 띄운다.
-                            modifier = Modifier.padding(top = 8.dp),
-                            // **어떤 권한인지** 말한다. '권한' 이라고만 하면 어디를 켜야 하는지
-                            // 모른 채 설정 화면에서 헤맨다. 결과도 권한마다 다르다.
-                            textResId = when (missing) {
-                                PermissionTarget.Notifications -> R.string.hs_perm_banner_notifications
-                                PermissionTarget.ExactAlarms -> R.string.hs_perm_banner_exact_alarm
-                                else -> R.string.hs_perm_banner_full_screen
-                            },
-                            // 탭하면 우리 모달을 한 번 더 거치지 않고 바로 그 권한 요청/설정으로
-                            // 보낸다 — 배너가 이미 무엇을 왜 켜야 하는지 말했다.
-                            onClick = { onRequestAlarmPermission(missing) },
-                        )
-                    }
-                }
+                // 권한 안내 배너는 없앴다(2026-11-16 오너) — 알람 권한이 모자라면 앱에 들어오기 전에 권한 게이트가 막는다
+                // (`AlarmTalkApp` 의 진입 게이트). 그래서 이 목록이 그려질 때는 셋이 다 있다.
                 items(sortedAlarms, key = { it.id }) { alarm ->
                     // TTS 알람만 프로필 이름을 찾는다(녹음·파일 알람은 이름 없이 날짜만).
                     // 시스템이 '알람' 모드로 바꿔 둔 옛 잠금·강등 행은 더는 그 목소리로 울리지 않으므로

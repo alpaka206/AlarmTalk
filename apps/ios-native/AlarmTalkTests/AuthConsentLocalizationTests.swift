@@ -40,9 +40,9 @@ struct AuthConsentLocalizationTests {
     func authAndConsentMessages(language: String) throws {
         let bundle = try bundle(language)
         for key in ["Apple 로그인 정보를 확인하지 못했어요.", "Apple identity token을 받지 못했어요.",
-                    "인증 코드가 일치하지 않아요.", "이메일 인증이 완료됐어요.",
-                    "세션이 만료됐어요. 다시 로그인해 주세요.", "필수 동의 내용", "선택 동의", "미동의",
-                    "서비스 이용약관", "개인정보 처리방침", "설명 접기", "설명 펼치기"] {
+                    "인증 코드가 맞지 않아요.", "이메일 인증이 완료됐어요",
+                    "로그인이 만료됐어요. 다시 로그인해 주세요.", "필수 동의 내용", "선택 동의", "미동의",
+                    "서비스 이용약관", "개인정보 처리방침", "항목 접기", "항목 펼치기"] {
             #expect(bundle.localizedString(forKey: key, value: nil, table: nil) != key)
         }
     }

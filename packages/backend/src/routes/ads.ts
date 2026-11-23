@@ -59,7 +59,7 @@ ads.get('/admob-ssv', async (c) => {
   let outcome = settledOutcome;
   if (outcome === null) {
     try {
-      outcome = await settleAdRewardCallback(db, c.env, callback.transactionId, nowMs);
+      outcome = await settleAdRewardCallback(db, callback.transactionId, nowMs);
     } catch (err) {
       // 기록은 남았다 — cron 이 다시 정산한다. AdMob 에는 받았다고 답한다.
       console.error('[ads/admob-ssv] settle failed; will retry from cron', err);

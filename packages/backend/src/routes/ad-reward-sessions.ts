@@ -14,8 +14,6 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { jsonError } from '../lib/api-error';
 import { logStructured } from '../lib/logger';
-import { planWithGrantSql } from '../lib/plan-grant-sql';
-import { resolvePersonalPromo } from '../lib/personal-promo';
 import { nextManualQuotaResetAt } from '../lib/manual-tts-quota';
 import { isConfiguredRewardedAdUnit } from '../lib/ad-reward-credits';
 import { UUID_RE } from '../lib/validate';
@@ -40,12 +38,12 @@ function adUnitTail(adUnit: string): string {
 
 async function callerIsFree(c: Context<AppEnv>, userPk: string): Promise<boolean> {
   const res = await getDB(c.env).execute({
-    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? AND deletion_status = 'active' LIMIT 1`,
+    sql: `SELECT plan FROM users WHERE id = ? AND deletion_status = 'active' LIMIT 1`,
     args: [userPk],
   });
   const row = res.rows[0];
   if (!row) return false;
-  return !hasPersonalVoiceAccess(row.plan == null ? null : String(row.plan), resolvePersonalPromo(c.env));
+  return !hasPersonalVoiceAccess(row.plan == null ? null : String(row.plan));
 }
 
 async function readJson(c: Context<AppEnv>): Promise<unknown> {
@@ -74,7 +72,7 @@ adRewardSessions.post('/sessions', async (c) => {
     return jsonError(c, 409, 'AD_REWARD_UNAVAILABLE', 'This ad unit is not configured.', { reason: 'ad_unit' });
   }
   if (!(await callerIsFree(c, userPk))) {
-    // 플러스·체험·관리자 지급 — 월 30회 규칙을 쓴다. 광고를 권하지 않는다.
+    // 플러스(무료 체험 포함) — 월 30회 규칙을 쓴다. 광고를 권하지 않는다.
     return jsonError(c, 409, 'AD_REWARD_UNAVAILABLE', 'Rewarded ads are for the free plan.', { reason: 'plan' });
   }
 

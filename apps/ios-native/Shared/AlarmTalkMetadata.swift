@@ -3,10 +3,10 @@ import Foundation
 #if canImport(AlarmKit)
 import AlarmKit
 
-/// AlarmKit `AlarmAttributes<Metadata>` 의 메타데이터.
+/// AlarmKit `AlarmAttributes<Metadata>` 의 메타데이터 — **위젯(Live Activity)이 읽는 값만** 싣는다.
 ///
-/// Phase 2-B4 에서 `playMode` 와 `voiceCacheKey` 를 추가해 LiveActivity / Widget /
-/// alarmUpdates 핸들러가 어떤 사운드 전략으로 등록된 알람인지 식별할 수 있게 한다.
+/// `playMode` 는 Live Activity 부제(재생 방식 문구)가 읽는다. 위젯도 앱도 읽지 않던 `localAlarmID`·`voiceCacheKey` 는
+/// 2026-11-23 에 뺐다 — 그 키가 든 옛 예약도 키드 디코딩이라 그대로 읽힌다.
 ///
 /// GROUP 3 에서 `alarmKitID` 와 `voiceText` 를 추가한다:
 ///   - `alarmKitID`: LiveActivity 의 Stop/Snooze 버튼이 `Button(intent:)` 로
@@ -18,10 +18,8 @@ import AlarmKit
 ///
 /// 신규 필드는 모두 옵셔널이며 기본 생성자는 nil 을 채워 기존 호출처와 호환을 유지한다.
 struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
-    var localAlarmID: String
     var label: String
     var playMode: String?
-    var voiceCacheKey: String?
     /// AlarmKit `Alarm.id` (UUID) 문자열. LiveActivity 가 Stop/Snooze 인텐트를
     /// 구성할 때 사용한다. 기존 레코드(필드 없음)와의 호환을 위해 옵셔널.
     var alarmKitID: String?
@@ -34,19 +32,15 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
     var minute: Int?
 
     init(
-        localAlarmID: String,
         label: String,
         playMode: String? = nil,
-        voiceCacheKey: String? = nil,
         alarmKitID: String? = nil,
         voiceText: String? = nil,
         hour: Int? = nil,
         minute: Int? = nil
     ) {
-        self.localAlarmID = localAlarmID
         self.label = label
         self.playMode = playMode
-        self.voiceCacheKey = voiceCacheKey
         self.alarmKitID = alarmKitID
         self.voiceText = voiceText
         self.hour = hour
@@ -72,10 +66,8 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
     /// 에서 디코딩되므로 Live Activity 가 늘 nil 을 받아 **큰 시계가 한 번도 안 그려졌다**
     /// (안드로이드 `RingingActivity` 의 104sp 시계 대응. 2026-09-08 실기기 지적).
     enum CodingKeys: String, CodingKey {
-        case localAlarmID
         case label
         case playMode
-        case voiceCacheKey
         case alarmKitID
         case voiceText
         case hour
@@ -84,10 +76,8 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.localAlarmID = try c.decode(String.self, forKey: .localAlarmID)
         self.label = try c.decode(String.self, forKey: .label)
         self.playMode = try c.decodeIfPresent(String.self, forKey: .playMode)
-        self.voiceCacheKey = try c.decodeIfPresent(String.self, forKey: .voiceCacheKey)
         self.alarmKitID = try c.decodeIfPresent(String.self, forKey: .alarmKitID)
         self.voiceText = try c.decodeIfPresent(String.self, forKey: .voiceText)
         // 옛 레코드에는 없다 — 그때는 `clockLabel` 이 nil 이라 LA 가 모드 라벨로 폴백한다.

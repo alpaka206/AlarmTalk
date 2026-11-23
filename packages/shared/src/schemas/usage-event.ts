@@ -47,7 +47,7 @@ export const USAGE_EVENT_V2_TYPES = [
   /** 로그인 결과(`outcome`·`method`). ⚠ 계정이 생긴 **뒤**에만 적힌다 — 가입 전 수집은 하지 않는다(§7.4). */
   'auth_result',
   // 목소리 선택
-  /** 알람에 쓸 목소리를 골랐다(`is_first`·`prepared`·`pack_id`). 문구 원문은 싣지 않는다. */
+  /** 알람에 쓸 목소리를 골랐다(`is_first`·`prepared`). 문구 원문은 싣지 않는다. */
   'voice_selected',
   // 음성 준비 — **작업 소유자(워커·프리페처)가 한 번만** 적는다
   'voice_preparation_started',
@@ -71,9 +71,8 @@ export const USAGE_EVENT_V2_TYPES = [
   'reward_pending',
   'reward_granted',
   'reward_spent',
-  // 콘텐츠 — `content_selected`·`pack_selected` 는 알람 저장 성공 때 적는다
+  // 콘텐츠 — `content_selected` 는 알람 저장 성공 때 적는다
   'content_selected',
-  'pack_selected',
   // 결제
   'paywall_viewed',
   'store_purchase_verified',
@@ -82,7 +81,27 @@ export const USAGE_EVENT_V2_TYPES = [
 
 export const USAGE_EVENT_TYPES = [...USAGE_EVENT_V1_TYPES, ...USAGE_EVENT_V2_TYPES] as const;
 
-export type UsageEventType = (typeof USAGE_EVENT_TYPES)[number];
+/**
+ * **은퇴한 종류·칸** — 더는 적지 않지만 옛 큐(내부 dev 빌드)에 남아 올라올 수 있다. `pack_selected` 종류와 `pack_id` 칸은
+ * 추가 음성팩과 함께 2026-11-23 에 없앴다.
+ *
+ * ⚠ **거절하지 않고 받고 버린다**(저장하지 않는다). 두 앱은 2xx 가 아닌 배치를 큐에서 지우지 않으므로, 400 을 주면 그 기기는
+ * 그 뒤로 아무 기록도 올리지 못한다(`error-codes.ts` 의 `INVALID_USAGE_EVENTS` 경보 주석). 모르는 종류·칸(앱이 서버보다
+ * 앞서 나간 것)은 여전히 400 이다 — 여기 적는 것은 **우리가 없앤 것**뿐이다.
+ */
+const RETIRED_USAGE_EVENT_TYPES: ReadonlySet<string> = new Set(['pack_selected']);
+const RETIRED_USAGE_EVENT_PROPS = ['pack_id'] as const;
+
+function isRetiredUsageEvent(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && RETIRED_USAGE_EVENT_TYPES.has(String((value as { type?: unknown }).type));
+}
+
+function withoutRetiredProps(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  const props = { ...(value as Record<string, unknown>) };
+  for (const key of RETIRED_USAGE_EVENT_PROPS) delete props[key];
+  return props;
+}
 
 /** 한 번에 보낼 수 있는 이벤트 수. 큐가 밀려도 요청 하나가 지나치게 커지지 않게 막는다. */
 export const USAGE_EVENT_BATCH_MAX = 100;
@@ -99,7 +118,7 @@ const IdSchema = z.string().uuid();
 export const USAGE_EVENT_SCHEMA_VERSION = 2;
 
 /**
- * 짧은 **코드**(사유·단계·방법·팩 id 같은 것). 자유 문장이 아니다 — 영문 소문자·숫자·`_`·`.`·`-` 만 받는다.
+ * 짧은 **코드**(사유·단계·방법 같은 것). 자유 문장이 아니다 — 영문 소문자·숫자·`_`·`.`·`-` 만 받는다.
  * 문구 원문·이름·이메일이 이 칸으로 새지 않게 모양으로 막는다.
  */
 const CodeSchema = z.string().regex(/^[a-z0-9][a-z0-9_.-]{0,63}$/);
@@ -108,7 +127,7 @@ const VersionSchema = z.string().regex(/^[0-9A-Za-z][0-9A-Za-z._-]{0,31}$/);
 const CountSchema = z.number().int().min(0).max(100_000);
 
 /** 권한 출처 — 서버가 받는 순간 계정 상태로 찍는다(`usage_events.entitlement_source`). 앱은 보내지 않는다. */
-export const ENTITLEMENT_SOURCES = ['paid', 'trial', 'admin', 'promo', 'free'] as const;
+export const ENTITLEMENT_SOURCES = ['paid', 'trial', 'free'] as const;
 export type EntitlementSource = (typeof ENTITLEMENT_SOURCES)[number];
 
 /** 직접 입력 제작이 무엇으로 정산됐나 — 월 기본분(무료 3·유료 30) / 광고 보상 / 세지 않음(재사용·실패 환불). 서버 응답 값 그대로. */
@@ -125,11 +144,12 @@ export const PREPARATION_CACHE_STATES = ['cold', 'partial', 'warm'] as const;
  * `detail` 에 끼워 넣지 않는다.
  *
  * ⚠ `.strict()` — 모르는 칸이 오면 거절한다(모르는 종류를 거절하는 것과 같은 이유: 앱이 서버보다 앞서 나가도
- * 조용히 버려지지 않게). 새 칸은 **서버를 먼저** 올린다.
+ * 조용히 버려지지 않게). 새 칸은 **서버를 먼저** 올린다. 은퇴한 칸만 먼저 걷어 낸다([RETIRED_USAGE_EVENT_PROPS]).
  * ⚠ 문구 원문·관심기업·기사 원문·이메일을 넣을 칸은 없다 — 자유 문자열 칸은 `CodeSchema` 모양만 받는다.
  */
-export const UsageEventPropsSchema = z
-  .object({
+export const UsageEventPropsSchema = z.preprocess(
+  withoutRetiredProps,
+  z.object({
     // 준비(voice_preparation_*)
     scope: z.enum(PREPARATION_SCOPES).optional(),
     /** 콘텐츠 언어(`ko`·`en`·`ja`·`ko-KR`). */
@@ -153,8 +173,6 @@ export const UsageEventPropsSchema = z
     method: CodeSchema.optional(),
     /** 첫 경험 단계 이름. */
     step: CodeSchema.optional(),
-    /** 고른 팩·테마·스톡 목소리 키. */
-    pack_id: CodeSchema.optional(),
     /** 이 계정에서 처음 고른 것인가(최초/변경). */
     is_first: z.boolean().optional(),
     /** 고르는 순간 그 목소리가 이미 기기에 준비돼 있었나(준비 전/후). */
@@ -182,8 +200,8 @@ export const UsageEventPropsSchema = z
     /** 권한 변경의 앞·뒤(앱이 본 플랜 — `free`·`plus`). */
     from_plan: CodeSchema.optional(),
     to_plan: CodeSchema.optional(),
-  })
-  .strict();
+  }).strict(),
+);
 export type UsageEventProps = z.infer<typeof UsageEventPropsSchema>;
 
 export const UsageEventSchema = z.object({
@@ -223,6 +241,12 @@ export const UsageEventSchema = z.object({
 export type UsageEvent = z.infer<typeof UsageEventSchema>;
 
 export const UsageEventBatchSchema = z.object({
-  events: z.array(UsageEventSchema).min(1).max(USAGE_EVENT_BATCH_MAX),
+  // 개수는 **받은 그대로** 센다 — 은퇴한 종류만 든 배치도 빈 배열 400 이 아니라 200 으로 큐를 비운다. 은퇴한 종류를 걷어 낸
+  // 나머지만 기록 하나하나의 규칙으로 본다.
+  events: z
+    .array(z.unknown())
+    .min(1)
+    .max(USAGE_EVENT_BATCH_MAX)
+    .transform((events) => events.filter((event) => !isRetiredUsageEvent(event)))
+    .pipe(z.array(UsageEventSchema)),
 });
-export type UsageEventBatch = z.infer<typeof UsageEventBatchSchema>;

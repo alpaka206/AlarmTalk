@@ -38,7 +38,8 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
                 // 이 목록들은 많아야 열 몇 행이라 게으를 이유도 없다.
                 VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        if index > 0 { Divider() }
+                        // 선은 `outlineVariant` — 안드로이드 `WakerSheetOptionRow` 의 `HorizontalDivider` 기본 색과 같다.
+                        if index > 0 { Divider().overlay(theme.palette.outlineVariant) }
                         Button {
                             onSelect(item)
                             dismiss()

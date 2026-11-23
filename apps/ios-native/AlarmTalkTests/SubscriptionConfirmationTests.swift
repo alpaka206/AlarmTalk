@@ -16,7 +16,6 @@ final class SubscriptionConfirmationTests: XCTestCase {
 
             XCTAssertFalse(outcome.confirmed)
             XCTAssertEqual(outcome.rejection, message, "purchase는 이 값이 없으면 구독 성공으로 처리한다")
-            XCTAssertEqual(manager.lastError, message)
             XCTAssertEqual(refreshes, 0)
             // ⚠ 확정 전에는 끝내지 않는 갈래(`mayFinish`)는 소모성 선물 하나를 위한 것이었고, 선물과 함께
             // 2026-10-14 에 없앴다(App Store 지침 3.1.1 두 번째 반려 — 되살리지 말 것, 할인·무료 이용은 스토어
@@ -24,7 +23,7 @@ final class SubscriptionConfirmationTests: XCTestCase {
         }
     }
 
-    func test_eachConfirmationKeepsItsOwnRejectionWhenSharedErrorChanges() async throws {
+    func test_eachConfirmationKeepsItsOwnRejection() async throws {
         try await withManager(responses: [
             (409, #"{"error":"owned","error_code":"TRANSACTION_OWNED_BY_OTHER_USER"}"#),
             (409, #"{"error":"other store","error_code":"CROSS_STORE_RENEWAL_ACTIVE"}"#),
@@ -35,12 +34,10 @@ final class SubscriptionConfirmationTests: XCTestCase {
             let crossStore = await manager.syncWithBackend(transactionID: "cross-store-test")
             XCTAssertNotNil(crossStore.rejection)
             XCTAssertNotEqual(crossStore.rejection, expected)
-            XCTAssertEqual(manager.lastError, crossStore.rejection)
 
             let success = await manager.syncWithBackend(transactionID: "success-test")
             XCTAssertTrue(success.confirmed)
-            XCTAssertNil(manager.lastError)
-            XCTAssertEqual(ownership.rejection, expected, "다른 요청이 lastError를 지워도 이 구매의 거절은 남는다")
+            XCTAssertEqual(ownership.rejection, expected, "다른 요청이 끝나도 이 구매의 거절은 남는다")
         }
     }
 

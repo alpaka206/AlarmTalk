@@ -296,7 +296,7 @@ internal fun MainViewModel.promoteFormerReceivedAlarms(listOwner: String?) {
     // 이용권 판정이 섰는가 — **이번 실행에서 서버로 받은 답**(구독 + `/auth/me` 의 plan)으로만 정한다. 저장해 둔
     // 판정만 있으면 미룬다: 그 사이 결제했을 수 있고, 미나 확정은 되돌릴 수 없다. 유료면 클론을 쓸 수 있고, 확실히
     // 무료면 못 쓴다. 그 밖(판정 전)은 다음에 다시 본다.
-    val serverAnswered = subscriptionAnsweredThisRun && planAnsweredEntry > 0L
+    val serverAnswered = subscriptionAnsweredThisRun && planAnsweredThisRun
     val cloneEntitled = when {
         !serverAnswered -> null
         paidVoiceAccess() == PaidVoiceAccess.Entitled -> true
@@ -340,33 +340,25 @@ internal fun MainViewModel.promoteFormerReceivedAlarms(listOwner: String?) {
     }
 }
 
-/** 계정 전환으로 등록을 중단했다는 내부 신호. 사용자에게 보일 실패가 아니다. */
-private class VoiceCreateAbortedException : Exception("voice creation aborted: session changed")
 
 /**
  * 등록 화면 한 건. 화면이 [VoiceProfileCreationDraft] 를 **이름 붙인 인자로** 만들어 넘긴다 —
  * 예전에는 문자열 네 개(관계·호칭·언어…)를 자리 순서로 넘겼는데, 필드가 늘면 두 문자열이
  * 자리를 바꿔도 컴파일이 통과한다.
  */
-internal fun MainViewModel.createVoiceProfile(
-    draft: VoiceProfileCreationDraft,
-    consentAgreedInline: Boolean,
-): Boolean = createVoiceProfiles(listOf(draft), consentAgreedInline = consentAgreedInline)
+internal fun MainViewModel.createVoiceProfile(draft: VoiceProfileCreationDraft): Boolean =
+    createVoiceProfiles(listOf(draft))
 
 /**
  * 반환값: 클론 생성 요청을 실제로 시작했는지. false 면 검증 실패로 아무 요청도 나가지
  * 않은 것 — 호출측(등록 패널)은 이때 '만드는 중' 스텝에 진입하면 안 된다(갇힘 방지).
  *
- * [consentAgreedInline] 은 등록 화면의 인라인 동의 항목을 사용자가 체크했다는 뜻이다.
- * true 면 모달을 띄우지 않고 **같은 코루틴에서 동의를 먼저 기록한 뒤** 업로드한다 —
- * 순서가 중요하다. draft 도 생성 즉시 실제 ElevenLabs 보이스를 만들기 때문에, 녹음이
- * 올라간 뒤에 동의를 받으면 이미 처리한 생체정보에 사후 동의를 받는 꼴이 된다.
- * 기록이 실패하면 업로드도 안 나가고 기존 실패 경로(메시지 + busy 해제)를 그대로 탄다.
+ * 빠진 민감 동의나 목소리 권리 확인이 있으면 **업로드 전에** 시트(`VoiceConsentSheet`)를 띄우고 멈춘다 — 시트에서
+ * 동의하면 [submitVoiceConsents] 가 기록한 뒤 같은 초안으로 이 함수를 다시 부른다. 순서가 중요하다. draft 도 생성
+ * 즉시 실제 ElevenLabs 보이스를 만들기 때문에, 녹음이 올라간 뒤에 동의를 받으면 이미 처리한 생체정보에 사후 동의를
+ * 받는 꼴이 된다.
  */
-internal fun MainViewModel.createVoiceProfiles(
-    items: List<VoiceProfileCreationDraft>,
-    consentAgreedInline: Boolean = false,
-): Boolean {
+internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationDraft>): Boolean {
     val session = sessionOrMessage(R.string.msg_voice_create_login_required) ?: return false
     // 아래 두 거절도 등록 창에서 누른 `등록` 의 답이다 — 창이 열려 있으면 그 안에 쓴다
     // ([showVoiceRegistrationFailure]). 화면이 같은 조건을 먼저 막지만, 두 판정이 어긋난 순간에
@@ -406,24 +398,13 @@ internal fun MainViewModel.createVoiceProfiles(
     // 끝난다(이 함수가 false 를 돌려주면 패널은 스텝을 전진시키지 않는다).
     if (voiceProfileBusy) return false
 
-    // 아직 없는 민감 동의. 등록 화면이 인라인 항목으로 이미 물어봤으면(consentAgreedInline)
-    // 모달 없이 아래 코루틴에서 먼저 기록하고, 물어보지 못한 경로(예: 화면 밖에서 호출)
-    // 에서만 전용 시트를 띄운다.
-    //
-    // ⚠ **화면이 실제로 물어본 유형만 기록한다.** 인라인 체크박스는 `voice_biometric`
-    // **하나만** 그리는데(`VoiceProfileManagementPanel.needsBiometricConsent`), 예전에는
-    // 그 체크 하나로 `sensitiveConsentMissing` **전부**를 `agreed=true` 로 올렸다 —
-    // 사용자가 본 적 없는 동의가 기록된다. 인라인이 덮지 않는 유형이 남으면 시트로 보낸다
-    // (`docs/spec/consent.md` 「한 번 받은 동의는 다시 묻지 않는다」의 짝 규칙:
-    //  **묻지 않은 것은 기록하지 않는다**).
-    val consentsToRecord =
-        if (consentAgreedInline) sensitiveConsentMissing.filter { it in INLINE_COVERED_CONSENTS }
-        else emptyList()
-    val unaskedConsents = sensitiveConsentMissing.filterNot { it in consentsToRecord }
-    if (unaskedConsents.isNotEmpty()) {
+    // 아직 없는 민감 동의 — **한 시트에서 한 번에** 받는다(2026-11-15 오너: "생성할때 모달로 떠서 한번에 다 받고
+    // 다음부터 안받게"). 이름 화면의 생체정보 체크칸과 '추가' 입구의 권리 확인 모달은 없앴다. 이미 유효한 동의는 서버
+    // `sensitive_missing` 에서 빠지므로 다시 묻지 않는다 — 가입 때 다 받았으면 아무것도 띄우지 않는다.
+    // 목소리 권리 확인은 따로 받지 않는다 — 약관 제7조(가입 필수 동의)의 권리 보증으로 갈음한다(2026-11-15 오너: "본인이
+    // 등록해서 공유하는것도 아니고 본인이 쓰는거니깐"). 되살리지 말 것 — `docs/spec/consent.md` 「목소리 권리 확인」.
+    if (sensitiveConsentMissing.isNotEmpty()) {
         pendingSensitiveConsent = MainViewModel.SensitiveConsentRequest(
-            // 시트는 남은 것뿐 아니라 **아직 없는 민감 동의 전체**를 다룬다 — 인라인 체크는
-            // 아직 서버에 기록되지 않았으므로 여기서 함께 받아야 한 번에 끝난다.
             types = sensitiveConsentMissing,
             resumeVoiceDrafts = drafts,
         )
@@ -433,11 +414,8 @@ internal fun MainViewModel.createVoiceProfiles(
     // busy 는 launch 안이 아니라 여기서 세운다 — true 를 반환하는 순간 이미 busy 인 것이
     // 보장돼야 호출측 '만드는 중' 스텝의 종료 감지(!busy && draft 없음)가 어긋나지 않는다.
     voiceProfileBusy = true
-    // 동의 기록에 실려 보낼 정책 버전. 코루틴 밖에서 읽어 둔다.
-    val policyVersion = cachedPolicyVersion()
-    // 이 등록을 시작한 계정. 인라인 동의 경로는 동의 기록 왕복이 먼저 끼어 업로드까지의
-    // 창이 길다 — 그 사이 401/계정전환이 나면 앞 계정 토큰으로 뒤 계정에 목소리를 올리고,
-    // 완료 콜백이 뒤 계정 상태(pendingVoiceDraft·쿼터·busy)를 앞 계정 결과로 덮는다.
+    // 이 등록을 시작한 계정. 업로드가 도는 사이 401/계정전환이 나면 완료 콜백이 뒤 계정 상태
+    // (pendingVoiceDraft·쿼터·busy)를 앞 계정 결과로 덮는다.
     val ownerUserId = session.user.id
     fun sessionChanged() = authSession?.user?.id != ownerUserId
     viewModelScope.launch {
@@ -446,28 +424,6 @@ internal fun MainViewModel.createVoiceProfiles(
         // 지운다(아래 실패 갈래, `cloneRejectionSpendsRecording`).
         var recordingSpent = false
         runCatching {
-            // 순서 고정: 동의 기록 → 업로드. 같은 runCatching 안에 두어 기록이 실패하면
-            // 녹음이 절대 나가지 않고, 실패 처리도 업로드 실패와 같은 경로를 탄다.
-            if (consentsToRecord.isNotEmpty()) {
-                api.recordConsents(
-                    AlarmTalkApiClient.bearer(session.token),
-                    com.alarmtalk.app.network.RecordConsentsRequest(
-                        consents = consentsToRecord.map { type ->
-                            com.alarmtalk.app.network.ConsentItemRequest(
-                                type = type,
-                                agreed = true,
-                                version = policyVersion,
-                            )
-                        },
-                        documentVersion = bundledPolicyVersion,
-                    ),
-                )
-                // 동의 기록 자체는 앞 계정의 토큰으로 나갔으니 그 계정에 정상적으로 남는다.
-                // 하지만 계정이 바뀌었으면 여기서 끊는다 — 녹음을 올리면 앞 계정이 녹음한
-                // 음성이 뒤 계정 화면에 목소리로 뜬다.
-                if (sessionChanged()) throw VoiceCreateAbortedException()
-                sensitiveConsentMissing = sensitiveConsentMissing - consentsToRecord.toSet()
-            }
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
                     // 폼 필드(관계·호칭·언어…)는 `createVoiceCloneDraft` 한 곳에서 조립한다.
@@ -491,13 +447,13 @@ internal fun MainViewModel.createVoiceProfiles(
             loadVoiceDraftQuota()
             message = null
         }.onFailure { error ->
-            // 계정 전환으로 우리가 끊은 것이면 에러가 아니다 — 보고도 메시지도 남기지 않는다.
+            // 계정이 바뀌었으면 에러가 아니다 — 보고도 메시지도 남기지 않는다.
             // 다만 **떠나기 전에 평문 녹음은 지운다.** 그 계정은 이 기기에서 이어서 등록할 수
             // 없으므로(세션이 이미 바뀌었다) 남겨 둘 이유가 없고, 남기면 성공 갈래에서 막아 둔
             // 것과 같은 구멍이 실패 갈래로 열린다(Codex #660).
             // 반대로 **같은 계정의 일반 실패**(네트워크 등)에서는 지우지 않는다 — 사용자가
             // 그대로 다시 시도할 수 있어야 한다.
-            if (error is VoiceCreateAbortedException || sessionChanged()) {
+            if (sessionChanged()) {
                 purgeSourceRecordings()
                 return@onFailure
             }
@@ -891,9 +847,6 @@ internal fun TtsGenerateRequest.isFreeSystemManualRequest(): Boolean =
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
     val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
-    // 받은 추가 팩의 클립은 문구(`messages`)가 아니다 — 팩 API 로 받는다(`docs/spec/voice-packs.md` §3). 편집기가 캐시를
-    // 못 찾았을 때 기본 목소리 클립과 같은 이 길로 부르므로 여기서 가른다.
-    downloadVoicePackClipIfHeld(messageId)?.let { return it }
     return api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
 }
 
@@ -969,7 +922,7 @@ internal fun MainViewModel.deviceAppVoiceLanguage(): String {
     val locales = getApplication<Application>().resources.configuration.locales
     val language = (if (!locales.isEmpty) locales[0] else null)?.language
         ?: Locale.getDefault().language
-    // 매핑 단일 출처(data.appVoiceLanguageOf) — 편집기 supportedAppVoiceLanguage 와 같은 함수라 divergence 없음.
+    // 매핑 단일 출처(data.appVoiceLanguageOf) — 편집기도 같은 함수를 부른다.
     return com.alarmtalk.app.data.appVoiceLanguageOf(language)
 }
 
@@ -985,15 +938,6 @@ internal fun MainViewModel.deviceAppVoiceLanguage(): String {
  *    유료 클론 전용이라 받아도 쓰지 못한 채 저장 공간만 먹는다(Codex #607).
  * best-effort: 실패해도 알람 저장 시점의 기존 다운로드 경로가 다시 시도한다.
  */
-/**
- * 목소리 등록 화면의 **인라인 동의 항목이 실제로 묻는** 유형.
- *
- * `VoiceProfileManagementPanel` 의 `needsBiometricConsent` 가 그리는 체크박스 하나에
- * 대응한다 — 여기 없는 유형은 그 체크로 기록하면 안 되고, 전용 시트로 따로 물어야 한다.
- * iOS 짝은 `VoiceCloneUploadFlow.inlineCoveredConsents`.
- */
-private val INLINE_COVERED_CONSENTS = setOf("voice_biometric")
-
 internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = null) {
     // 목소리를 연달아 바꾸면 이전 프리페치는 취소하고 마지막 선택만 받는다.
     voicePrefetchJob?.cancel()

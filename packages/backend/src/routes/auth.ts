@@ -3,8 +3,6 @@ import type { Client } from '@libsql/client/web';
 import type { Env, AppEnv } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { getDB } from '../lib/db';
-import { planWithGrantSql } from '../lib/plan-grant-sql';
-import { composeLimitedPlanFields, loadPlanGrantAnswer } from '../lib/plan-grants';
 import { logRouteError, logStructured } from '../lib/logger';
 import { errorBody } from '../lib/api-error';
 import type { ErrorCode } from '@alarmtalk/shared';
@@ -27,12 +25,6 @@ import { verifyAppleIdToken } from '../lib/apple-oauth';
 import { verifyKakaoAccessToken } from '../lib/kakao-oauth';
 import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { cancelPendingDeletionOnSignIn } from '../lib/account-deletion';
-import {
-  computedUserPlan,
-  loadPersonalPromoField,
-  personalPromoField,
-  resolvePersonalPromo,
-} from '../lib/personal-promo';
 import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
   dynamicPromptSettingsFromRow,
@@ -459,6 +451,48 @@ auth.post('/password-reset', async (c) => {
 
 // 비밀번호 재설정 확정: 코드 검증 → 새 비밀번호 해시로 교체 + token_epoch+1(유출된 기존 세션
 // 전부 폐기) → 코드 소모. 비밀번호 계정에만 허용한다.
+// 비밀번호 재설정 코드 확인(2026-11-16 오너 — 가입처럼 코드를 먼저 확인한 뒤 새 비밀번호로 넘어간다).
+// 코드를 **쓰지 않는다** — 소모는 재설정 확정(`/password-reset/confirm`)이 성공할 때다. 판정은 가입의 인증 확인과
+// 같은 `checkEmailVerificationCode` 이고 용도만 재설정이다(틀린 횟수도 같은 코드에 쌓인다). 비밀번호 계정이 아니면
+// 확정과 같은 답(AUTH_EMAIL_CODE_INVALID)을 준다 — 확인은 통과했는데 확정이 거절하는 갈래를 만들지 않는다.
+auth.post('/password-reset/verify', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = EmailVerificationConfirmRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const email = normalizeAuthEmail(parsed.data.email);
+  const db = getDB(c.env);
+
+  try {
+    const check = await checkEmailVerificationCode(
+      db,
+      c.env,
+      email,
+      parsed.data.code,
+      EMAIL_VERIFICATION_PURPOSE_RESET,
+    );
+    if (!check.ok) {
+      return c.json(errorBody(check.code, check.message), check.status);
+    }
+    const account = await classifyExistingAccount(db, email);
+    if (!account || account.kind !== 'password') {
+      return c.json(errorBody('AUTH_EMAIL_CODE_INVALID', 'Invalid email verification code'), 400);
+    }
+    return c.json({ success: true });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json(errorBody('AUTH_EMAIL_CODE_VERIFY_FAILED', 'Failed to verify email code'), 500);
+  }
+});
+
 auth.post('/password-reset/confirm', async (c) => {
   let body: unknown;
   try {
@@ -499,7 +533,7 @@ auth.post('/password-reset/confirm', async (c) => {
     const passwordHash = await hashPassword(parsed.data.password, c.env.PASSWORD_PEPPER);
     await db.execute({
       sql: `UPDATE users
-            SET password_hash = ?, token_epoch = token_epoch + 1, updated_at = datetime('now')
+            SET password_hash = ?, token_epoch = token_epoch + 1
             WHERE email = ?`,
       args: [passwordHash, email],
     });
@@ -576,10 +610,7 @@ auth.post('/register', async (c) => {
       c.env.JWT_SECRET,
     );
 
-    // ⚠ **`plan` 은 계산값이다**(기간 한정 개인 플랜 — `docs/spec/billing-lifecycle.md`).
-    //   신규 가입자의 원시 plan 은 언제나 'free' 이고, 기간 안이면 'plus' 로 읽힌다. 원시
-    //   'free' 리터럴을 그대로 내보내면 구버전 앱이 가입 직후 무료로 판정해 잠근다.
-    const promo = resolvePersonalPromo(c.env);
+    // 신규 가입자의 plan 은 언제나 'free' 다 — 유료는 스토어 결제(무료 체험 포함)만 올린다.
     return c.json(
       {
         token,
@@ -588,10 +619,7 @@ auth.post('/register', async (c) => {
           email: normalizedEmail,
           // 옛 앱은 이 칸을 문자열로 읽는다(`LEGACY_EMPTY_NAME`).
           name: LEGACY_EMPTY_NAME,
-          plan: computedUserPlan('free' as const, promo),
-          // 방금 만든 계정이라 구독 행이 없다 — 끝나면 종료 전환 대상이다.
-          personal_promo: personalPromoField('free', promo, { hasActiveSubscriptionRow: false }),
-          plan_grant: null,
+          plan: 'free',
           dynamic_prompt_settings: EMPTY_DYNAMIC_PROMPT_SETTINGS,
         },
       },
@@ -636,7 +664,7 @@ auth.post('/login', async (c) => {
 
   try {
     const result = await db.execute({
-      sql: `SELECT id, google_id, email, password_hash, ${planWithGrantSql('users')} AS plan, token_epoch,
+      sql: `SELECT id, google_id, email, password_hash, plan, token_epoch,
                    deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users WHERE email = ?`,
       args: [normalizedEmail],
@@ -672,7 +700,7 @@ auth.post('/login', async (c) => {
 
     if (!row.google_id) {
       await db.execute({
-        sql: `UPDATE users SET google_id = ?, updated_at = datetime('now') WHERE id = ?`,
+        sql: `UPDATE users SET google_id = ? WHERE id = ?`,
         args: [row.id, row.id],
       });
     }
@@ -690,16 +718,8 @@ auth.post('/login', async (c) => {
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(
       row as unknown as Record<string, unknown>,
     );
-    const promo = resolvePersonalPromo(c.env);
-    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
-    const grantAnswer = await loadPlanGrantAnswer(db, String(row.id), row.plan, promo.now);
-    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
-    const { personalPromo, planGrant } = composeLimitedPlanFields(
-      await loadPersonalPromoField(db, String(row.id), grantAnswer.rawPlan, promo),
-      grantAnswer.planGrant,
-    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
-    //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
+    //   토큰 서명·계정 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
     const deletionOutcome = await cancelPendingDeletionOnSignIn(db, String(row.id), {
       requestedAt: row.deletion_status === 'pending_deletion' ? row.deletion_requested_at : null,
@@ -722,10 +742,7 @@ auth.post('/login', async (c) => {
         id: row.id,
         email: row.email,
         name: LEGACY_EMPTY_NAME,
-        // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
-        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
-        personal_promo: personalPromo,
-        plan_grant: planGrant,
+        plan: row.plan ?? 'free',
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -762,7 +779,7 @@ auth.post('/google', async (c) => {
     // ⚠ **구글이 준 이름은 받지 않는다**(2026-10-29 닉네임 삭제 — 처리방침 수집 항목에서도 뺐고, `users.name` 칸째 없다).
 
     const existing = await db.execute({
-      sql: `SELECT id, google_id, email, ${planWithGrantSql('users')} AS plan, token_epoch,
+      sql: `SELECT id, google_id, email, plan, token_epoch,
                    deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users
             WHERE google_id = ? OR email = ?
@@ -771,8 +788,7 @@ auth.post('/google', async (c) => {
     });
 
     let userId: string;
-    // 원시 `users.plan` — 응답에는 계산값을 싣는다(아래). `null` 은 계산에서도 `null` 이라
-    // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
+    // `users.plan` — `null` 은 응답에서 예전처럼 'free' 로 읽는다.
     let rawPlan: 'free' | 'plus' | null;
     let tokenEpoch = 0;
     // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
@@ -795,7 +811,7 @@ auth.post('/google', async (c) => {
         row.deletion_status === 'pending_deletion' ? ((row.deletion_requested_at as string | null) ?? null) : null;
       await db.execute({
         sql: `UPDATE users
-              SET google_id = ?, email = ?, updated_at = datetime('now')
+              SET google_id = ?, email = ?
               WHERE id = ?`,
         args: [googleId, email, userId],
       });
@@ -832,16 +848,8 @@ auth.post('/google', async (c) => {
         ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
         : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
-    const promo = resolvePersonalPromo(c.env);
-    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
-    const grantAnswer = await loadPlanGrantAnswer(db, userId, rawPlan, promo.now);
-    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
-    const { personalPromo, planGrant } = composeLimitedPlanFields(
-      await loadPersonalPromoField(db, userId, grantAnswer.rawPlan, promo),
-      grantAnswer.planGrant,
-    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
-    //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
+    //   토큰 서명·계정 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
     const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, {
       requestedAt: observedDeletionRequestedAt,
@@ -864,10 +872,7 @@ auth.post('/google', async (c) => {
         id: userId,
         email,
         name: LEGACY_EMPTY_NAME,
-        // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
-        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
-        personal_promo: personalPromo,
-        plan_grant: planGrant,
+        plan: rawPlan ?? 'free',
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -940,7 +945,7 @@ auth.post('/apple', async (c) => {
     // ⚠ **애플이 준 이름은 받지 않는다**(2026-10-29 닉네임 삭제 — 1.3 앱은 보내지도 않고, `users.name` 칸째 없다).
 
     const existing = await db.execute({
-      sql: `SELECT id, apple_id, email, ${planWithGrantSql('users')} AS plan, token_epoch,
+      sql: `SELECT id, apple_id, email, plan, token_epoch,
                    deletion_status, deletion_requested_at, dynamic_prompt_settings_json
             FROM users
             WHERE apple_id = ? OR email = ?
@@ -949,8 +954,7 @@ auth.post('/apple', async (c) => {
     });
 
     let userId: string;
-    // 원시 `users.plan` — 응답에는 계산값을 싣는다(아래). `null` 은 계산에서도 `null` 이라
-    // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
+    // `users.plan` — `null` 은 응답에서 예전처럼 'free' 로 읽는다.
     let rawPlan: 'free' | 'plus' | null;
     let tokenEpoch = 0;
     // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
@@ -981,7 +985,7 @@ auth.post('/apple', async (c) => {
 
       await db.execute({
         sql: `UPDATE users
-              SET apple_id = ?, updated_at = datetime('now')
+              SET apple_id = ?
               WHERE id = ?`,
         // ⚠ 구글 경로와 달리 **email 을 덮어쓰지 않는다.** 애플은 재로그인 때 이메일을
         // 안 주는 경우가 있어, 그때 합성한 `<sub>@apple.local` 로 갱신하면 이미 저장된
@@ -1049,16 +1053,8 @@ auth.post('/apple', async (c) => {
         ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
         : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
-    const promo = resolvePersonalPromo(c.env);
-    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
-    const grantAnswer = await loadPlanGrantAnswer(db, userId, rawPlan, promo.now);
-    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
-    const { personalPromo, planGrant } = composeLimitedPlanFields(
-      await loadPersonalPromoField(db, userId, grantAnswer.rawPlan, promo),
-      grantAnswer.planGrant,
-    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
-    //   토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
+    //   토큰 서명·계정 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면, 실패를 본 사람은 아직
     //   탈퇴가 진행 중인 줄 안다. 이 쓰기가 실패하면 500 — 다시 로그인하면 된다.
     const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, {
       requestedAt: observedDeletionRequestedAt,
@@ -1081,10 +1077,7 @@ auth.post('/apple', async (c) => {
         id: userId,
         email: effectiveEmail,
         name: LEGACY_EMPTY_NAME,
-        // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
-        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
-        personal_promo: personalPromo,
-        plan_grant: planGrant,
+        plan: rawPlan ?? 'free',
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -1151,7 +1144,7 @@ auth.post('/kakao', async (c) => {
     // 행이 있으면 그 행이 이긴다(두 행이 걸리면 회원번호 쪽).
     const existing = kakao.verifiedEmail
       ? await db.execute({
-          sql: `SELECT id, kakao_id, email, ${planWithGrantSql('users')} AS plan, token_epoch,
+          sql: `SELECT id, kakao_id, email, plan, token_epoch,
                        deletion_status, deletion_requested_at, dynamic_prompt_settings_json
                 FROM users
                 WHERE kakao_id = ? OR email = ?
@@ -1160,7 +1153,7 @@ auth.post('/kakao', async (c) => {
           args: [kakaoId, email, kakaoId],
         })
       : await db.execute({
-          sql: `SELECT id, kakao_id, email, ${planWithGrantSql('users')} AS plan, token_epoch,
+          sql: `SELECT id, kakao_id, email, plan, token_epoch,
                        deletion_status, deletion_requested_at, dynamic_prompt_settings_json
                 FROM users
                 WHERE kakao_id = ?
@@ -1169,8 +1162,7 @@ auth.post('/kakao', async (c) => {
         });
 
     let userId: string;
-    // 원시 `users.plan` — 응답에는 계산값을 싣는다(아래). `null` 은 계산에서도 `null` 이라
-    // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
+    // `users.plan` — `null` 은 응답에서 예전처럼 'free' 로 읽는다.
     let rawPlan: 'free' | 'plus' | null;
     let tokenEpoch = 0;
     // 로그인 첫 조회가 본 탈퇴 신청(유예가 아니면 null) — 그 신청만 철회한다(`cancelPendingDeletionOnSignIn`).
@@ -1199,7 +1191,7 @@ auth.post('/kakao', async (c) => {
       await db.execute({
         // 애플 경로와 같이 **email 은 덮어쓰지 않는다** — 이미 저장된 주소(이메일 가입·구글)가 계정의 주소다.
         sql: `UPDATE users
-              SET kakao_id = ?, updated_at = datetime('now')
+              SET kakao_id = ?
               WHERE id = ?`,
         args: [kakaoId, userId],
       });
@@ -1230,14 +1222,6 @@ auth.post('/kakao', async (c) => {
         ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
         : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
-    const promo = resolvePersonalPromo(c.env);
-    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
-    const grantAnswer = await loadPlanGrantAnswer(db, userId, rawPlan, promo.now);
-    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
-    const { personalPromo, planGrant } = composeLimitedPlanFields(
-      await loadPersonalPromoField(db, userId, grantAnswer.rawPlan, promo),
-      grantAnswer.planGrant,
-    );
     // ⚠ **다시 로그인하면 탈퇴를 철회한다 — 응답이 다 준비된 뒤 마지막에**(`cancelPendingDeletionOnSignIn`, 코덱스 #904).
     const deletionOutcome = await cancelPendingDeletionOnSignIn(db, userId, {
       requestedAt: observedDeletionRequestedAt,
@@ -1260,10 +1244,7 @@ auth.post('/kakao', async (c) => {
         id: userId,
         email: effectiveEmail,
         name: LEGACY_EMPTY_NAME,
-        // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
-        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
-        personal_promo: personalPromo,
-        plan_grant: planGrant,
+        plan: rawPlan ?? 'free',
         dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
@@ -1303,7 +1284,7 @@ auth.get('/me', async (c) => {
   try {
     const db = getDB(c.env);
     const result = await db.execute({
-      sql: `SELECT id, email, ${planWithGrantSql('users')} AS plan, token_epoch, deletion_status, dynamic_prompt_settings_json
+      sql: `SELECT id, email, plan, token_epoch, deletion_status, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [payload.sub, payload.sub],
     });
@@ -1353,25 +1334,13 @@ auth.get('/me', async (c) => {
       },
       c.env.JWT_SECRET,
     ).catch(() => null);
-    const promo = resolvePersonalPromo(c.env);
-    // 등급과 지급 끝은 한 순간·한 문장으로 계산한다(`loadPlanGrantAnswer`) — 프로모도 같은 `promo.now` 다.
-    const grantAnswer = await loadPlanGrantAnswer(db, String(row.id), row.plan, promo.now);
-    // 행사 조각은 **원시** plan 으로 계산하고, 둘 다 덮으면 더 늦게 끝나는 기한 하나만 싣는다(`composeLimitedPlanFields`).
-    const { personalPromo, planGrant } = composeLimitedPlanFields(
-      await loadPersonalPromoField(db, String(row.id), grantAnswer.rawPlan, promo),
-      grantAnswer.planGrant,
-    );
     return c.json({
       ...(rolledToken ? { token: rolledToken } : {}),
       user: {
         id: row.id,
         email: row.email,
         name: LEGACY_EMPTY_NAME,
-        // ⚠ **계산값**(기간 한정 개인 플랜). 앱의 판정기·울림 캐시가 이 값을 `users.plan` 으로
-        //   적는다 — 구버전 앱도 이것만으로 개인 기능이 열린다. 끝나면 곧바로 'free' 가 된다.
-        plan: computedUserPlan(grantAnswer.plan, promo) ?? 'free',
-        personal_promo: personalPromo,
-        plan_grant: planGrant,
+        plan: row.plan ?? 'free',
         // 탈퇴 유예 상태 — 클라가 복구 전용 화면 게이팅에 쓴다(누락 시 active 로 오인해 진입).
         deletion_status: (row.deletion_status as string | null) ?? 'active',
         dynamic_prompt_settings: dynamicPromptSettings,
@@ -1406,7 +1375,7 @@ logout.post('/', async (c) => {
   try {
     await db.execute({
       sql: `UPDATE users
-            SET token_epoch = token_epoch + 1, updated_at = datetime('now')
+            SET token_epoch = token_epoch + 1
             WHERE id = ? OR google_id = ?`,
       args: [userPk ?? userId, userId],
     });

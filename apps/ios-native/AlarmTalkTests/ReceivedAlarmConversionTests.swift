@@ -556,7 +556,7 @@ final class ReceivedAlarmConversionTests: XCTestCase {
             XCTAssertEqual(after.audioCacheKey, keys.first)
             XCTAssertEqual(after.localAudioUri, AudioCacheStore.shared.cachedURL(for: keys[0])?.lastPathComponent)
             XCTAssertEqual(after.voiceRandomContext, RandomPromptContext.preset.rawValue)
-            XCTAssertEqual(after.syncStateEnum, .localOnly, "아직 서버에 없는 내 알람이다")
+            XCTAssertEqual(after.syncState, AlarmSyncState.localOnly.rawValue, "아직 서버에 없는 내 알람이다")
             XCTAssertEqual(after.hour, row.hour)
             XCTAssertEqual(after.minute, row.minute)
             XCTAssertTrue(voice.needsScheduleReconcile, "예약을 다시 걸어야 새 목소리로 운다")

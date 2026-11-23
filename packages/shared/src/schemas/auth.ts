@@ -96,11 +96,6 @@ export function normalizeEmail(raw: string): string {
   return raw.trim().toLowerCase();
 }
 
-/** 정규화한 값이 [EMAIL_PATTERN] 에 맞는가. 세 구현이 같은 답을 내야 한다. */
-export function isValidEmailFormat(value: string): boolean {
-  return EMAIL_RE.test(normalizeEmail(value));
-}
-
 /**
  * 이메일을 받는 **모든** 요청이 쓰는 스키마. 새 경로가 이메일을 받으면 자체
  * `z.string().email()` 을 쓰지 말고 이걸 가져다 쓴다 — 같은 값에 규칙이 여러 개면
@@ -120,25 +115,21 @@ export const EmailSchema = z
 export const EmailVerificationRequestSchema = z.object({
   email: EmailSchema,
 });
-export type EmailVerificationRequest = z.infer<typeof EmailVerificationRequestSchema>;
 
 export const EmailVerificationConfirmRequestSchema = z.object({
   email: EmailSchema,
   code: EmailVerificationCodeSchema,
 });
-export type EmailVerificationConfirmRequest = z.infer<typeof EmailVerificationConfirmRequestSchema>;
 
 export const PasswordResetRequestSchema = z.object({
   email: EmailSchema,
 });
-export type PasswordResetRequest = z.infer<typeof PasswordResetRequestSchema>;
 
 export const PasswordResetConfirmRequestSchema = z.object({
   email: EmailSchema,
   code: EmailVerificationCodeSchema,
   password: PasswordSchema,
 });
-export type PasswordResetConfirmRequest = z.infer<typeof PasswordResetConfirmRequestSchema>;
 
 /**
  * 표시 이름(닉네임) 공통 규칙 — **모든 경로가 이걸 쓴다.**
@@ -212,7 +203,6 @@ export const RegisterRequestSchema = z.object({
   //   보내는 값만 형식을 거쳐 받아 둔다 — 강제 업데이트 뒤 `users.name` 칸과 함께 지운다.
   name: DisplayNameSchema.optional(),
 });
-export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 
 /**
  * 로그인 요청.
@@ -233,12 +223,10 @@ export const LoginRequestSchema = z.object({
   email: EmailSchema,
   password: z.string().min(1).max(128),
 });
-export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 
 export const GoogleLoginRequestSchema = z.object({
   id_token: z.string().min(1),
 });
-export type GoogleLoginRequest = z.infer<typeof GoogleLoginRequestSchema>;
 
 // Sign in with Apple. 앱이 `ASAuthorizationAppleIDCredential` 에서 얻은 값을 그대로 보낸다.
 //
@@ -257,11 +245,9 @@ export const AppleLoginRequestSchema = z.object({
   full_name: z.string().max(256).optional(),
   authorization_code: z.string().min(1).max(2048).optional(),
 });
-export type AppleLoginRequest = z.infer<typeof AppleLoginRequestSchema>;
 
 // 카카오 로그인(2026-11-14). 앱이 카카오 SDK(카카오톡 또는 카카오계정 로그인)로 받은 **액세스 토큰**을 보낸다.
 // 서버가 카카오 API 로 우리 앱의 토큰인지·회원번호·인증된 이메일을 확인한다(`lib/kakao-oauth.ts`).
 export const KakaoLoginRequestSchema = z.object({
   access_token: z.string().min(1).max(4096),
 });
-export type KakaoLoginRequest = z.infer<typeof KakaoLoginRequestSchema>;

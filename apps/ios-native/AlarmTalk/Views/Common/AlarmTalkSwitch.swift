@@ -35,6 +35,10 @@ struct AlarmTalkSwitchStyle: ViewModifier {
 }
 
 /// 트랙·손잡이 색을 **둘 다** 우리가 정하는 스위치.
+///
+/// 모양은 안드로이드 M3 `Switch`(`AlarmTalkSwitch`)와 같다(2026-11-22 두 앱 통일) — 트랙 52×32, 손잡이 **꺼짐 16 / 켜짐 24**,
+/// 꺼짐 트랙은 `surfaceVariant` 에 `outline` 2 테두리, 켜짐 트랙은 테두리 없이 `primary`, 손잡이는 둘 다 흰색이고 그림자가 없다.
+/// 그전 iOS 는 시스템 스위치 크기(51×31 · 손잡이 27 고정 · 그림자)였다.
 private struct AlarmTalkToggleStyle: ToggleStyle {
     let palette: AlarmTalkPalette
     let isDark: Bool
@@ -51,31 +55,38 @@ private struct AlarmTalkToggleStyle: ToggleStyle {
     // 안드로이드를 이쪽으로 맞춘다(`ControlsAndPermissions.kt` 의 `AlarmTalkSwitch`).
     private var thumbColor: Color { .white }
 
+    /// 트랙 크기 — M3 `SwitchDefaults` 의 52×32.
+    private static let trackWidth: CGFloat = 52
+    private static let trackHeight: CGFloat = 32
+    /// 손잡이 지름 — 꺼짐 16 · 켜짐 24(M3). 손잡이 중심은 언제나 트랙 끝에서 16 안쪽이다.
+    private static let thumbOff: CGFloat = 16
+    private static let thumbOn: CGFloat = 24
+
     func makeBody(configuration: Configuration) -> some View {
-        HStack {
+        let thumb = configuration.isOn ? Self.thumbOn : Self.thumbOff
+        return HStack {
             configuration.label
             Spacer(minLength: 0)
             ZStack(alignment: configuration.isOn ? .trailing : .leading) {
                 Capsule()
                     .fill(configuration.isOn ? trackColor : palette.surfaceVariant)
+                    // 꺼짐만 테두리 — 트랙 **안쪽**으로 2(M3 꺼짐 트랙의 `outline` 2 테두리).
                     .overlay(
-                        Capsule().stroke(
+                        Capsule().strokeBorder(
                             configuration.isOn ? Color.clear : palette.outline,
-                            lineWidth: 1
+                            lineWidth: 2
                         )
                     )
-                    .frame(width: 51, height: 31)
+                    .frame(width: Self.trackWidth, height: Self.trackHeight)
+                // ⚠ **켜짐·꺼짐 크기가 다르다**(2026-11-22 — 안드로이드 M3 와 같게). 2026-08-10 에는 iOS 시스템 스위치처럼
+                //   27 고정이었고 "부풀었다 줄어드는 움직임이 낯설다" 고 적었지만, 두 앱의 스위치를 같은 물건으로 맞추기로 했다.
                 Circle()
                     .fill(thumbColor)
-                    .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
-                    // ⚠ **켜짐·꺼짐 크기가 같다.** iOS 시스템 스위치는 손잡이 지름이
-                    // 상태와 무관하게 27 이다(누르고 있는 동안만 옆으로 늘어난다).
-                    // 상태에 따라 20↔27 로 바꾸면 그건 Material 방식이라, 전환할 때마다
-                    // 손잡이가 부풀었다 줄어드는 낯선 움직임이 된다.
-                    .frame(width: 27, height: 27)
-                    .padding(.horizontal, 2)
+                    .frame(width: thumb, height: thumb)
+                    // 중심을 트랙 끝에서 16 안쪽에 둔다 — 꺼짐은 끝에서 8, 켜짐은 4 떨어진다.
+                    .padding(.horizontal, (Self.trackHeight - thumb) / 2)
             }
-            .frame(width: 51, height: 31)
+            .frame(width: Self.trackWidth, height: Self.trackHeight)
             .contentShape(Rectangle())
             .onTapGesture {
                 withAnimation(.easeInOut(duration: 0.18)) {
@@ -91,5 +102,98 @@ extension View {
     /// 앱 공용 스위치 색·스타일을 입힌다. `muted` 면 켜짐·꺼짐과 상관없이 회색이다(`AlarmRow.switchMuted`).
     func alarmTalkSwitch(muted: Bool = false) -> some View {
         modifier(AlarmTalkSwitchStyle(muted: muted))
+    }
+}
+
+/// 단계가 있는 막대(목소리 크기·목소리 높이) — 트랙 4 · 흰 손잡이 20(옅은 그림자) · 손잡이 반지름만큼 들여 그린다. 안드로이드
+/// `ui/components/WakerVolumeSlider.kt` 의 `WakerStepSlider` 와 같은 모양이다. `origin` 이 없으면 왼쪽 끝부터 채우고(음량), 있으면
+/// 그 값부터 손잡이까지만 채우고 그 자리에 눈금을 둔다(목소리 높이의 '원래', 시안 A 2026-11-15).
+///
+/// ⚠ **시스템 `Slider` 로 되돌리지 말 것.** iOS 26 의 손잡이는 넓적한 흰 알약이라 100% 에서 막대 오른쪽 끝에 얼룩처럼 붙고
+/// (2026-11-22 오너 "로딩바 오른쪽 끝에 살짝 뭐가 있는 건 어쩔 수 없는 거야?"), 안드로이드의 동그라미와 다른 물건이 된다.
+/// 시스템 슬라이더는 손잡이 모양을 바꿀 수 없어 직접 그린다 — 원래 '톤 조절' 화면 전용이던 막대를 꺼내 '목소리 크기' 에도 쓴다.
+///
+/// 손을 떼거나(끌기 끝) 읽어 주기로 한 칸 옮기면 `onEditingEnded` 를 부른다 — 부르는 쪽이 그 값으로 들려준다.
+struct WakerStepSlider: View {
+    static let thumbSize: CGFloat = 20
+
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    /// 채움을 시작할 값. nil 이면 왼쪽 끝부터.
+    var origin: Double? = nil
+    let accessibilityLabel: String
+    let accessibilityValue: String
+    var onEditingEnded: () -> Void = {}
+
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        GeometryReader { geo in
+            let inset = Self.thumbSize / 2
+            let track = max(geo.size.width - Self.thumbSize, 1)
+            let valueX = inset + track * fraction(value)
+            let originX = inset + track * fraction(origin ?? range.lowerBound)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(theme.palette.surfaceVariant)
+                    .frame(width: track, height: 4)
+                    .offset(x: inset)
+                Capsule()
+                    .fill(theme.palette.primary)
+                    .frame(width: abs(valueX - originX), height: 4)
+                    .offset(x: min(valueX, originX))
+                if origin != nil {
+                    Capsule()
+                        .fill(theme.palette.onSurfaceVariant)
+                        .frame(width: 2, height: 12)
+                        .offset(x: originX - 1)
+                }
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: Self.thumbSize, height: Self.thumbSize)
+                    .shadow(color: .black.opacity(0.35), radius: 1.5, y: 1)
+                    .offset(x: valueX - inset)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        guard isEnabled else { return }
+                        let raw = range.lowerBound + Double((drag.location.x - inset) / track) * (range.upperBound - range.lowerBound)
+                        let next = snapped(raw)
+                        if next != value { value = next }
+                    }
+                    .onEnded { _ in
+                        guard isEnabled else { return }
+                        onEditingEnded()
+                    }
+            )
+        }
+        .frame(height: 44)
+        .opacity(isEnabled ? 1 : 0.38)
+        .accessibilityElement()
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(accessibilityValue)
+        .accessibilityAdjustableAction { direction in
+            guard isEnabled else { return }
+            switch direction {
+            case .increment: value = snapped(value + step)
+            case .decrement: value = snapped(value - step)
+            @unknown default: return
+            }
+            onEditingEnded()
+        }
+    }
+
+    private func fraction(_ v: Double) -> CGFloat {
+        CGFloat((v - range.lowerBound) / (range.upperBound - range.lowerBound))
+    }
+
+    private func snapped(_ raw: Double) -> Double {
+        let clamped = min(max(raw, range.lowerBound), range.upperBound)
+        return range.lowerBound + ((clamped - range.lowerBound) / step).rounded() * step
     }
 }

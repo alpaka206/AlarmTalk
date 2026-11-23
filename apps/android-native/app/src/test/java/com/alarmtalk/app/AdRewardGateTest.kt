@@ -13,14 +13,11 @@ class AdRewardGateTest {
         remaining: Int = 10,
         pending: Int = 0,
         canWatch: Boolean = true,
-        reason: String? = null,
     ) = AdRewardStatus(
         credits = credits,
         remainingGrants = remaining,
-        monthlyLimit = 10,
         pending = pending,
         canWatch = canWatch,
-        unavailableReason = reason,
     )
 
     @Test
@@ -35,7 +32,7 @@ class AdRewardGateTest {
         // 빈 운영 ID — 광고 제안 자체를 숨긴다.
         assertFalse(AdRewardGate.canOfferAd(true, reward(), adsConfigured = false))
         assertFalse(AdRewardGate.canOfferAd(true, reward(remaining = 0), adsConfigured = true))
-        assertFalse(AdRewardGate.canOfferAd(true, reward(canWatch = false, reason = "disabled"), adsConfigured = true))
+        assertFalse(AdRewardGate.canOfferAd(true, reward(canWatch = false), adsConfigured = true))
         assertFalse(AdRewardGate.canOfferAd(true, null, adsConfigured = true))
         assertFalse(AdRewardGate.canOfferAd(false, reward(), adsConfigured = true))
     }
@@ -49,8 +46,8 @@ class AdRewardGateTest {
         assertTrue(AdRewardGate.canChangeManualText(true, 0, reward(), adsConfigured = true))
         // 광고가 없는 빌드·운영 스위치가 꺼진 서버·이번 달 광고 상한이면 회색이다.
         assertFalse(AdRewardGate.canChangeManualText(true, 0, reward(), adsConfigured = false))
-        assertFalse(AdRewardGate.canChangeManualText(true, 0, reward(canWatch = false, reason = "disabled"), adsConfigured = true))
-        assertFalse(AdRewardGate.canChangeManualText(true, 0, reward(remaining = 0, canWatch = false, reason = "monthly_limit"), adsConfigured = true))
+        assertFalse(AdRewardGate.canChangeManualText(true, 0, reward(canWatch = false), adsConfigured = true))
+        assertFalse(AdRewardGate.canChangeManualText(true, 0, reward(remaining = 0, canWatch = false), adsConfigured = true))
         // 보상이 남았거나 확인 중이면 만들 수 있다.
         assertTrue(AdRewardGate.canChangeManualText(true, 0, reward(credits = 1, canWatch = false), adsConfigured = false))
         assertTrue(AdRewardGate.canChangeManualText(true, 0, reward(pending = 1, canWatch = false), adsConfigured = false))
@@ -60,7 +57,7 @@ class AdRewardGateTest {
     }
 
     @Test
-    fun `표 — 플러스·체험·관리자 지급이면 광고 없이 30회 규칙`() {
+    fun `표 — 플러스·체험이면 광고 없이 30회 규칙`() {
         assertEquals(ManualCreationRoute.PLAN_RULES, AdRewardGate.route(false, 0, reward(), adsConfigured = true))
     }
 
@@ -80,13 +77,13 @@ class AdRewardGateTest {
         assertEquals(ManualCreationRoute.OFFER_AD, AdRewardGate.route(true, 0, reward(), true))
         assertEquals(
             ManualCreationRoute.NEXT_DATE,
-            AdRewardGate.route(true, 0, reward(remaining = 0, canWatch = false, reason = "monthly_limit"), true),
+            AdRewardGate.route(true, 0, reward(remaining = 0, canWatch = false), true),
         )
         // 미지원(이 빌드에 광고 없음)·스위치 꺼짐·옛 서버(`ad_reward` 없음)도 다음 제공일 안내다.
         assertEquals(ManualCreationRoute.NEXT_DATE, AdRewardGate.route(true, 0, reward(), adsConfigured = false))
         assertEquals(
             ManualCreationRoute.NEXT_DATE,
-            AdRewardGate.route(true, 0, reward(canWatch = false, reason = "disabled"), true),
+            AdRewardGate.route(true, 0, reward(canWatch = false), true),
         )
         assertEquals(ManualCreationRoute.NEXT_DATE, AdRewardGate.route(true, null, null, true))
     }

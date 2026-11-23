@@ -57,7 +57,9 @@ class AlarmVoiceRecorderInstrumentedTest {
         Thread.sleep(150)
         val error = runCatching { recorder.stop() }.exceptionOrNull()
         assertNotNull(error)
-        assertTrue("$error", AlarmTalkLog.isRecordingStoppedTooSoon(error!!))
+        assertTrue("$error", generateSequence(error!!) { it.cause }.any { it is RecordingStoppedTooSoonException })
+        // 보고 쪽 분류(이슈가 아니라 브레드크럼)는 상위 판정이 맡는다.
+        assertTrue("$error", AlarmTalkLog.isRecordingEndedByUserOrDevice(error))
         assertTrue(error.message.orEmpty().isNotBlank())
         assertTrue(!recorder.isRecording)
     }

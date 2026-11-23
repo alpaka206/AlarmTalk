@@ -21,7 +21,7 @@ import java.io.File
  *
  * 토큰이 바뀌면 토큰을 키로 쓰는 효과가 전부 다시 돈다(동의·계정·목소리 준비 확인과 목소리·
  * 클립·구독 선로드) — 복귀할 때마다 앱 전체를 다시 불러오게 된다. 그래서 토큰은 뷰모델의 첫
- * 갱신(콜드 스타트)과 워커만 굴리고, 복귀 때는 plan·프로모만 새로 받는다.
+ * 갱신(콜드 스타트)과 워커만 굴리고, 복귀 때는 plan 만 새로 받는다.
  *
  * `MainViewModel` 은 암호화 저장소·Room·워커를 통째로 물고 있어 단위 테스트에서 세울 수 없다
  * (`SignOutWindowOpensBeforeServerCallTest` 와 같은 사정). 그래서 둘로 나눠 고정한다:
@@ -65,7 +65,6 @@ class EntryRefreshKeepsTokenTest {
             user = user.copy(plan = "free"),
             provider = login.provider,
             rolledToken = sessionTokenToSave(rollToken = false, serverToken = "t-rolled"),
-            userFetchedAtMillis = System.currentTimeMillis(),
         )
         assertEquals("t-login", kept?.token)
         assertEquals("t-login", store.read()?.token)
@@ -77,7 +76,6 @@ class EntryRefreshKeepsTokenTest {
             user = user,
             provider = login.provider,
             rolledToken = sessionTokenToSave(rollToken = true, serverToken = "t-rolled"),
-            userFetchedAtMillis = System.currentTimeMillis(),
         )
         assertEquals("t-rolled", store.read()?.token)
     }
@@ -108,85 +106,36 @@ class EntryRefreshKeepsTokenTest {
     }
 
     /**
-     * **늦게 온 옛 계정 응답은 아무것도 쓰지 않는다**(순번 가드). 장부 테스트(`PersonalPromoLedgerTest`)는
+     * **늦게 온 옛 계정 응답은 아무것도 쓰지 않는다**(순번 가드). 장부 테스트(`AccountRequestLedgerTest`)는
      * 규칙만 본다 — 여기서는 그 규칙이 **쓰기보다 먼저** 걸려 있는지를 고정한다. 순서가 뒤집히면 옛 답이
-     * 세션 plan·프로모 도장을 되돌려, 방금 유료가 된 사람을 다음 조회까지 무료로 그린다.
+     * 세션 plan 을 되돌려, 방금 유료가 된 사람을 다음 조회까지 무료로 그린다.
      */
     @Test
     fun refreshAppSessionNowClaimsThePlanAnswerBeforeWritingAnything() {
         val body = bodyOf(authActions, "internal suspend fun MainViewModel.refreshAppSessionNow(")
-        val claim = body.indexOf("if (!personalPromoLedger.claimPlanAnswer(accountRequest))")
+        val claim = body.indexOf("if (!accountRequestLedger.claimPlanAnswer(accountRequest))")
         assertTrue("refreshAppSessionNow 가 plan 답을 `claimPlanAnswer` 로 먼저 잡지 않는다.", claim >= 0)
         val bail = body.indexOf("return@onSuccess", claim)
         val save = body.indexOf("authSessionStore.saveSessionIfAlive(")
         val write = body.indexOf("entitlementWriter.write(")
-        val applied = body.indexOf("personalPromoLedger.recordPlanApplied(accountRequest)")
+        val applied = body.indexOf("accountRequestLedger.recordPlanApplied(accountRequest)")
         assertTrue("세션 저장을 못 찾았다 — 이름이 바뀌었으면 이 테스트도 고칠 것.", save >= 0 && write >= 0 && applied >= 0)
         assertTrue("옛 답이면 쓰기 전에 빠져나가야 한다(`return@onSuccess`).", bail in (claim + 1) until save)
         assertTrue("`claimPlanAnswer` 가 세션 저장보다 뒤에 있다.", claim < save && claim < write && claim < applied)
     }
 
-    /** **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11) — 실패도 적어야 한다. */
-    @Test
-    fun bothEntryAccountRequestsRecordTheirFailures() {
-        for (header in listOf(
-            "internal suspend fun MainViewModel.refreshAppSessionNow(",
-            "internal fun MainViewModel.checkAccountStatus(",
-        )) {
-            val body = bodyOf(authActions, header)
-            val failure = body.indexOf(".onFailure")
-            assertTrue("$header 의 실패 갈래를 못 찾았다.", failure >= 0)
-            assertTrue(
-                "$header 가 실패를 `recordAccountFailure(accountRequest)` 로 적지 않는다 — 같은 진입의 뒤 성공이 " +
-                    "세션 한가운데 종료 안내를 띄운다.",
-                body.indexOf("recordAccountFailure(accountRequest)", failure) >= 0,
-            )
-        }
-    }
-
-    /** 로그인·가입 응답도 이 진입의 계정 응답이다(D11 — iOS 와 같다). 실패는 적지 않는다. */
-    @Test
-    fun signInResponsesAreThisEntrysAccountAnswer() {
-        for (header in listOf(
-            "internal fun MainViewModel.login(",
-            "internal fun MainViewModel.register(",
-            "internal fun MainViewModel.finishGoogleLogin(",
-        )) {
-            val body = bodyOf(authActions, header)
-            // 표는 **요청을 보내기 전에** 뜬다 — 도착해서 뜨면 앞 진입의 요청이 이번 진입의 답이 된다(Codex #803).
-            val ticket = body.indexOf("val accountRequest = beginAccountRequest()")
-            val send = body.indexOf("runCatching {")
-            assertTrue("$header 가 요청 전에 표를 뜨지 않는다.", ticket >= 0 && send >= 0 && ticket < send)
-            val signedIn = body.indexOf("onSignedIn()")
-            assertTrue("$header 에서 `onSignedIn()` 을 못 찾았다.", signedIn >= 0)
-            val recorded = body.indexOf("recordSignInAnswer(response.user, accountRequest)")
-            assertTrue(
-                "$header 가 로그인 응답을 보낼 때 뜬 표로 적지 않는다(`recordSignInAnswer(response.user, accountRequest)`).",
-                recorded >= 0,
-            )
-            // 세션을 올리면 로그인 뒤 계정 조회가 곧바로 뜬다 — 멈추는 `onSignedIn()` 보다 **먼저** 적어야
-            // 이 응답이 이번 진입의 첫 결과다(Codex #803).
-            assertTrue("$header 가 `onSignedIn()` 뒤에 로그인 응답을 적는다.", recorded < signedIn)
-            val failure = body.indexOf(".onFailure")
-            assertTrue(
-                "$header 가 로그인 **실패**를 계정 결과로 적는다 — 같은 진입의 재시도 성공이 첫 결과여야 한다.",
-                failure < 0 || !body.substring(failure).contains("recordAccountFailure"),
-            )
-        }
-    }
-
     /**
      * **결제 전 조회의 plan 도 `/auth/me` 와 같은 순번으로 가른다**(Codex #803). 안 그러면 먼저 보낸
-     * `/auth/me` 가 늦게 도착해 결제 전 조회가 쓴 더 새 plan·프로모를 덮는다.
+     * `/auth/me` 가 늦게 도착해 결제 전 조회가 쓴 더 새 plan 을 덮는다.
      */
     @Test
     fun billingPreflightTakesAPlanTicketBeforeItsRequestAndClaimsBeforeWriting() {
         val body = bodyOf(billingActions, "private suspend fun MainViewModel.crossStoreRenewalBlocked(")
         val ticket = body.indexOf("val planRequest = beginAccountRequest()")
         val send = body.indexOf("api.getSubscription(")
-        val claim = body.indexOf("personalPromoLedger.claimPlanAnswer(planRequest)")
+        val claim = body.indexOf("accountRequestLedger.claimPlanAnswer(planRequest)")
         val save = body.indexOf("saveSubscriptionSnapshot(ticket, toSave)")
-        val applied = body.indexOf("personalPromoLedger.recordPlanApplied(planRequest)")
+        val applied = body.indexOf("accountRequestLedger.recordPlanApplied(planRequest)")
         assertTrue("결제 전 조회가 요청 전에 plan 표를 뜨지 않는다.", ticket >= 0 && send >= 0 && ticket < send)
         assertTrue("결제 전 조회가 쓰기 전에 plan 순번을 잡지 않는다.", claim > send && save > claim)
         assertTrue("잡은 답만 plan 반영으로 적어야 한다.", applied > save)

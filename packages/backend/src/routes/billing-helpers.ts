@@ -1,7 +1,6 @@
 import type { AppEnv } from '../types';
 import type { Context } from 'hono';
 import { getDB } from '../lib/db';
-import { computedUserPlan, type PersonalPromoState } from '../lib/personal-promo';
 import {
   PAID_PLAN_TYPES as SHARED_PAID_PLAN_TYPES,
   PAID_USER_PLANS as SHARED_PAID_USER_PLANS,
@@ -18,24 +17,14 @@ export function planTypeToUserPlan(planType: string): 'free' | 'plus' {
 }
 
 /**
- * **원시** `users.plan` 이 유료인가 — 기간 한정 개인 플랜을 **반영하지 않는다.**
- * 라우트는 [hasPersonalVoiceAccess] 를 쓴다(목소리 게이트는 전부 내 개인 기능이다). 스펙:
- * `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」의 계산값/원시값 표.
- */
-function isPaidVoicePlan(plan: unknown): boolean {
-  return typeof plan === 'string' && PAID_USER_PLANS.has(plan);
-}
-
-/**
- * **내 개인 목소리 기능**을 쓸 수 있는가 — 원시 `users.plan` 에 기간 한정 개인 플랜을
- * 반영해 판정한다(원시 free 이고 구간 안이면 개인).
+ * **내 개인 목소리 기능**을 쓸 수 있는가 — `users.plan` 이 유료(`PAID_USER_PLANS`)인가 하나로 판정한다. 유료 등급은
+ * 스토어 결제(무료 체험 포함)만 올린다 — 기간 한정 개인 플랜·관리자 기간 지급은 2026-11-23 에 없앴다.
  *
- * 쓰는 자리: 클론 등록·초안 승격·제자리 교체, `/tts/generate` 의 무료 제한,
- * 내 알람 저장·수정의 목소리 게이트, 오디오 라우트의 클론 목소리 잠금.
+ * 쓰는 자리: 클론 등록·초안 승격·제자리 교체·응원 보충, `/tts/generate` 의 무료 제한, 오디오 라우트의 클론 목소리 잠금,
+ * 광고 보상의 무료 판정.
  */
-export function hasPersonalVoiceAccess(plan: unknown, promo: PersonalPromoState): boolean {
-  if (typeof plan !== 'string') return false;
-  return isPaidVoicePlan(computedUserPlan(plan, promo));
+export function hasPersonalVoiceAccess(plan: unknown): boolean {
+  return typeof plan === 'string' && PAID_USER_PLANS.has(plan);
 }
 
 export async function resolveUserPk(c: Context<AppEnv>): Promise<string | null> {

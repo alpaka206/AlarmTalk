@@ -38,7 +38,27 @@ enum UIPreviewSeed {
         #endif
     }
 
-    /// 인증 화면을 바로 띄우는 실행 인자 — `-UIPreviewAuthScreen login|register|reset`.
+    /// 비밀번호 재설정 화면을 그 단계로 띄운다 — `-UIPreviewResetStep code|password`(함께 `-UIPreviewAuthScreen reset`).
+    /// 서버 없이 코드 줄·새 비밀번호 단계를 보려고 둔다.
+    static var resetStep: String? {
+        #if DEBUG
+        return argValue("-UIPreviewResetStep")
+        #else
+        return nil
+        #endif
+    }
+
+    /// 가입 화면의 인증 줄을 그 단계로 띄운다 — `-UIPreviewRegisterStep code|rejected|verified|invalid`(함께
+    /// `-UIPreviewAuthScreen register`). 서버 없이 코드 줄·거절 문장·`✓ 인증됨`·형식 오류를 보려고 둔다.
+    static var registerStep: String? {
+        #if DEBUG
+        return argValue("-UIPreviewRegisterStep")
+        #else
+        return nil
+        #endif
+    }
+
+    /// 인증 화면을 바로 띄우는 실행 인자 — `-UIPreviewAuthScreen methods|login|register|reset|consent`(`methods` 는 수단 고르기).
     /// 시뮬레이터에는 스크립트로 탭할 방법이 없어, 화면 확인용 진입점을 인자로 연다.
     static var authScreen: String? {
         #if DEBUG
@@ -55,6 +75,18 @@ enum UIPreviewSeed {
         return ProcessInfo.processInfo.arguments.contains("-UIPreviewUpdateRequired")
         #else
         return false
+        #endif
+    }
+
+    /// 목소리 등록 동의 시트(`VoiceConsentSheet`)를 바로 띄우는 실행 인자 — `-UIPreviewConsentSheet "voice_biometric,overseas_transfer"`.
+    /// 쉼표로 물을 민감 동의 유형을 준다. `-UIPreviewSeed` 와 함께 쓴다.
+    /// 시트는 녹음·파일을 거친 '등록' 에서만 떠서, 높이·문구를 확인하려고 둔다.
+    static var consentSheetItems: [String]? {
+        #if DEBUG
+        guard let raw = argValue("-UIPreviewConsentSheet") else { return nil }
+        return raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        #else
+        return nil
         #endif
     }
 
@@ -80,31 +112,6 @@ enum UIPreviewSeed {
         #endif
     }
 
-    /// 기간 한정 개인 플랜을 쓰는 계정으로 띄운다 — `-UIPreviewPersonalPromo <남은 일수>`.
-    ///
-    /// 서버 없이 이용권 화면의 '무료 이용 중' 문구(개인 카드 또는 카드 위 한 줄)와 **종료 안내 알럿**을
-    /// 보려고 둔다. 종료는 지금부터 그 일수 뒤, 안내 시작은 그 7일 전이다(서버 계약과 같은 간격).
-    /// 남은 일수를 7 이하로 주면 실행하자마자 안내가 뜬다. 이때 plan 은 서버가 주는 계산값(`plus`)이다.
-    /// `-UIPreviewPromoKeepsVoices` 를 함께 주면 종료 전환 대상이 아닌 계정
-    /// (`deletes_voices_at_end: false` — 보류 중인 구독 행이 남은 계정)으로 심는다 — 이용권 화면은
-    /// 그 계정의 문구를 카드 위 한 줄로 두고 '현재 이용권' 은 무료 카드다(스펙 D4).
-    static var previewPersonalPromo: PersonalPromo? {
-        #if DEBUG
-        guard let days = argValue("-UIPreviewPersonalPromo").flatMap(Double.init) else { return nil }
-        let end = Date().addingTimeInterval(days * 86_400)
-        let from = end.addingTimeInterval(-7 * 86_400)
-        let iso = ISO8601DateFormatter()
-        return PersonalPromo(
-            endsAt: iso.string(from: end),
-            noticeFrom: iso.string(from: from),
-            deletesVoicesAtEnd: !ProcessInfo.processInfo.arguments.contains("-UIPreviewPromoKeepsVoices"),
-            fetchedAt: Date()
-        )
-        #else
-        return nil
-        #endif
-    }
-
     /// 계정에 심어 둘 날씨 지역 — `-UIPreviewWeather "<나라>|<도시>"`(예: `대한민국|서울`, 옛 값이면 `대한민국|속초`).
     ///
     /// 설정 '지역' 행·문구 화면 상세 카드의 값과 **목록에 없는 옛 값의 안내**를 실기기 계정 없이 보려고 둔다.
@@ -124,12 +131,51 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 목소리 등록 화면을 그 단계로 바로 연다 — `-UIPreviewVoiceClone source|details|creating`. 화면 확인용.
+    /// 세부 정보는 녹음 12초를 마쳐야 넘어가 시뮬레이터에서는 눈으로 볼 길이 없었다(`-UIPreviewVoicePrep` 와 같은 이유).
+    /// 녹음이 없으니 '등록' 은 꺼진 채다(배치만 본다). `creating` 은 '만드는 중' 화면만 띄우고 아무것도 만들지 않는다.
+    static var voiceCloneStep: String? {
+        #if DEBUG
+        return argValue("-UIPreviewVoiceClone")
+        #else
+        return nil
+        #endif
+    }
+
+    /// 편집기를 열자마자 그 하위 화면을 연다 — `-UIPreviewEditorPane voiceOutput|alarmSound|message`(함께 `-UIPreviewEditor`).
+    static var editorPane: String? {
+        #if DEBUG
+        return argValue("-UIPreviewEditorPane")
+        #else
+        return nil
+        #endif
+    }
+
+    /// 편집기를 열자마자 저장 막힘 알럿을 띄운다 — `-UIPreviewEditorAlert voice_missing|voice_unavailable|…`(함께 `-UIPreviewEditor`).
+    static var editorAlert: String? {
+        #if DEBUG
+        return argValue("-UIPreviewEditorAlert")
+        #else
+        return nil
+        #endif
+    }
+
     /// 실행하자마자 알람 편집기를 연다 — `-UIPreviewEditor`. 화면 확인용.
     static var opensEditor: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.arguments.contains("-UIPreviewEditor")
         #else
         return false
+        #endif
+    }
+
+    /// 새 알람 대신 표본 알람을 연다 — `-UIPreviewEditorAlarm weekday|morning`(함께 `-UIPreviewEditor`). 반복 요일·공휴일 줄처럼
+    /// 기존 알람에서만 보이는 자리를 보려고 둔다.
+    static var editorAlarmID: String? {
+        #if DEBUG
+        return argValue("-UIPreviewEditorAlarm").map { LocalAlarmRecord.previewIDPrefix + $0 }
+        #else
+        return nil
         #endif
     }
 
@@ -191,17 +237,13 @@ enum UIPreviewSeed {
 
     /// 화면을 채울 가짜 세션.
     static func makeSession() -> AuthSession {
-        let promo = previewPersonalPromo
-        return AuthSession(
+        AuthSession(
             token: "ui-preview-token",
             user: AuthUser(
                 id: "ui-preview-user",
                 email: "preview@alarm-talk.com",
-                name: "김규원",
-                // 프로모 계정은 서버가 계산값 `plus` 를 준다 — 원시 plan 은 free 다.
-                plan: promo == nil ? previewPlan : "plus",
-                dynamicPromptSettings: previewWeather.map { DynamicPromptSettings(weather: $0) },
-                personalPromo: promo
+                plan: previewPlan,
+                dynamicPromptSettings: previewWeather.map { DynamicPromptSettings(weather: $0) }
             )
         )
     }

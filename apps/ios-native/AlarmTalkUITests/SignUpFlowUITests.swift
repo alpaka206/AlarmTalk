@@ -35,9 +35,9 @@ final class SignUpFlowUITests: XCTestCase {
             "회원가입 화면에 도달하지 못했다"
         )
         // 제목 아래 부제는 2026-11-09 에 지웠다 — 가입 화면의 고정 요소는 이메일 칸 옆 '인증 받기' 버튼이다
-        // (2026-11-14 — 그전에는 칸 아래 넓은 '이메일 인증' 버튼이었다). 간편 로그인이 맨 위에 있다.
+        // (2026-11-14 — 그전에는 칸 아래 넓은 '이메일 인증' 버튼이었다). 간편 로그인은 앞 화면(고르기)에 있다(2026-11-22).
         XCTAssertTrue(app.buttons["인증 받기"].exists, "'인증 받기' 버튼이 없다")
-        XCTAssertTrue(app.buttons["카카오 로그인"].exists, "가입 화면에 카카오 로그인이 없다")
+        XCTAssertFalse(app.buttons["카카오 로그인"].exists, "가입 화면에 간편 로그인이 또 있다 — 고르기 화면에만 둔다")
         XCTAssertFalse(app.staticTexts["목소리 알람을 만들 계정을 준비해요."].exists, "지운 부제가 다시 나온다")
     }
 
@@ -73,10 +73,28 @@ final class SignUpFlowUITests: XCTestCase {
             : matches.firstMatch
         if !target.isHittable { app.swipeUp() }
         target.tap()
-        // 로그인 모드에만 있는 행으로 판별한다(제목 아래 부제는 2026-11-09 에 지웠다).
+        // 로그인 모드에만 있는 줄('비밀번호 찾기 | 회원가입')로 판별한다(제목 아래 부제는 2026-11-09 에 지웠다).
         XCTAssertTrue(
-            app.staticTexts["비밀번호를 잊으셨나요?"].waitForExistence(timeout: 8),
+            app.buttons["비밀번호 찾기"].waitForExistence(timeout: 8),
             "하단 전환 행으로 로그인 모드에 못 갔다"
         )
+    }
+
+    /// 랜딩 '시작하기' → 수단 고르기(카카오·Apple·이메일로 계속하기) → 이메일 로그인(2026-11-22).
+    func test_start_showsMethodsThenEmailLogin() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UIPreviewAuthScreen", "landing"]
+        app.launch()
+        let start = app.buttons["시작하기"]
+        XCTAssertTrue(start.waitForExistence(timeout: 20), "랜딩의 '시작하기' 가 없다")
+        start.tap()
+        XCTAssertTrue(app.buttons["카카오 로그인"].waitForExistence(timeout: 8), "고르기 화면에 카카오 로그인이 없다")
+        let email = app.buttons["이메일로 계속하기"]
+        XCTAssertTrue(email.exists, "고르기 화면에 '이메일로 계속하기' 가 없다")
+        // 고르기 화면에는 이메일 칸이 없다 — 칸은 다음 화면이다.
+        XCTAssertEqual(app.secureTextFields.count, 0, "고르기 화면에 비밀번호 칸이 있다")
+        email.tap()
+        XCTAssertTrue(app.buttons["비밀번호 찾기"].waitForExistence(timeout: 8), "이메일 로그인으로 못 갔다")
+        XCTAssertTrue(app.buttons["회원가입"].exists, "로그인 아래 '회원가입' 이 없다")
     }
 }

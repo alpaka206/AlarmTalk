@@ -123,6 +123,29 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
         XCTAssertEqual(mine?.syncState, AlarmSyncState.dirty.rawValue)
     }
 
+    /// **추가 음성팩을 없앤 뒤의 옛 팩 목소리 알람**(내부 시험 기기에만 있다) — 그 목소리 id 는 `GET /voice` 에 없는
+    /// 모르는 목소리라, 따로 옮기는 코드 없이 잃은 목소리와 같은 길로 **미나**가 된다. 팩 클립은 더 물지 않는다.
+    func test_옛_추가_음성팩_알람은_잃은_목소리로_미나가_된다() {
+        let store = makeStore()
+        var record = alarm(id: "pack", voiceProfileId: "70000000-0000-4000-9100-0000000000aa")
+        record.bucketId = "cheer"
+        record.bucketClipKeys = ["pack_clip-1", "pack_clip-2"]
+        record.audioCacheKey = "pack_clip-1"
+        store.upsert(record)
+        let voice = VoiceStudioViewModel()
+        voice.__setAccessibleVoicesForTests(profileIDs: ["clone-1"])
+
+        XCTAssertEqual(
+            voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"),
+            1
+        )
+        let degraded = store.record(id: "pack")
+        XCTAssertEqual(degraded?.voiceProfileId, substituteSystemVoiceID)
+        XCTAssertEqual(degraded?.playMode, AlarmPlayMode.voiceOnly.rawValue, "알람음이 아니라 기본 목소리로 운다")
+        XCTAssertFalse(degraded?.audioCacheKey?.hasPrefix("pack_") ?? false)
+        XCTAssertFalse((degraded?.bucketClipKeys ?? []).contains { $0.hasPrefix("pack_") })
+    }
+
     /// 아직 접근 가능한 목소리는 건드리지 않는다.
     func test_접근_가능한_목소리는_그대로다() {
         let store = makeStore()
@@ -447,19 +470,17 @@ final class ConflictScopeTests: XCTestCase {
         XCTAssertEqual(ids, ["B-것", "옛행"], "중복 방지가 헐거워지면 같은 시각 알람이 둘 생긴다")
     }
 
-    /// 저장 경로(`requireUniqueTime`)도 같은 기준이어야 한다 — 한쪽만 고치면
+    /// 저장 경로(편집기의 교체 흐름 — 같은 `conflictingAlarms`)도 같은 기준이어야 한다 — 한쪽만 고치면
     /// 화면에는 충돌이 없는데 저장이 거부되는(또는 그 반대) 상태가 된다.
     func test_저장_판정도_남의_알람을_보지_않는다() {
         let store = makeStore()
         store.upsert(alarm(id: "A-것", owner: "A", hour: 7, minute: 0))
 
-        XCTAssertNoThrow(
-            try store.requireUniqueTime(hour: 7, minute: 0, ownerUserId: "B"),
+        XCTAssertTrue(
+            store.conflictingAlarms(hour: 7, minute: 0, ownerUserId: "B").isEmpty,
             "보이지도 않는 알람 때문에 저장이 막히면 사용자는 이유를 알 길이 없다"
         )
-        XCTAssertThrowsError(
-            try store.requireUniqueTime(hour: 7, minute: 0, ownerUserId: "A")
-        )
+        XCTAssertEqual(store.conflictingAlarms(hour: 7, minute: 0, ownerUserId: "A").map(\.id), ["A-것"])
     }
 }
 

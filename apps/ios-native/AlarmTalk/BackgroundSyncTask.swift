@@ -383,8 +383,7 @@ final class BackgroundSyncTask {
             let result = EntitlementWriter().renewSession(
                 AccessTicket(userID: session.user.id, token: session.token),
                 rolledToken: rolledToken,
-                plan: user.plan,
-                personalPromo: user.personalPromo
+                plan: user.plan
             )
             if result == .applied { auth.absorbStoredSession(from: session.token) }
         } catch {

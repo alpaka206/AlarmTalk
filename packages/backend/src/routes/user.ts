@@ -75,7 +75,7 @@ user.patch('/me', async (c) => {
 
   args.push(userId);
   const result = await db.execute({
-    sql: `UPDATE users SET ${updates.join(', ')}, updated_at = datetime('now')
+    sql: `UPDATE users SET ${updates.join(', ')}
           WHERE id = ?`,
     args,
   });

@@ -53,18 +53,20 @@ struct FormSheet<Content: View>: View {
     private var header: some View {
         // 제목은 **가운데**, 액션은 양 끝. `HStack` 으로 셋을 나란히 두면 좌우 글자 길이에
         // 따라 제목이 밀려 가운데가 아니게 된다 — 그래서 겹쳐 놓는다.
+        // 글꼴은 앱 글꼴(Pretendard) 17 — 안드로이드 `WakerFormSheet` 의 `IosAlertType.Title`(17 SemiBold) · `Action`(17, 저장만
+        // SemiBold)과 같다. 2026-11-22 전에는 여기만 시스템 글꼴(SF)이었다.
         ZStack {
             Text(title)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.pretendard(.semibold, size: 17, relativeTo: .headline))
                 .foregroundStyle(theme.palette.onSurface)
                 .lineLimit(1)
 
             HStack {
                 Button(cancelTitle, action: onCancel)
-                    .font(.system(size: 17))
+                    .font(.pretendard(.regular, size: 17, relativeTo: .body))
                 Spacer(minLength: 12)
                 Button(saveTitle, action: onSave)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.pretendard(.semibold, size: 17, relativeTo: .body))
                     .disabled(!saveEnabled)
             }
         }

@@ -129,7 +129,7 @@ const SPEECH_TRANSCRIPT = '마 오늘 아침은 우째 이래 좋노, 퍼뜩 일
 
 /**
  * clone 성공 경로에 필요한 결과들
- * (플랜 → 프로필수 → 슬롯수 → attempt 예약 → INSERT → UPDATE ready).
+ * (플랜 → 프로필수 → 슬롯수 → INSERT → UPDATE ready). 초안 시도는 세지 않는다(#152).
  *
  * fakeAuthMiddleware 가 userIdPK 까지 채우면서 라우트의 `if (resolvedUserPk)` 분기가
  * 실제로 타진다 — 즉 `SELECT plan FROM users` 페이월 조회가 큐를 한 칸 소비한다.
@@ -140,7 +140,6 @@ function pushCloneSuccessResults() {
   pushMonthlyRegistrationOpen();
   mockDB.pushResult([{ draft_count: 0, official_count: 0 }]);
   mockDB.pushResult([{ draft_count: 0, official_count: 0 }]);
-  mockDB.pushResult([], 1);
   mockDB.pushResult([], 1);
   mockDB.pushResult([], 1);
 }
@@ -359,11 +358,10 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     mockDB.pushResult(sensitiveConsentRows()); // 1) 라우트 진입 동의 확인 — 동의됨
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 2) 프로필 수
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 3) 슬롯 수(tx)
-    mockDB.pushResult([], 1); // 4) 월간 attempt 예약
-    mockDB.pushResult([], 1); // 5) voice_profiles INSERT
-    mockDB.pushResult(sensitiveConsentRows()); // 6) 완료 tx 동의 재확인 — 아직 동의됨
-    mockDB.pushResult([], 1); // 7) status='ready' 전환
-    mockDB.pushResult([]); // 8) 원본 보관 직전 재확인 — 철회됨(빈 결과)
+    mockDB.pushResult([], 1); // 4) voice_profiles INSERT
+    mockDB.pushResult(sensitiveConsentRows()); // 5) 완료 tx 동의 재확인 — 아직 동의됨
+    mockDB.pushResult([], 1); // 6) status='ready' 전환
+    mockDB.pushResult([]); // 7) 원본 보관 직전 재확인 — 철회됨(빈 결과)
     // 이후(상태 pending 기록, 분석 시작 동의 재확인)는 큐 소진 → 기본 빈 결과(=철회 유지).
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
     // 등록의 말소리 확인은 전사를 받지 못했다(그대로 통과시킨다) — 그러면 분석이 스스로 녹음을 전사해야 한다.
@@ -393,15 +391,14 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     mockDB.pushResult(sensitiveConsentRows()); // 1) 라우트 진입
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 2) 프로필 수
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 3) 슬롯 수
-    mockDB.pushResult([], 1); // 4) attempt 예약
-    mockDB.pushResult([], 1); // 5) voice_profiles INSERT
-    mockDB.pushResult(sensitiveConsentRows()); // 6) 완료 tx 재확인
-    mockDB.pushResult([], 1); // 7) ready 전환
-    mockDB.pushResult(sensitiveConsentRows()); // 8) 원본 보관 직전 재확인 — 동의됨(보관 진행)
-    mockDB.pushResult([], 1); // 9) voice_uploads INSERT
-    mockDB.pushResult([], 1); // 10) status='pending'
-    mockDB.pushResult(sensitiveConsentRows()); // 11) 분석 시작 재확인 — 동의됨
-    mockDB.pushResult([]); // 12) 저장 직전 재확인 — 철회됨
+    mockDB.pushResult([], 1); // 4) voice_profiles INSERT
+    mockDB.pushResult(sensitiveConsentRows()); // 5) 완료 tx 재확인
+    mockDB.pushResult([], 1); // 6) ready 전환
+    mockDB.pushResult(sensitiveConsentRows()); // 7) 원본 보관 직전 재확인 — 동의됨(보관 진행)
+    mockDB.pushResult([], 1); // 8) voice_uploads INSERT
+    mockDB.pushResult([], 1); // 9) status='pending'
+    mockDB.pushResult(sensitiveConsentRows()); // 10) 분석 시작 재확인 — 동의됨
+    mockDB.pushResult([]); // 11) 저장 직전 재확인 — 철회됨
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
     mockSpeechToText.mockResolvedValue(SPEECH_TRANSCRIPT);
     mockAnalyzeSpeechStyle.mockResolvedValue({ kind: 'style', style: SAMPLE_STYLE });

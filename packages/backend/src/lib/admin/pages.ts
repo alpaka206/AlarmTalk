@@ -6,6 +6,7 @@ import { appVersionPolicy } from '../app-version';
 import { USAGE_EVENT_MIN_PRIVACY_VERSION } from '../consent';
 import type { Overview, PushJobRow, RangeDays, UserRow } from './metrics';
 import type { StoreDownloads, StorePlatformView } from './store-downloads';
+import type { UserDetail } from './user-detail';
 import { STORE_SYNC_KST_HOURS } from './store-downloads';
 import { AD_HOURS_KST, AD_OPT_OUT_FOOTER, AD_TITLE_PREFIX, PUSH_BODY_MAX, PUSH_TITLE_MAX } from './push-jobs';
 import {
@@ -419,6 +420,41 @@ export function renderUsers(nonce: string, query: string, users: UserRow[], nowM
 <section class="panel reveal" style="--d:1" aria-label="사용자 목록">${table}</section>
 <p class="note">앱 빌드와 마지막 접속은 콘솔 배포 뒤 서버에 접속한 기기만 보여요.</p>`;
   return page({ title: '사용자', active: 'users', nonce, body });
+}
+
+/** 지금 권한을 덮는 활성 구독(만료 전·보류 아님). */
+function liveSubscriptions(detail: UserDetail, now: Date): UserDetail['subscriptions'] {
+  return detail.subscriptions.filter(
+    (s) =>
+      s.status === 'active' &&
+      s.entitlementState === 'entitled' &&
+      (s.expiresAt == null || Date.parse(s.expiresAt.includes('T') ? s.expiresAt : `${s.expiresAt.replace(' ', 'T')}Z`) > now.getTime()),
+  );
+}
+
+/** 사용자 상세(읽기 전용) — 지금 권한이 어디서 오는가(`lib/admin/user-detail.ts`). */
+export function renderUserDetail(nonce: string, detail: UserDetail, now: Date): string {
+  const subscriptions = liveSubscriptions(detail, now).map(
+    (s) =>
+      `${s.provider === 'apple' ? 'App Store' : s.provider === 'google' ? 'Google Play' : '스토어'} 구독 · ${escapeHtml(
+        fmtDateTime(s.expiresAt),
+      )}까지${s.cancelAtPeriodEnd ? ' (해지 예약)' : ''}`,
+  );
+  const body = `
+<header class="page-head reveal">
+  <div><h1 translate="no">${escapeHtml(detail.email || '이메일 없음')}</h1><p class="muted">가입 ${escapeHtml(fmtDate(detail.createdAt))}</p></div>
+  <a class="btn btn-secondary btn-sm" href="/admin/users">사용자 목록</a>
+</header>
+<section class="panel reveal" style="--d:1" aria-labelledby="d-state">
+  <div class="panel-head"><h2 id="d-state">지금 권한</h2></div>
+  <dl class="kv">
+    <div><dt>유료 근거</dt><dd>${subscriptions.length ? subscriptions.join('<br>') : '<span class="muted">유료 권한 없음</span>'}</dd></div>
+    <div><dt>등급</dt><dd>${detail.plan === 'plus' ? '플러스' : '무료'}</dd></div>
+    <div><dt>이번 달 직접 입력</dt><dd class="num">${detail.manualUsedThisMonth}회 사용</dd></div>
+    <div><dt>목소리 삭제 예정</dt><dd>${detail.retentionDeleteAfter ? escapeHtml(fmtDateTime(detail.retentionDeleteAfter)) : '<span class="muted">없음</span>'}</dd></div>
+  </dl>
+</section>`;
+  return page({ title: '사용자 상세', active: 'users', nonce, body });
 }
 
 // ── 알림 보내기 ────────────────────────────────────────────────────────────────

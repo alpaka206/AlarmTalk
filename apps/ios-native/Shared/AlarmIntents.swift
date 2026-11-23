@@ -1,9 +1,6 @@
+import AlarmKit
 import AppIntents
 import Foundation
-
-#if canImport(AlarmKit)
-import AlarmKit
-#endif
 
 // MARK: - Target boundary
 //
@@ -56,7 +53,6 @@ struct StopAlarmIntent: LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        #if canImport(AlarmKit)
         guard let uuid = UUID(uuidString: alarmID) else {
             return .result()
         }
@@ -91,9 +87,6 @@ struct StopAlarmIntent: LiveActivityIntent {
         }
         #endif
         return .result()
-        #else
-        return .result()
-        #endif
     }
 }
 
@@ -139,7 +132,6 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        #if canImport(AlarmKit)
         guard let uuid = UUID(uuidString: alarmID) else {
             return .result()
         }
@@ -214,9 +206,6 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         }
         #endif
         return .result()
-        #else
-        return .result()
-        #endif
     }
 }
 

@@ -67,81 +67,21 @@ final class AlarmAppContextTests: XCTestCase {
         let updated = try XCTUnwrap(store.record(id: record.id))
         XCTAssertEqual(updated.state, AlarmRuntimeState.armed.rawValue)
         XCTAssertTrue(updated.enabled)
-        XCTAssertEqual(updated.snoozeCount, 0)
-    }
-
-    /// ⚠ **기간 한정 개인 플랜만으로 열린 목소리의 주간 반복 알람은 정지마다 다시 맞춘다**(Codex #803) —
-    /// AlarmKit 이 한 번 받은 설정을 끝 뒤 회차까지 다시 쓰므로, 끝 전 마지막 회차를 끄는 순간이 다시 걸
-    /// 유일한 로컬 기회다. 결제자(활성 구독 행)·끝이 지난 뒤·한 번 알람은 부르지 않는다.
-    func test_handleAlarmStopped_promoOnlyWeeklyVoiceAlarmReconcilesOnStop() async throws {
-        var reconciled: [String] = []
-        ctx.reconcileAfterStop = { reconciled.append($0) }
-        let ends = fixedNow.addingTimeInterval(3 * 86_400)
-        let endsISO = ISO8601DateFormatter().string(from: ends)
-        var promoOnly = AccessSnapshot.empty
-        promoOnly.userPlan = "plus"
-        promoOnly.subscriptionResponse = BillingSubscriptionResponse(subscription: nil, plan: nil)
-        promoOnly.personalPromo = PersonalPromo(endsAt: endsISO, noticeFrom: nil, fetchedAt: fixedNow)
-
-        func stop(_ snapshot: AccessSnapshot, weekly: Bool = true) async -> [String] {
-            reconciled = []
-            ctx.accessSnapshot = { snapshot }
-            let kitID = UUID().uuidString
-            var record = makeArmedRecord(alarmKitID: kitID)
-            record.repeatDaysMask = weekly ? RepeatDay.monday.mask : 0
-            record.playMode = AlarmPlayMode.voiceOnly.rawValue
-            record.voiceProfileId = "clone-1"
-            store.upsert(record)
-            await ctx.handleAlarmStopped(alarmKitIDString: kitID)
-            return reconciled
-        }
-
-        let promoWeekly = await stop(promoOnly)
-        XCTAssertEqual(promoWeekly.count, 1, "프로모에만 기댄 주간 목소리 알람은 정지 때 다시 맞춘다")
-        let promoOnce = await stop(promoOnly, weekly: false)
-        XCTAssertTrue(promoOnce.isEmpty, "한 번 알람은 예약할 때 울릴 시각으로 이미 본다")
-
-        var payer = promoOnly
-        payer.subscriptionResponse = BillingSubscriptionResponse(
-            subscription: BillingSubscription(
-                id: "sub-1", planId: "p", status: "active", expiresAt: "2099-01-01T00:00:00Z"
-            ),
-            plan: BillingPlan(id: "p", key: "personal", name: "personal", planType: "personal")
-        )
-        let payerStop = await stop(payer)
-        XCTAssertTrue(payerStop.isEmpty, "활성 구독 행이 있으면 프로모와 무관하다")
-
-        var noPromo = promoOnly
-        noPromo.personalPromo = nil
-        let noPromoStop = await stop(noPromo)
-        XCTAssertTrue(noPromoStop.isEmpty)
-
-        // ⚠ **끝 직전에 울린 회차를 끝 뒤에 꺼도** 다시 맞춘다(Codex #803) — 그때는 이미 못 듣는 상태다.
-        var justEnded = promoOnly
-        justEnded.personalPromo = PersonalPromo(
-            endsAt: ISO8601DateFormatter().string(from: fixedNow.addingTimeInterval(-60)),
-            noticeFrom: nil,
-            fetchedAt: fixedNow.addingTimeInterval(-3_600)
-        )
-        let afterCutoff = await stop(justEnded)
-        XCTAssertEqual(afterCutoff.count, 1, "끝을 막 넘긴 정지도 다음 회차를 기본 알람음으로 다시 건다")
     }
 
     // MARK: - Snooze
     // MARK: - Snooze
 
-    func test_handleAlarmSnoozed_advancesFireAndIncrementsCount() async throws {
+    func test_handleAlarmSnoozed_advancesFire() async throws {
         let kitID = UUID().uuidString
         var record = makeArmedRecord(alarmKitID: kitID)
         record.snoozeMinutes = 7
-        record.snoozeCount = 1
         store.upsert(record)
 
         await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
         XCTAssertEqual(updated.state, AlarmRuntimeState.snoozed.rawValue)
-        XCTAssertEqual(updated.snoozeCount, 2)
         let expectedFire = Int64(fixedNow.timeIntervalSince1970 * 1000) + 7 * 60_000
         XCTAssertEqual(updated.fireAtMillis, expectedFire)
     }
@@ -181,8 +121,7 @@ final class AlarmAppContextTests: XCTestCase {
         await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
-        XCTAssertEqual(updated.snoozeCount, record.snoozeCount + 1, "옛 행의 꺼진 스위치가 다시 울림을 막았다")
-        XCTAssertEqual(updated.state, AlarmRuntimeState.snoozed.rawValue)
+        XCTAssertEqual(updated.state, AlarmRuntimeState.snoozed.rawValue, "옛 행의 꺼진 스위치가 다시 울림을 막았다")
     }
 
     /// ⚠ **횟수 한도는 더 이상 다시 울림을 막지 않는다**(2026-09-09 지시로 설정을 없앴다).
@@ -193,14 +132,12 @@ final class AlarmAppContextTests: XCTestCase {
         let kitID = UUID().uuidString
         var record = makeArmedRecord(alarmKitID: kitID)
         record.snoozeRepeatLimit = SnoozeRepeatLimit.three.rawValue
-        record.snoozeCount = 3
         store.upsert(record)
 
         await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
-        XCTAssertEqual(updated.snoozeCount, 4, "한도를 이유로 거절하면 안 된다")
-        XCTAssertEqual(updated.state, AlarmRuntimeState.snoozed.rawValue)
+        XCTAssertEqual(updated.state, AlarmRuntimeState.snoozed.rawValue, "한도를 이유로 거절하면 안 된다")
     }
 
     // MARK: - Helpers

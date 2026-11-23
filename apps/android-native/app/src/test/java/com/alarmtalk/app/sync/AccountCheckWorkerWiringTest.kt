@@ -27,7 +27,7 @@ class AccountCheckWorkerWiringTest {
     @Test
     fun `plan 은 인증에 쓴 세션의 계정으로 적는다`() {
         assertTrue(worker.contains(".write(AccessTicket(userId, startGeneration)"))
-        assertTrue("plan 과 프로모 짝을 한 벌로 적지 않는다.", worker.contains("it.withServerUser(me.user, fetchedAt)"))
+        assertTrue("받은 plan 을 스냅샷에 적지 않는다.", worker.contains("it.withServerUser(me.user)"))
     }
 
     @Test

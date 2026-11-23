@@ -3,7 +3,6 @@ import { MANUAL_TTS_TEXT_MAX_LENGTH, stockContentInfo, stockThemeForCategory, ty
 import { jsonError } from '../lib/api-error';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { planWithGrantSql } from '../lib/plan-grant-sql';
 import { callerOwnerIds } from '../lib/caller-ids';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
@@ -33,7 +32,6 @@ import { voicePitchFromRow } from '../lib/voice-pitch';
 import {
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
-  generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   deriveAlarmDisplayText,
   normalizeAlarmTextWithoutTags,
@@ -43,7 +41,6 @@ import {
 } from '../lib/vertex-translate';
 import {
   CLONE_CLIP_SEEDS,
-  FREE_BUCKET_CATEGORIES,
   findLegacyBucketHints,
   releasedStockContentSets,
   stockCategoryReleased,
@@ -64,9 +61,7 @@ import {
 import { consumeAdRewardCredit, refundAdRewardCredit } from '../lib/ad-reward-credits';
 import { adRewardView, readAdRewardStatus } from '../lib/ad-reward-sessions';
 import { hasPersonalVoiceAccess } from './billing-helpers';
-import { computedUserPlan, resolvePersonalPromo } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
-import { EMPTY_DYNAMIC_PROMPT_SETTINGS } from '../lib/dynamic-prompt-settings';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
 import { weatherRegionFor } from '../lib/weather-signal';
@@ -79,17 +74,12 @@ export { resolvePrerenderWeatherIndex, type WeatherSignalInput } from '../lib/we
 
 const tts = new Hono<AppEnv>();
 // 클라가 보내는 카테고리(= messages.category 저장값). 넷이 전부다.
-//  - morning: 기본값·날씨·운세가 공통으로 쓰는 라벨(문구는 preset/동적 경로가 따로 정한다)
+//  - morning: 기본값·날씨·운세가 공통으로 쓰는 라벨(문구는 사전렌더 클립이 따로 정한다)
 //  - medication / love: 그 문구를 고른 알람
 //  - custom: 직접 입력
 // ⚠ `cheer` 의 옛 이름은 `love` 다(2026-09-02 개념 변경). 구버전 앱과 이미 저장된 행이
 // 여전히 `love` 를 보내오므로 **둘 다 받고** 아래 normalize 가 `cheer` 로 접는다.
 const TTS_CATEGORIES = ['morning', 'medication', 'cheer', 'love', 'custom'] as const;
-
-// 편집기가 실제로 고를 수 있는 문구 종류. medication 은 일부러 빠져 있다 — 아래
-// normalizeRandomContext 의 폴백으로 'preset' 에 접혀 고정 문구 경로를 탄다.
-const RANDOM_CONTEXTS = ['preset', 'wake_weather', 'wake_fortune', 'cheer'] as const;
-type RandomContext = (typeof RANDOM_CONTEXTS)[number];
 
 
 function consentRequired(c: Context<AppEnv>, consent: string) {
@@ -130,8 +120,6 @@ class VoiceAuthorizationChangedDuringTtsError extends Error {
  *   `#110` 이 한 번 옮겨 놓은 것을 **새 생성이 되살린다** — 유료 클론이 문구를 하나 만들
  *   때마다 `messages.category = 'love'` 가 다시 생기고, `cheer` 로 거르는 목록·매니페스트가
  *   그 행을 못 본다. 접기는 **요청 경계에서 한 번**, 그게 곧 저장값이다.
- *   (`normalizeStockCategory` 는 `stockPresetCategory` 에서 프리셋을 **찾을 때만** 쓰였고,
- *    저장되는 `category` 는 건드리지 않았다.)
  */
 function normalizeTtsCategory(category: string): (typeof TTS_CATEGORIES)[number] | null {
   const raw = category.trim();
@@ -143,124 +131,11 @@ function normalizeTtsCategory(category: string): (typeof TTS_CATEGORIES)[number]
     : raw) as (typeof TTS_CATEGORIES)[number];
 }
 
-function randomIndex(length: number): number {
-  if (length <= 1) return 0;
-  const values = new Uint32Array(1);
-  crypto.getRandomValues(values);
-  return values[0]! % length;
-}
-
-/**
- * 이름이 바뀐 값의 **옛 이름 → 새 이름** 표.
- *
- * ⚠ **이 표가 없으면 조용히 뜻이 바뀐다.** 아래 normalize 는 모르는 값을 `preset` 으로
- * 접으므로, 구버전 앱이 보낸 `love` 가 **'기본 인사말' 로 둔갑**한다 — 사용자는 응원을
- * 골랐는데 인사말이 울린다. 이미 저장된 행도 같은 값을 들고 있다.
- *
- * 옛 이름은 **지우지 않는다.** 스토어에 올라간 앱과 사용자 기기의 로컬 DB 는 우리가
- * 고칠 수 없다(`meal`/`sleep`/`exercise` 를 접어 두는 것과 같은 이유).
- */
-const RENAMED_RANDOM_CONTEXTS: Readonly<Record<string, RandomContext>> = {
-  // 2026-09-02: '사랑' 을 '응원' 으로 바꿨다(연애 문구가 아니라 응원·자기돌봄).
-  love: 'cheer',
-};
-
-function normalizeRandomContext(value: unknown): RandomContext {
-  const raw = typeof value === 'string' ? value.trim() : '';
-  const renamed = RENAMED_RANDOM_CONTEXTS[raw];
-  if (renamed) return renamed;
-  return (RANDOM_CONTEXTS as readonly string[]).includes(raw) ? (raw as RandomContext) : 'preset';
-}
-
 function normalizeRelationshipLabel(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const label = value.trim();
   if (!label) return null;
   return label.slice(0, 30);
-}
-
-function optionalInt(value: unknown, min: number, max: number): number | null {
-  const numeric = typeof value === 'number' ? value : Number(value);
-  if (!Number.isInteger(numeric) || numeric < min || numeric > max) return null;
-  return numeric;
-}
-
-function normalizeShortText(value: unknown, maxLength: number): string | null {
-  if (typeof value !== 'string') return null;
-  const text = value.trim();
-  return text ? text.slice(0, maxLength) : null;
-}
-
-function firstNonBlankText(...values: unknown[]): string | null {
-  for (const value of values) {
-    const normalized = normalizeShortText(value, 120);
-    if (normalized) return normalized;
-  }
-  return null;
-}
-
-function alarmTimeLabel(hour: number | null, minute: number | null): string | null {
-  if (hour == null || minute == null) return null;
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-}
-
-function fortuneProfile(args: {
-  gender?: unknown;
-  birthDate?: unknown;
-  birthTime?: unknown;
-}): string | null {
-  const gender = normalizeShortText(args.gender, 12);
-  const birthDate = normalizeShortText(args.birthDate, 16);
-  const birthTime = normalizeShortText(args.birthTime, 8);
-  const parts = [
-    gender ? `gender=${gender}` : null,
-    birthDate ? `birth date=${birthDate}` : null,
-    birthTime ? `birth time=${birthTime}` : null,
-  ].filter(Boolean);
-  return parts.length > 0 ? parts.join(', ') : null;
-}
-
-function todayKoreaLabel(): string {
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long',
-  }).format(new Date());
-}
-
-/**
- * 요청 카테고리(TTS_CATEGORIES) → 스톡 프리셋 카테고리. 클라는 기본값 문구를 'morning' 으로
- * 보내는데 STOCK_CLIP_PRESETS 에는 그 이름이 없다. 여기서만 이어 붙이고 클라는 건드리지 않는다.
- *  - morning = 사용자가 문구를 안 바꿨을 때의 기본값 → greeting(목소리 미리듣기와 같은 인사말)
- *  - 나머지는 이름이 그대로다.
- *
- * ⚠ **`love` 는 이제 null 이 아니다**(2026-09-02). 그전 주석은 "love 는 스톡 프리셋에 대응
- * 문구가 없다(동적 생성 전용) → null" 이라고 적혀 있었는데, 문구 목록을 하나로 합치면서
- * `STOCK_CLIP_PRESETS` 에 love 3문구·fortune 5문구가 들어갔다. 기본 목소리도 그 둘을 고를
- * 수 있으므로 프리셋 문구가 정상적으로 나온다 — 그 서술을 근거로 아래 F2 게이트를 손대면
- * Codex #599(카테고리가 새어 시스템 보이스로 합성되던 것) 재발 방지 장치가 깨진다.
- */
-function stockPresetCategory(category: string): string {
-  if (category === 'morning') return STOCK_GREETING_CATEGORY;
-  // 이름이 바뀐 카테고리도 여기서 접는다 — 구버전 앱은 `love` 를 보낸다.
-  return normalizeStockCategory(category);
-}
-
-
-/**
- * random_context='preset' 의 문구를 고른다. 출처는 사전렌더와 **같은** STOCK_CLIP_PRESETS 다.
- * 버킷이 아직 준비 안 돼 이 라이브 폴백으로 내려와도 사전렌더 클립과 같은 문장이 나온다.
- */
-function pickRandomPresetText(category: string, language: string): string | null {
-  const preset = STOCK_CLIP_PRESETS.find((item) => item.category === stockPresetCategory(category));
-  if (!preset) return null;
-  const texts = preset.texts as Partial<Record<string, readonly string[]>>;
-  const messages = (texts[language] ?? texts.ko ?? [])
-    .map((message) => message.trim())
-    .filter(Boolean);
-  if (messages.length === 0) return null;
-  return messages[randomIndex(messages.length)]!;
 }
 
 // 프리셋 문구 앞에 호칭을 붙인다. 프리셋·미리듣기 고정 예문에는 태그가 없다(2026-09-30).
@@ -327,42 +202,10 @@ tts.post('/generate', async (c) => {
     category?: string;
     language?: string;
     translate?: boolean;
+    /** 옛 앱의 라이브 랜덤 요청 — 받으면 400 `RANDOM_TTS_RETIRED`(초안 미리듣기는 함께 보내도 통과). */
     random?: boolean;
-    random_context?: string;
-    randomContext?: string;
-    random_mode?: string;
-    randomMode?: string;
-    relationship_label?: string;
     /** 직접 입력 '음성 만들기' 한 번의 id(UUID) — 재시도에도 같은 값. 옛 앱은 보내지 않는다. */
     request_id?: string;
-    relationshipLabel?: string;
-    listener_title?: string;
-    listenerTitle?: string;
-    weather_location_label?: string;
-    weatherLocationLabel?: string;
-    weather_latitude?: number;
-    weatherLatitude?: number;
-    weather_longitude?: number;
-    weatherLongitude?: number;
-    weather_country?: string;
-    weatherCountry?: string;
-    weather_city?: string;
-    weatherCity?: string;
-    weather_region?: string;
-    weatherRegion?: string;
-    alarm_hour?: number;
-    alarmHour?: number;
-    alarm_minute?: number;
-    alarmMinute?: number;
-    fortune_gender?: string;
-    fortuneGender?: string;
-    gender?: string;
-    fortune_birth_date?: string;
-    fortuneBirthDate?: string;
-    birthDate?: string;
-    fortune_birth_time?: string;
-    fortuneBirthTime?: string;
-    birthTime?: string;
     draft_preview?: boolean;
     draftPreview?: boolean;
   }>();
@@ -409,56 +252,26 @@ tts.post('/generate', async (c) => {
   //   보내므로, `body.random` 만 보고 거절하거나 위 draft 판정보다 앞에 두면 **새 목소리를 아예
   //   등록할 수 없다.**
   //   앱 문구 표(`ApiErrorMessages.kt`·`APIErrorMessages.swift`)에는 넣지 않았다 — 닿는 빌드가 없다.
-  //   이 아래의 `randomRequested` 갈래는 이제 닿지 않는 코드다. 지우는 것은 후속 PR 이다(초안
-  //   미리듣기와 같이 쓰는 헬퍼·사전렌더 검사의 테스트를 먼저 옮겨야 한다).
+  //   이 거절 뒤에 남아 있던 랜덤·동적 문구 갈래(프리셋 랜덤 문구, Gemini 동적 생성)는 2026-11-23 에 지웠다.
+  //   이 400 과 에러 코드는 옛 앱 계약이라 남긴다.
   if (randomRequested) {
     return jsonError(c, 400, 'RANDOM_TTS_RETIRED', 'Live random TTS generation has been retired.');
   }
-  const randomContext = randomRequested
-    ? normalizeRandomContext(
-        body.random_context ?? body.randomContext ?? body.random_mode ?? body.randomMode,
-      )
-    : 'preset';
-  if (randomRequested && category === 'custom') {
+
+  let requestText = draftPreviewRequested ? draftPreviewText('ko') : (body.text ?? '').trim();
+  if (!requestText) {
     return c.json(
-      {
-        error: 'Random TTS requires a preset category.',
-        error_code: 'RANDOM_CATEGORY_REQUIRED',
-      },
+      { error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' },
       400,
     );
   }
 
-  // 프리셋 문구는 STOCK_CLIP_PRESETS 에서 온다 — 사용자가 친 글이 아니다(아래 messageText 는 빈 원문으로 만든다).
-  const presetTextUsed = !draftPreviewRequested && randomRequested && randomContext === 'preset';
-  let requestText = draftPreviewRequested
-    ? draftPreviewText('ko')
-    : presetTextUsed
-      ? pickRandomPresetText(category, normalizeSynthesisLanguage(body.language))
-      : (body.text ?? '').trim();
-  if (!requestText) {
-    if (randomRequested && randomContext !== 'preset') {
-      requestText = '';
-    } else {
-      return c.json(
-        { error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' },
-        400,
-      );
-    }
-  }
-
   // ⚠ **상한은 '사용자가 친 글자' 에만 건다**(2026-09-03 리뷰 2차).
   //
-  //   `requestText` 는 이 지점에서 이미 **우리 프리셋 문구**일 수 있다(위 751행 —
-  //   `random_context=preset` 이면 `pickRandomPresetText` 가 채운다). 그때 이 검사는
-  //   우리가 확정한 대사를 사용자 입력 규칙으로 재는 셈이라, 영어 프리셋 20개 중 12개가
-  //   **TEXT_TOO_LONG(400)** 이 된다 — 들리는 말은 181자인데 태그까지 세어 213자로 읽는다.
-  //
-  //   200자는 **사용자에게 들리는 말**의 상한이고(2026-08-13 C안), 프리셋은 우리가 길이를
-  //   보고 확정한 신뢰 입력이다. 그래서 여기서는 **body.text 로 들어온 것만** 재고,
-  //   프리셋·초안 미리듣기는 지나게 둔다. 최종 안전망은 아래 합성 직전의
-  //   `normalizeAlarmTextWithoutTags(...)  > 200` 하나다.
-  const userTypedText = draftPreviewRequested || presetTextUsed ? '' : requestText;
+  //   200자는 **사용자에게 들리는 말**의 상한이고(2026-08-13 C안), 초안 미리듣기 예문은 우리가
+  //   확정한 신뢰 입력이다. 그래서 여기서는 **body.text 로 들어온 것만** 재고, 초안 미리듣기는
+  //   지나게 둔다. 최종 안전망은 아래 합성 직전의 `normalizeAlarmTextWithoutTags(...)  > 200` 하나다.
+  const userTypedText = draftPreviewRequested ? '' : requestText;
   if (userTypedText && userTypedText.length > MANUAL_TTS_TEXT_MAX_LENGTH) {
     return c.json(
       { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
@@ -470,7 +283,7 @@ tts.post('/generate', async (c) => {
   // `apple_refresh_token` 같은 **비밀값**과 JSON 덩어리(`dynamic_prompt_settings_json`)가 함께 있다. 알람 저장마다 도는 경로라 필요 없는 값을
   // 메모리에 올릴 이유가 없고, 특히 토큰은 쓰지도 않으면서 끌어오면 안 된다.
   const user = await db.execute({
-    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+    sql: `SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
     args: ownerIds,
   });
   if (user.rows.length === 0) {
@@ -485,24 +298,16 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  // 직접 입력 미터링 폴백용(구독을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
-  // ⚠ **페이월과 한도는 같은 값을 봐야 한다** — 기간 한정 개인 플랜(계산값)을 둘 다에
-  //   반영한다. 한쪽만 반영하면 게이트는 열렸는데 한도가 0 이라 직접 입력이 전부 429 가 된다.
-  const promo = resolvePersonalPromo(c.env);
-  const rawCallerUserPlan = (user.rows[0]!.plan as string) ?? null;
-  const callerUserPlan = computedUserPlan(rawCallerUserPlan, promo);
-  // 유료 접근이 기간 한정 개인 플랜에서만 오는가 — 직접 입력 한도 풀을 고를 때 보류된 구독 행을 건너뛴다
-  // (`resolveManualTtsPool` 의 `promoOnly`).
-  const callerPromoOnly = callerUserPlan !== rawCallerUserPlan;
+  // 직접 입력 미터링 폴백용(구독을 못 찾을 때 페이월과 같은 출처인 users.plan 사용) — 페이월과 한도는 같은 값을 본다.
+  const callerUserPlan = (user.rows[0]!.plan as string) ?? null;
 
   const vp = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
   if (!vp) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
   // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
-  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다. 내 목소리·스톡 목소리 모두 **계산값**이다
-  // (기간 한정 개인 플랜 반영 — 내 개인 기능). 스펙: `docs/spec/billing-lifecycle.md`.
-  const freePlanRestricted = !hasPersonalVoiceAccess(rawCallerUserPlan, promo);
+  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
+  const freePlanRestricted = !hasPersonalVoiceAccess(callerUserPlan);
 
   if (vp.status !== 'ready') {
     return c.json(
@@ -537,19 +342,15 @@ tts.post('/generate', async (c) => {
 
   const isSystemVoice = Boolean(Number(vp.is_system ?? 0));
   let draftPreviewListenerTitle: string | null = null;
-  if ((randomRequested && randomContext === 'preset') || draftPreviewRequested) {
-    const listenerTitle =
-      (draftPreviewRequested
-        ? normalizeRelationshipLabel(vp.listener_title)
-        : normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle)) ??
-      normalizeRelationshipLabel(vp.listener_title);
-    if (draftPreviewRequested) draftPreviewListenerTitle = listenerTitle ?? null;
+  if (draftPreviewRequested) {
+    const listenerTitle = normalizeRelationshipLabel(vp.listener_title);
+    draftPreviewListenerTitle = listenerTitle;
     // 미리듣기는 아래에서 관계·호칭 톤 적응 생성을 시도한다 — 여기서 만든 '고정 예문+호칭 접두어'는
     // 생성 실패(Vertex 미설정/모델 오류) 시의 폴백 문구가 된다.
     requestText = presetTextWithListenerTitle(requestText, listenerTitle);
   }
-  // 기본(시스템) 목소리는 원칙적으로 '프리셋(날씨/약)'만 허용한다 — 동적 생성·번역은
-  // 매번 비용이 들어 유료 커스텀 클론 전용이다.
+  // 기본(시스템) 목소리는 원칙적으로 '프리셋(날씨/약)'만 허용한다 — 프리셋은 사전렌더 클립으로 받고,
+  // 번역은 매번 비용이 들어 유료 커스텀 클론 전용이다.
   //
   // ⚠ **단 하나 예외: 유료 사용자의 '직접 입력' 은 기본 목소리로도 허용한다**
   // (2026-08-11 결정). 예전에는 유료여도 기본 목소리면 직접 입력이 막혀서, 이용권을 산
@@ -558,7 +359,7 @@ tts.post('/generate', async (c) => {
   // 그 비용은 **직접 입력 월 한도**(`reserveManualTtsQuota`)가 이미 세고 있다.
   // 그래서 한도를 차감하는 조건으로 연다.
   //
-  // 여전히 막는 것: 동적 문구(날씨·운세) / 번역. 그쪽은 한도로 세지 않는다.
+  // 여전히 막는 것: 번역. 그쪽은 한도로 세지 않는다(동적 문구는 위에서 `RANDOM_TTS_RETIRED` 로 끝난다).
   //
   // ⚠ **무료도 기본 목소리 직접 입력을 연다 — 월 3회, 다 쓰면 광고 보상**(2026-10-26, `docs/spec/voice-and-message.md`
   //   §8). 예전(2026-10-19)에는 광고 보상이 있을 때만 열었다. 기본 목소리 한정이다 — 등록 목소리는 위에서 그대로 막는다.
@@ -567,14 +368,12 @@ tts.post('/generate', async (c) => {
   const freeManualEligible =
     freePlanRestricted &&
     isSystemVoice &&
-    !randomRequested &&
     !draftPreviewRequested &&
     body.translate !== true &&
     Boolean(resolvedUserPk);
   const manualTextOnSystemVoice =
     (!freePlanRestricted || freeManualEligible) &&
     isSystemVoice &&
-    !randomRequested &&
     body.translate !== true;
   const presetOnlyRestricted = (freePlanRestricted || isSystemVoice) && !manualTextOnSystemVoice;
   // 무료 플랜은 시스템 스톡 보이스만 쓸 수 있다(커스텀 클론 불가). 시스템 보이스면 통과.
@@ -592,47 +391,14 @@ tts.post('/generate', async (c) => {
     const presetOnlyCode: ErrorCode = freePlanRestricted
       ? 'FREE_PLAN_PRESET_ONLY'
       : 'BASIC_VOICE_PRESET_ONLY';
-    // 커스텀 텍스트·동적(날씨/운세) 문구·번역은 매번 생성 비용이 들어 유료 커스텀 클론 전용.
-    if (!randomRequested || randomContext !== 'preset' || body.translate === true) {
-      return c.json(
-        {
-          error: 'This voice supports preset phrases only.',
-          error_code: presetOnlyCode,
-        },
-        403,
-      );
-    }
-    // F2: 기본 목소리(=무료 버킷)는 날씨·약만 허용한다. love 만 막던 블랙리스트로는
-    // morning/love 등 다른 요청 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
-    // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES) 화이트리스트로 바꿔 그 외
-    // 카테고리를 전부 차단한다(날씨 동적은 위 randomContext!=='preset' 에서 이미 걸리므로, 실제
-    // 프리셋 경로로 통과하는 건 medication 뿐). 무료 플랜도 동일 버킷이라 함께 조인다.
-    if (!FREE_BUCKET_CATEGORIES.includes(category)) {
-      return c.json(
-        {
-          // ⚠ 허용 목록을 문장에 **베껴 적지 않는다.** 예전에는 "weather and medication
-          // only" 라고 못 박아 두었는데, 2026-09-02 에 fortune·love 가 들어오면서 곧바로
-          // 거짓이 됐다. 목록은 STOCK_CLIP_PRESETS 하나에서 자란다.
-          error: 'This voice only supports its prepared preset phrases.',
-          error_code: presetOnlyCode,
-        },
-        403,
-      );
-    }
-    // 암묵적 번역 우회 차단: 프리셋 문구는 여기서 이미 확정되므로 source 언어를 산정할 수 있다.
-    // 요청 언어가 source 와 다르면 아래 shouldTranslate 분기가 켜져 유료 번역 경로로 새어 나간다.
-    // translate===true 와 동일하게 차단해 프리셋 요청이 번역을 절대 호출하지 못하게 한다.
-    const requestedLanguageForGate = normalizeSynthesisLanguage(body.language);
-    const sourceLanguageForGate = inferSynthesisLanguage(requestText, 'ko');
-    if (requestedLanguageForGate !== sourceLanguageForGate) {
-      return c.json(
-        {
-          error: 'This voice supports preset phrases only.',
-          error_code: presetOnlyCode,
-        },
-        403,
-      );
-    }
+    // 커스텀 텍스트·번역은 매번 생성 비용이 들어 유료 커스텀 클론 전용. 프리셋 문구는 사전렌더 클립으로 받는다.
+    return c.json(
+      {
+        error: 'This voice supports preset phrases only.',
+        error_code: presetOnlyCode,
+      },
+      403,
+    );
   }
 
   const requiredSensitiveConsents = isSystemVoice
@@ -641,11 +407,11 @@ tts.post('/generate', async (c) => {
   const missingTtsConsent = await missingConsentType(db, userPk, requiredSensitiveConsents);
   if (missingTtsConsent) return consentRequired(c, missingTtsConsent);
 
-  // 직접 입력(random 아님) = 사용자가 문구를 직접 타이핑한 생성 경로. 여기 닿는 것은 유료이거나 기본 목소리의 무료다.
+  // 직접 입력(초안 미리듣기 아님) = 사용자가 문구를 직접 타이핑한 생성 경로. 여기 닿는 것은 유료이거나 기본 목소리의 무료다.
   // ⚠ **서버가 처리한 요청은 결과가 무엇이든 한 번 센다**(2026-10-27 오너 결정 — `docs/spec/voice-and-message.md` §8).
   //   캐시 히트(다시 받기)·새 합성·서비스 재렌더 모두 같다. 예외는 둘뿐이다: 같은 `request_id` 의 재시도(한 번만 센다)와
   //   실패(catch 에서 돌려준다). 기기 안의 캐시로 다시 쓰는 것은 서버에 오지 않으니 여기서 볼 수 없다.
-  const isManualGeneration = !randomRequested && !draftPreviewRequested && Boolean(resolvedUserPk);
+  const isManualGeneration = !draftPreviewRequested && Boolean(resolvedUserPk);
   let manualQuotaPoolKey: string | null = null;
   let manualQuotaMonth: string | null = null;
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
@@ -674,9 +440,7 @@ tts.post('/generate', async (c) => {
    * 응답을 돌려준다.
    */
   const reserveManualGeneration = async (): Promise<Response | null> => {
-    const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
-      promoOnly: callerPromoOnly,
-    });
+    const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
     const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
     if (!reservation.ok) {
       if (freeManualEligible) {
@@ -715,9 +479,7 @@ tts.post('/generate', async (c) => {
   };
   /** 세지 않는 응답(셌던 요청의 재시도)에 싣는 남은 횟수 — 지금 값을 읽는다(소비 없음). */
   const readCurrentManualQuota = async (): Promise<void> => {
-    const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
-      promoOnly: callerPromoOnly,
-    });
+    const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
     const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
     manualQuotaResult = { used, limit: pool.limit, remaining: Math.max(0, pool.limit - used) };
   };
@@ -833,63 +595,6 @@ tts.post('/generate', async (c) => {
       }
     }
 
-    // 국외 이전 동의(B4): 동적 문구 생성(wake_weather/wake_fortune 등)과 번역은
-    // 텍스트를 국외(Google Vertex)로 전송하므로 overseas_transfer 동의가 필요하다.
-    // 동의가 없으면 해당 크로스보더 경로를 차단(403)한다. 프리셋·동일언어 비번역
-    // 합성은 국외 이전이 없어 게이트 대상이 아니다.
-    let dynamicGenerated: Awaited<ReturnType<typeof generateDynamicAlarmTextWithVertex>> | null =
-      null;
-    if (randomRequested && randomContext !== 'preset') {
-      const alarmHour = optionalInt(body.alarm_hour ?? body.alarmHour, 0, 23);
-      const alarmMinute = optionalInt(body.alarm_minute ?? body.alarmMinute, 0, 59);
-      const promptSettings = EMPTY_DYNAMIC_PROMPT_SETTINGS;
-      const relationshipLabel =
-        normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
-        normalizeRelationshipLabel(vp.relationship_label);
-      const listenerTitle =
-        normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
-        normalizeRelationshipLabel(vp.listener_title);
-      // ⚠ 이 갈래는 닿지 않는다 — 라이브 랜덤 생성은 위에서 `RANDOM_TTS_RETIRED`(400)로 거절된다. 날씨 원천을
-      // 나라별 공식 예보로 바꾸면서(2026-10-01) 이 경로의 날씨 조회(서울 폴백·먼지 없음 폴백)를 지웠다 — 문장용
-      // 날씨는 더 만들지 않는다. 남은 코드를 지우는 것은 후속 정리다.
-      const weatherSignal = null;
-      const generated = await generateDynamicAlarmTextWithVertex(c.env, {
-        mode: randomContext,
-        category,
-        targetLanguage: requestedLanguage,
-        dateLabel: todayKoreaLabel(),
-        relationshipLabel,
-        listenerTitle,
-        weatherSignal,
-        fortuneProfile:
-          randomContext === 'wake_fortune'
-            ? fortuneProfile({
-                gender: firstNonBlankText(
-                  body.fortune_gender,
-                  body.fortuneGender,
-                  body.gender,
-                  promptSettings.fortune.gender,
-                ),
-                birthDate: firstNonBlankText(
-                  body.fortune_birth_date,
-                  body.fortuneBirthDate,
-                  body.birthDate,
-                  promptSettings.fortune.birth_date,
-                ),
-                birthTime: firstNonBlankText(
-                  body.fortune_birth_time,
-                  body.fortuneBirthTime,
-                  body.birthTime,
-                  promptSettings.fortune.birth_time,
-                ),
-              })
-            : null,
-        alarmTimeLabel: alarmTimeLabel(alarmHour, alarmMinute),
-      });
-      requestText = generated.text;
-      dynamicGenerated = generated;
-    }
-
     if (!requestText) {
       return c.json(
         { error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' },
@@ -898,29 +603,24 @@ tts.post('/generate', async (c) => {
     }
     // ⚠ **여기에 길이 검사를 다시 두지 말 것**(2026-09-03 리뷰 12차). 상한은 두 곳에서만
     //   잰다: 위쪽의 `userTypedText`(사용자가 친 글자)와 합성 직전의 최종 안전망
-    //   (`Prepared text must be…`, 프리셋 면제). 예전에 여기 있던 세 번째 검사는
-    //   **프리셋을 면제하지 않아** `random_context=preset` 라이브 폴백이 400 으로 죽었다 —
-    //   면제를 넣은 최종 검사에 닿기도 전에 막혔다. 사용자 입력에 대해서는 위 검사가
-    //   이미 더 빡빡하므로(원시 길이) 이 검사는 더해 주는 것이 없었다.
+    //   (`Prepared text must be…`). 사용자 입력에 대해서는 위 검사가 이미 더 빡빡하므로(원시 길이)
+    //   여기 세 번째 검사는 더해 주는 것이 없다.
 
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
-    // ⚠ **태그를 붙이지 않는다**(2026-09-30 — `lib/vertex-translate.ts` 「태그」 머리말). 미리듣기·동적 생성은
-    //   생성한 문구 그대로, 직접 입력·프리셋은 `prepareAlarmTextWithVertex` 가 번역할 때만 Gemini 를 부른다 —
+    // ⚠ **태그를 붙이지 않는다**(2026-09-30 — `lib/vertex-translate.ts` 「태그」 머리말). 미리듣기는
+    //   생성한 문구 그대로, 직접 입력은 `prepareAlarmTextWithVertex` 가 번역할 때만 Gemini 를 부른다 —
     //   같은 언어 직접 입력은 사용자가 친 글(글자 웃음만 `[laughs]`) 그대로다.
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (draftPreviewRequested) {
       prepared = { text: requestText, translated: false, tags: [] };
-    } else if (dynamicGenerated) {
-      prepared = { text: dynamicGenerated.text, translated: false, tags: [] };
     } else {
-      const shouldTranslate =
-        body.translate === true || (randomRequested && requestedLanguage !== sourceLanguage);
+      const shouldTranslate = body.translate === true;
       prepared = await prepareAlarmTextWithVertex(c.env, requestText, {
         targetLanguage: shouldTranslate ? requestedLanguage : sourceLanguage,
         sourceLanguage,
         translate: shouldTranslate,
-        // 사용자가 친 ㅋㅋ·haha·www 를 글자로 읽지 않고 웃음소리(`[laughs]`)로 — 프리셋은 우리 대사라 켜지 않는다.
-        speakTypedLaughter: !presetTextUsed,
+        // 사용자가 친 ㅋㅋ·haha·www 를 글자로 읽지 않고 웃음소리(`[laughs]`)로.
+        speakTypedLaughter: true,
       });
     }
     const synthesisText = prepared.text;
@@ -929,29 +629,19 @@ tts.post('/generate', async (c) => {
     // → (1) 번역 경로에서도 화면 문구가 음성 언어와 일치하고, (2) '[after lunch]'·'[calm]'만 입력 등
     //   사용자 대괄호가 안 지워진다.
     //
-    // 프리셋 경로는 사용자가 친 문구가 없다(우리 스톡 문구). 빈 원문을 넘겨 대괄호를 벗긴다 — 옛 태그가 남은
-    // 문구에서도 화면에 '[brightly] …' 가 새지 않게.
-    //
     // ⚠ **같은 언어의 직접 입력은 사용자가 친 글에서 만든다**(합성 문구가 아니라). 합성 문구의 `[laughs]` 는
     //   사용자가 친 ㅋㅋ·haha 를 소리로 바꾼 것이라, 합성 문구에서 태그를 벗기면 그 웃음이 화면에서 사라진다.
     //   같은 언어면 합성 문구는 원문에서 웃음만 바꾼 것이다(`prepareAlarmTextWithVertex` — 태그를 붙이지 않는다).
     //   번역은 합성 문구(번역문)에서 만든다.
-    const typedSameLanguage =
-      !draftPreviewRequested && !dynamicGenerated && !presetTextUsed && !prepared.translated;
-    const messageText = dynamicGenerated
-      ? dynamicGenerated.text
-      : deriveAlarmDisplayText(
-          typedSameLanguage ? requestText : synthesisText,
-          presetTextUsed ? '' : requestText,
-        );
+    const typedSameLanguage = !draftPreviewRequested && !prepared.translated;
+    const messageText = deriveAlarmDisplayText(typedSameLanguage ? requestText : synthesisText, requestText);
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.
-    // - 동적 생성 경로(dynamicGenerated): targetLanguage=requestedLanguage 로 생성했으므로 사용.
-    // - 그 외(preset/custom 비번역): 텍스트 스크립트로 추론하되, 라틴 스크립트라 en 으로
+    // - 그 외(비번역): 텍스트 스크립트로 추론하되, 라틴 스크립트라 en 으로
     //   떨어지는 지원언어(fr/it 등)는 요청 언어를 우선한다(en 오판 → 잘못된 발음 방지).
     let synthesisLanguage: string;
-    if (prepared.translated || dynamicGenerated) {
+    if (prepared.translated) {
       synthesisLanguage = requestedLanguage;
     } else {
       const inferred = inferSynthesisLanguage(synthesisText, sourceLanguage);
@@ -966,12 +656,7 @@ tts.post('/generate', async (c) => {
     // 200자는 **사용자에게 들리는 말**의 상한이다. 태그는 낭독되지 않는데 예전에는 그것까지
     // 세어서, 태그가 여러 개 붙으면(`[through gritted teeth]` 하나만 24자) 규격대로 만든
     // 문구가 뒤늦게 400 으로 거절됐다.
-    // ⚠ **프리셋은 이 상한에서 면제한다**(2026-09-03 리뷰 2차). 200자는 사용자가 친 글자를
-    //   재는 규칙이고, 스톡 프리셋은 우리가 길이를 보고 확정한 대사다 — 실제로 영어
-    //   프리셋 20개 중 12개가 낭독 기준으로도 200자를 넘는다(최장 283자). 여기서 막으면
-    //   그 문구를 고른 알람이 **라이브 폴백 경로에서만 400** 이 나 원인을 찾기 어렵다.
-    //   (평소에는 사전렌더 클립을 쓰므로 이 경로에 오지 않는다.)
-    if (!presetTextUsed && normalizeAlarmTextWithoutTags(synthesisText).length > MANUAL_TTS_TEXT_MAX_LENGTH) {
+    if (normalizeAlarmTextWithoutTags(synthesisText).length > MANUAL_TTS_TEXT_MAX_LENGTH) {
       return c.json(
         { error: 'Prepared text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
         400,
@@ -1282,7 +967,7 @@ tts.post('/generate', async (c) => {
               manual_quota: manualQuotaResult,
               charged_source: chargedSource,
               usage_month: manualQuotaMonth,
-              random_context: randomRequested ? randomContext : null,
+              random_context: null,
               preview_playback_token: activePreviewClaimToken,
               preview_playback_confirmed: Boolean(vp.previewed_at),
             },
@@ -1551,7 +1236,7 @@ tts.post('/generate', async (c) => {
             provider: generated.provider,
             cache_key: cacheKey,
             cache_hit: false,
-            random_context: randomRequested ? randomContext : null,
+            random_context: null,
             manual_quota: manualQuotaResult,
             charged_source: chargedSource,
             // 기본 제공분에서 실제로 차감한 **원래 사용월**(KST) — 사용 기록 `generation_outcome` 의 `usage_month`
@@ -1672,24 +1357,19 @@ tts.get('/manual-quota', async (c) => {
   const db = getDB(c.env);
 
   const userRow = await db.execute({
-    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+    sql: `SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
     args: ownerIds,
   });
-  const rawCallerUserPlan =
+  const callerUserPlan =
     userRow.rows.length > 0 && userRow.rows[0]!.plan != null ? String(userRow.rows[0]!.plan) : null;
-  // 생성 라우트와 같은 계산값 — 기간 한정 개인 플랜이면 개인 한도(30)가 보인다.
-  const callerUserPlan = computedUserPlan(rawCallerUserPlan, resolvePersonalPromo(c.env));
 
-  const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
-    promoOnly: callerUserPlan !== rawCallerUserPlan,
-  });
+  const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
   // 무료면 광고 보상 현황도 싣는다(`docs/spec/ad-rewards.md` §4). 잔액(`credits`)은 광고 스위치와 무관하게 늘 싣는다 —
   // 광고를 꺼도 받아 둔 보상은 쓸 수 있다. 새 광고를 볼 수 있는지는 `can_watch`·`unavailable_reason` 이 말한다.
   // ⚠ 계정 PK(`user_id`)는 더는 싣지 않는다 — 승인 세션 응답에만 있다(옛 앱이 승인 없이 광고를 띄우지 않게, 스펙 §3).
   // 유료에게는 싣지 않는다 — 플러스 동안은 월 30회를 쓰고 보상은 그대로 남는다.
-  const freeCaller =
-    Boolean(c.get('userIdPK')) && !hasPersonalVoiceAccess(rawCallerUserPlan, resolvePersonalPromo(c.env));
+  const freeCaller = Boolean(c.get('userIdPK')) && !hasPersonalVoiceAccess(callerUserPlan);
   const adReward = freeCaller ? adRewardView(c.env, await readAdRewardStatus(db, userPk)) : undefined;
   return c.json({
     plan_key: pool.planKey,
@@ -1786,7 +1466,7 @@ tts.get('/messages/:id/audio', async (c) => {
                  messages.category,
                  COALESCE(vp.is_system, 0) AS is_system,
                  owner.id AS owner_id,
-                 ${planWithGrantSql('owner')} AS owner_plan
+                 owner.plan AS owner_plan
           FROM messages
           JOIN voice_profiles vp
             ON vp.id = messages.voice_profile_id
@@ -1826,13 +1506,11 @@ tts.get('/messages/:id/audio', async (c) => {
   }>(result.rows[0]!);
 
   // 무료 플랜 잠금 강제: 클론(비시스템) 보이스의 오디오는 그 보이스 주인(= 호출자, 위 WHERE)이 유료일
-  // 때만 내려준다 — 계산값(`hasPersonalVoiceAccess`, 기간 한정 개인 플랜 반영)이다. 주인이 무료로
-  // 내려가면(다운그레이드) 데이터는 보존하되 재생은 잠기고, 재유료가 되면 users.plan 이 복구돼 그대로
-  // 다시 풀린다. 시스템 스톡 보이스는 항상 허용.
+  // 때만 내려준다(`hasPersonalVoiceAccess`). 주인이 무료로 내려가면(다운그레이드) 데이터는 보존하되 재생은
+  // 잠기고, 재유료가 되면 users.plan 이 복구돼 그대로 다시 풀린다. 시스템 스톡 보이스는 항상 허용.
   const isSystemVoice = Number(message.is_system ?? 0) === 1;
   const ownerIsCaller = message.owner_id != null && ownerIds.includes(message.owner_id);
-  const ownerHasVoiceAccess =
-    ownerIsCaller && hasPersonalVoiceAccess(message.owner_plan, resolvePersonalPromo(c.env));
+  const ownerHasVoiceAccess = ownerIsCaller && hasPersonalVoiceAccess(message.owner_plan);
   if (!isSystemVoice && !ownerHasVoiceAccess) {
     return c.json(
       {

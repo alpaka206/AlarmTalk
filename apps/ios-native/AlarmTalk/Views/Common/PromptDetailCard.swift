@@ -5,25 +5,27 @@ import SwiftUI
 /// ⚠ **이 카드가 값을 바꾸는 유일한 길이다.** 목록 행을 다시 눌러도 모달이 뜨지 않는다
 /// (「이미 등록한 정보는 다시 묻지 않는다」 규약). 이 액션을 지우면 등록한 값을 영영 못 바꾼다.
 ///
-/// 유료 문구 화면(`MessageSettingsPane`)과 무료·기본목소리 문구 화면
-/// (`FreeBucketSettingsPane`)이 **같이 쓴다** — 두 벌로 만들지 말 것.
+/// 문구 화면(`MessageSettingsPane`)이 쓴다 — 유료·무료가 같은 화면이다(무료·기본목소리 전용 화면은 2026-09-02 에 합쳤다).
+/// 상세 카드를 두 벌로 만들지 말 것.
+///
+/// 치수는 안드로이드 `RandomPromptDetailRow` 와 같다(2026-11-22 두 앱 통일) — 반경 18(`WakerPanelShape`, 위 목록 카드와
+/// 같은 껍데기), 안 여백 왼쪽 14 · 위아래 12 · 오른쪽 6, '변경하기' 는 M3 `TextButton`(좌우 12 · 높이 40 · 14 SemiBold ·
+/// primary). 그전 iOS 는 반경 22 · 좌우 16 · 글자만 있는 버튼이었다.
 struct PromptDetailCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String
     let value: String
     /// 값 아래 작은 안내(예: 되짚지 못한 옛 지역의 "목록에서 다시 골라 주세요"). 없으면 안 그린다.
     var note: String? = nil
-    /// false 면 '변경하기' 를 흐리게 두고 누르지 못한다(직접 입력을 이번 달 더 만들 수 없을 때 — 안드로이드 `changeEnabled`).
-    var changeEnabled: Bool = true
     let onChange: () -> Void
 
     var body: some View {
-        EditorCard {
+        EditorCard(verticalPadding: 0, horizontalPadding: 0, cornerRadius: theme.shapes.medium) {
             // ⚠ **'변경하기' 는 제목+값 블록의 세로 가운데다**(2026-08-16 지시).
             // 예전에는 `HStack(alignment: .top)` 안에 값과 나란히 있어 **값의 첫 줄**에
             // 붙었고, 제목이 위에 따로 있어서 카드 안에서 위로 치우쳐 보였다.
             // 안드로이드 `RandomPromptDetailRow` 는 처음부터 블록 전체 기준 가운데다.
-            HStack(spacing: 12) {
+            HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(theme.typography.bodySmall)
@@ -39,12 +41,22 @@ struct PromptDetailCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // ⚠ 이 액션을 지우면 등록한 값을 영영 못 바꾼다.
-                Button("변경하기", action: onChange)
-                    .font(theme.typography.bodyMedium.weight(.semibold))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(changeEnabled ? theme.palette.primary : theme.palette.onSurfaceVariant.opacity(0.6))
-                    .disabled(!changeEnabled)
+                // 언제나 눌린다 — 직접 입력을 이번 달 더 만들 수 없으면 눌러서 열린 창이 그 사실을 말한다(2026-11-22 오너).
+                Button(action: onChange) {
+                    Text("변경하기")
+                        .font(theme.typography.bodyMedium)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 40)
+                        // ⚠ 없으면 글자만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.palette.primary)
             }
+            .padding(.leading, 14)
+            .padding(.trailing, 6)
             .padding(.vertical, 12)
         }
     }

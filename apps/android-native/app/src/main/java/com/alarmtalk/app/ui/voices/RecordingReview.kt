@@ -72,19 +72,17 @@ internal fun recordingAdvisoryMessageRes(advisory: RecordingAdvisory): Int = whe
     RecordingAdvisory.CLIPPING -> R.string.recording_quality_clipping
 }
 
-/** 알럿 본문 — 멈춘 사정, 안내, 잰 수치(말소리로 들린 시간·전체 길이), 맺음말 순이다. 한 줄에 하나씩. */
+/**
+ * 알럿 본문 — 멈춘 사정(있으면)과 안내 줄만, 한 줄에 하나씩.
+ *
+ * ⚠ **잰 수치('말소리로 들린 시간 약 n초 · 전체 m초')와 맺음말('그대로 써도 돼요…')을 되살리지 말 것**(2026-11-22 오너 "그냥
+ * 없애고 '말소리가 거의 들리지 않아요.' 이렇게만 알려 주도록"). 고를 길은 버튼(다시 녹음 / 그래도 쓰기)이 이미 말한다.
+ * iOS `RecordingReview.alertMessage` 와 같다.
+ */
 internal fun recordingReviewMessage(context: Context, review: RecordingReview.Ask): String = buildList {
     when {
         review.recovered -> add(context.getString(R.string.recording_quality_recovered))
         review.interrupted -> add(context.getString(R.string.recording_interrupted_kept))
     }
     review.advisories.forEach { add(context.getString(recordingAdvisoryMessageRes(it))) }
-    add(
-        context.getString(
-            R.string.recording_quality_summary,
-            (review.metrics.speechMillis / 1000).toInt(),
-            (review.metrics.durationMillis / 1000).toInt(),
-        ),
-    )
-    if (review.advisories.isNotEmpty()) add(context.getString(R.string.recording_quality_footer))
 }.joinToString("\n")

@@ -18,7 +18,10 @@ final class SocialFeatureViewModel: ObservableObject {
     /// `ui/main/MainViewModelBillingActions.kt` 의 `billingRefreshing` vs `billingBusy`.
     @Published private(set) var isRefreshing = false
 
-    @Published var statusMessage: String?
+    /// 마지막 이용권 새로고침(`refreshAll`)이 **실패했으면** 그 이유 — 이용권 화면이 들어올 때 위쪽 토스트로 띄운다
+    /// (안드로이드 `refreshBillingData(showMessage = true)` 의 `msg_gb_billing_info_load_failed` 와 같은 문장).
+    /// 갱신을 받아들일 때 비우고, 그 회차의 구독 조회가 실패하면 그 이유를 적는다. 밀려난 회차는 적지 않는다.
+    @Published private(set) var refreshFailureMessage: String?
 
     /// 마지막 `refreshAll` 이 **권한 판단에 필요한 것을 모두** 받아왔는가
     /// (구독 + `/auth/me` 의 plan). 하나라도 실패하면 false.
@@ -28,9 +31,21 @@ final class SocialFeatureViewModel: ObservableObject {
     /// 목소리 알람이 톤으로 바뀐다**(2026-08-18 Codex #697 P1). 파괴적 판단은 이 값이 true 일 때만.
     private(set) var entitlementSnapshotComplete = false
 
-    /// 해지를 App Store 에서 해야 하는가 — 서버가 `STORE_CANCEL_UNSUPPORTED` 로 거절했을 때.
-    /// 이용권 화면이 이걸 보고 StoreKit 구독 관리 시트를 연다.
-    @Published var needsAppStoreSubscriptionManagement = false
+    /// 해지 한 번의 결과 — 이용권 화면이 위쪽 토스트·알럿으로 그린다(안드로이드 `cancelSubscription` 의 `message`·
+    /// `billingPlayManageUrl`). 예전에는 결과를 `statusMessage`(2026-11-23 삭제)에만 적었는데 그 값을 그리는 화면이 없어, 해지가 됐는지
+    /// 안 됐는지 화면이 아무 말도 하지 않았다.
+    enum CancelOutcome: Equatable {
+        /// 서버가 해지했다 — 그 안내 문장.
+        case canceled(String)
+        /// 해지하지 못했다 — 그 이유.
+        case failed(String)
+        /// App Store 결제라 서버가 끊을 수 없다(`STORE_CANCEL_UNSUPPORTED`, 무변경) — 시스템 구독 관리 시트로 보낸다.
+        case appStoreManagementRequired
+        /// Google Play 해지 호출이 실패했다(`PLAY_CANCEL_FAILED`·`PLAY_REVOKE_FAILED`, 무변경) — Google Play 에서 직접 해지하게 한다.
+        case playManagementRequired
+        /// 다른 해지가 돌고 있어 이번 요청은 보내지 않았다.
+        case skipped
+    }
 
     private let api: AlarmTalkAPI
     private let accessSnapshotStore: AccessSnapshotStore
@@ -62,8 +77,6 @@ final class SocialFeatureViewModel: ObservableObject {
      * (그 규칙 자체는 보류를 잡기 위해 필요하다 — 고칠 것은 **plan 의 신선도**다.)
      *
      * **plan 만 넘긴다.** 프로필 전체를 넘기면 전경에서 방금 바꾼 닉네임이 되돌아간다.
-     * 기간 한정 개인 플랜(`personalPromo`)은 plan 의 **짝**이라 함께 넘긴다 — 같은 응답에서
-     * 온 값이고, 떨어뜨리면 계산값 `plus` 만 남아 끝난 뒤에도 걷어낼 근거가 없다.
      *
      * 마지막 인자는 그 요청을 보내기 **직전에** `beginAccountRequest` 로 받은 표다 — 받는 쪽이
      * 다른 계정 응답과 순번으로 갈라, 늦게 도착한 옛 답이 새 답을 덮지 않게 한다.
@@ -72,28 +85,16 @@ final class SocialFeatureViewModel: ObservableObject {
         _ userID: String,
         _ from: String,
         _ plan: String,
-        _ personalPromo: PersonalPromo?,
         _ request: AuthViewModel.AccountRequest?
     ) -> Void)?
 
-    /// 세션 주인에게서 계정 요청 표(순번·진입)를 받는다 — `/auth/me`·결제 전 조회를 보내기
+    /// 세션 주인에게서 계정 요청 표(순번)를 받는다 — `/auth/me`·결제 전 조회를 보내기
     /// **직전에** 부른다(`AuthViewModel.beginAccountRequest`). 없으면(테스트) 표 없이 넘긴다.
     var beginAccountRequest: (() -> AuthViewModel.AccountRequest?)?
 
     /// 이 표의 plan 답을 권한 스냅샷에 써도 되는가(`AuthViewModel.isPlanAnswerCurrent`) — 세션이 옛 답으로
-    /// 거절한 plan·프로모를 스냅샷에만 남기지 않게(Codex #803). 없으면(테스트) 쓴다.
+    /// 거절한 plan 을 스냅샷에만 남기지 않게(Codex #803). 없으면(테스트) 쓴다.
     var isPlanAnswerCurrent: ((AuthViewModel.AccountRequest?) -> Bool)?
-
-    /**
-     * 표를 뜬 계정 요청(`/auth/me`·결제 전 조회)이 **실패했다**는 것을 세션 주인에게 알린다
-     * (`AuthViewModel.noteAccountRequestFailure`).
-     *
-     * 성공은 `onFreshPlan` 이 이 진입의 답으로 적는다. 실패도 적어야 한다 — 이 진입의 **첫 결과**가
-     * 성공이든 실패든 그 진입의 종료 안내 판정을 끝낸다(스펙 D11, 안드로이드
-     * `MainViewModel.recordAccountFailure`). 안 적으면 실패가 먼저 온 진입에서 같은 진입의 뒤 성공이
-     * 첫 결과가 되어 세션 한가운데서 안내가 뜬다.
-     */
-    var onAccountRequestFailed: ((_ userID: String, _ request: AuthViewModel.AccountRequest?) -> Void)?
 
     // `isCurrentSessionToken` 은 없앴다 — `EntitlementWriter` 가 그 판단을 갖는다(2026-09-02).
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
@@ -136,7 +137,7 @@ final class SocialFeatureViewModel: ObservableObject {
         entryFreshness.reset()
         activeUserID = nil
         subscription = nil
-        statusMessage = nil
+        refreshFailureMessage = nil
     }
 
     /// **화면 진입 갱신** — 같은 계정의 완결된 갱신이 같은 앱 진입 안에서 60초 안에 있었으면
@@ -178,6 +179,8 @@ final class SocialFeatureViewModel: ObservableObject {
         //   건너 다음 진입에 도착했을 때 완료 시점의 진입 번호를 적으면, 떠나 있는 동안 다른
         //   기기에서 바뀐 것을 돌아와서 1분 동안 못 받는다.
         let admitted = entryRefreshClock()
+        // 이 회차의 결과로 다시 적는다 — 앞 회차의 실패가 이번 진입의 안내로 남지 않게.
+        refreshFailureMessage = nil
         if !isRefreshing { isRefreshing = true }
         // ⚠ **내린는 것은 '지금 세대' 뿐이다**(2026-09-01 리뷰 3차 정정). 세운 사람이
         // 내리게 하면, 밀려난 갱신이 세대 가드에서 돌아가면서 **진행 중인 `force` 갱신의
@@ -189,7 +192,8 @@ final class SocialFeatureViewModel: ObservableObject {
             if generation == refreshGeneration { isRefreshing = false }
         }
 
-        var messages: [String] = []
+        /// 이용권 화면 안내(`refreshFailureMessage`)에 쓸 구독 조회 실패의 이유 — 라벨 없이 안드로이드와 같은 문장이다.
+        var firstFailure: String?
         // 권한 스냅샷은 **문 하나로만** 쓴다. 표는 요청 전에 뜨고, rolling refresh 로 토큰이
         // 굴러가면 **우리가 굴린 것**이므로 표도 함께 옮긴다(안 옮기면 그 뒤 쓰기가 전부 거절된다 —
         // 30차에 실제로 그렇게 `entitlementSnapshotComplete` 가 영영 안 섰다).
@@ -205,10 +209,9 @@ final class SocialFeatureViewModel: ObservableObject {
         //     뜬다 — 구독 읽기와 `/auth/me` 가 지금 출발하므로, 그 뒤에 성공한 결제 전 조회·뒤에 보낸
         //     계정 요청의 답을 이 회차가 되돌리지 못한다.
         //   - 앞 단계의 가드에서 물러나면 떠 있던 나머지는 취소되고 답은 쓰지 않는다.
-        //   - 구독 조회가 실패하면 `/auth/me` 의 답은 **세션의 plan·프로모와 이 진입의
-        //     결과로만** 쓴다(아래 `catch` — 나간 요청의 결과를 버리지 않는다, D11). 권한 스냅샷에는
-        //     쓰지 않고(예전과 같다) 토큰도 굴리지 않는다 — 무상태 JWT 라 지금 토큰이 그대로 유효하다
-        //     (`docs/spec/session-and-auth.md`).
+        //   - 구독 조회가 실패하면 `/auth/me` 의 답은 **세션의 plan 으로만** 쓴다(아래 `catch` — 나간
+        //     요청의 결과를 버리지 않는다). 권한 스냅샷에는 쓰지 않고(예전과 같다) 토큰도 굴리지 않는다
+        //     — 무상태 JWT 라 지금 토큰이 그대로 유효하다(`docs/spec/session-and-auth.md`).
         let preflightRevision = billingPreflightRevision
         let accountRequest = beginAccountRequest?()
         async let subscriptionFetch = api.getSubscription(token: token)
@@ -230,8 +233,6 @@ final class SocialFeatureViewModel: ObservableObject {
             // 예약된 채 남긴다. 못 받았으면 **적지 않고**(마지막으로 확인된 값을 남긴다)
             // 스냅샷을 미완으로 표시해 다음 갱신을 기다린다.
             var freshPlan: String?
-            // `freshPlan` 과 **같은 응답**의 기간 한정 개인 플랜 — 둘은 늘 함께 적는다.
-            var freshPromo: PersonalPromo?
             var planOK = false
             var rolledToken: String?
             // 표(`accountRequest`)는 위에서 **보내기 전에** 떴다 — 늦게 도착한 옛 답이 새 답을 덮지
@@ -239,15 +240,11 @@ final class SocialFeatureViewModel: ObservableObject {
             do {
                 let me = try await meFetch
                 freshPlan = me.user.plan
-                freshPromo = me.user.personalPromo
                 planOK = true
                 rolledToken = me.token?.nilIfBlank
             } catch {
-                messages.append(Self.scopedRefreshErrorMessage(
-                    label: String(localized: "이용권"),
-                    error: error,
-                    fallback: String(localized: "이용권 정보를 불러오지 못했어요")
-                ))
+                // 이용권 화면의 안내(`refreshFailureMessage`)는 구독 조회가 실패했을 때만이다 — 구독은 받았으니 화면은 맞다
+                // (안드로이드 `refreshBillingData` 는 구독 하나만 받는다).
             }
             // ⚠ **await 뒤에는 다시 본다**(2026-08-31 리뷰 2차). 위 가드를 통과한 뒤 이
             // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
@@ -261,9 +258,7 @@ final class SocialFeatureViewModel: ObservableObject {
             // 에폭 가드로 쓰는데, 토큰을 먼저 굴리면 그 뒤 `applyFreshPlan` 의
             // `current.token == previous` 가 **항상 거짓**이 되어 plan 이 영영 반영되지 않는다
             // (27차에 넣은 에폭 가드가 26차 수정을 통째로 무력화하고 있었다).
-            if let freshPlan { onFreshPlan?(userID, token, freshPlan, freshPromo, accountRequest) }
-            // 실패도 이 진입의 결과다(D11 — `onAccountRequestFailed`). 취소는 결과가 아니다.
-            if !planOK, !Task.isCancelled { onAccountRequestFailed?(userID, accountRequest) }
+            if let freshPlan { onFreshPlan?(userID, token, freshPlan, accountRequest) }
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
                 // 우리가 굴렸으니 표도 옮긴다 — 안 옮기면 이후 쓰기가 전부 거절된다.
@@ -289,14 +284,13 @@ final class SocialFeatureViewModel: ObservableObject {
             guard subscriptionWrite == .applied else { return }
             subscription = resolvedSubscription
             // ⚠ **세션이 옛 답으로 거절한 plan 은 스냅샷에도 쓰지 않는다**(Codex #803) — 더 나중에 보낸 계정
-            // 요청의 답이 이미 반영됐으면(`isPlanAnswerCurrent`) 이 plan·프로모는 옛 것이다.
+            // 요청의 답이 이미 반영됐으면(`isPlanAnswerCurrent`) 이 plan 은 옛 것이다.
             if let freshPlan, isPlanAnswerCurrent?(accountRequest) ?? true {
                 // ⚠ 위 두 쓰기와 **같은 규칙**이다 — 문이 거절하면 그 뒤도 전부 옛 세션의
                 // 것이므로 반영하지 않는다(2026-09-02 리뷰). 결과를 버리면 구독은 새 값인데
                 // plan 만 옛 값인 **반쪽 스냅샷**이 남는다.
                 let planWrite = entitlementWriter.write(accessTicket, "auth/me plan") {
                     $0.userPlan = freshPlan
-                    $0.personalPromo = freshPromo
                 }
                 guard planWrite == .applied else { return }
                 // ⚠ **서버가 무료를 확정하면 캐시된 StoreKit 신호도 끊는다**(2026-09-01 리뷰,
@@ -319,30 +313,17 @@ final class SocialFeatureViewModel: ObservableObject {
             }
             entitlementOK = planOK
         } catch {
-            messages.append(Self.scopedRefreshErrorMessage(
-                label: String(localized: "이용권"),
-                error: error,
-                fallback: String(localized: "이용권 정보를 불러오지 못했어요")
-            ))
-            // ⚠ **`/auth/me` 는 이미 나갔다 — 그 답을 이 진입의 결과로 적는다**(코덱스 #827). 두 조회를
-            //   한꺼번에 보내므로 구독이 실패해도 계정 요청은 표와 함께 실제로 나갔다. 여기서
-            //   버리면 이 진입의 첫 결과가 비어, 뒤에 오는 다른 응답이 세션 한가운데서 종료 안내를
-            //   판정한다(D11). 성공이면 세션의 plan·프로모(`onFreshPlan`), 실패면 `onAccountRequestFailed`.
-            //   구독을 못 받았으니 **권한 스냅샷에는 쓰지 않는다**(예전과 같다 — 반쪽 스냅샷 금지). 토큰도
-            //   굴리지 않는다 — 무상태 JWT 라 지금 토큰이 그대로 유효하다(`docs/spec/session-and-auth.md`).
-            var answered: (plan: String, promo: PersonalPromo?)?
-            do {
-                let me = try await meFetch
-                answered = (me.user.plan, me.user.personalPromo)
-            } catch {}
+            firstFailure = Self.refreshFailureText(error)
+            // ⚠ **`/auth/me` 는 이미 나갔다 — 그 답(plan)을 세션에 넘긴다**(코덱스 #827). 두 조회를
+            //   한꺼번에 보내므로 구독이 실패해도 계정 요청은 표와 함께 실제로 나갔다 — 나간 요청의 결과를
+            //   버리지 않는다(`onFreshPlan`). 구독을 못 받았으니 **권한 스냅샷에는 쓰지 않는다**(예전과 같다 —
+            //   반쪽 스냅샷 금지). 토큰도 굴리지 않는다 — 무상태 JWT 라 지금 토큰이 그대로 유효하다
+            //   (`docs/spec/session-and-auth.md`).
+            let answeredPlan = (try? await meFetch)?.user.plan
             // 위 정상 갈래와 같은 가드 — 밀려난 갱신·바뀐 계정·그 뒤에 성공한 결제 전 조회면 적지 않는다.
-            if activeUserID == userID, generation == refreshGeneration,
+            if let answeredPlan, activeUserID == userID, generation == refreshGeneration,
                preflightRevision == billingPreflightRevision {
-                if let answered {
-                    onFreshPlan?(userID, token, answered.plan, answered.promo, accountRequest)
-                } else if !Task.isCancelled {
-                    onAccountRequestFailed?(userID, accountRequest)
-                }
+                onFreshPlan?(userID, token, answeredPlan, accountRequest)
             }
         }
 
@@ -351,8 +332,13 @@ final class SocialFeatureViewModel: ObservableObject {
         if entitlementSnapshotComplete {
             entryFreshness.record(.init(userID: userID, entry: admitted.entry, at: admitted.now))
         }
-        // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
-        statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
+        // 취소된 회차(화면을 떠났다)는 실패가 아니다 — 안내하지 않는다.
+        refreshFailureMessage = Task.isCancelled ? nil : firstFailure
+    }
+
+    /// 이용권 새로고침 실패의 안내 문장 — 안드로이드 `refreshBillingData` 의 `userFacingError(…, msg_gb_billing_info_load_failed)` 와 같다.
+    nonisolated static func refreshFailureText(_ error: Error) -> String {
+        userFacingErrorMessage(error, fallback: String(localized: "이용권 정보를 불러오지 못했어요"))
     }
 
     /// 구독 정보만 조용히 재조회. Apple IAP confirm 이 `success: true` 로 끝난 직후
@@ -396,7 +382,7 @@ final class SocialFeatureViewModel: ObservableObject {
               accessTicket.userID == userID, accessTicket.token == token else {
             return nil
         }
-        // 표는 보내기 전에 뜬다 — 이 응답의 `user_plan` 도 세션의 plan·프로모를 바꾼다.
+        // 표는 보내기 전에 뜬다 — 이 응답의 `user_plan` 도 세션의 plan 을 바꾼다.
         let accountRequest = beginAccountRequest?()
         do {
             let nextSubscription = try await api.getSubscription(
@@ -410,41 +396,34 @@ final class SocialFeatureViewModel: ObservableObject {
             // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
             guard activeUserID == userID, generation == refreshGeneration,
                   preflightRevision == billingPreflightRevision else { return nil }
-            // 더 나중에 보낸 계정 요청의 답이 이미 반영됐으면 이 plan·프로모는 옛 것이다 — 구독만 쓴다(Codex #803).
+            // 더 나중에 보낸 계정 요청의 답이 이미 반영됐으면 이 plan 은 옛 것이다 — 구독만 쓴다(Codex #803).
             let planCurrent = isPlanAnswerCurrent?(accountRequest) ?? true
             let silentWrite = entitlementWriter.write(accessTicket, "silent subscription") {
                 $0.subscriptionResponse = nextSubscription
-                // plan 과 프로모는 **같은 응답에서 온 짝**이다 — plan 을 받아 온 회차에만,
-                // 둘을 함께 적는다(`user_plan` 은 결제 전 조회에서만 온다).
+                // plan 은 받아 온 회차에만 적는다(`user_plan` 은 결제 전 조회에서만 온다).
                 if let plan = nextSubscription.userPlan, planCurrent {
                     $0.userPlan = plan
-                    $0.personalPromo = nextSubscription.limitedPlan
                 }
             }
             guard silentWrite == .applied else { return nil }
             if refreshStoreState { billingPreflightRevision &+= 1 }
             subscription = nextSubscription
             if let plan = nextSubscription.userPlan {
-                onFreshPlan?(userID, token, plan, nextSubscription.limitedPlan, accountRequest)
+                onFreshPlan?(userID, token, plan, accountRequest)
             }
             return nextSubscription
         } catch {
             // 백그라운드 새로고침 실패는 사용자에게 노출하지 않는다.
-            // 결제 전 조회(`user_plan` 을 싣는 계정 응답)의 실패는 이 진입의 결과로 적는다(D11 —
-            // 성공은 `onFreshPlan` 이 적는다). 조용한 구독 조회는 plan 을 싣지 않아 계정 응답이 아니다.
-            if refreshStoreState, !Task.isCancelled, activeUserID == userID {
-                onAccountRequestFailed?(userID, accountRequest)
-            }
             return nil
         }
     }
 
     /// **쓰기·푸시 뒤 이용권 + plan 을 받는다 — `/auth/me` 는 대개 한 번**(스펙 plan-gates §4).
     ///
-    /// 끝까지 가면 `refreshAll` 의 `/auth/me` 가 plan·프로모·토큰을 이미 세션에 넣었다
+    /// 끝까지 가면 `refreshAll` 의 `/auth/me` 가 plan·토큰을 이미 세션에 넣었다
     /// (`onFreshPlan`·`onRolledToken`) — 옆에서 사용자 새로고침을 또 부르지 않는다. 못 갔으면
     /// (구독 조회가 실패해 권한 스냅샷을 채우지 못했거나 — 그때 `/auth/me` 의 답은 세션의
-    /// plan·프로모에만 들어간다 — 그 사이 토큰이 굴러 plan 을 버렸다) 그때만 사용자 새로고침을 한 번 더
+    /// plan 에만 들어간다 — 그 사이 토큰이 굴러 plan 을 버렸다) 그때만 사용자 새로고침을 한 번 더
     /// 부른다. 그쪽은 토큰이 굴러도 plan 을 반영한다(`AuthViewModel.refreshUserApplyingToken`).
     ///
     /// ⚠ **"확정 성공이면 `onServerEntitlementUpdated` 가 이미 사용자를 읽었다" 에 기대지 말 것**
@@ -457,37 +436,42 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    private func refreshAllAfterMutation(session: AuthSession?, successMessage: String) async {
-        await refreshAll(session: session, force: true)
-        statusMessage = successMessage
-    }
-
-    func cancelSubscription(mode: String = "at_period_end", session: AuthSession?) async {
+    /// 이용권을 해지한다. 결과는 돌려주는 값으로 화면이 그린다(`CancelOutcome`) — 문장은 안드로이드
+    /// `MainViewModelBillingActions.cancelSubscription` 과 같다.
+    @discardableResult
+    func cancelSubscription(mode: String = "at_period_end", session: AuthSession?) async -> CancelOutcome {
         guard let token = session?.token else {
-            statusMessage = String(localized: "로그인이 필요해요.")
-            return
+            return .failed(String(localized: "로그인 후 사용할 수 있어요"))
         }
-        guard !isBusy else { return }
+        guard !isBusy else { return .skipped }
         isBusy = true
         defer { isBusy = false }
 
         do {
             let normalizedMode = Self.normalizedCancellationMode(mode)
             _ = try await api.cancelSubscription(mode: normalizedMode, token: token)
-            let successMessage = normalizedMode == "immediate" ? String(localized: "이용권을 해지했어요.") : String(localized: "구독 해지를 예약했어요.")
-            await refreshAllAfterMutation(session: session, successMessage: successMessage)
+            // 해지해도 만든 목소리는 지우지 않는다 — 문장은 언제까지 쓰는지와 다음 결제가 없다는 것만 말한다(안드로이드와 같다).
+            let successMessage = normalizedMode == "immediate"
+                ? String(localized: "이용권을 해지했어요")
+                : String(localized: "이번 이용 기간까지 그대로 쓸 수 있어요. 다음 결제는 없어요")
+            await refreshAll(session: session, force: true)
+            return .canceled(successMessage)
         } catch {
-            // ⚠ **App Store 구독은 서버가 못 끊는다.** Apple 에는 Play 의
-            // `purchases.subscriptions.cancel` 에 해당하는 API 가 없어서, 사용자가 App Store
-            // 구독 관리 화면에서 직접 끊어야 한다. 서버가 이 코드로 거절하면(무변경)
-            // 여기서 그 화면으로 보낸다 — 안 보내면 "해지에 실패했어요" 만 남고 **해지할
-            // 길이 앱 어디에도 없다**(심사 거절 사유이기도 하다).
-            if Self.extractServerErrorCode(from: error) == "STORE_CANCEL_UNSUPPORTED" {
-                needsAppStoreSubscriptionManagement = true
-                statusMessage = nil
-                return
+            switch Self.extractServerErrorCode(from: error) {
+            case "STORE_CANCEL_UNSUPPORTED":
+                // ⚠ **App Store 구독은 서버가 못 끊는다.** Apple 에는 Play 의
+                // `purchases.subscriptions.cancel` 에 해당하는 API 가 없어서, 사용자가 App Store
+                // 구독 관리 화면에서 직접 끊어야 한다. 서버가 이 코드로 거절하면(무변경)
+                // 그 화면으로 보낸다 — 안 보내면 "해지에 실패했어요" 만 남고 **해지할
+                // 길이 앱 어디에도 없다**(심사 거절 사유이기도 하다).
+                return .appStoreManagementRequired
+            case "PLAY_CANCEL_FAILED", "PLAY_REVOKE_FAILED":
+                // Google Play 호출이 실패했다 — 서버·앱 상태 모두 무변경이다. 안드로이드 `PlayStoreManageDialog` 처럼
+                // Google Play 에서 직접 해지하도록 안내한다(이용권 화면의 알럿).
+                return .playManagementRequired
+            default:
+                return .failed(Self.billingErrorMessage(error, fallback: String(localized: "해지에 실패했어요")))
             }
-            statusMessage = Self.billingErrorMessage(error, fallback: String(localized: "해지에 실패했어요"))
         }
     }
 
@@ -497,10 +481,13 @@ final class SocialFeatureViewModel: ObservableObject {
         return "immediate"
     }
 
+    /// 해지 실패의 문구 — 결제 문구 표 → 공용 표(`APIErrorMessages`) → 화면 폴백. 안드로이드 `billingFailureMessage` 의
+    /// `apiErrorMessage(context, errorCode) ?: fallback` 와 같은 층이다(2026-11-22 두 앱 통일 — 그전 iOS 는 공용 표를 건너뛰어,
+    /// 같은 `RATE_LIMITED` 가 안드로이드는 "요청이 너무 많아요…", iOS 는 "해지에 실패했어요" 였다).
     static func billingErrorMessage(_ error: Error, fallback: String) -> String {
         billingFailureMessage(
             errorCode: extractServerErrorCode(from: error),
-            fallback: userFacingErrorMessage(error, fallback: fallback)
+            fallback: APIErrorMessages.message(for: error, fallback: fallback)
         )
     }
 
@@ -525,10 +512,6 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-
-    static func scopedRefreshErrorMessage(label: String, error: Error, fallback: String) -> String {
-        String(format: String(localized: "%1$@: %2$@"), label, userFacingErrorMessage(error, fallback: fallback))
-    }
 
     private static func extractServerErrorCode(from error: Error) -> String? {
         if let apiError = error as? APIError, let code = apiError.serverErrorCode {
@@ -648,7 +631,6 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         voiceStudio.clearPaidVoiceState()
-        clearPaidVoiceState(lockedAlarmCount: locked)
         return locked
     }
 
@@ -692,9 +674,6 @@ final class SocialFeatureViewModel: ObservableObject {
             await Self.rescheduleIfEnabled(updated, replacing: record, alarmKit: alarmKit, store: alarmStore)
             restored += 1
         }
-        if restored > 0 {
-            statusMessage = String(localized: "이용권이 확인되어 목소리 알람을 다시 켰어요.")
-        }
         return restored
     }
 
@@ -718,14 +697,6 @@ final class SocialFeatureViewModel: ObservableObject {
         guard FreePlanLockSelection.reschedules(updated) else { return }
         if await alarmKit.schedule(record: updated, store: store), previous.alarmKitID != nil {
             await alarmKit.cancelScheduledAlarm(record: previous)
-        }
-    }
-
-    func clearPaidVoiceState(lockedAlarmCount: Int = 0) {
-        if lockedAlarmCount > 0 {
-            // '삭제했어요' 라고 하지 않는다 — 지우지 않았고, 알람은 **기본 목소리로** 계속 울린다.
-            // 강등 모달(`RootView.downgradeNoticeMessage` 의 `.freePlan`)과 같은 뜻이어야 한다.
-            statusMessage = String(localized: "무료 이용권으로 전환되어 목소리 알람이 기본 목소리로 바뀌었어요. 3일 안에 다시 구독하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요.")
         }
     }
 }
@@ -805,7 +776,4 @@ struct FreePlanLockSelection {
     /// **처음** 잠그는 행인가 — 강등 안내 개수는 이것만 센다. 옛 모양을 새 모양으로 옮기는 것은
     /// 이미 알린 알람이라 다시 세지 않는다(세면 앱을 열 때마다 강등 모달이 뜬다 — 2026-08-11).
     static func isNewLock(_ record: LocalAlarmRecord) -> Bool { record.preLockPlayMode == nil }
-
-    /// 이번 실행이 **새로** 잠글 개수 — `applyFreePlanVoiceLock` 의 반환값(취소되지 않았을 때).
-    var newLockCount: Int { toLock.filter(Self.isNewLock).count }
 }

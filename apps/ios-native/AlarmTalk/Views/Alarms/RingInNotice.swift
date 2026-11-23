@@ -227,13 +227,15 @@ struct RingInNoticeHost: View {
         .floatingChromeShadow()
     }
 
-    /// 진입은 살짝 올라오며 감속하고, 퇴장은 그보다 빠르게 걷힌다(CLAUDE.md 「동작(애니메이션) 원칙」 — 퇴장이 더 빨라야 한다).
+    /// 안드로이드 스낵바(Material 3 `SnackbarHost` 기본)와 같은 움직임 — 0.8 배에서 커지며 0.15 초에 나타나고, 0.075 초 만에
+    /// 흐려져 걷힌다(퇴장이 더 빠르다 — CLAUDE.md 「동작(애니메이션) 원칙」). 2026-11-22 두 앱 통일(그전 iOS 는 12pt 올라오며 0.28 초).
     /// 동작 줄이기를 켰으면 움직이지 않고 나타나기만 한다.
     private var transition: AnyTransition {
-        let insertion: AnyTransition = reduceMotion ? .opacity : .offset(y: 12).combined(with: .opacity)
+        // 곡선은 안드로이드 `FastOutSlowInEasing`(0.4, 0, 0.2, 1) 이다. 걷힐 때도 0.8 배로 줄며 흐려진다(스낵바와 같다).
+        let shape: AnyTransition = reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity)
         return .asymmetric(
-            insertion: insertion.animation(.smooth(duration: 0.28)),
-            removal: .opacity.animation(.easeIn(duration: 0.18))
+            insertion: shape.animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.15)),
+            removal: shape.animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.075))
         )
     }
 }
@@ -241,17 +243,20 @@ struct RingInNoticeHost: View {
 // MARK: - 하단 탭 위에 떠 있는 것들의 자리
 
 /// ＋FAB(`MainTabsView`)와 켜면 뜨는 안내(`RingInNoticeHost`)가 **같은 값**을 본다 — 한쪽만 옮기면 안내가 FAB 에 겹친다.
+///
+/// ＋FAB 자리는 안드로이드 `Scaffold` 의 기본 자리와 같다 — **오른쪽 16 · 하단바 위 16**(2026-11-22 두 앱 통일. 그전 iOS 는
+/// 오른쪽 20 · 하단바 위 22 였다).
 enum FloatingChrome {
-    /// 하단바 위로 띄우는 아래 여백 — ＋FAB 의 아래 끝이다.
-    static let bottomInset: CGFloat = 92
+    /// ＋FAB 의 아래 끝 — 탭 화면 맨 아래(하단바 아래 끝)에서 잰다. 하단바 높이 + 16 이라 하단바 위 16 이다.
+    static let bottomInset: CGFloat = BottomNavBar.height + 16
     /// ＋FAB 의 지름.
     static let fabSize: CGFloat = 56
     /// ＋FAB 의 오른쪽 여백.
-    static let fabTrailingInset: CGFloat = 20
+    static let fabTrailingInset: CGFloat = 16
     /// 안내의 아래 여백 — ＋FAB **위**(사이 12)다.
     ///
     /// ⚠ **FAB 와 같은 띠에 두지 말 것.** 가운데 정렬을 지키려면 양옆을 FAB 폭만큼 똑같이 비워야 해서 쓸 폭이 반쯤 준다
-    /// (402pt 기기 226pt · 375pt 기기 199pt). 글자만 재도(Pretendard Medium 14, 2026-11-09) 영어
+    /// (402pt 기기 234pt · 375pt 기기 207pt). 글자만 재도(Pretendard Medium 14, 2026-11-09) 영어
     /// "Rings in 9 hours 21 minutes." 가 178pt, 일본어 "9時間21分後に鳴ります。" 가 150pt 다 — 아이콘·여백(약 65pt)을 더하면
     /// 402pt 에서 영어가, 375pt 에서는 일본어도 두 줄로 꺾인다. 안내를 띄우는 두 자리(저장 뒤 목록·목록의 켜기)에는 언제나 FAB 가
     /// 있다 — 떠 있는 사이 다른 탭으로 옮겨도 남은 몇 초는 자리를 옮기지 않는다(뛰지 않게).

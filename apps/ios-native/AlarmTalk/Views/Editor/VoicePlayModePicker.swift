@@ -26,17 +26,20 @@ struct VoicePlayModePicker: View {
     @Namespace private var thumbNamespace
 
     var body: some View {
-        HStack(spacing: 4) {
+        // 칸 사이는 0 — 안드로이드 `EditorSegmentedSelector` 의 `spacedBy(0.dp)` 와 같다(2026-11-22 전 iOS 는 4). 트랙 안 여백 4 는 같다.
+        HStack(spacing: 0) {
             ForEach(AlarmPlayMode.pickerCases) { option in
                 segment(for: option)
             }
         }
         .padding(4)
+        // 안드로이드 `EditorSegmentedSelector` 와 같은 바탕·테두리다 — surfaceVariant 55% · `wakerCardBorder`(카드와 같은 선).
+        // 2026-11-15 전까지 iOS 만 44% · outlineVariant 62% 라 카드들 사이에서 이 칸만 흐렸다.
         .background(
-            trackShape.fill(theme.palette.surfaceVariant.opacity(0.44))
+            trackShape.fill(theme.palette.surfaceVariant.opacity(0.55))
         )
         .overlay(
-            trackShape.stroke(theme.palette.outlineVariant.opacity(0.62), lineWidth: 1)
+            trackShape.stroke(theme.palette.cardBorder, lineWidth: 1)
         )
     }
 
@@ -55,15 +58,11 @@ struct VoicePlayModePicker: View {
         Button {
             commit(option)
         } label: {
-            // 칸마다 아이콘 + 글자(2026-11-09 오너 — 고르기 시안 A). 목소리는 하단 탭과 같은 사람 + 음파, 알람은 종이다.
-            // 안드로이드 `PlayModeChip` 의 `icon`(`RecordVoiceOver`·`Notifications`)과 같은 자리다.
-            HStack(spacing: 6) {
-                Image(systemName: option == .alarmOnly ? "bell" : "person.wave.2")
-                    .font(.system(size: 15, weight: .semibold))
-                Text(option.label)
-                    .font(theme.typography.labelLarge)
-                    .fontWeight(.semibold)
-            }
+            // ⚠ **아이콘을 두지 않는다 — 글자만**(2026-11-22 오너 "목소리, 알람 앞에 이모지 떼"). 11-09 고르기 시안 A 의
+            // 사람 + 음파·종 아이콘을 걷었다. 안드로이드 `PlayModeChip` 도 글자만이다.
+            Text(option.label)
+                .font(theme.typography.labelLarge)
+                .fontWeight(.semibold)
                 // 색도 안드로이드와 같은 역할을 쓴다: 선택 `onPrimaryContainer`,
                 // 잠긴 미선택 `onSurfaceVariant`, 그냥 미선택은 **`onSurface`** 다.
                 // (미선택을 흐린 색으로 두면 안 고른 쪽이 비활성처럼 보인다.)
@@ -115,6 +114,86 @@ struct VoicePlayModePicker: View {
             mode = option
         } else {
             withAnimation(.snappy(duration: 0.28)) { mode = option }
+        }
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+}
+
+// MARK: - 공용 세그먼트
+
+/// 글자만 있는 공용 세그먼트 — 안드로이드 `EditorSegmentedSelector` 와 같은 모양이다(트랙 18 · 칸 14 · surfaceVariant 55% ·
+/// 카드 테두리, 고른 칸 primaryContainer + primary 42% 테두리가 미끄러져 옮겨간다). 녹음/파일 · 목소리 언어 · 날씨 나라 고르기가
+/// 쓴다. 위 `VoicePlayModePicker` 와 같은 결이다(그쪽만 아이콘·잠금 배지가 있다).
+///
+/// ⚠ **시스템 `.pickerStyle(.segmented)` 로 돌아가지 말 것.** 회색 시스템 막대라 같은 자리의 안드로이드 세그먼트와도,
+/// 편집기 '재생 방식' 과도 다른 앱처럼 보였다(2026-11-15 오너: "목소리 등록 녹음, 파일 고르는것도 페이지마다 디자인이 다름").
+/// 잠기면(`.disabled`) 안드로이드처럼 통째로 38% 로 흐려진다.
+struct AppSegmentedPicker<Value: Hashable>: View {
+    let options: [(value: Value, label: String)]
+    @Binding var selection: Value
+
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @Namespace private var thumbNamespace
+
+    var body: some View {
+        // 칸 사이는 0 — 안드로이드 `EditorSegmentedSelector` 의 `spacedBy(0.dp)` 와 같다(2026-11-22 전 iOS 는 4).
+        HStack(spacing: 0) {
+            ForEach(options.indices, id: \.self) { index in
+                segment(options[index])
+            }
+        }
+        .padding(4)
+        .background(trackShape.fill(theme.palette.surfaceVariant.opacity(0.55)))
+        .overlay(trackShape.stroke(theme.palette.cardBorder, lineWidth: 1))
+        .opacity(isEnabled ? 1 : 0.38)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var trackShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+    }
+
+    private var segmentShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
+    }
+
+    private func segment(_ option: (value: Value, label: String)) -> some View {
+        let selected = option.value == selection
+        return Button {
+            commit(option.value)
+        } label: {
+            Text(verbatim: option.label)
+                .font(theme.typography.labelLarge)
+                .fontWeight(.semibold)
+                .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
+                // 넘치면 말줄임 — 안드로이드 `PlayModeChip`(maxLines 1 · Ellipsis)과 같다. 글자를 줄이지 않는다(2026-11-22).
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 10)
+                .padding(.vertical, theme.spacing.sm)
+                .background {
+                    if selected {
+                        segmentShape
+                            .fill(theme.palette.primaryContainer)
+                            .overlay(segmentShape.stroke(theme.palette.primary.opacity(0.42), lineWidth: 1))
+                            .matchedGeometryEffect(id: "segmentThumb", in: thumbNamespace)
+                    }
+                }
+                .contentShape(segmentShape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: option.label))
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private func commit(_ value: Value) {
+        guard value != selection else { return }
+        if reduceMotion {
+            selection = value
+        } else {
+            withAnimation(.snappy(duration: 0.28)) { selection = value }
         }
         UISelectionFeedbackGenerator().selectionChanged()
     }

@@ -100,7 +100,6 @@ beforeEach(async () => {
   mockSpeechToText.mockResolvedValue('오늘도 또박또박 소리 내어 읽은 등록 녹음의 전사입니다');
   for (const table of [
     'voice_profile_change_ledger',
-    'voice_draft_attempt_usage',
     'pending_external_deletions',
     'voice_uploads',
     'user_consents',
@@ -167,8 +166,7 @@ describe('POST /voice/clone — 월 등록 자격 확인', () => {
         status: 'ready',
         elevenlabs_voice_id: 'elv-old',
       });
-      // 초안 시도 집계도, 외부 자원 삭제 예약도 없다.
-      expect(await count('SELECT COUNT(*) AS n FROM voice_draft_attempt_usage')).toBe(0);
+      // 외부 자원 삭제 예약도 없다.
       expect(await count('SELECT COUNT(*) AS n FROM pending_external_deletions')).toBe(0);
       // 원장도 그대로다 — 자격 확인은 읽기만 한다.
       expect(await count('SELECT COUNT(*) AS n FROM voice_profile_change_ledger')).toBe(1);
@@ -228,7 +226,6 @@ describe('POST /voice/clone — 월 등록 자격 확인', () => {
       args: [OLD_DRAFT],
     });
     expect(oldDraft.rows[0]!.deleted_at).toBeNull();
-    expect(await count('SELECT COUNT(*) AS n FROM voice_draft_attempt_usage')).toBe(0);
     expect(await count('SELECT COUNT(*) AS n FROM pending_external_deletions')).toBe(0);
     // 다른 기기가 쓴 한 줄뿐이다.
     expect(await count('SELECT COUNT(*) AS n FROM voice_profile_change_ledger')).toBe(1);
@@ -244,6 +241,5 @@ describe('POST /voice/clone — 월 등록 자격 확인', () => {
       args: [OLD_DRAFT],
     });
     expect(oldDraft.rows[0]!.deleted_at).not.toBeNull();
-    expect(await count('SELECT COUNT(*) AS n FROM voice_draft_attempt_usage')).toBe(1);
   });
 });

@@ -17,6 +17,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +46,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -70,6 +72,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -365,8 +368,8 @@ internal fun VoiceProfileManagementPanel(
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
     storeEntitledNow: Boolean,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
-    // 두 번째 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
-    onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
+    // 빠진 동의·권리 확인은 뷰모델이 '등록' 을 누를 때 시트(`VoiceConsentSheet`)로 한 번에 받는다(2026-11-15).
+    onCreateVoiceProfile: (VoiceProfileCreationDraft) -> Boolean,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     /** 카테고리별 완전한 세트 크기(서버 제공). 앱에 개수를 박지 않는다. */
@@ -408,10 +411,6 @@ internal fun VoiceProfileManagementPanel(
     // '생성 중' 화면을 닫아도 계속되고, 앱이 죽으면 서버 cron 이 이어받는다.
     prerenderDrive: PrerenderDriveState? = null,
     onStartPrerenderDrive: (String) -> Unit = {},
-    // 아직 없는 민감 동의. 가입 화면에서 음성 생체정보(선택)를 거절한 사람만 비어 있지 않다 —
-    // 그 사람에게만 '세부 정보' 단계 아래에 인라인 동의 항목을 그리고, 체크해야 등록이 눌린다.
-    // 한 번 동의하면 서버 기록이 남아 이 목록이 비고 다음 등록부터는 보이지 않는다.
-    sensitiveConsentMissing: List<String> = emptyList(),
     // 등록 흐름(등록·저장·다시 만들기)의 거절 — 뷰모델이 올리고 **이 창이 자기 안에** 그린다
     // (`MainViewModel.voiceRegistrationFailure`). 앱 스낵바는 이 창 뒤에 가려 안 보인다.
     voiceRegistrationFailure: VoiceRegistrationFailure? = null,
@@ -419,8 +418,6 @@ internal fun VoiceProfileManagementPanel(
     onVoiceRegistrationFailureShown: () -> Unit = {},
     // 등록 창이 열리고 닫히는 것을 뷰모델에 알린다 — 닫힌 뒤에 온 실패는 스낵바로 가야 한다.
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
-    // 기본 목소리 아래 '추가 팩' 섹션(`docs/spec/voice-packs.md` §7).
-    voicePacks: VoicePackPanelState = VoicePackPanelState(),
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -435,17 +432,7 @@ internal fun VoiceProfileManagementPanel(
     var profileNameTooLong by remember { mutableStateOf(false) }
     var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
-    // 인라인 동의 체크. 등록 요청이 나가기 전 단계에서만 의미가 있으므로 다이얼로그를 닫을 때
-    // 함께 초기화한다(closeCreateDialog).
-    var voiceBiometricAgreed by remember { mutableStateOf(false) }
     var currentStep by remember { mutableStateOf(VoiceRegistrationStep.Source) }
-    // 가입 화면에서 음성 생체정보(선택)를 거절한 사람에게만 인라인 동의 항목을 그린다.
-    // 한 번 동의하면 서버 기록이 남아 sensitiveConsentMissing 이 비고 다시 뜨지 않는다.
-    val needsBiometricConsent = "voice_biometric" in sensitiveConsentMissing
-    // 등록(=draft 생성=실제 클론 생성)을 눌러도 되는지 — **법정 동의만** 본다.
-    // 권리 보증 확인은 약관 제7조가 담당하므로 체크박스가 아니라 안내 문구다
-    // (VoiceRegistrationAttestation 주석 참조).
-    val registrationConsentSatisfied = !needsBiometricConsent || voiceBiometricAgreed
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     // 등록을 거절당해 음원 준비 단계로 돌아온 이유(말소리 없음 — `RegistrationFailureSurface.ReRecord`). 녹음 카드(파일
@@ -473,7 +460,6 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
-    var registrationConsentOpen by remember { mutableStateOf(false) }
     // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 띄우는 '임시 목소리 삭제' 경고.
     var draftExitWarningOpen by remember { mutableStateOf(false) }
     // 서버가 "이번 달 등록을 다 썼다" 고 답해 등록 흐름을 끝냈다 — 이유를 말하는 알럿(스펙
@@ -512,7 +498,15 @@ internal fun VoiceProfileManagementPanel(
     // '이 목소리로 할게요'를 눌러 승격한 보이스 id — draft 소멸이 삭제가 아니라 승격에서
     // 왔음을 구분해, 플로우를 닫는 대신 '목소리 생성 중' 스텝으로 잇는다.
     var promotedForPrerenderId by remember { mutableStateOf<String?>(null) }
+    // 확정 화면의 `다시 만들기` 로 지우는 초안 id — 그 초안이 사라지면 창을 닫지 않고 음원 준비부터 다시 한다
+    // (`restartRegistrationFromSource`). 그 밖의 이유로 사라진 초안(나가기 경고·서버 정리)은 예전처럼 창을 닫는다.
+    var remakeDraftId by remember { mutableStateOf<String?>(null) }
     var confirmPreviewBusy by remember { mutableStateOf(false) }
+    // 톤 카드를 그리는가 — 첫 미리듣기 준비가 **끝난 뒤**에만 그린다(2026-11-15 오너: "목소리 등록 확인 화면 준비중일때는 톤
+    // 조절도 완성되었을때 뜨게 해줘"). 받는 동안 그리면 막대가 기본값에 있다가 추천값으로 튄다. 실패로 끝나도 그린다 — 그때는
+    // 톤 카드의 듣기 버튼이 다시 받는 길이다. 한 번 켜면 문구를 고쳐 다시 받는 동안에도 끄지 않는다(사라졌다 나타나지 않게).
+    // iOS `VoicePreviewConfirmView.tuningCardShown` 과 같다.
+    var confirmToneCardShown by remember { mutableStateOf(false) }
     var confirmPreviewPlaying by remember { mutableStateOf(false) }
     var confirmPreviewCompleted by remember { mutableStateOf(false) }
     // 첫 미리듣기의 세대 — 문구를 고치면 오른다. 확인 요청이 그 사이 늦게 돌아오면 옛 클립의 '들었다' 로 새 클립의
@@ -574,8 +568,6 @@ internal fun VoiceProfileManagementPanel(
         userPlan = authSession?.user?.plan,
         storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
-        // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
-        userPlanPromo = authSession?.planPromoStamp(),
     )
     // **표시와 생성 게이트를 함께 움직인다** — 목록만 숨기고 '생성 가능 n/m회' 와 등록
     // 흐름을 열어 두면 교체 대상이 비어 버려 확정에서 거절당한다(2026-08-31 리뷰).
@@ -780,44 +772,6 @@ internal fun VoiceProfileManagementPanel(
                 AlarmTalkLog.reportError(failureLog, error)
                 if (greetingPreviewRequestId == requestId) {
                     if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
-                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
-                }
-            }
-        }
-    }
-
-    // 추가 팩 미리듣기 샘플 — 인사말 미리듣기와 같은 플레이어·같은 '트는 중' 표시를 쓴다(겹쳐 울리지 않게).
-    // 받기 전에도 샘플 클립 하나만 받아 캐시한다(`MainViewModel.ensureVoicePackSample`).
-    fun playVoicePackSample(summary: com.alarmtalk.app.network.VoicePackSummary) {
-        if (playingGreetingVoiceId == summary.voiceId) {
-            stopMediaPreview()
-            return
-        }
-        val requestId = greetingPreviewRequestId + 1
-        greetingPreviewRequestId = requestId
-        scope.launch {
-            stopMediaPreview(invalidateGreetingPreview = false)
-            playingGreetingVoiceId = summary.voiceId
-            runCatching {
-                val cached = voicePacks.ensureSample(summary)
-                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
-                    ?: error("Failed to create voice pack sample player.")
-                if (greetingPreviewRequestId != requestId) {
-                    player.release()
-                    return@runCatching
-                }
-                mediaPlayer = player.apply {
-                    setOnCompletionListener {
-                        it.release()
-                        if (mediaPlayer === it) mediaPlayer = null
-                        if (playingGreetingVoiceId == summary.voiceId) playingGreetingVoiceId = null
-                    }
-                    start()
-                }
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to play voice pack sample", error)
-                if (greetingPreviewRequestId == requestId) {
-                    if (playingGreetingVoiceId == summary.voiceId) playingGreetingVoiceId = null
                     localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
                 }
             }
@@ -1213,6 +1167,8 @@ internal fun VoiceProfileManagementPanel(
                 localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
             }.getOrDefault(false)
             confirmPreviewBusy = false
+            // 첫 준비가 끝났다(성공이면 추천값을 잰 뒤다) — 이제 톤 카드를 그린다. 받는 사이 초안이 바뀌었으면 그 초안의 몫이 아니다.
+            if (previewGeneration == confirmPreviewGeneration) confirmToneCardShown = true
             // 받는 사이 누른 버튼(진행 표시가 도는 버튼을 눌러 비웠으면 받기만 한다)의 소리를 처음부터 튼다 — 굽기·재생·
             // 끝까지 들은 뒤의 청취 확인은 기기에서 다시 트는 길과 같다. 실패했으면 아무것도 틀지 않는다 — 누른 버튼이
             // '준비 중' 으로 남지 않게 비운다.
@@ -1411,11 +1367,12 @@ internal fun VoiceProfileManagementPanel(
                         selectedAudio = audio
                         recordingElapsedMillis = duration
                         recordTooShort = true
-                        // 끼어들어 멈춘 짧은 녹음이면 왜 멈췄는지 말한다 — 사용자가 멈춘 것이 아니다.
-                        localMessage = if (result.interruption != null) {
-                            context.getString(R.string.recording_interrupted_short)
-                        } else {
-                            null
+                        // 끼어들어 멈춘 짧은 녹음이면 왜 멈췄는지 말한다 — 사용자가 멈춘 것이 아니다. 자리는 녹음 카드 바로
+                        // 아래의 거절 줄이다(2026-11-22 두 앱 통일 — iOS `VoiceCloneUploadFlow.reviewFinishedRecording` 과
+                        // 같다). 단계 맨 아래 줄에 두면 대사 카드를 펼친 채로는 화면 밖이다.
+                        localMessage = null
+                        if (result.interruption != null) {
+                            rerecordReason = context.getString(R.string.recording_interrupted_short)
                         }
                     } else {
                         selectedAudio = null
@@ -1477,7 +1434,6 @@ internal fun VoiceProfileManagementPanel(
         profileVoiceLanguage = defaultVoiceLanguage
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
-        voiceBiometricAgreed = false
         currentStep = VoiceRegistrationStep.Source
         selectedAudio = null
         mediaPlayer?.release()
@@ -1499,6 +1455,7 @@ internal fun VoiceProfileManagementPanel(
         confirmPreviewBusy = false
         confirmPreviewPlaying = false
         confirmPreviewText = null
+        confirmToneCardShown = false
         confirmPreviewEditing = false
         confirmPreviewEditText = ""
         confirmPreviewSaving = false
@@ -1518,6 +1475,17 @@ internal fun VoiceProfileManagementPanel(
         sourceF0Job?.cancel()
         sourceF0Job = null
         heardTunings = emptySet()
+        remakeDraftId = null
+    }
+
+    // `다시 만들기` 로 초안이 지워졌다 — 창을 닫지 않고 처음(음원 준비)부터 다시 한다(2026-11-22 두 앱 통일, 스펙
+    // voice-and-message §4-1 "다시 만들기를 고르면 처음부터 다시 녹음한다"). iOS 는 새 등록 흐름을 띄운다(`VoicesPanelView` 의
+    // `onDiscarded`) — 닫았다가 다시 연 것과 같다: 폼은 처음 상태로 비우고 창은 그대로 둔다. 닫힘을 알린 바로 뒤에 열림을
+    // 다시 알린다 — 그리는 값(`registrationWindowShown`)은 그대로라 열림 알림 효과가 다시 돌지 않는다.
+    fun restartRegistrationFromSource() {
+        closeCreateDialog()
+        showCreateForm = true
+        onRegistrationWindowOpenChange(true)
     }
 
     // 등록 요청을 보낸 뒤에도 다이얼로그를 닫지 않고 '만드는 중' 스텝으로 전환한다 —
@@ -1578,6 +1546,7 @@ internal fun VoiceProfileManagementPanel(
                     confirmPreviewCompleted = false
                     heardTunings = emptySet()
                     confirmPreviewText = null
+                    confirmToneCardShown = false
                     confirmPreviewEditing = false
                     confirmPreviewEditText = ""
                     confirmPreviewAudioUri = null
@@ -1609,11 +1578,14 @@ internal fun VoiceProfileManagementPanel(
             }
 
             // draft 소멸(삭제/승격) → 미리듣기 상태 정리. 승격이면 플로우를 닫는 대신
-            // '목소리 생성 중' 스텝으로 이어 알람 문구 생성·다운로드까지 끝낸다.
+            // '목소리 생성 중' 스텝으로 이어 알람 문구 생성·다운로드까지 끝낸다. `다시 만들기` 로 지운 것이면
+            // 창을 닫지 않고 음원 준비로 돌아간다(`restartRegistrationFromSource`).
             draft == null && confirmNewVoice?.isDraft == true -> {
                 val promotedId = promotedForPrerenderId
                     ?.takeIf { requested -> requested == confirmNewVoice?.id }
                     ?.takeIf { requested -> voiceProfiles.any { it.id == requested } }
+                val remakeRequested = remakeDraftId != null && remakeDraftId == confirmNewVoice?.id
+                remakeDraftId = null
                 confirmPreviewJob?.cancel()
                 confirmPreviewJob = null
                 stopMediaPreview(invalidateGreetingPreview = false)
@@ -1625,7 +1597,7 @@ internal fun VoiceProfileManagementPanel(
                     onStartPrerenderDrive(promotedId)
                     currentStep = VoiceRegistrationStep.Prerendering
                 } else if (showCreateForm) {
-                    closeCreateDialog()
+                    if (remakeRequested) restartRegistrationFromSource() else closeCreateDialog()
                 }
             }
         }
@@ -1689,6 +1661,9 @@ internal fun VoiceProfileManagementPanel(
         // 저장이 실패했으면 '저장을 보냈다' 는 표시를 내린다. 안 내리면 뒤에 누른 `다시 만들기` 가
         // 지우는 동안 저장 버튼이 '저장 중…' 으로 그려진다(두 버튼의 진행 표시가 이 값으로 갈린다).
         promotedForPrerenderId = null
+        // `다시 만들기`(초안 삭제)가 실패했으면 그 화면에 머문다 — 표시가 남으면 나중에 다른 이유로 사라진 초안이
+        // 음원 준비로 돌아간다.
+        remakeDraftId = null
         // ⚠ `windowOpen` 은 **지금 그려져 있는가**다(`registrationWindowShown` — 이 순간의 값을 읽는다). 만드는 중에
         // 이용권이 끝나고 등록이 실패하면, 위의 되돌리기 효과(만드는 중 → 세부 정보)가 **같은 차례에 먼저** 돌아
         // 그려지지 않는 단계로 바꿔 놓는다 — 그래서 이 거절은 스낵바로 간다. '열기로 했다'(`showCreateForm`)로 가르면
@@ -2029,9 +2004,6 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         if (createPreparing) return
-        // 버튼이 이미 비활성이지만, 파일 경로의 비동기 크롭을 거쳐 다시 들어올 수 있어
-        // 여기서도 막는다 — 확인·동의 없이 녹음이 나가는 경로가 하나도 없어야 한다.
-        if (!registrationConsentSatisfied) return
         if (inputMode == VoiceCaptureMode.Record) {
             val audio = selectedAudio ?: run {
                 localMessage = context.getString(R.string.voices_prepare_recording_first)
@@ -2042,7 +2014,7 @@ internal fun VoiceProfileManagementPanel(
             // 스냅샷이 남아 엉뚱한 목소리에 확인창이 뜨는 것을 막는다).
             // ViewModel 이 요청을 시작하지 못했으면(false — 스테일 세션/플랜/개수 상태 등)
             // '만드는 중' 스텝에 진입하지 않는다 — 못 닫는 화면에 갇히는 것을 막는다.
-            val accepted = onCreateVoiceProfile(creationDraft(audio), voiceBiometricAgreed)
+            val accepted = onCreateVoiceProfile(creationDraft(audio))
             if (accepted) enterCreatingStep()
             return
         }
@@ -2056,7 +2028,7 @@ internal fun VoiceProfileManagementPanel(
                 if (error != null) {
                     localMessage = error
                 } else {
-                    val accepted = onCreateVoiceProfile(creationDraft(audio), voiceBiometricAgreed)
+                    val accepted = onCreateVoiceProfile(creationDraft(audio))
                     if (accepted) enterCreatingStep()
                 }
             }.onFailure { error ->
@@ -2096,7 +2068,9 @@ internal fun VoiceProfileManagementPanel(
             val monthlyExhausted = monthlyRegistrationUsedUp(monthlyQuota)
             Button(
                 onClick = {
-                    if (canOpenCreateForm) registrationConsentOpen = true else voicePlanGateOpen = true
+                    // 입구 권리 확인 모달은 없앴다 — 권리 보증은 약관 제7조(가입 필수 동의)로 받고, 빠진 법정 동의만
+                    // '등록' 을 누를 때 시트로 받는다(2026-11-15 오너).
+                    if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
                 },
                 enabled = !voiceProfileBusy && !monthlyExhausted,
                 colors = wakerButtonColors(),
@@ -2109,7 +2083,18 @@ internal fun VoiceProfileManagementPanel(
         // 본문으로 새어 나오지 않게 `registrationWindowShown` 이 아니라 `showCreateForm` 으로 가른다. 그사이의 등록
         // 거절은 스낵바로 간다.
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
-            MutedText(localMessage.orEmpty())
+            // 미리듣기 준비 안내만 흐린 글자이고, 나머지(이름 변경·삭제·다시 시도·미리듣기 재생 실패)는 **빨간 글자**다 — iOS 목소리 탭
+            // '내 목소리' 아래 줄(`VoiceSectionMessage` 의 `isError`)과 같다(2026-11-22 두 앱 통일. 그전에는 실패도 회색이었다).
+            val text = localMessage.orEmpty()
+            if (text == stringResource(R.string.voices_greeting_preview_preparing)) {
+                MutedText(text)
+            } else {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
 
         VoiceCatalogGroup(
@@ -2221,46 +2206,8 @@ internal fun VoiceProfileManagementPanel(
             )
         }
         // 기본 목소리 받기 진행은 위 헤더 옆으로 옮겼다(2026-09-17).
-
-        // 추가 팩은 기본 목소리 **아래**다(`docs/spec/voice-packs.md` §7). 기본 4종 받기·관문과 섞지 않는다.
-        // 지금은 숨긴다(`VOICE_PACKS_VISIBLE`).
-        if (com.alarmtalk.app.data.VOICE_PACKS_VISIBLE) VoicePackSection(
-            catalog = voicePacks.catalog,
-            held = voicePacks.held,
-            progress = voicePacks.progress,
-            catalogLoaded = voicePacks.catalogLoaded,
-            catalogFailed = voicePacks.catalogFailed,
-            playingVoiceId = playingGreetingVoiceId,
-            onPlaySample = { summary -> playVoicePackSample(summary) },
-            onDownload = { packId -> voicePacks.onDownload(packId) },
-            onDelete = { packId -> voicePacks.onDelete(packId) },
-            countAlarmsUsing = { voiceId -> voicePacks.countAlarmsUsing(voiceId) },
-        )
     }
 
-    // 이번에 등록할 목소리의 권리는 입구에서 확인한다. 법정 민감 동의는 기존 업로드 경로가 따로 받는다.
-    if (registrationConsentOpen) {
-        IosAlertDialog(
-            title = stringResource(R.string.voice_registration_consent_title),
-            message = stringResource(R.string.voice_registration_consent_body),
-            onDismiss = { registrationConsentOpen = false },
-            actions = listOf(
-                IosAlertAction(
-                    label = stringResource(R.string.voice_consent_cancel),
-                    onClick = { registrationConsentOpen = false },
-                ),
-                IosAlertAction(
-                    label = stringResource(R.string.voice_registration_consent_agree),
-                    emphasized = true,
-                    enabled = !voiceProfileBusy && canOpenCreateForm && !monthlyRegistrationUsedUp(voiceDraftQuota),
-                    onClick = {
-                        registrationConsentOpen = false
-                        if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
-                    },
-                ),
-            ),
-        )
-    }
 
     if (voicePlanGateOpen) {
         PlanGateDialog(
@@ -2295,12 +2242,17 @@ internal fun VoiceProfileManagementPanel(
         } else {
             0.dp
         }
+        // 배경은 다른 하위 전체화면과 같은 밤하늘 그라데이션이다(2026-11-22 두 앱 통일 — CLAUDE.md 디자인 토큰
+        // `homeGradientBrush`). 상태바 자리까지 칠하도록 인셋 여백보다 **앞에** 둔다.
         val dialogSurfaceModifier = if (useManualSystemInsets) {
             Modifier
                 .fillMaxSize()
+                .background(homeGradientBrush())
                 .statusBarsPadding()
         } else {
-            Modifier.fillMaxSize()
+            Modifier
+                .fillMaxSize()
+                .background(homeGradientBrush())
         }
         val resolvedProfileName = profileName.trim()
         val nameRequiredError = createSubmitAttempted && resolvedProfileName.isBlank()
@@ -2312,10 +2264,6 @@ internal fun VoiceProfileManagementPanel(
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
             selectedFileUri != null &&
             (cropEndMillis - cropStartMillis) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
-        // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
-        // 녹음 파일을 고르러 문서 선택기에 다녀오면 **진입**으로 세어지는데, 그때 이 창이
-        // 열려 있다 — 여기서 빠지면 개인 플랜 종료 안내가 등록 창 위에 겹쳐 뜬다.
-        TrackOpenModal()
         Dialog(
             onDismissRequest = {
                 when {
@@ -2335,7 +2283,8 @@ internal fun VoiceProfileManagementPanel(
         ) {
             Surface(
                 modifier = dialogSurfaceModifier,
-                color = MaterialTheme.colorScheme.background,
+                color = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onBackground,
             ) {
                 // ⚠ **마지막 단계(오프라인 준비)는 폼 골격을 쓰지 않는다**(2026-09-29 지시).
                 // 상단바 제목 없이 진행 블록을 화면 한가운데에, '백그라운드에서 계속' 을 화면
@@ -2359,34 +2308,43 @@ internal fun VoiceProfileManagementPanel(
                         .clearFocusOnOutsideTap()
                         .imePadding(),
                 ) {
-                    WakerTopBar(
-                        title = stringResource(R.string.voices_create_dialog_title),
-                        onBack = when (currentStep) {
-                            VoiceRegistrationStep.Source -> ::closeCreateDialog
-                            VoiceRegistrationStep.Details -> {
-                                {
-                                    currentStep = VoiceRegistrationStep.Source
-                                    createSubmitAttempted = false
-                                    localMessage = null
+                    // '만드는 중' 에는 상단바를 그리지 않는다(2026-11-15 오너) — 제목만 떠 있고 누를 것이 없다. 준비 단계
+                    // (`VoiceClipPreparationStep`)도 그리지 않으니 두 대기 화면이 같은 모양이 된다. 본문은 화면 전체의
+                    // 한가운데에 놓인다(아래 `bodyFillsHeight`). iOS `VoiceCloneUploadFlow` 와 같다.
+                    if (currentStep != VoiceRegistrationStep.Creating) {
+                        WakerTopBar(
+                            title = stringResource(R.string.voices_create_dialog_title),
+                            onBack = when (currentStep) {
+                                // 람다로 넘긴다 — `closeCreateDialog` 는 콤포지션 지역 `defaultVoiceLanguage` 와 매개변수
+                                // `onRegistrationWindowOpenChange` 를 캡처한다(CLAUDE.md 「Compose 콜백에 지역 함수 참조를 넘기지 않는다」).
+                                VoiceRegistrationStep.Source -> {
+                                    { closeCreateDialog() }
                                 }
-                            }
-                            VoiceRegistrationStep.Preview -> {
-                                { draftExitWarningOpen = true }
-                            }
-                            // 생성 중에는 이탈 불가. 준비 중에는 이 상단바를 그리지 않는다
-                            // (`VoiceClipPreparationStep` — 맨 아래 '백그라운드에서 계속' 이
-                            // 나가는 행동이다).
-                            VoiceRegistrationStep.Creating,
-                            VoiceRegistrationStep.Prerendering -> null
-                        },
-                        // 확정 화면은 잠금표를 따른다(`confirmStepLocks` — 시스템 뒤로가기도 같다).
-                        backEnabled = if (currentStep == VoiceRegistrationStep.Preview) {
-                            !confirmLocks.working
-                        } else {
-                            !voiceProfileBusy
-                        },
-                        modifier = Modifier.padding(top = 18.dp),
-                    )
+                                VoiceRegistrationStep.Details -> {
+                                    {
+                                        currentStep = VoiceRegistrationStep.Source
+                                        createSubmitAttempted = false
+                                        localMessage = null
+                                    }
+                                }
+                                VoiceRegistrationStep.Preview -> {
+                                    { draftExitWarningOpen = true }
+                                }
+                                // 두 단계 모두 이 상단바를 그리지 않는다 — 만드는 중은 위의 조건, 준비 중은
+                                // `VoiceClipPreparationStep`(맨 아래 '백그라운드에서 계속' 이 나가는 행동이다).
+                                // 생성 중에는 이탈할 수 없다.
+                                VoiceRegistrationStep.Creating,
+                                VoiceRegistrationStep.Prerendering -> null
+                            },
+                            // 확정 화면은 잠금표를 따른다(`confirmStepLocks` — 시스템 뒤로가기도 같다).
+                            backEnabled = if (currentStep == VoiceRegistrationStep.Preview) {
+                                !confirmLocks.working
+                            } else {
+                                !voiceProfileBusy
+                            },
+                            modifier = Modifier.padding(top = 18.dp),
+                        )
+                    }
 
                     // 녹음 모드(첫 스텝)는 대사 카드가 남은 화면 높이를 채우고 카드 안에서만
                     // 스크롤하므로 페이지 스크롤을 끈다. 파일 모드·다른 스텝은 콘텐츠가
@@ -2415,16 +2373,21 @@ internal fun VoiceProfileManagementPanel(
                     LaunchedEffect(rerecordReason) {
                         if (rerecordReason != null) contentScrollState.animateScrollTo(0)
                     }
+                    // '만드는 중' 은 고를 것도 입력할 것도 없는 대기 화면이라 페이지 스크롤 없이 본문 한가운데에 둔다(아래 Creating).
+                    // 스크롤 본문 맨 위에 두면 블록이 위로 붙어 비어 보였다 — 준비 단계(`VoiceClipPreparationStep`)와 같은 이유다
+                    // (2026-11-15 오너: "목소리 만드는 중이에요 그거 중앙에 배치되는게 맞지않을까?").
+                    val bodyFillsHeight = scriptFillsRemainingHeight || currentStep == VoiceRegistrationStep.Creating
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .then(
-                                if (scriptFillsRemainingHeight) {
+                                if (bodyFillsHeight) {
                                     Modifier
                                 } else {
                                     Modifier.verticalScroll(contentScrollState)
                                 },
                             )
+                            // 상단바 아래 간격(24)은 상단바가 갖는다(`WakerTopBarBottomGap`) — 여기서 더하지 않는다.
                             .padding(horizontal = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -2515,15 +2478,13 @@ internal fun VoiceProfileManagementPanel(
                                             enabled = !voiceProfileBusy && !isRecording && !createPreparing,
                                             uploadLabel = stringResource(R.string.voices_upload_file_or_video),
                                             notice = stringResource(R.string.voices_crop_duration_notice),
-                                            noticeAfterUpload = true,
-                                            // ⚠ **길이 조건을 여기서 말하지 않는다**(2026-08-18 지시).
+                                            // ⚠ **업로드 존에서 길이 조건을 말하지 않는다**(2026-08-18 지시 — 그래서 보조 설명 칸도 없다).
                                             // 고른 파일은 길이로 막지 않는다 — `prepareSelectedFile` 이
                                             // `cropEnd` 를 2분으로 잡아 **자르기 화면**으로 넘긴다(3분짜리
                                             // 영상도 된다). "12초 이상 2분 이하 파일이면 돼요" 는 **없는
                                             // 제약을 광고**하는 문구라, 쓸 수 있는 파일을 안 쓰게 만든다.
                                             // 실제 조건은 **잘라낸 구간**에만 있고, 그건 자르기 화면이
                                             // `voices_crop_duration_notice` 로 그 자리에서 말한다.
-                                            uploadSubtitle = null,
                                             isPreviewActive = filePreviewPlaying,
                                             isPreviewPreparing = filePreviewPreparing,
                                             onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },
@@ -2547,87 +2508,84 @@ internal fun VoiceProfileManagementPanel(
                             }
 
                             VoiceRegistrationStep.Details -> {
-                                OutlinedTextField(
-                                    value = profileName,
-                                    onValueChange = { raw ->
-                                        val (bounded, tooLong) = boundedNameInput(raw, VoiceNameMaxLength, profileNameTooLong)
-                                        profileName = bounded
-                                        profileNameTooLong = tooLong
-                                    },
-                                    label = { Text(stringResource(R.string.voices_name_label)) },
-                                    placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
-                                    singleLine = true,
-                                    isError = nameRequiredError || profileNameTooLong,
-                                    // supportingText 람다를 항상 넘기면 에러가 없어도 그 자리(약 16dp)가
-                                    // 예약돼 이름↔관계 간격만 넓어진다 — 에러일 때만 붙여 3개 필드의
-                                    // 간격(부모 spacedBy 14dp)을 균일하게 유지한다.
-                                    supportingText = when {
-                                        nameRequiredError -> {
-                                            { Text(stringResource(R.string.voices_required_field)) }
-                                        }
-                                        profileNameTooLong -> {
-                                            { Text(stringResource(R.string.voices_name_too_long, VoiceNameMaxLength)) }
-                                        }
-                                        else -> null
-                                    },
-                                    shape = WakerInputShape,
-                                    colors = wakerOutlinedTextFieldColors(),
-                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
-                                )
-                                // 관계·호칭은 선택 입력 — 비워도 다음 단계로 진행할 수 있다.
-                                RelationshipDropdownField(
-                                    selection = relationshipSelection,
-                                    onSelectionChange = { relationshipSelection = it },
-                                )
-                                OutlinedTextField(
-                                    value = profileListenerTitle,
-                                    onValueChange = { profileListenerTitle = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
-                                    label = { Text(stringResource(R.string.voices_listener_title_label)) },
-                                    placeholder = { Text(stringResource(R.string.voices_listener_title_placeholder)) },
-                                    singleLine = true,
-                                    shape = WakerInputShape,
-                                    colors = wakerOutlinedTextFieldColors(),
-                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
-                                )
-                                // ⚠ '목소리 느낌'(자동·경쾌·차분) 선택을 되살리지 말 것(2026-09-29 사용자
-                                // 결정으로 뺐다). 클론 문구의 결은 서버가 등록 녹음 전사로 추정한 말투를
-                                // 따른다(`docs/spec/voice-and-message.md` 4-2).
-                                // 문구 언어 — 미리듣기와 매일 사전렌더 문구가 이 언어로 만들어진다.
-                                Text(
-                                    text = stringResource(R.string.voices_language_label),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
-                                EditorSegmentedSelector(
-                                    options = listOf(
-                                        "ko" to stringResource(R.string.voices_lang_ko),
-                                        "en" to stringResource(R.string.voices_lang_en),
-                                        "ja" to stringResource(R.string.voices_lang_ja),
-                                    ),
-                                    selected = profileVoiceLanguage,
-                                    onSelect = { profileVoiceLanguage = it },
-                                )
-                                // 등록 직전 확인 — 이 단계에 두는 이유는 다음 버튼('등록')이
-                                // draft 를 만들고, draft 생성이 곧 실제 ElevenLabs 클론 생성이기
-                                // 때문이다. 마지막 '저장하기'(승격) 앞에 두면 이미 목소리를
-                                // 만들어 놓고 사후 동의를 받는 꼴이 된다.
-                                VoiceRegistrationAttestation(
-                                    // 가입 화면에서 이미 동의했으면 그리지 않는다 — 한 번 받은
-                                    // 동의를 등록할 때마다 다시 묻지 않는다.
-                                    showBiometricConsent = needsBiometricConsent,
-                                    biometricAgreed = voiceBiometricAgreed,
-                                    onBiometricAgreedChange = { voiceBiometricAgreed = it },
-                                )
+                                // 칸마다 **위에 라벨**을 둔다 — iOS 등록 화면(`VoiceCloneUploadFlow.nameSection`)·가입 화면(`AuthTextField`)과
+                                // 같은 모양이다(2026-11-15 오너: "목소리 만들기 입력하는곳 디자인 시안 저게 최선일까? / 위에랑 왜이렇게
+                                // 붙어있어"). M3 의 떠 있는 라벨은 첫 칸 라벨이 상단바 쪽으로 올라가 붙어 보였고, 빈 칸만 라벨이 칸 안에
+                                // 들어가 칸마다 모양이 달랐다. 라벨과 칸 사이 8, 묶음 사이 20 — iOS 와 같은 값이다.
+                                Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        VoiceFieldLabel(stringResource(R.string.voices_name_label))
+                                        OutlinedTextField(
+                                            value = profileName,
+                                            onValueChange = { raw ->
+                                                val (bounded, tooLong) = boundedNameInput(raw, VoiceNameMaxLength, profileNameTooLong)
+                                                profileName = bounded
+                                                profileNameTooLong = tooLong
+                                            },
+                                            placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
+                                            singleLine = true,
+                                            isError = nameRequiredError || profileNameTooLong,
+                                            // supportingText 람다를 항상 넘기면 에러가 없어도 그 자리(약 16dp)가 예약돼 이 묶음만
+                                            // 길어진다 — 에러일 때만 붙여 묶음 사이 간격(20)을 균일하게 유지한다.
+                                            supportingText = when {
+                                                nameRequiredError -> {
+                                                    { Text(stringResource(R.string.voices_required_field)) }
+                                                }
+                                                profileNameTooLong -> {
+                                                    { Text(stringResource(R.string.voices_name_too_long, VoiceNameMaxLength)) }
+                                                }
+                                                else -> null
+                                            },
+                                            shape = WakerInputShape,
+                                            colors = wakerOutlinedTextFieldColors(),
+                                            modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
+                                        )
+                                    }
+                                    // 관계·호칭은 선택 입력 — 비워도 다음 단계로 진행할 수 있다. 관계 칸은 라벨을 스스로 그린다.
+                                    RelationshipDropdownField(
+                                        selection = relationshipSelection,
+                                        onSelectionChange = { relationshipSelection = it },
+                                    )
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        VoiceFieldLabel(stringResource(R.string.voices_listener_title_label))
+                                        OutlinedTextField(
+                                            value = profileListenerTitle,
+                                            onValueChange = { profileListenerTitle = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
+                                            placeholder = { Text(stringResource(R.string.voices_listener_title_placeholder)) },
+                                            singleLine = true,
+                                            shape = WakerInputShape,
+                                            colors = wakerOutlinedTextFieldColors(),
+                                            modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
+                                        )
+                                    }
+                                    // ⚠ '목소리 느낌'(자동·경쾌·차분) 선택을 되살리지 말 것(2026-09-29 사용자
+                                    // 결정으로 뺐다). 클론 문구의 결은 서버가 등록 녹음 전사로 추정한 말투를
+                                    // 따른다(`docs/spec/voice-and-message.md` 4-2).
+                                    // 문구 언어 — 미리듣기와 매일 사전렌더 문구가 이 언어로 만들어진다. 라벨도 위 칸들과 같은 모양이다.
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        VoiceFieldLabel(stringResource(R.string.voices_language_label))
+                                        EditorSegmentedSelector(
+                                            options = listOf(
+                                                "ko" to stringResource(R.string.voices_lang_ko),
+                                                "en" to stringResource(R.string.voices_lang_en),
+                                                "ja" to stringResource(R.string.voices_lang_ja),
+                                            ),
+                                            selected = profileVoiceLanguage,
+                                            onSelect = { profileVoiceLanguage = it },
+                                        )
+                                    }
+                                }
                             }
 
                             VoiceRegistrationStep.Creating -> {
+                                // 남은 높이를 다 차지하고 그 한가운데에 둔다(위 `bodyFillsHeight` — 이 단계는 스크롤하지 않는다).
+                                // 상단바도 하단 버튼도 없어 화면 전체의 한가운데다.
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 72.dp),
+                                        .weight(1f),
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
                                 ) {
                                     CircularProgressIndicator()
                                     Text(
@@ -2774,17 +2732,22 @@ internal fun VoiceProfileManagementPanel(
                                     // 톤 조절 — 손을 떼면 그 높이로 메모리에서 굽고 처음부터 다시 튼다(첫 청취 확인
                                     // 전 재생 도중이면 그게 끝난 뒤 — `replayTunedPreviewIfReady`). 카드 안 하단의
                                     // `원본 듣기`·`현재 톤 듣기` 가 이 화면의 재생 버튼이다(`onTuningListen`).
-                                    VoiceTuningCard(
-                                        tuning = previewTuning,
-                                        // 서버에서 받는 동안·청취 확인 중에는 잠그지 않는다 — 받는 동안 누른 버튼이 받은
-                                        // 뒤에 튼다. 문구를 고치는 동안과 등록 확정·초안 삭제 중에만 잠근다(잠금표).
-                                        enabled = confirmLocks.toneEnabled,
-                                        listenTarget = tuningListenTarget,
-                                        listenPreparing = !confirmPreviewPlaying,
-                                        onTuningChange = { updated -> previewTuning = updated },
-                                        onAdjustFinished = { replayTunedPreviewIfReady() },
-                                        onListen = { target -> onTuningListen(previewVoice, target) },
-                                    )
+                                    // 첫 준비가 끝난 뒤에만 그린다(`confirmToneCardShown`).
+                                    AnimatedVisibility(visible = confirmToneCardShown, enter = fadeIn(), exit = fadeOut()) {
+                                        VoiceTuningCard(
+                                            tuning = previewTuning,
+                                            // 추천값 그대로면 제목 줄에 `추천` 을 단다(시안 A).
+                                            suggestedPitch = tuningSuggestion?.pitchSemitones,
+                                            // 서버에서 받는 동안·청취 확인 중에는 잠그지 않는다 — 받는 동안 누른 버튼이 받은
+                                            // 뒤에 튼다. 문구를 고치는 동안과 등록 확정·초안 삭제 중에만 잠근다(잠금표).
+                                            enabled = confirmLocks.toneEnabled,
+                                            listenTarget = tuningListenTarget,
+                                            listenPreparing = !confirmPreviewPlaying,
+                                            onTuningChange = { updated -> previewTuning = updated },
+                                            onAdjustFinished = { replayTunedPreviewIfReady() },
+                                            onListen = { target -> onTuningListen(previewVoice, target) },
+                                        )
+                                    }
 
                                     // 교체 한 줄 — 톤 카드 바로 아래. **이미 등록된 목소리가 있을 때만** 낸다 — 그때 이
                                     // 화면의 저장은 언제나 교체다(2026-10-08 사용자: 체크 상자·설명 없이 제목 크기의 이
@@ -2818,8 +2781,14 @@ internal fun VoiceProfileManagementPanel(
                         }
                         // 확정 화면은 자기 자리(교체 줄 아래)에 오류를 그린다 — 여기서 한 번 더 그리지 않는다.
                         val previewShowsOwnMessage = currentStep == VoiceRegistrationStep.Preview && confirmNewVoice != null
+                        // 이 창의 문장은 전부 '안 됐다' 는 이유다(파일·녹음·권한·등록 거절) — 확정 화면의 오류 줄과 같은 빨간
+                        // `bodySmall` 이다(2026-11-22 두 앱 통일 — iOS `VoiceCloneUploadFlow.statusSection`). 흐린 글자면 힌트로 읽힌다.
                         if (localMessage != null && !previewShowsOwnMessage) {
-                            MutedText(localMessage.orEmpty())
+                            Text(
+                                text = localMessage.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                     }
@@ -2838,7 +2807,8 @@ internal fun VoiceProfileManagementPanel(
                                 end = 16.dp,
                                 bottom = actionBottomPadding,
                             ),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        // 두 버튼이 나란할 때(확인 화면) 간격은 편집기 하단(`EditorActionButtons`)과 같은 12 다.
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         when (currentStep) {
@@ -2887,12 +2857,11 @@ internal fun VoiceProfileManagementPanel(
                                             submitCreateProfile(resolvedProfileName)
                                         }
                                     },
-                                    // 확인·동의를 체크해야 등록이 눌린다. 서버도 같은 지점에서
-                                    // 403 으로 막지만, 요청을 보내 튕기기 전에 무엇에 동의하는지
-                                    // 부터 보여준다.
                                     enabled = !voiceProfileBusy && !isRecording && !createPreparing &&
-                                        (canSubmitRecord || canSubmitSingleFile) &&
-                                        registrationConsentSatisfied,
+                                        (canSubmitRecord || canSubmitSingleFile),
+                                    // `다음` 과 같은 채움 한 벌이다(2026-11-22 두 앱 통일) — 예전에는 이것만 M3 기본색이라 잠기면
+                                    // 글자가 지워진 것처럼 보였다.
+                                    colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
@@ -2914,10 +2883,21 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Prerendering -> Unit
 
                             VoiceRegistrationStep.Preview -> {
-                                TextButton(
-                                    onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
+                                // 편집기 하단(`EditorActionButtons`)과 같은 한 쌍 — `다시 만들기` 는 외곽선, `저장하기` 는 채움, 같은 폭
+                                // (2026-11-15 오너: "다시 만들기, 저장하기 버튼도 디자인 바꿔도 돼"). 예전에는 빨간 글자 텍스트 버튼과 넓은
+                                // 채움 버튼이라 iOS(같은 폭 두 버튼)와도 달랐다. iOS `VoicePreviewConfirmView.actions` 와 같다.
+                                OutlinedButton(
+                                    onClick = {
+                                        confirmNewVoice?.let {
+                                            // 지워지면 창을 닫지 않고 음원 준비로 돌아간다(초안 효과의 `remakeRequested`).
+                                            remakeDraftId = it.id
+                                            onDeleteVoiceDraft(it.id)
+                                        }
+                                    },
                                     // 뒤로가기와 같은 일(초안 삭제)이라 같은 잠금을 쓴다(`confirmStepLocks`).
                                     enabled = !confirmLocks.working,
+                                    modifier = Modifier.weight(1f),
+                                    shape = WakerButtonShape,
                                 ) {
                                     // 지우는 동안은 **이 버튼**이 진행을 말한다 — 옆의 저장 버튼이
                                     // 아니라(위 주석 참조).
@@ -2925,13 +2905,10 @@ internal fun VoiceProfileManagementPanel(
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(18.dp),
                                             strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.error,
+                                            color = LocalContentColor.current,
                                         )
                                     } else {
-                                        Text(
-                                            text = stringResource(R.string.voices_confirm_new_delete),
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
+                                        Text(text = stringResource(R.string.voices_confirm_new_delete))
                                     }
                                 }
                                 Button(
@@ -2958,6 +2935,9 @@ internal fun VoiceProfileManagementPanel(
                                     enabled = !confirmLocks.working && !confirmPreviewEditing &&
                                         confirmPreviewCompleted && !tuningRendering &&
                                         tuningHeardToEnd(previewTuning, heardTunings),
+                                    // 잠긴 색은 앞 단계의 `다음`·`등록` 과 같은 한 벌이다(`wakerButtonColors` — M3 기본은 딥네이비
+                                    // 위에서 글자가 지워진 것처럼 보인다).
+                                    colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
@@ -2971,10 +2951,11 @@ internal fun VoiceProfileManagementPanel(
                                     // 지우는 중인데 저장한다고 하면 되돌릴 수 없는 일을 한 줄 안다.
                                     // 승격이 실제로 나갔을 때만(`promotedForPrerenderId`) 표시한다.
                                     if (voiceProfileBusy && promotedForPrerenderId != null) {
+                                        // 저장 중에는 버튼이 잠겨 있다 — 진행 표시는 잠긴 글자색을 따른다(iOS 도 onSurfaceVariant).
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(18.dp),
                                             strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            color = LocalContentColor.current,
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(stringResource(R.string.voices_confirm_new_keep_saving))

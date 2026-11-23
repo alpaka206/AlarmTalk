@@ -186,12 +186,6 @@ jobs:
       - name: Check sync workers route failures through syncWorkerOutcome
         run: python3 scripts/check-sync-worker-unauthorized.py
 
-      # 안드로이드의 날것 `Dialog(`·`ModalBottomSheet(` 가 `TrackOpenModal()` 을 빠뜨리면, 그 창이
-      # 떠 있는 동안 앱에 다시 들어올 때(문서 선택기·설정에서 복귀) 개인 플랜 종료 안내가 그 위에
-      # 겹쳐 뜬다. 규칙이 KDoc 한 줄에만 있으면 다음 모달이 조용히 빠뜨린다(리뷰 지적).
-      - name: Check Android modals register with OpenModalRegistry
-        run: python3 scripts/check-open-modal-tracking.py
-
       # 카탈로그는 manual 추출이라 새 키 누락이 빌드를 통과한다. 번역 유무뿐 아니라
       # Swift 호출부가 키를 실제 조회하는지와 Kotlin의 생 UI 문구를 함께 검사한다.
       - name: Check user-visible Hangul literals

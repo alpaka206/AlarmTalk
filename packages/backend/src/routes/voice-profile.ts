@@ -3,7 +3,6 @@ import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv, Env } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
-import { planWithGrantSql } from '../lib/plan-grant-sql';
 import { getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError, logStructured } from '../lib/logger';
@@ -11,7 +10,6 @@ import { jsonError } from '../lib/api-error';
 import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 import { hasPersonalVoiceAccess } from './billing-helpers';
-import { resolvePersonalPromo, type PersonalPromoState } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import {
@@ -254,33 +252,6 @@ async function markMonthlyOfficialVoiceChange(
   });
 }
 
-// KST 기준 'YYYY-MM' — 월 생성(초안) 쿼터의 키. reserve/read 가 동일 월 문자열을 쓰도록 단일 출처.
-function currentKstAttemptMonth(): string {
-  const monthParts = new Intl.DateTimeFormat('en', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(new Date());
-  return `${monthParts.find((part) => part.type === 'year')!.value}-${monthParts.find((part) => part.type === 'month')!.value}`;
-}
-
-// 이번 달(KST) 목소리 초안 생성 사용량 조회 — 클라가 삭제 전 '재생성 가능 여부'를 판정하는 데 쓴다.
-async function readMonthlyDraftAttemptUsage(
-  db: DbExecutor,
-  ownerUserId: string,
-): Promise<{ limit: number; used: number; remaining: number }> {
-  const res = await db.execute({
-    sql: `SELECT used_count FROM voice_draft_attempt_usage
-          WHERE owner_user_id = ? AND attempt_month = ?`,
-    args: [ownerUserId, currentKstAttemptMonth()],
-  });
-  const used = Number(res.rows[0]?.used_count ?? 0);
-  // 초안 시도에는 제한이 없다 — 확정 전까지는 마음에 들 때까지 만들고 지울 수 있다.
-  // 여기서 세는 건 운영 지표일 뿐이고, 사용자에게 보여줄 숫자는 registration_*(월 1회
-  // 정식 등록)이다. limit=0 은 '제한 없음'을 뜻하며 응답 필드 호환을 위해 남긴다.
-  return { limit: 0, used, remaining: 0 };
-}
-
 // 이번 달(KST) '정식 등록' 사용량 — 목소리는 한 달에 1개만 만들 수 있고(월 1회 교체),
 // 이게 사용자에게 보여줄 숫자다. 초안 시도는 제한이 없어
 // (마음에 안 들면 지우고 다시) 내부 값이지 사용자가 셀 숫자가 아니다.
@@ -301,40 +272,6 @@ async function readMonthlyRegistrationUsage(
     used,
     remaining: Math.max(0, MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH - used),
   };
-}
-
-async function reserveMonthlyDraftAttempt(
-  db: DbExecutor,
-  ownerUserId: string,
-): Promise<string | null> {
-  const attemptMonth = currentKstAttemptMonth();
-  const result = await db.execute({
-    sql: `INSERT INTO voice_draft_attempt_usage
-            (owner_user_id, attempt_month, used_count)
-          VALUES (?, ?, 1)
-          ON CONFLICT(owner_user_id, attempt_month) DO UPDATE SET
-            used_count = used_count + 1,
-            updated_at = datetime('now')`,
-    args: [ownerUserId, attemptMonth],
-  });
-  // 사용량은 세지만 막지 않는다 — 초안은 확정 전 단계라 마음에 들 때까지 만들고 지울 수
-  // 있어야 한다. 월 1회 제한은 '최종 확정'에만 건다. 동시 보유 개수는
-  // MAX_DRAFT_VOICE_PROFILES=1 이 여전히 막으므로 클론 슬롯이 쌓이지는 않는다.
-  void result;
-  return attemptMonth;
-}
-
-async function refundMonthlyDraftAttempt(
-  db: DbExecutor,
-  ownerUserId: string,
-  attemptMonth: string,
-): Promise<void> {
-  await db.execute({
-    sql: `UPDATE voice_draft_attempt_usage
-          SET used_count = MAX(used_count - 1, 0), updated_at = datetime('now')
-          WHERE owner_user_id = ? AND attempt_month = ?`,
-    args: [ownerUserId, attemptMonth],
-  });
 }
 
 async function activeOfficialVoiceProfileCount(
@@ -676,10 +613,13 @@ voiceProfile.get('/draft-quota', async (c) => {
   const userId = c.get('userId');
   const userPk = (c.get('userIdPK') as string | undefined) || userId;
   const db = getDB(c.env);
-  const quota = await readMonthlyDraftAttemptUsage(db, userPk);
   const registration = await readMonthlyRegistrationUsage(db, userPk);
   return c.json({
-    ...quota,
+    // 옛 '초안 시도' 칸 — 앱은 읽지 않지만 2026-09-29 전 iOS 는 이 키를 필수로 디코딩했다. 시도는 세지 않는다(제한도 없다 —
+    // 그 집계 표는 읽는 곳이 없어 2026-11-23 #152 에서 지웠다).
+    limit: 0,
+    used: 0,
+    remaining: 0,
     // 클라가 '생성 가능 n/1회'로 보여주는 값. draft 시도 쿼터(limit 0)와 다르다.
     registration_limit: registration.limit,
     registration_used: registration.used,
@@ -850,18 +790,13 @@ export async function replaceVoiceInPlace(
     /** 토큰의 로그인 식별자(구 토큰이면 google_id) — 플랜 조회 보조 매칭(승격과 같은 조건). */
     loginId?: string;
     /**
-     * 기간 한정 개인 플랜 — 요청 가장자리에서 `resolvePersonalPromo(c.env)` 로 푼 값.
-     * 교체는 **내 개인 기능**이라 승격과 같은 계산값 게이트(`hasPersonalVoiceAccess`)를 쓴다.
-     */
-    promo: PersonalPromoState;
-    /**
      * 등록 미리듣기에서 고른 목소리 높이(반음, 0 = 원래 소리). 교체는 **새 목소리**라(2026-10-07 사용자) 옛
      * 목소리의 높이를 물려받지 않는다 — 언제나 덮어쓴다(0 이면 비운다). 스펙 voice-and-message §4-3.
      */
     pitchSemitones?: number;
   },
 ): Promise<ReplaceResult> {
-  const { targetUserIds, draftProfileId, language, ownerPk, loginId, promo } = params;
+  const { targetUserIds, draftProfileId, language, ownerPk, loginId } = params;
   const pitchSemitones = params.pitchSemitones ?? 0;
   const ph = targetUserIds.map(() => '?').join(',');
 
@@ -909,10 +844,10 @@ export async function replaceVoiceInPlace(
     // **월 1회 등록 한도는 교체로 풀리지 않는다** — 앱이 보여 주는 `등록 n/1` 이 그 숫자다.
     // 예전에는 이 갈래가 승격 트랜잭션(아래)에 닿기 전에 return 해서 셋 다 건너뛰었다.
     const plan = await tx.execute({
-      sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+      sql: `SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [ownerPk, loginId ?? ownerPk],
     });
-    if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan, promo)) {
+    if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan)) {
       return { status: 'paid_required' as const };
     }
     const missingConsent = await missingConsentType(tx, ownerPk, SENSITIVE_REQUIRED_CONSENTS);
@@ -1383,7 +1318,6 @@ voiceProfile.patch('/:id', async (c) => {
         language: prerenderLanguage,
         ownerPk: userPk,
         loginId: userId,
-        promo: resolvePersonalPromo(c.env),
         pitchSemitones,
       });
       if (!replaced.ok) {
@@ -1465,15 +1399,13 @@ voiceProfile.patch('/:id', async (c) => {
             WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL ${extraWhere}`,
       args,
     });
-  const promo = resolvePersonalPromo(c.env);
   const updateRes = promotesDraftToOfficial
     ? await withWriteTransaction(db, async (tx) => {
         const plan = await tx.execute({
-          sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+          sql: `SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
           args: [userPk, userId],
         });
-        // 기간 한정 개인 플랜 반영(계산값) — 승격은 내 개인 기능이다.
-        if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan, promo)) {
+        if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan)) {
           return { status: 'paid_required' as const, rowsAffected: 0 };
         }
         const missingConsent = await missingConsentType(tx, userPk, SENSITIVE_REQUIRED_CONSENTS);
@@ -1698,7 +1630,6 @@ voiceProfile.post('/clone', async (c) => {
   // 그렇지 않으면 status 가 'processing' 에 영구히 갇혀 앱이 "생성중" 으로 표시된다.
   let insertedProfileId: string | null = null;
   let monthlyLedgerId: string | null = null;
-  let draftAttemptMonth: string | null = null;
   let providerVoiceCreated = false;
   let createdProviderVoiceId: string | null = null;
 
@@ -1720,14 +1651,10 @@ voiceProfile.post('/clone', async (c) => {
     // 있어서, 식별자를 해석하지 못하면 플랜 확인 없이 클론이 진행됐다(fail-open).
     // 같은 파일의 promote 경로는 무조건 확인하고 있어 두 경로의 강도도 어긋나 있었다.
     const userPlan = await db.execute({
-      sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+      sql: `SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [userPk, userId],
     });
-    // 기간 한정 개인 플랜 반영(계산값) — 클론 등록은 내 개인 기능이다.
-    if (
-      userPlan.rows.length === 0 ||
-      !hasPersonalVoiceAccess(userPlan.rows[0]!.plan, resolvePersonalPromo(c.env))
-    ) {
+    if (userPlan.rows.length === 0 || !hasPersonalVoiceAccess(userPlan.rows[0]!.plan)) {
       return c.json(
         {
           error: 'Voice features require a paid plan.',
@@ -1822,7 +1749,6 @@ voiceProfile.post('/clone', async (c) => {
       // 한 달에 한 번이라는 규칙은 여기서 풀리지 않는다 — 그건 등록 원장
       // (`voice_profile_change_ledger`)이 지킨다: 아래 예약 트랜잭션 맨 앞의 자격 확인
       // (`readMonthlyRegistrationUsage`)과 확정의 예약(`reserveMonthlyOfficialVoiceChange`).
-      // (`reserveMonthlyDraftAttempt` 는 초안 시도를 세기만 한다 — 아무것도 막지 않는다.)
       // ⚠ **초안이 남아 있다고 거절하지 않는다**(2026-08-25 지시). 아래 예약 트랜잭션이
       // 같은 스냅샷에서 그 초안을 **버리고** 진행한다 — 이유는 그쪽 주석에 있다.
       // 이 선검사는 official 슬롯 수를 세는 용도로만 남는다(로그·지표).
@@ -1935,8 +1861,7 @@ voiceProfile.post('/clone', async (c) => {
       // 거절됐다(ALARMTALK-ANDROID-Q).
       //
       // ⚠ **맨 앞이어야 한다.** 거절은 한 줄도 쓰지 않는다 — 옛 초안 정리
-      // (`discardAbandonedDrafts`)·초안 시도 집계(`reserveMonthlyDraftAttempt`)·프로필 INSERT
-      // 보다 뒤로 내리면 '만들 수 없는 등록' 이 그 사람의 남은 초안을 지우고 집계를 올린다.
+      // (`discardAbandonedDrafts`)·프로필 INSERT 보다 뒤로 내리면 '만들 수 없는 등록' 이 그 사람의 남은 초안을 지운다.
       // 확정의 게이트(`reserveMonthlyOfficialVoiceChange`)는 그대로 둔다 — 초안을 만든 뒤
       // 다른 기기가 먼저 등록할 수 있어, 여기를 통과했다는 것은 확정의 근거가 못 된다.
       // (위의 읽기 전용 선검사는 전사 비용을 아끼는 것일 뿐이다 — 이 확인을 대신하지 않는다.)
@@ -1976,13 +1901,11 @@ voiceProfile.post('/clone', async (c) => {
         await discardAbandonedDrafts(tx, ids);
       }
       // F1(Codex #599 3차): 전역 슬롯이 꽉 찼는데 evict 후보가 전부 보호 대상(draft)이면
-      // 등록 후 eviction 이 후보 부족으로 짧게 끝나 상한 초과가 지속된다 → enroll·쿼터 소모 전에
-      // 조기 거부. draft attempt 예약 앞에 두어 쿼터도 아끼고, 같은 tx 스냅샷이라 TOCTOU 최소화.
+      // 등록 후 eviction 이 후보 부족으로 짧게 끝나 상한 초과가 지속된다 → enroll 전에 조기 거부.
+      // 같은 tx 스냅샷이라 TOCTOU 최소화.
       if (!(await hasCloneSlotCapacity(tx))) {
         return { status: 'clone_capacity' as const, ledgerId: null };
       }
-      // 사용량만 센다 — 막지 않는다(위 readMonthlyDraftAttemptUsage 주석 참고).
-      draftAttemptMonth = await reserveMonthlyDraftAttempt(tx, userPk);
       await tx.execute({
         sql: `INSERT INTO voice_profiles
               (id, user_id, name, status, is_draft, relationship_label, listener_title, preview_language${
@@ -2235,15 +2158,6 @@ voiceProfile.post('/clone', async (c) => {
       }
     }
 
-    // 제공자에 실제 보이스가 만들어지기 전 실패(네트워크/설정 오류)만 시도 횟수를 돌려준다.
-    // providerVoiceCreated 이후에는 응답 유실·DB 오류가 있어도 비용이 발생했으므로 환불하지 않는다.
-    if (draftAttemptMonth && !providerVoiceCreated) {
-      try {
-        await refundMonthlyDraftAttempt(db, userPk, draftAttemptMonth);
-      } catch (refundErr) {
-        logRouteError(c, refundErr);
-      }
-    }
     if (providerVoiceCreated && createdProviderVoiceId) {
       try {
         await enqueueExternalDeletion(db, 'elevenlabs_voice', createdProviderVoiceId);
@@ -2719,7 +2633,7 @@ voiceProfile.post('/:id/prerender-retry', async (c) => {
  * ⚠ 예전에는 서버 알람 사본의 쓰기(`POST/PATCH /alarm`)가 이 일을 함께 했다. 사본을 없앤 뒤(2026-10-29, 마이그레이션 #147)
  *   알람은 기기에만 있으므로 앱이 직접 알린다. 실패해도 잃는 것은 보충이 한 번 늦는 것뿐이라 앱은 답을 기다리지 않는다.
  *
- * 대상은 내 확정·ready 클론뿐(다른 것은 404)이고, 개인 목소리 권한(계산값)이 있어야 한다. 큐의 주인 확인은
+ * 대상은 내 확정·ready 클론뿐(다른 것은 404)이고, 개인 목소리 권한(`hasPersonalVoiceAccess`)이 있어야 한다. 큐의 주인 확인은
  * `requestCloneContentSupplement` 가 한 번 더 한다.
  */
 voiceProfile.post('/:id/content-supplement', async (c) => {
@@ -2742,10 +2656,10 @@ voiceProfile.post('/:id/content-supplement', async (c) => {
   }
 
   const plan = await db.execute({
-    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? LIMIT 1`,
+    sql: `SELECT plan FROM users WHERE id = ? LIMIT 1`,
     args: [userPk],
   });
-  if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan, resolvePersonalPromo(c.env))) {
+  if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan)) {
     return c.json(
       { error: 'Voice alarms require a paid plan.', error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN' },
       403,

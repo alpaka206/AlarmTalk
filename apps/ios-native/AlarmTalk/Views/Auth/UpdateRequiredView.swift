@@ -19,7 +19,10 @@ struct UpdateRequiredView: View {
                 GeometryReader { proxy in
                     ScrollView {
                         VStack(spacing: 0) {
-                            Image(systemName: "arrow.down.app")
+                            // 그림은 두 앱이 같은 **아래 화살표**다(2026-11-22 오너 "업데이트가 필요해요 디자인도 통일"). 예전에는 iOS 가
+                            // 네모 + 화살표(`arrow.down.app`), 안드로이드가 폰 + 화살표였다. 글리프는 각 OS 것이다(CLAUDE.md) —
+                            // 안드로이드 `ui/app/UpdateRequiredScreen.kt` 의 `ArrowDownward` 와 같은 모양이다.
+                            Image(systemName: "arrow.down")
                                 .font(.system(size: 34, weight: .semibold))
                                 .foregroundStyle(AuthSceneColors.accent)
                                 .frame(width: 88, height: 88)

@@ -2,6 +2,9 @@ import Foundation
 
 /// 남기는 사건의 종류. **서버 화이트리스트와 같은 값**이어야 한다
 /// (`packages/shared/src/schemas/usage-event.ts`) — 모르는 값은 서버가 배치째 거절한다.
+///
+/// ⚠ **종류를 지우면 큐 파일에 남은 그 종류의 건은 읽을 때 버린다**(`UsageEventQueue.loadLocked`). 추가 음성팩과 함께
+/// 지운 팩 선택 기록이 그렇다 — 한 건이 못 읽힌다고 큐 전체를 잃거나, 서버가 모르는 종류를 보내 배치째 막히지 않게.
 enum UsageEventType: String, Codable {
     case alarmCreated = "alarm_created"
     case alarmUpdated = "alarm_updated"
@@ -43,10 +46,8 @@ enum UsageEventType: String, Codable {
     case rewardPending = "reward_pending"
     case rewardGranted = "reward_granted"
     case rewardSpent = "reward_spent"
-    /// 콘텐츠 — `contentSelected`·`packSelected` 는 알람 저장 성공(`CheerVariety.contentSelectionProps`·
-    /// `VoicePacks.packSelectionProps`)이 적는다.
+    /// 콘텐츠 — `contentSelected` 는 알람 저장 성공(`CheerVariety.contentSelectionProps`)이 적는다.
     case contentSelected = "content_selected"
-    case packSelected = "pack_selected"
     case paywallViewed = "paywall_viewed"
     case storePurchaseVerified = "store_purchase_verified"
     case entitlementChanged = "entitlement_changed"
@@ -89,7 +90,6 @@ struct UsageEventProps: Codable, Equatable, Sendable {
     var reason: String?
     var method: String?
     var step: String?
-    var packID: String?
     var isFirst: Bool?
     var prepared: Bool?
     var reuseLocation: ReuseLocation?
@@ -112,7 +112,6 @@ struct UsageEventProps: Codable, Equatable, Sendable {
         case completedCount = "completed_count"
         case durationMs = "duration_ms"
         case errorCode = "error_code"
-        case packID = "pack_id"
         case isFirst = "is_first"
         case reuseLocation = "reuse_location"
         case chargedSource = "charged_source"
@@ -136,7 +135,6 @@ struct UsageEventProps: Codable, Equatable, Sendable {
         copy.reason = reason.flatMap(Self.code)
         copy.method = method.flatMap(Self.code)
         copy.step = step.flatMap(Self.code)
-        copy.packID = packID.flatMap(Self.code)
         copy.surface = surface.flatMap(Self.code)
         copy.fromPlan = fromPlan.flatMap(Self.code)
         copy.toPlan = toPlan.flatMap(Self.code)
@@ -236,6 +234,15 @@ struct QueuedUsageEvent: Codable, Identifiable, Equatable {
     var featureVersion: String?
     var attemptID: String?
     var props: UsageEventProps?
+}
+
+/// 큐 파일의 한 건 — 못 읽으면 nil(`UsageEventQueue.loadLocked`).
+private struct LossyQueuedUsageEvent: Decodable {
+    let event: QueuedUsageEvent?
+
+    init(from decoder: Decoder) throws {
+        event = try? QueuedUsageEvent(from: decoder)
+    }
 }
 
 /// 사용 기록을 **파일에 쌓아 두는** 큐. 보내는 일은 `UsageEventUploader` 가 한다.
@@ -363,11 +370,13 @@ final class UsageEventQueue: @unchecked Sendable {
 
     // MARK: - 파일
 
+    /// ⚠ **한 건씩 읽는다** — 읽을 수 없는 건(이 빌드가 모르는 종류 등)만 버리고 나머지는 남긴다. 배열째 읽으면 한 건 때문에
+    /// 큐 전체가 빈 것으로 읽히고, 다음 기록이 그 빈 목록을 저장해 밀린 기록을 통째로 잃는다.
     private func loadLocked() -> [QueuedUsageEvent] {
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode([QueuedUsageEvent].self, from: data)) ?? []
+        return ((try? decoder.decode([LossyQueuedUsageEvent].self, from: data)) ?? []).compactMap(\.event)
     }
 
     /// @return 실제로 파일에 남았으면 true. **실패를 삼키지 않는다** — 못 남긴 것을 남긴

@@ -53,7 +53,7 @@ struct WeatherRegionPickerSheet: View {
         if let legacyLabel {
             return String(localized: "‘\(legacyLabel)’은(는) 목록에 없어요. 다시 골라 주세요.")
         }
-        return String(localized: "목록에서 지역을 골라 주세요. 현재 위치 권한은 쓰지 않아요.")
+        return String(localized: "목록에서 지역을 골라 주세요.")
     }
 
     /// 목록 높이 상한에서 뺄 몫 — 나라 세그먼트(+ 그 아래 간격), 안내 줄.
@@ -77,13 +77,13 @@ struct WeatherRegionPickerSheet: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noteHeight = $0 }
             }
 
-            // 나라는 시스템 세그먼트다 — 셋뿐이고, 목록 위에서 한 번에 보여야 한다.
-            Picker(String(localized: "나라"), selection: $country) {
-                ForEach(WeatherCountry.allCases, id: \.self) { item in
-                    Text(verbatim: item.displayName(language: language)).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
+            // 나라는 세그먼트다 — 셋뿐이고, 목록 위에서 한 번에 보여야 한다. 앱 공용 세그먼트를 쓴다(안드로이드
+            // `AlarmRandomPromptSettings` 의 `EditorSegmentedSelector` 와 같은 모양 — 시스템 세그먼트는 회색 막대라 달랐다).
+            AppSegmentedPicker(
+                options: WeatherCountry.allCases.map { ($0, $0.displayName(language: language)) },
+                selection: $country
+            )
+            .accessibilityLabel(Text(String(localized: "나라")))
             .padding(.horizontal, BottomSheetTitle.horizontalPadding)
             .accessibilityIdentifier("weather-region-country")
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { countryBarHeight = $0 }
@@ -130,7 +130,8 @@ struct WeatherRegionPickerSheet: View {
             }
 
         }
-        .padding(.bottom, 8)
+        // 아래 20 — 안드로이드 지역 시트(`WeatherLocationDialog`)를 담는 `WakerSelectionSheet` 의 아래 여백과 같다(2026-11-22 전 8).
+        .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         // 배경·모서리·드래그 핸들은 `BottomSheetHost` 가 그린다.
     }
@@ -159,13 +160,14 @@ struct WeatherRegionPickerSheet: View {
             dismiss()
         } label: {
             // 긴 이름("찰스턴(웨스트버지니아)", "North Chungcheong")은 칩 안에서 두 줄까지 감는다. 높이는 칩마다 같다(52).
+            // ⚠ **글자를 줄이지 않는다**(`minimumScaleFactor` 를 되살리지 말 것, 2026-11-22) — 안드로이드 `WeatherRegionChip` 처럼
+            //   두 줄을 넘으면 말줄임이다. 줄이면 칩마다 글자 크기가 달라 목록이 들쭉날쭉해진다.
             Text(verbatim: region.displayName(language: language))
                 .font(theme.typography.labelLarge)
                 .fontWeight(.semibold)
                 .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
-                .minimumScaleFactor(0.85)
                 .padding(.horizontal, 6)
                 .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52)
                 .background(

@@ -5,7 +5,7 @@
 //  - 서명·체인·번들·환경이 하나라도 틀리면 거절하고 **아무것도 적지 않는다.**
 //  - `notificationUUID` 로 거른다 — 끝난 알림은 다시 처리하지 않고, 실패한 알림은 재전송 때 다시 처리한다.
 //  - 알림의 상태를 그대로 쓰지 않는다 — 언제나 애플에 다시 묻는다(순서가 뒤바뀌어도 같은 답).
-//  - 환불·회수는 확정 라우트와 같은 회수 갈래를 탄다. 남은 권한(관리자 기간 지급)이 있으면 보관을 걸지 않는다.
+//  - 환불·회수는 확정 라우트와 같은 회수 갈래를 탄다. 남은 권한(다른 스토어 구독)이 있으면 보관을 걸지 않는다.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -179,7 +179,6 @@ beforeEach(async () => {
     'store_transactions',
     'subscriptions',
     'paid_voice_retention',
-    'plan_grants',
   ]) {
     await db.execute(`DELETE FROM ${table}`);
   }
@@ -381,16 +380,19 @@ describe('환불·회수 — 확정 라우트와 같은 회수 갈래', () => {
     expect(await rows("SELECT id FROM subscriptions WHERE status = 'active'")).toHaveLength(1);
   });
 
-  it('관리자 기간 지급이 남아 있으면 보관을 걸지 않는다 — 다른 권한이 있는 사람을 강등하지 않는다', async () => {
+  it('다른 스토어 구독이 남아 있으면 보관을 걸지 않는다 — 아직 유료인 사람을 강등하지 않는다', async () => {
     await db.execute({
-      sql: `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
-            VALUES ('grant-owner', 'owner', ?, ?, 'support', 'admin', 'grant-key-owner')`,
-      args: [new Date(NOW - 86400_000).toISOString(), new Date(NOW + 30 * 86400_000).toISOString()],
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at, cancel_at_period_end)
+            VALUES ('sub-other', 'owner', ?, 'active', ?, ?, 0)`,
+      args: [personalPlanId, new Date(PAID).toISOString(), CURRENT_EXPIRY],
     });
     appleSays(5);
     const { res } = await notify('REVOKE', { transaction: { revocationDate: NOW } });
     expect(res.status).toBe(200);
-    expect(await rows("SELECT id FROM subscriptions WHERE status = 'active'")).toHaveLength(0);
+    expect((await rows("SELECT id FROM subscriptions WHERE status = 'active'")).map((r) => r.id)).toEqual([
+      'sub-other',
+    ]);
+    expect((await rows("SELECT plan FROM users WHERE id = 'owner'"))[0]!.plan).toBe('plus');
     expect(
       await rows("SELECT user_id FROM paid_voice_retention WHERE user_id = 'owner'"),
     ).toHaveLength(0);

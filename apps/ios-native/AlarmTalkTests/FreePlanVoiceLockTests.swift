@@ -235,7 +235,8 @@ final class FreePlanVoiceLockTests: XCTestCase {
         for record in selection.toLock {
             byID[record.id] = DefaultVoiceSubstitute.locked(record, voiceID: systemVoice, binding: nil, nowMillis: 1)
         }
-        return (selection.newLockCount, alarms.map { byID[$0.id]! })
+        // 이번 실행이 **새로** 잠글 개수 — `applyFreePlanVoiceLock` 의 반환값(취소되지 않았을 때)과 같은 셈이다.
+        return (selection.toLock.filter(FreePlanLockSelection.isNewLock).count, alarms.map { byID[$0.id]! })
     }
 
     /// 소유자가 다르면 잠금 대상이 아니다(같은 기기에서 계정을 바꾼 경우). 소유자가 안 적힌 옛 행은

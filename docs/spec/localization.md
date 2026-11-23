@@ -50,7 +50,7 @@ Android 스낵바의 색(성공·오류·안내)은 문구의 글자가 아니�
 | 이용권 | plan | 利用券 | 영어 pass와 섞지 않는다. 기존 일본어의 プラン 문장은 유지한다 |
 | ~~초대 코드~~ | ~~invite code~~ | ~~招待コード~~ | **쓰지 않는다**(2026-10-20). 코드 칸·더보기의 '초대 코드 등록'·코드 공유를 커플·가족 이용권과 함께 지웠다 — 코드를 쳐서 여는 길이 없다([plan-gates.md](plan-gates.md) 「커플·가족 이용권 — 폐지」). 선물·프로모션·쿠폰 낱말도 쓰지 않는다 |
 | ~~이용권 코드~~ | ~~plan code~~ | ~~利用券コード~~ | **쓰지 않는다**(2026-10-14). 코드가 이용권을 여는 것(라이선스 키)으로 읽혀 App Store 지침 3.1.1 에 걸릴 말이다 — CI 검사 `scripts/check-paid-unlock-codes.py` 가 화면 문구에서 막는다 |
-| 무료·플러스 | Free·Plus | 無料·プラス | 유료 이용권 이름은 2026-10-21 에 '개인' 에서 '플러스' 로 바꿨다(상품 id·키 `personal` 은 그대로). 스펙·코드의 '기간 한정 개인 플랜'(`personal_promo`)은 그 프로모의 **내부 이름**이고 화면에는 '플러스 무료 이용' 으로 나간다. 커플·가족 플랜은 2026-10-20 에 없앴다. 관계 라벨의 가족은 그대로 家族 |
+| 무료·플러스 | Free·Plus | 無料·プラス | 유료 이용권 이름은 2026-10-21 에 '개인' 에서 '플러스' 로 바꿨다(상품 id·키 `personal` 은 그대로). ('기간 한정 개인 플랜'(`personal_promo`)은 2026-10-31 에 끝난 행사의 내부 이름이었다 — 2026-11-23 에 코드째 지웠다.) 커플·가족 플랜은 2026-10-20 에 없앴다. 관계 라벨의 가족은 그대로 家族 |
 | 알람·목소리·더보기 탭 | Alarms·Voices·More | アラーム·声·その他 | 단수 재생 방식과 키를 나눈다 |
 | 문구 | message | 文言 | 기존 같은 화면의 Android 번역을 우선한다 |
 | 기본 목소리 | default voice(s) | 基本の声 | 한 개와 목록 제목을 구분한다 |
@@ -62,6 +62,13 @@ Android 스낵바의 색(성공·오류·안내)은 문구의 글자가 아니�
 
 영어·일본어 앱 화면의 브랜드는 `AlarmTalk`이다. 언어 선택지는 `한국어`·`English`·`日本語`처럼
 각 언어의 자기 이름으로 쓴다. 영어 문장 안의 플랜 이름도 대문자로 쓴다.
+더보기 '앱 언어' 행의 값도 **지금 화면이 쓰는 언어**의 자기 이름이다 — '시스템 기본' 이라고 쓰지 않는다(지금 무슨 언어인지가
+보이지 않는다). 기기 언어가 앱이 가진 세 언어 밖이면 화면이 그리는 언어의 이름이다(두 앱 — 안드로이드는 2026-11-22 전 앱별
+언어를 고르지 않았으면 '시스템 기본' 이었다).
+
+영어의 남은 시간은 짧은 단위다 — "Rings in 9 hr, 21 min." · "1 day, 3 hr" · "2 days"(일만 단수·복수가 갈린다. 안드로이드 ICU
+`MeasureFormat` 의 SHORT 와 iOS 카탈로그가 같은 글자다). iOS 는 2026-11-22 전 "9 hours 21 minutes" 꼴에 단수를 가르지 못해
+"1 minutes" 가 나왔다.
 
 약관·개인정보처리방침 웹 링크는 현재 앱 언어의 경로를 쓴다(ko·en·ja, 그 밖은 ko).
 동의 화면의 번들 문서와 동의 버전 계약은 그대로다.
@@ -174,6 +181,8 @@ Shared의 키는 두 타깃에 있어야 한다. 한글이 포함됐는지를 �
 | 공통 오류 코드 | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` |
 | 스낵바 색은 문구 종류로 | `ui/app/SnackbarSeverity.kt`의 `SnackbarSeverities` · `SnackbarSeverityTest` | (스낵바 색 구분 없음) |
 | 언어 선택지 자기 이름 | `voices_lang_ko`·`voices_lang_en`·`voices_lang_ja` | 목소리 등록 화면의 언어 선택지(후속 연결) |
+| 더보기 '앱 언어' 값 = 지금 화면 언어의 자기 이름('시스템 기본' 없음) | `ui/home/HomeComponents.kt` 의 `MenuTabPanel`(`appVoiceLanguageOf`) | `Views/Settings/MenuView.swift` 의 `appLanguageLabel` |
+| 영어 남은 시간은 짧은 단위(일만 단수·복수) | `ui/home/HomeComponents.kt` 의 `remainingDurationLabel`(`MeasureFormat` SHORT) | `NextAlarmHeadline.remainingLabel`(`remaining.days.hours` + `Localizable.xcstrings` 의 `%lld일` 복수형 변형) |
 | 관계는 목록에 표시하지 않는다(입력·저장·전송만) | 목소리 탭 `VoiceProfileRowComponents.kt`(보조 줄 없음)·편집기 `VoiceAudioCard.kt`의 `ownedVoiceDetail`·알람 행 `AlarmListScreen.kt`의 `voiceName` | `ownVoiceOptionDetail`·`alarmRowVoiceName`(`LocalizedDisplay.swift`) · `VoiceLocalizationTests` |
 | 저장값과 기본 목소리의 표시 | `fortuneValueLabel`·`systemVoiceDisplayName` | `FortunePromptInputFormat.displayLabel`·`systemVoiceDisplayName`·`VoiceRelationshipPreset.displayLabel` |
 | 약관 웹 링크의 앱 언어 | 설정 화면의 언어별 경로 | `LegalLinks`(후속 화면에서 채택) |

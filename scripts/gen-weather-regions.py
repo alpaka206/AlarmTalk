@@ -301,11 +301,6 @@ def gen_android_xml(cat: Catalog, locale: str) -> str:
         )
     for region in cat.regions:
         lines.append(f'    <string name="weather_region_{res_name(region["key"])}">{xml_str(region["names"][locale])}</string>')
-        if region.get("seatNames"):
-            lines.append(
-                f'    <string name="weather_region_seat_{res_name(region["key"])}">'
-                f'{xml_str(region["seatNames"][locale])}</string>'
-            )
     lines.append("</resources>")
     return "\n".join(lines) + "\n"
 
@@ -351,7 +346,7 @@ def gen_android_kt(cat: Catalog) -> str:
     w("")
     w("/**")
     w(" * 고를 수 있는 지역 하나. 저장·전송 값은 [key] 이고, 보이는 이름은 [nameRes] 다.")
-    w(" * [seatNameRes] 는 날씨를 재는 대표 도시(경기 → 수원)가 지역 이름과 다를 때만 있다.")
+    w(" * 대표 도시 이름(경기 → 수원)은 화면에 쓰지 않아 리소스로 싣지 않는다 — 되짚기 별칭 표에는 글자로 들어 있다.")
     w(" */")
     w("data class WeatherRegion(")
     w("    val key: String,")
@@ -359,7 +354,6 @@ def gen_android_kt(cat: Catalog) -> str:
     w("    /** 나라 안에서의 목록 순서(1부터). */")
     w("    val order: Int,")
     w("    @StringRes val nameRes: Int,")
-    w("    @StringRes val seatNameRes: Int?,")
     w("    /** 옛 앱이 읽는 `city` 칸에 쓰는 글자(한국어 이름). */")
     w("    val legacyCity: String,")
     w(") {")
@@ -375,10 +369,9 @@ def gen_android_kt(cat: Catalog) -> str:
     w("    val all: List<WeatherRegion> = listOf(")
     for region in cat.regions:
         rn = res_name(region["key"])
-        seat = f"R.string.weather_region_seat_{rn}" if region.get("seatNames") else "null"
         w(
             f"        WeatherRegion({kt_str(region['key'])}, WeatherCountry.{region['country']}, {region['order']}, "
-            f"R.string.weather_region_{rn}, {seat}, {kt_str(region['names']['ko'])}),"
+            f"R.string.weather_region_{rn}, {kt_str(region['names']['ko'])}),"
         )
     w("    )")
     w("")
@@ -547,14 +540,13 @@ def gen_ios(cat: Catalog) -> str:
     w("}")
     w("")
     w("/// 고를 수 있는 지역 하나. 저장·전송 값은 `key` 이고, 보이는 이름은 `displayName` 이다.")
-    w("/// `seatNames` 는 날씨를 재는 대표 도시(경기 → 수원)가 지역 이름과 다를 때만 있다.")
+    w("/// 대표 도시 이름(경기 → 수원)은 화면에 쓰지 않아 싣지 않는다 — 되짚기 별칭 표에는 글자로 들어 있다.")
     w("struct WeatherRegion: Hashable, Sendable, Identifiable {")
     w("    let key: String")
     w("    let country: WeatherCountry")
     w("    /// 나라 안에서의 목록 순서(1부터).")
     w("    let order: Int")
     w("    let names: WeatherRegionNames")
-    w("    let seatNames: WeatherRegionNames?")
     w("")
     w("    var id: String { key }")
     w("    /// 옛 앱이 읽는 `country` 칸에 쓰는 글자.")
@@ -565,20 +557,15 @@ def gen_ios(cat: Catalog) -> str:
     w("    func displayName(language: String = WeatherRegions.currentLanguage()) -> String {")
     w("        names.value(for: language)")
     w("    }")
-    w("")
-    w("    func seatDisplayName(language: String = WeatherRegions.currentLanguage()) -> String? {")
-    w("        seatNames?.value(for: language)")
-    w("    }")
     w("}")
     w("")
     w("enum WeatherRegions {")
     w("    /// 전체 목록 — 나라(KR·JP·US) 순, 나라 안에서는 `order` 순.")
     w("    static let all: [WeatherRegion] = [")
     for region in cat.regions:
-        seat = swift_names(region["seatNames"]) if region.get("seatNames") else "nil"
         w(
             f"        WeatherRegion(key: {swift_str(region['key'])}, country: .{region['country'].lower()}, "
-            f"order: {region['order']}, names: {swift_names(region['names'])}, seatNames: {seat}),"
+            f"order: {region['order']}, names: {swift_names(region['names'])}),"
         )
     w("    ]")
     w("")

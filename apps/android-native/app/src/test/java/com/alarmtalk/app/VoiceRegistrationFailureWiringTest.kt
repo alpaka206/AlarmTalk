@@ -90,7 +90,11 @@ class VoiceRegistrationFailureWiringTest {
             1,
             Regex("""onDiscardVoiceDraftQuietly\(""").findAll(panel).count(),
         )
-        assertTrue(panel.contains("onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } }"))
+        // `다시 만들기` 는 사용자가 누른 삭제 길 그대로다 — 지우기 전에 '다시 만들기로 지운다' 를 적을 뿐이다
+        // (`theRemakeGoesBackToTheSourceStepInsteadOfClosing`).
+        assertTrue(
+            Regex("""confirmNewVoice\?\.let \{\s*remakeDraftId = it\.id\s*onDeleteVoiceDraft\(it\.id\)\s*\}""").containsMatchIn(panel),
+        )
         assertTrue(functionBody(panel, "if (draftExitWarningOpen)").contains("exitDraftId?.let(onDeleteVoiceDraft)"))
 
         // 앱이 조용한 길을 뷰모델의 조용한 삭제에 잇고, 목록 화면이 패널에 그대로 넘긴다.
@@ -156,7 +160,9 @@ class VoiceRegistrationFailureWiringTest {
             1,
             guardedPurges,
         )
-        assertTrue(failure.contains("if (error is VoiceCreateAbortedException || sessionChanged())"))
+        // 계정이 바뀐 것만 본다 — 인라인 동의 기록 뒤에 끊던 내부 예외(`VoiceCreateAbortedException`)는 그 갈래와 함께
+        // 지웠다(2026-11-15, 동의는 업로드 전에 시트가 받는다).
+        assertTrue(failure.contains("if (sessionChanged()) {"))
     }
 
     // ── 등록 창 — 받아서 그 안에 그린다 ───────────────────────────────────
@@ -201,6 +207,31 @@ class VoiceRegistrationFailureWiringTest {
         val reset = effect.indexOf("promotedForPrerenderId = null")
         assertTrue("저장 실패에서 '저장을 보냈다' 표시를 내리지 않는다.", reset >= 0)
         assertTrue("갈래를 가르기 전에 내려야 한다 — 어느 갈래로 가든 저장은 끝났다.", reset < effect.indexOf("when ("))
+    }
+
+    @Test
+    fun theRemakeGoesBackToTheSourceStepInsteadOfClosing() {
+        // 스펙 voice-and-message §4-1: 확인 스텝에서 `다시 만들기` 를 고르면 처음부터 다시 녹음한다(iOS 는 새 등록 흐름을 띄운다 —
+        // `VoicesPanelView` 의 `onDiscarded`). 2026-11-22 전 안드로이드는 초안이 지워지면 창을 닫아, 다시 만들려면 목록에서
+        // `추가` 부터 다시 눌러야 했다.
+        val draftGone = functionBody(panel, "LaunchedEffect(pendingVoiceDraft?.id, pendingVoiceDraft?.status)")
+        assertTrue(draftGone.contains("val remakeRequested = remakeDraftId != null && remakeDraftId == confirmNewVoice?.id"))
+        assertTrue(
+            "`다시 만들기` 로 지운 초안이 창을 닫는다 — 음원 준비로 돌아가야 한다.",
+            draftGone.contains("if (remakeRequested) restartRegistrationFromSource() else closeCreateDialog()"),
+        )
+        // 다시 여는 것은 닫았다 연 것과 같다 — 폼을 비우고, 창은 열린 채로 뷰모델에 다시 알린다(안 알리면 그 뒤의 등록 거절이
+        // 열린 창 대신 스낵바로 간다 — `registrationFailureSurface`).
+        val restart = functionBody(panel, "fun restartRegistrationFromSource()")
+        val close = restart.indexOf("closeCreateDialog()")
+        val reopen = restart.indexOf("showCreateForm = true")
+        val notify = restart.indexOf("onRegistrationWindowOpenChange(true)")
+        assertTrue("다시 만들기가 폼을 비운 뒤 창을 다시 열고 알리지 않는다.", close >= 0 && reopen > close && notify > reopen)
+        // 표시는 남지 않는다 — 삭제가 실패하면(거절 효과, 갈래를 가르기 전에) 그리고 창을 닫으면 내린다. 남으면 나중에 다른 이유로
+        // 사라진 초안(나가기 경고·서버 정리)이 창을 닫는 대신 음원 준비로 돌아간다.
+        val effect = functionBody(panel, "LaunchedEffect(voiceRegistrationFailure)")
+        assertTrue(effect.indexOf("remakeDraftId = null") in 0 until effect.indexOf("when ("))
+        assertTrue(functionBody(panel, "fun closeCreateDialog()").contains("remakeDraftId = null"))
     }
 
     @Test
@@ -253,7 +284,7 @@ class VoiceRegistrationFailureWiringTest {
         )
         // ① 그리는 조건이 그 값이다 — 따로 쓴 조건이 남아 있으면 '그려지지 않았는데 열려 있다' 가 다시 생긴다.
         val drawn = functionBody(panel, "if (registrationWindowShown)")
-        assertTrue("등록 창(`Dialog`)을 그 값으로 그리지 않는다.", drawn.contains("TrackOpenModal()") && drawn.contains("Dialog("))
+        assertTrue("등록 창(`Dialog`)을 그 값으로 그리지 않는다.", drawn.contains("Dialog("))
         assertFalse(panel.contains("if (showCreateForm && (inDraftDecisionFlow"))
         // ② 뷰모델에 알리는 열림과 ③ 거절 라우터는 위 두 테스트가 본다(`theWindowTellsTheViewModelWhenItOpensAndCloses`,
         // `theWindowDrawsTheFailureInsideItselfAndEndsTheFlowOnTheMonthlyLimit`).
@@ -354,7 +385,11 @@ class VoiceRegistrationFailureWiringTest {
         // 그 줄은 음원 준비 단계의 녹음 카드(파일 경로는 파일 고르기) **바로 아래**다 — 다음에 누를 것이 녹음 버튼이다.
         // 본문의 음원 준비 단계 — 상단바·하단 행에도 같은 단계 이름이 있어 그 단계가 그리는 첫 컨트롤로 집는다.
         val sourceStart = Regex("""VoiceRegistrationStep\.Source -> \{\s*VoiceCaptureModeSelector\(""").find(panel)
-        val detailsStart = Regex("""VoiceRegistrationStep\.Details -> \{\s*OutlinedTextField\(""").find(panel)
+        // 세부 정보 단계는 칸 위 라벨부터 그린다(2026-11-15 — 첫 컨트롤이 이름 라벨). 그 사이에 `}` 가 없으니 상단바·하단 행의
+        // 같은 단계 이름은 걸리지 않는다.
+        val detailsStart = Regex(
+            """VoiceRegistrationStep\.Details -> \{[^}]*?VoiceFieldLabel\(stringResource\(R\.string\.voices_name_label\)\)""",
+        ).find(panel)
         assertTrue("본문의 음원 준비·세부 정보 단계를 못 찾았다.", sourceStart != null && detailsStart != null)
         val sourceStep = panel.substring(sourceStart!!.range.first, detailsStart!!.range.first)
         val recordCard = sourceStep.indexOf("VoiceRecordControls(")

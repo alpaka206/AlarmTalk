@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { personalPromoCoversFree } from '../lib/personal-promo';
 import { withWriteTransaction } from '../lib/transactions';
 import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
@@ -297,7 +296,6 @@ billingGoogle.post('/google/confirm', async (c) => {
         latestOrderId: subscription.latestOrderId ?? null,
         subscriptionState: subscription.subscriptionState,
       }),
-      promoCoversFree: personalPromoCoversFree(c.env),
     }),
   );
 

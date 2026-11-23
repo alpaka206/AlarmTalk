@@ -5,10 +5,8 @@ import { createMockDB } from './helpers';
 const mockDB = createMockDB();
 
 import {
-  getTokensForUser,
   sendPushNotifications,
-  sendAlarmPush,
-  sendPlanChangedPush,
+  sendVoiceShareChangedPush,
   pruneStaleTokens,
 } from '../src/lib/fcm';
 
@@ -36,40 +34,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('getTokensForUser', () => {
-  it('토큰이 없으면 빈 배열', async () => {
-    mockDB.pushResult([]);
-    const tokens = await getTokensForUser(mockDB.client as never, 'user-1');
-    expect(tokens).toEqual([]);
-    expect(mockDB.calls[0].sql).toContain('push_tokens');
-    expect(mockDB.calls[0].args).toContain('user-1');
-  });
-
-  it('여러 토큰 반환', async () => {
-    mockDB.pushResult([
-      { token: 'tok-a' },
-      { token: 'tok-b' },
-      { token: 'tok-c' },
-    ]);
-    const tokens = await getTokensForUser(mockDB.client as never, 'user-2');
-    expect(tokens).toEqual(['tok-a', 'tok-b', 'tok-c']);
-  });
-
-  it('토큰 1개 반환', async () => {
-    mockDB.pushResult([{ token: 'single-token' }]);
-    const tokens = await getTokensForUser(mockDB.client as never, 'user-3');
-    expect(tokens).toEqual(['single-token']);
-  });
-});
-
-describe('sendPlanChangedPush', () => {
-  it('대상 전원의 토큰을 한 번에 조회해 plan_changed data 메시지를 만든다(중복 사용자 제거)', async () => {
+// 무음 신호 발송(`sendSilentSignalPush`)의 묶음 조회·중복 제거 — 예전에는 `sendPlanChangedPush`(2026-11-23 삭제)로 쟀다.
+// 같은 발송부를 쓰는 `sendVoiceShareChangedPush` 로 잰다(신호 종류만 다르다).
+describe('sendVoiceShareChangedPush — 무음 신호 묶음 발송', () => {
+  it('대상 전원의 토큰을 한 번에 조회해 data 메시지를 만든다(중복 사용자 제거)', async () => {
     // ⚠ 사람마다 조회하지 않는다 — 조회 하나가 워커 subrequest 하나다(여러 사람을 한꺼번에 알리는 처리).
     mockDB.pushResult([
       { uid: 'user-1', gid: null, token: 'tok-a', platform: 'android' },
       { uid: 'user-2', gid: null, token: 'tok-b', platform: 'android' },
     ]);
-    await sendPlanChangedPush(mockDB.client as never, RSA_TEST_ENV, ['user-1', 'user-2', 'user-1']);
+    await sendVoiceShareChangedPush(mockDB.client as never, RSA_TEST_ENV, ['user-1', 'user-2', 'user-1']);
     const tokenQueries = mockDB.calls.filter((c) => c.sql.includes('push_tokens'));
     expect(tokenQueries).toHaveLength(1);
     // 중복을 뺀 두 사람이 PK·로그인 id 양쪽 자리에 한 번씩 들어간다.
@@ -81,7 +55,7 @@ describe('sendPlanChangedPush', () => {
     // 모두 걸린다. 두 번 넣으면 같은 기기에 두 통이 나간다(2026-09-20 검토에서 재현).
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockDB.pushResult([{ uid: 'email-u1', gid: 'email-u1', token: 'tok-email', platform: 'android' }]);
-    await sendPlanChangedPush(mockDB.client as never, unconfiguredEnv, ['email-u1']);
+    await sendVoiceShareChangedPush(mockDB.client as never, unconfiguredEnv, ['email-u1']);
     // 자격 미설정 경로는 보낼 메시지마다 경고 한 줄을 남긴다 — 한 줄이어야 한 통이다.
     const sends = warnSpy.mock.calls
       .map(([line]) => JSON.parse(String(line)) as { action?: string; token?: string })
@@ -91,7 +65,7 @@ describe('sendPlanChangedPush', () => {
 
   it('토큰이 하나도 없으면 전송하지 않는다(조기 반환)', async () => {
     mockDB.pushResult([]); // user-1 토큰 없음
-    await sendPlanChangedPush(mockDB.client as never, RSA_TEST_ENV, ['user-1']);
+    await sendVoiceShareChangedPush(mockDB.client as never, RSA_TEST_ENV, ['user-1']);
     // push_tokens 조회만 하고, 전송/정리 쿼리는 없다.
     expect(mockDB.calls.every((c) => c.sql.includes('push_tokens'))).toBe(true);
   });
@@ -207,124 +181,6 @@ describe('pruneStaleTokens', () => {
     const deletes = mockDB.calls.filter((c) => c.sql.includes('DELETE FROM push_tokens'));
     expect(deletes).toHaveLength(1);
     expect(deletes[0].args).toEqual(['stale']);
-  });
-});
-
-describe('sendAlarmPush', () => {
-  it('토큰 없으면 빈 결과', async () => {
-    mockDB.pushResult([]);
-    const results = await sendAlarmPush(
-      mockDB.client as never,
-      unconfiguredEnv,
-      'user-1',
-      'alarm-id',
-      '07:00',
-    );
-    expect(results).toEqual([]);
-  });
-
-  it('토큰 있으면 토큰별 결과 반환 (미설정 → success=false)', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockDB.pushResult([{ token: 'device-tok' }]);
-    const results = await sendAlarmPush(
-      mockDB.client as never,
-      unconfiguredEnv,
-      'user-1',
-      'alarm-123',
-      '07:30',
-    );
-    expect(results).toHaveLength(1);
-    expect(results[0].token).toBe('device-tok');
-    expect(results[0].success).toBe(false);
-  });
-
-  it('여러 디바이스 토큰에 모두 시도', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mockDB.pushResult([
-      { token: 'phone-tok' },
-      { token: 'tablet-tok' },
-    ]);
-    const results = await sendAlarmPush(
-      mockDB.client as never,
-      unconfiguredEnv,
-      'user-1',
-      'alarm-456',
-      '08:00',
-    );
-    expect(results).toHaveLength(2);
-    expect(results.map((r) => r.token)).toEqual(['phone-tok', 'tablet-tok']);
-  });
-
-  it('영어 로케일 시 영문 body 로 전송한다', async () => {
-    const fetchMock = vi.fn(async (url: string | URL | Request) => {
-      if (String(url).includes('oauth2.googleapis.com/token')) {
-        return new Response(JSON.stringify({ access_token: 'at', expires_in: 3600 }), {
-          status: 200,
-        });
-      }
-      return new Response('{}', { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(crypto.subtle, 'importKey').mockResolvedValue({} as CryptoKey);
-    vi.spyOn(crypto.subtle, 'sign').mockResolvedValue(new Uint8Array([1]).buffer);
-    mockDB.pushResult([{ token: 'en-tok' }]);
-
-    await sendAlarmPush(
-      mockDB.client as never,
-      RSA_TEST_ENV,
-      'user-en',
-      'alarm-en',
-      '09:00',
-      'en',
-    );
-    const fcmCall = fetchMock.mock.calls.find(([u]) => new URL(String(u)).hostname === 'fcm.googleapis.com');
-    const body = JSON.parse(String((fcmCall![1] as RequestInit).body));
-    expect(body.message.notification.body).toBe('Alarm at 09:00');
-  });
-
-  it('한국어 로케일 기본 body + data payload 구성', async () => {
-    const fetchMock = vi.fn(async (url: string | URL | Request) => {
-      if (String(url).includes('oauth2.googleapis.com/token')) {
-        return new Response(JSON.stringify({ access_token: 'at', expires_in: 3600 }), {
-          status: 200,
-        });
-      }
-      return new Response('{}', { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(crypto.subtle, 'importKey').mockResolvedValue({} as CryptoKey);
-    vi.spyOn(crypto.subtle, 'sign').mockResolvedValue(new Uint8Array([1]).buffer);
-    mockDB.pushResult([{ token: 'ko-tok' }]);
-
-    await sendAlarmPush(
-      mockDB.client as never,
-      RSA_TEST_ENV,
-      'user-ko',
-      'alarm-ko',
-      '06:30',
-    );
-    const fcmCall = fetchMock.mock.calls.find(([u]) => new URL(String(u)).hostname === 'fcm.googleapis.com');
-    const body = JSON.parse(String((fcmCall![1] as RequestInit).body));
-    expect(body.message.notification.body).toBe('06:30 알람이 울립니다');
-    expect(body.message.notification.title).toBe('AlarmTalk');
-    expect(body.message.data).toEqual({ type: 'alarm', alarmId: 'alarm-ko', channelId: 'alarms' });
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/*  Edge cases — getTokensForUser                                      */
-/* ------------------------------------------------------------------ */
-describe('getTokensForUser — edge cases', () => {
-  it('숫자 토큰 값을 String()으로 변환', async () => {
-    mockDB.pushResult([{ token: 12345 }]);
-    const tokens = await getTokensForUser(mockDB.client as never, 'user-x');
-    expect(tokens).toEqual(['12345']);
-  });
-
-  it('null 토큰 값을 String()으로 변환 → "null"', async () => {
-    mockDB.pushResult([{ token: null }]);
-    const tokens = await getTokensForUser(mockDB.client as never, 'user-x');
-    expect(tokens).toEqual(['null']);
   });
 });
 

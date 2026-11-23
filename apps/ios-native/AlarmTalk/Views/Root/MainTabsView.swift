@@ -132,8 +132,9 @@ struct MainTabsView: View {
                             currentTabContent
                         }
                         .padding(.horizontal, 20)
-                        .padding(.top, 20)
-                        .padding(.bottom, 24)
+                        // 위 24 · 아래 32 — 안드로이드 목소리·더보기 탭 목록의 여백과 같다(`AlarmListScreen` 의 `contentPadding`).
+                        .padding(.top, 24)
+                        .padding(.bottom, 32)
                     }
                     .background(theme.homeGradient)
                 }
@@ -149,7 +150,9 @@ struct MainTabsView: View {
             .overlay(alignment: .bottomTrailing) {
                 // 선택 모드에서는 숨긴다 — 삭제 바와 ＋가 함께 있으면 오른쪽 아래에서
                 // 손가락이 뭘 노리는지 애매해진다(안드로이드 `!alarmSelectionActive`).
-                if selectedTab == .alarms && !store.alarms.isEmpty && !alarmSelectionActive {
+                // ⚠ **이 계정 것만 센다**(`AlarmsListView.visibleAlarms` 와 같은 목록). `store.alarms` 를 그대로 보면 다른
+                //   계정의 알람만 남은 기기에서 목록은 빈 카드인데 ＋FAB 까지 함께 떠 같은 일을 하는 버튼이 둘이 된다.
+                if selectedTab == .alarms && !store.alarms(visibleTo: auth.session?.user.id).isEmpty && !alarmSelectionActive {
                     Button {
                         // ⚠ **여기서 편집기를 직접 열지 말 것.** 예전에는 이 버튼이
                         // `editorTarget` 을 곧바로 세워, 알람 목록의 `openCreateAlarm()`
@@ -176,9 +179,8 @@ struct MainTabsView: View {
             .task {
                 // 알림 권한은 **로그인·약관 동의·목소리 받기가 다 끝난 뒤** 여기서 처음 묻는다
                 // (2026-09-17 실기기: 로그인 직후 동의 화면보다 먼저 떴다). 이미 답했으면 no-op.
-                // ⚠ **끝났다고 알린다** — 이 요청이 끝나기 전에는 루트의 안내 알럿(개인 플랜
-                // 종료 안내)이 기다린다. 게이트가 풀리는 같은 순간 둘 다 판정되어 시스템
-                // 팝업과 우리 알럿이 함께 떴다(`SystemPermissionPrompts` 주석).
+                // ⚠ **끝났다고 알린다** — 루트의 안내 판정(`RootView.overlayKey`)이 이 신호로 다시 돈다
+                // (`SystemPermissionPrompts` 주석).
                 await SystemPermissionPrompts.shared.track {
                     await SocialNotificationTracker.requestAuthorizationIfNeeded()
                 }
@@ -186,14 +188,16 @@ struct MainTabsView: View {
             }
             .alert(String(localized: "목소리를 아직 받는 중이에요"), isPresented: $voicesNotReadyAlert) {
                 // 받기는 막는 순간 이미 다시 걸었다 — 누를 버튼을 따로 두지 않는다.
-                Button(String(localized: "확인"), role: .cancel) {}
+                // 주행동 = 기본 액션(파란 채움) — 안드로이드 `AlarmTalkApp` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+                Button(String(localized: "확인")) {}
+                    .keyboardShortcut(.defaultAction)
             } message: {
                 Text(voicesNotReadyMessage)
             }
             .task {
                 // DEBUG 전용 — 편집기 화면 확인 진입점.
                 if UIPreviewSeed.opensEditor, editorTarget == nil {
-                    editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil)
+                    editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: UIPreviewSeed.editorAlarmID)
                 }
             }
             .background(theme.homeGradient)

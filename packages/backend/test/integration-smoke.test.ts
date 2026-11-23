@@ -167,12 +167,12 @@ describe('CORS', () => {
     const r = new Request('http://localhost/', {
       method: 'OPTIONS',
       headers: {
-        Origin: 'http://localhost:8081',
+        Origin: 'http://localhost:3100',
         'Access-Control-Request-Method': 'GET',
       },
     });
     const res = await worker.fetch(r, ENV, {} as ExecutionContext);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:8081');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3100');
   });
 });
 

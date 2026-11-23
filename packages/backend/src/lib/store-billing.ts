@@ -79,12 +79,6 @@ export interface StoreEntitlementInput {
    * 앞 주인이 옛 영수증으로 도로 가져간다.
    */
   purchaserVerified?: boolean;
-  /**
-   * **기간 한정 개인 플랜이 지금 원시 free 를 덮는가** — 호출부가 `personalPromoCoversFree(env,
-   * appliedAt)` 로 푼 값. 이 결제로 무료가 되는 사람(체인을 넘겨준 앞 주인)의 보관 판정에 쓴다.
-   * ⚠ 필수다 — 빠뜨려 원시로 판정되면 기간 중에 거짓 삭제 예고가 나간다.
-   */
-  promoCoversFree: boolean;
 }
 
 export type StoreEntitlementResult =
@@ -219,14 +213,14 @@ export async function applyStoreEntitlement(
         });
         // 즉시 해지와 같은 규칙 — 무료가 됐으면 목소리 보관 기한을 건다. 남은 유료 권한이
         // 있으면 기한을 지운다(`syncPaidVoiceRetention`).
-        await syncPaidVoiceRetention(tx, previousOwner, appliedAt, input.promoCoversFree);
+        await syncPaidVoiceRetention(tx, previousOwner, appliedAt);
       } else {
         // ⚠ 여기서는 보관 기한을 다시 걸지 않는다 — 만료 크론이 이미 걸었고, 다시 부르면
         //   기한이 오늘부터로 **연장**된다(스펙: 재조회로 유예를 연장하지 않는다).
         // 이미 끝난 행(만료 크론이 먼저 지나갔다)이다 — 등급만 남은 구독에서 다시 계산한다.
         const previousPlanType = await resolvePlanAfterSuspend(tx, previousOwner, []);
         await tx.execute({
-          sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+          sql: `UPDATE users SET plan = ? WHERE id = ?`,
           args: [previousPlanType ? planTypeToUserPlan(previousPlanType) : 'free', previousOwner],
         });
       }
@@ -326,7 +320,7 @@ export async function applyStoreEntitlement(
   });
 
   await tx.execute({
-    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+    sql: `UPDATE users SET plan = ? WHERE id = ?`,
     args: [planTypeToUserPlan(input.plan.plan_type), input.userPk],
   });
 

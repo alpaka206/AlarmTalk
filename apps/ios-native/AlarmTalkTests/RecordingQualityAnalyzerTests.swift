@@ -218,7 +218,7 @@ final class RecordingReviewTests: XCTestCase {
         }
     }
 
-    func test_alertMessageSaysWhatWasMeasured() throws {
+    func test_alertMessageSaysOnlyWhyAndTheAdvice() throws {
         let message = try XCTUnwrap(
             RecordingReview.ask(advisories: [.quiet], recovered: false, interrupted: true, metrics: metrics).alertMessage
         )
@@ -227,8 +227,6 @@ final class RecordingReviewTests: XCTestCase {
             [
                 "전화나 다른 앱 때문에 녹음이 멈췄어요. 멈춘 곳까지 남겨 두었어요.",
                 "목소리가 작게 녹음됐어요.",
-                "말소리로 들린 시간 약 8초 · 전체 20초",
-                "그대로 써도 돼요. 다시 녹음하면 목소리가 더 또렷하게 만들어질 수 있어요.",
             ]
         )
         XCTAssertFalse(message.contains("VAD"))

@@ -223,9 +223,9 @@ class AccountPromptSettingsAdoptionTest {
             dynamicPromptSettings = regionSettings("kr-seoul"),
         )
         val first = com.alarmtalk.app.network.AuthSession(
-            token = "t1", provider = "email", user = user, userFetchedAtMillis = 1_000L, accountAnswerSeq = 1L,
+            token = "t1", provider = "email", user = user, accountAnswerSeq = 1L,
         )
-        // 다음 진입의 `/auth/me` — 값도 받은 시각도 같고(같은 초의 서버 계산 시각) 순번만 다르다.
+        // 다음 진입의 `/auth/me` — 값은 같고 순번만 다르다.
         val next = first.copy(token = "t2", accountAnswerSeq = 2L)
         assertEquals(accountSettingsReceipt(first), accountSettingsReceipt(first.copy()))
         assertNotEquals(accountSettingsReceipt(first), accountSettingsReceipt(next))
@@ -234,44 +234,36 @@ class AccountPromptSettingsAdoptionTest {
     }
 
     /**
-     * **개인 프로모 계정도 응답마다 새 사건이다**(Codex #837 11차). 저장소는 받은 시각을 서버의
-     * `personal_promo.computed_at`(초 단위)으로 바꿔 적어서, 같은 초에 계산된 `/auth/me` 두 번은 받은 시각이
-     * 같다. 그 시각을 축으로 쓰면 두 번째 응답이 받아 적기를 다시 돌리지 않아 — 첫 업로드가 실패했을 때 —
-     * 밀린 변경이 재시도되지 않는다. 축은 저장소가 저장마다 올리는 순번이다.
+     * **내용이 똑같은 응답 두 번도 다른 사건이다**(Codex #837 11차). 값으로 가르면 두 번째 응답이 받아 적기를 다시 돌리지
+     * 않아 — 첫 업로드가 실패했을 때 — 밀린 변경이 재시도되지 않는다. 축은 저장소가 저장마다 올리는 순번이다.
      */
     @Test
-    fun 같은_초에_계산된_프로모_응답_두_번도_다른_사건이다() {
+    fun 내용이_같은_응답_두_번도_다른_사건이다() {
         val prefsName = "account-answer-seq-test"
         val sessionStore = com.alarmtalk.app.network.AuthSessionStore(
             context.getSharedPreferences(prefsName, Context.MODE_PRIVATE),
         )
         try {
-            val promo = com.alarmtalk.app.network.PersonalPromo(
-                endsAt = "2026-10-31T15:00:00Z",
-                computedAt = "2026-10-01T00:00:00Z",
-            )
             val user = com.alarmtalk.app.network.AuthUser(
                 id = "user-a",
                 email = "a@example.test",
                 plan = "plus",
                 dynamicPromptSettings = regionSettings("kr-seoul"),
-                personalPromo = promo,
             )
             val login = sessionStore.saveAppSession(com.alarmtalk.app.network.AuthTokenResponse(token = "t1", user = user))
-            fun me(receivedAt: Long) = checkNotNull(
+            fun me() = checkNotNull(
                 sessionStore.saveSessionIfAlive(
                     expectedGeneration = sessionStore.sessionGeneration(),
                     user = user,
                     provider = login.provider,
                     rolledToken = null,
-                    userFetchedAtMillis = receivedAt,
                 ),
             )
-            val first = me(receivedAt = 5_000L)
-            val second = me(receivedAt = 5_400L)
+            val first = me()
+            val second = me()
 
-            // 받은 시각은 서버 계산 시각으로 같아졌다 — 그래서 그것만으로는 못 가른다.
-            assertEquals(first.userFetchedAtMillis, second.userFetchedAtMillis)
+            // 내용은 똑같다 — 그래서 값만으로는 못 가른다.
+            assertEquals(first.user, second.user)
             assertNotEquals(accountSettingsReceipt(first), accountSettingsReceipt(second))
             assertTrue(second.accountAnswerSeq > first.accountAnswerSeq)
             // 저장본을 다시 읽어도 같은 사건이다(관찰 경로가 메모리 사본과 갈라지지 않는다).

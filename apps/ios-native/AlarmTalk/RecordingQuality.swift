@@ -293,9 +293,11 @@ enum RecordingReview: Equatable, Sendable {
         }
     }
 
-    /// 알럿 본문 — 멈춘 사정, 안내, 잰 수치, 맺음말 순이다. 한 줄에 하나씩. `.ask` 가 아니면 nil.
+    /// 알럿 본문 — 멈춘 사정(있으면)과 안내 줄만, 한 줄에 하나씩. `.ask` 가 아니면 nil.
+    /// ⚠ 잰 수치('말소리로 들린 시간…')와 맺음말('그대로 써도 돼요…')을 되살리지 말 것(2026-11-22 오너 — 안내 줄만 알린다).
+    /// 안드로이드 `recordingReviewMessage` 와 같다.
     var alertMessage: String? {
-        guard case .ask(let advisories, let recovered, let interrupted, let metrics) = self else { return nil }
+        guard case .ask(let advisories, let recovered, let interrupted, _) = self else { return nil }
         var lines: [String] = []
         if recovered {
             lines.append(String(localized: "녹음이 제대로 끝나지 않았어요. 들어 보고 쓸지 정해 주세요."))
@@ -303,12 +305,6 @@ enum RecordingReview: Equatable, Sendable {
             lines.append(String(localized: "전화나 다른 앱 때문에 녹음이 멈췄어요. 멈춘 곳까지 남겨 두었어요."))
         }
         lines.append(contentsOf: advisories.map(\.message))
-        let speechSeconds = metrics.speechMillis / 1000
-        let totalSeconds = metrics.durationMillis / 1000
-        lines.append(String(localized: "말소리로 들린 시간 약 \(Int(speechSeconds))초 · 전체 \(Int(totalSeconds))초"))
-        if !advisories.isEmpty {
-            lines.append(String(localized: "그대로 써도 돼요. 다시 녹음하면 목소리가 더 또렷하게 만들어질 수 있어요."))
-        }
         return lines.joined(separator: "\n")
     }
 }

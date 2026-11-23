@@ -44,10 +44,13 @@ struct VoiceProfileManagementPanel: View {
 
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
-    @State private var registrationConsentOpen = false
 
-    /// 내 목소리 행의 ⋮ 가 여는 액션 시트 대상.
+    /// 내 목소리 행의 ⋮ 가 여는 관리 시트 대상.
     @State private var actionSheetTarget: VoiceProfile?
+
+    /// 지우는 중인 내 목소리 — 그 행을 '삭제 중' 진행 행으로 그린다(안드로이드는 같은 자리에서 그 행의 `status` 를
+    /// `deleting` 으로 바꿔 둔다 — `MainViewModelVoiceActions.deleteVoiceProfile`).
+    @State private var deletingProfileID: String?
 
     /// 사전렌더(알람 음성 준비) 상태 — 목소리 id → 상태. 5초 폴링으로 채운다.
     @State private var prerenderStatuses: [String: VoicePrerenderStatus] = [:]
@@ -110,15 +113,10 @@ struct VoiceProfileManagementPanel: View {
         // ⚠ **'목소리 슬롯' 진행바 카드도 두지 않는다.** 안드로이드에 없는 컨트롤이다 —
         // 남은 개수는 '내 목소리' 섹션 헤더의 '생성 가능 n/m회'가 말하고, 슬롯이 가득 차면
         // 추가 버튼을 누를 때 안내 모달이 뜬다. 진행바는 상시로 자리만 차지했다.
-        VStack(alignment: .leading, spacing: 16) {
-            // 이 탭에서 한 일(이름 변경·삭제·다시 시도·미리듣기)이 안 됐다는 이유 — 빨간 글자다(2026-10-29 오너: 실패는
-            // 알림이 아니라 그 자리 빨간 글자). 안내가 아니라 실패만 오도록, 탭에 들어올 때 다른 화면이 남긴 문장은 지운다(아래 `onAppear`).
-            if let message = voice.statusMessage {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.error)
-                    .padding(.horizontal, 4)
-            }
+        // 섹션 사이 12 — 안드로이드 목소리 탭은 머리·목록·다음 머리를 한 `Column(spacedBy(12))` 에 둔다.
+        VStack(alignment: .leading, spacing: 12) {
+            // 이 탭에서 한 일의 안내·실패 줄은 '내 목소리' 머리 바로 아래다(`ownProfilesSection` 의 `message` — 안드로이드
+            // `localMessage` 와 같은 자리).
 
             // ⚠ **전용 '목소리 없음' 빈 화면을 두지 않는다.** 안드로이드는 기본 목소리
             // 섹션이 **항상** 나오므로 이 화면이 비는 일이 없다 — 빈 화면을 그리면
@@ -128,16 +126,14 @@ struct VoiceProfileManagementPanel: View {
                 // 기본 제공 목소리는 맨 아래 — 내 목소리가 먼저다.
                 systemVoicesSection
             }
-            // 추가 음성팩 — 기본 목소리 **아래**(`docs/spec/voice-packs.md` §7). 받기는 고른 팩만이다.
-            // 지금은 숨긴다(`VoicePacks.isVisible`).
-            if VoicePacks.isVisible {
-                VoicePackSection()
-            }
         }
         // ⚠ **다른 화면이 남긴 문장을 이 탭에 띄우지 않는다**(2026-10-29 두 앱 비교). `statusMessage` 는 편집기도 쓴다 —
         //   직접 입력 알람을 저장하고 이 탭에 오면 "새 음성을 생성하고 로컬에 저장했어요." 가 맨 위에 남아 있었다. 안드로이드는
         //   동작마다 한 번 띄우고 사라진다.
-        .onAppear { voice.statusMessage = nil }
+        .onAppear {
+            voice.statusMessage = nil
+            voice.greetingPreviewNotice = nil
+        }
         // ⚠ **자격을 잃으면 열려 있던 액션도 닫는다**(2026-09-01 리뷰). 목록에서 걷어내는
         // 것만으로는 부족하다 — 이미 떠 있는 액션시트·이름변경·**삭제 확인**은 그대로
         // 살아 있어, 유예 동안 숨겨야 할 목소리를 그 창에서 영구 삭제할 수 있다.
@@ -159,36 +155,25 @@ struct VoiceProfileManagementPanel: View {
         // 결제) **유료 사용자가 '추가' 를 눌렀는데 이용권 안내 모달이 떴다.** 이용권 화면에 한 번 다녀와야 풀렸다 — 목소리를 만들려는 사람이 그 화면에
         // 들를 이유가 없으니 영영 막힌 것처럼 보인다. 규칙은 `docs/spec/plan-gates.md` §4.
 
-        // 내 목소리 행의 ⋮ — 안드로이드는 관리 시트(이름 수정·삭제)를 연다.
-        .confirmationDialog(
-            actionSheetTarget?.name ?? "",
+        // 내 목소리 행의 ⋮ — 안드로이드와 같은 **바텀시트**(제목 = 목소리 이름, 취소 행 없음 — 바깥 탭·끌어내리기가 닫기다).
+        // 안드로이드 `ui/voices/VoiceProfileRowComponents.kt` 의 `VoiceProfileMenuSheet`. 예전에는 시스템 액션시트였다.
+        .bottomSheet(
             isPresented: Binding(get: { actionSheetTarget != nil }, set: { if !$0 { actionSheetTarget = nil } }),
-            titleVisibility: .visible
+            onDismiss: { actionSheetTarget = nil }
         ) {
-            // ⚠ 예전의 '이 목소리 사용' 은 무엇을 바꾸는지 알 수 없었다(선택만 바꾸고 화면은 그대로 — 2026-10-26 v1.3 지시로
-            //   지웠다). 이제 그 목소리를 고른 **새 알람**을 만든다. 기존 알람·전역 기본값은 건드리지 않는다.
-            if onCreateAlarmWithVoice != nil {
-                Button(String(localized: "이 목소리로 새 알람 만들기")) {
-                    if let profile = actionSheetTarget { onCreateAlarmWithVoice?(profile.id) }
-                    actionSheetTarget = nil
-                }
+            SelectionSheet(
+                title: actionSheetTarget?.name ?? "",
+                items: rowMenuActions,
+                selectedID: nil,
+                onSelect: { action in runRowMenuAction(action) }
+            ) { action in
+                Text(action.title)
+                    .font(theme.typography.bodyLarge)
+                    .fontWeight(.semibold)
+                    // 파괴적 항목은 색으로만 구분한다(안드로이드 `WakerSheetOptionRow` 의 `destructive`).
+                    .foregroundStyle(action == .delete ? theme.palette.error : theme.palette.onSurface)
+                    .lineLimit(1)
             }
-            Button(String(localized: "이름 수정")) {
-                if let profile = actionSheetTarget {
-                    editName = profile.name
-                    actionSheetTarget = nil
-                    // 다음 런루프에 알럿을 띄운다 — 액션시트가 닫히는 프레임에 겹치면
-                    // 둘 다 안 뜨는 상태로 끝난다.
-                    DispatchQueue.main.async { editTarget = profile }
-                }
-            }
-            Button(String(localized: "삭제"), role: .destructive) {
-                if let profile = actionSheetTarget {
-                    actionSheetTarget = nil
-                    DispatchQueue.main.async { deleteTarget = profile }
-                }
-            }
-            Button(String(localized: "취소"), role: .cancel) { actionSheetTarget = nil }
         }
         // 사전렌더 진행 폴링 — 준비 중인 목소리가 하나라도 있는 동안만 돈다.
         .task(id: ownVoices.map(\.id).joined(separator: ",")) {
@@ -228,6 +213,7 @@ struct VoiceProfileManagementPanel: View {
             // 알럿을 먼저 닫고 그다음 guard 로 return 했다 — 저장을 눌러도 알럿만
             // 닫히고 아무 일도 일어나지 않아, 사용자는 저장된 줄 안다.
             // 이제 빈 값이면 **버튼 자체가 비활성**이라 그 상태가 만들어지지 않는다.
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `ui/voices/VoiceProfileManagementComponents.kt` 의 `emphasized = true` 짝(스펙 alarm-editor §4).
             Button(String(localized: "저장")) {
                 guard let profile = editTarget else { return }
                 let newName = InputSanitizer.clampVoiceName(
@@ -237,13 +223,16 @@ struct VoiceProfileManagementPanel: View {
                 guard !newName.isEmpty, newName != profile.name else { return }
                 Task { await voice.renameProfile(profile, newName: newName, session: auth.session) }
             }
+            .keyboardShortcut(.defaultAction)
             .disabled(
                 InputSanitizer.sanitizeDisplayName(editName)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .isEmpty
             )
         } message: {
-            Text(String(localized: "알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없고 \(InputSanitizer.voiceNameMaxLength)자까지 쓸 수 있어요."))
+            // 첫 문장은 안드로이드 `voices_edit_name_desc` 와 같은 말이다. 둘째 문장은 시스템 알럿이라 칸 아래에 경고를 띄울 수
+            // 없어서 남긴다(안드로이드는 칸 아래에 '꼭 입력해 주세요'·상한 경고를 띄운다).
+            Text(String(localized: "알람 목록과 목소리 선택에서 보일 이름이에요. 이름은 비울 수 없고 \(InputSanitizer.voiceNameMaxLength)자까지 쓸 수 있어요."))
         }
         // ⚠ **확인형 모달은 시스템 `.alert` 다**(CLAUDE.md 「iOS 는 안드로이드를 원본으로
         // 삼는다」의 플랫폼 표준 갈래). 예전에는 커스텀 시트였고, 거기에 안드로이드에
@@ -265,6 +254,8 @@ struct VoiceProfileManagementPanel: View {
                 // 무료 화면이 숨기려던 보관 중 목소리를 그 창에서 지워 버린다.
                 guard paidVoiceEntitledNow else { return }
                 Task {
+                    deletingProfileID = target.id
+                    defer { deletingProfileID = nil }
                     let didDelete = await voice.deleteProfile(
                         target,
                         session: auth.session,
@@ -279,7 +270,8 @@ struct VoiceProfileManagementPanel: View {
                     }
                 }
             }
-            Button(String(localized: "취소"), role: .cancel) { deleteTarget = nil }
+            // 안드로이드와 같은 말: '목소리 삭제'(`ui/voices/VoiceProfileManagementComponents.kt`) 는 닫기, '정말 삭제할까요?'(`VoiceProfileManagementPanel`) 는 취소.
+            Button(monthlyExhausted ? String(localized: "취소") : String(localized: "닫기"), role: .cancel) { deleteTarget = nil }
         } message: { profile in
             if monthlyExhausted {
                 Text(String(localized: "이 목소리로 만든 알람은 기본 목소리로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요."))
@@ -293,7 +285,9 @@ struct VoiceProfileManagementPanel: View {
         // 이 알럿 하나이고 액션은 닫기 하나다(여는 자리는 `VoicesPanelView`). 제목·본문은 두 앱이
         // 같은 말을 쓰기로 한 문구다(스펙 voice-and-message §4-1 「월 등록 한도」 ③) — 한쪽만 고치지 말 것.
         .alert(String(localized: "이번 달 목소리는 다 만들었어요"), isPresented: $monthlyLimitNoticeOpen) {
-            Button(String(localized: "닫기"), role: .cancel) {}
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `VoiceProfileManagementPanel` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+            Button(String(localized: "닫기")) {}
+                .keyboardShortcut(.defaultAction)
         } message: {
             Text(String(localized: "목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요."))
         }
@@ -304,23 +298,6 @@ struct VoiceProfileManagementPanel: View {
         // 넣었지만 코드를 쳐서 유료 기능을 여는 길 자체가 반려 사유였다 — 두 앱 모두에서 뺐다. 할인·무료
         // 이용은 스토어 오퍼 코드로 준다.
         // 제목은 안드로이드(`voices_create_paid_title`)에 맞춘다.
-        .alert(String(localized: "목소리를 등록하기 전에"), isPresented: $registrationConsentOpen) {
-            Button(String(localized: "취소"), role: .cancel) {}
-            Button(String(localized: "동의하기")) {
-                // 모달을 읽는 동안 권한·월 한도가 바뀌었으면 현재 상태로 다시 판정한다.
-                if !paidVoiceEntitledNow {
-                    planGateOpen = true
-                } else if monthlyExhausted {
-                    monthlyLimitNoticeOpen = true
-                } else {
-                    route = .clone
-                }
-            }
-            .disabled(voice.isBusy)
-            .keyboardShortcut(.defaultAction)
-        } message: {
-            Text(String(localized: "본인 목소리이거나, 목소리 주인이 음성 복제와 알람 사용에 명시적으로 동의한 목소리만 등록해 주세요. 목소리 주인의 동의를 확인했으며, 무단 등록·권리 침해·사칭으로 생기는 책임은 등록한 사람에게 있음을 확인합니다."))
-        }
         .alert(String(localized: "내 목소리 만들기는 유료 기능이에요"), isPresented: $planGateOpen) {
             Button(String(localized: "닫기"), role: .cancel) {}
             Button(PaidGateCopy.viewPlans) { onRequestBilling?() }
@@ -363,34 +340,72 @@ struct VoiceProfileManagementPanel: View {
         VoiceSectionCard(
             title: String(localized: "voice.section.own", defaultValue: "내 목소리"),
             trailing: AnyView(addVoiceHeaderTrailing),
+            message: voiceTabMessage,
             hasContent: !visibleOwnVoices.isEmpty
         ) {
             ForEach(Array(visibleOwnVoices.enumerated()), id: \.element.id) { index, profile in
                 if index > 0 {
                     Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
                 }
-                VoiceCatalogRow(
-                    name: profile.displayName,
-                    subtitle: ownSubtitle(profile),
-                    isPlaying: voice.previewingGreetingVoiceId == profile.id,
-                    onPreview: {
-                        Task { await voice.previewGreeting(voiceId: profile.id, session: auth.session) }
-                    },
-                    // 생성 중인 행은 손대지 못하게 한다 — 그 사이 이름을 바꾸거나 지우면
-                    // 서버 상태와 어긋난 요청이 나간다.
-                    enabled: normalizedStatus(profile.status) != "processing" && !voice.isBusy,
-                    onOpenActions: { actionSheetTarget = profile },
-                    below: {
-                        if let status = prerenderStatuses[profile.id] {
-                            VoicePrerenderStatusRow(
-                                status: status,
-                                // 생성이 끝난 뒤의 몫 — 받는 중에도 진행률이 이어진다.
-                                downloadProgress: downloadProgress[profile.id]
-                            )
+                if let progressText = progressText(for: profile) {
+                    // 만드는 중·지우는 중에는 손대지 못하게 한다 — 그 사이 이름을 바꾸거나 지우면 서버 상태와 어긋난 요청이
+                    // 나간다. ⋮·듣기를 그리지 않고 진행 알약만 둔다(안드로이드 `VoiceProfileRow`).
+                    VoiceProgressRow(name: profile.displayName, progressText: progressText)
+                } else {
+                    VoiceCatalogRow(
+                        name: profile.displayName,
+                        isPlaying: voice.previewingGreetingVoiceId == profile.id,
+                        onPreview: {
+                            Task { await voice.previewGreeting(voiceId: profile.id, session: auth.session) }
+                        },
+                        enabled: !voice.isBusy,
+                        onOpenActions: { actionSheetTarget = profile },
+                        below: {
+                            if let status = prerenderStatuses[profile.id] {
+                                VoicePrerenderStatusRow(
+                                    status: status,
+                                    // 생성이 끝난 뒤의 몫 — 받는 중에도 진행률이 이어진다.
+                                    downloadProgress: downloadProgress[profile.id]
+                                )
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
+        }
+    }
+
+    /// '내 목소리' 머리 아래 한 줄 — 실패(이름 변경·삭제·다시 시도·미리듣기 재생)는 빨간 글자, 미리듣기 준비 안내는 흐린
+    /// 글자다. 안드로이드는 같은 자리에 `localMessage` 를 둔다(`ui/voices/VoiceProfileManagementPanel.kt`).
+    private var voiceTabMessage: VoiceSectionMessage? {
+        if let error = voice.statusMessage.nilIfBlank {
+            return VoiceSectionMessage(text: error, isError: true)
+        }
+        if let notice = voice.greetingPreviewNotice.nilIfBlank {
+            return VoiceSectionMessage(text: notice, isError: false)
+        }
+        return nil
+    }
+
+    /// ⋮ 관리 시트의 항목 — '이 목소리로 새 알람 만들기'(있을 때만) · '이름 수정' · '삭제'.
+    private var rowMenuActions: [VoiceRowMenuAction] {
+        (onCreateAlarmWithVoice != nil ? [.createAlarm] : []) + [.rename, .delete]
+    }
+
+    private func runRowMenuAction(_ action: VoiceRowMenuAction) {
+        guard let profile = actionSheetTarget else { return }
+        actionSheetTarget = nil
+        switch action {
+        case .createAlarm:
+            // ⚠ 예전의 '이 목소리 사용' 은 무엇을 바꾸는지 알 수 없었다(선택만 바꾸고 화면은 그대로 — 2026-10-26 v1.3 지시로
+            //   지웠다). 이제 그 목소리를 고른 **새 알람**을 만든다. 기존 알람·전역 기본값은 건드리지 않는다.
+            onCreateAlarmWithVoice?(profile.id)
+        case .rename:
+            editName = profile.name
+            // 다음 런루프에 알럿을 띄운다 — 시트가 내려가는 프레임에 겹치면 둘 다 안 뜨는 상태로 끝난다.
+            DispatchQueue.main.async { editTarget = profile }
+        case .delete:
+            DispatchQueue.main.async { deleteTarget = profile }
         }
     }
 
@@ -431,7 +446,11 @@ struct VoiceProfileManagementPanel: View {
                     //
                     // 막는 기준은 **월 등록 한도 하나**다 — 그건 교체해도 풀리지 않으므로
                     // 녹음을 다 시킨 뒤 거절하지 않도록 입구에서 알린다.
-                    registrationConsentOpen = true
+                    //
+                    // ⚠ **입구에서 권리 확인 모달을 띄우지 않는다**(2026-11-15 오너: "등록할때마다 확인받아야한다는건 없잖아").
+                    // 권리 확인은 '등록' 을 누를 때 빠진 동의와 함께 시트 하나로, 계정마다 한 번만 받는다
+                    // (`VoiceCloneUploadFlow.submit` → `VoiceConsentSheet`).
+                    route = .clone
                 }
             } label: {
                 // ⚠ **여백은 라벨에 준다 — 바깥 `.frame` 은 캡슐을 못 키운다.**
@@ -441,15 +460,10 @@ struct VoiceProfileManagementPanel: View {
                 // (2026-08-11 스크린샷 픽셀로 실측 — 눈으로 작아 보인 게 맞았다).
                 // 안드로이드 M3 `Button` 기본 높이 40dp 에 맞춘다.
                 Text(String(localized: "추가"))
-                    .padding(.vertical, 5)
-                    // 좌우도 라벨에 준다 — 세로와 같은 이유다(캡슐은 **라벨 크기**에 맞춰
-                    // 그려지므로 버튼 바깥 여백으로는 안 넓어진다). 2026-08-11 지적
-                    // "좌우 여백이 너무 없다" — 실측 폭 48pt 였다.
-                    .padding(.horizontal, 8)
             }
-            .font(theme.typography.bodyMedium.weight(.semibold))
-            .buttonStyle(.borderedProminent)
-            .tint(theme.palette.primary)
+            // 안드로이드 M3 `Button` + `wakerButtonColors()` 와 같은 알약 — 하늘색 바탕에 **남색 글자**(onPrimary), 높이 40, 좌우 24,
+            // labelLarge. 잠기면 surfaceVariant/onSurfaceVariant(2026-11-22 — 그전에는 시스템 `.borderedProminent` 라 글자가 흰색이었다).
+            .buttonStyle(VoiceAddButtonStyle())
             // ⚠ `.controlSize(.small)` 을 쓰지 말 것 — 높이가 28pt 안팎으로 떨어져
             // **최소 터치 타깃(44pt)을 밑돈다.** 섹션 헤더에 있다고 작게 만들 이유가
             // 없다. 이 버튼이 목소리를 만드는 **유일한 진입점**이다.
@@ -473,14 +487,13 @@ struct VoiceProfileManagementPanel: View {
         }
     }
 
-    /// 행 둘째 줄 — 만드는 중·실패면 그 상태를, 아니면 없음.
+    /// 진행 알약 글자 — 지우는 중이면 '삭제 중', 만드는 중이면 '생성 중', 아니면 nil(보통 행). ⚠ **실패는 보통 행이다** —
+    /// '만들지 못했어요' 를 따로 그리지 않는다(안드로이드 `VoiceProfileRow` 도 `processing`·`deleting` 만 가른다).
     /// 관계(`relationshipLabel`)는 목록에 보이지 않는다(`LocalizedDisplay.swift` 주석).
-    private func ownSubtitle(_ profile: VoiceProfile) -> String? {
-        switch normalizedStatus(profile.status) {
-        case "processing": return String(localized: "만드는 중")
-        case "failed": return String(localized: "만들지 못했어요")
-        default: return nil
-        }
+    private func progressText(for profile: VoiceProfile) -> String? {
+        if deletingProfileID == profile.id { return String(localized: "삭제 중") }
+        if normalizedStatus(profile.status) == "processing" { return String(localized: "만드는 중") }
+        return nil
     }
 
     // MARK: - 기본(시스템) 목소리
@@ -605,5 +618,39 @@ struct VoiceProfileManagementPanel: View {
     /// `.alert` 는 `item:` 형태가 없어 Bool 바인딩으로 감싼다.
     private var renameAlertBinding: Binding<Bool> {
         Binding(get: { editTarget != nil }, set: { if !$0 { editTarget = nil } })
+    }
+}
+
+/// 내 목소리 ⋮ 관리 시트의 항목(`VoiceProfileManagementPanel.rowMenuActions`).
+enum VoiceRowMenuAction: String, Identifiable {
+    case createAlarm
+    case rename
+    case delete
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .createAlarm: return String(localized: "이 목소리로 새 알람 만들기")
+        case .rename: return String(localized: "이름 수정")
+        case .delete: return String(localized: "삭제")
+        }
+    }
+}
+
+/// 목소리 탭 '추가' 알약 — 안드로이드 `VoiceProfileManagementPanel` 의 M3 `Button`(`wakerButtonColors()`)과 같은 값.
+private struct VoiceAddButtonStyle: ButtonStyle {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(theme.typography.labelLarge)
+            .foregroundStyle(isEnabled ? theme.palette.onPrimary : theme.palette.onSurfaceVariant)
+            .padding(.horizontal, 24)
+            .frame(height: 40)
+            .background(Capsule().fill(isEnabled ? theme.palette.primary : theme.palette.surfaceVariant))
+            .contentShape(Capsule())
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
     }
 }

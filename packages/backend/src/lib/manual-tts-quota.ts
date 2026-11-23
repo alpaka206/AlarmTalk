@@ -56,19 +56,7 @@ export async function resolveManualTtsPool(
   ownerIds: string[],
   fallbackPoolKey: string,
   fallbackUserPlan: string | null | undefined,
-  options: {
-    /**
-     * 유료 접근이 **기간 한정 개인 플랜에서만** 온다(원시 plan 은 free 인데 계산값이 개인 플랜).
-     * 그러면 아래 구독 행은 **보류(ON_HOLD·PAUSED)로 남은 행뿐**이다 — 보류는 행을 살려 두고
-     * `users.plan` 만 회수한다(Codex #803). 계산값(개인 플랜 30회·개인 풀)으로 곧장 간다.
-     */
-    promoOnly?: boolean;
-  } = {},
 ): Promise<ManualTtsPool> {
-  if (options.promoOnly) {
-    const promoKey = fallbackUserPlan ? USER_PLAN_TO_KEY[fallbackUserPlan] ?? null : null;
-    return { poolKey: fallbackPoolKey, planKey: promoKey, limit: manualTtsMonthlyLimit(promoKey) };
-  }
   const ph = ownerIds.map(() => '?').join(',');
 
   // 1) 개인 활성 구독. 보류(ON_HOLD·PAUSED)된 행은 권한이 아니다 — 행은 남고 users.plan 만 회수된다.

@@ -18,7 +18,6 @@ import {
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { jsonError } from '../lib/api-error';
-import { inPlaceholders } from '../lib/caller-ids';
 import { withWriteTransaction } from '../lib/transactions';
 import { loadLatestConsents, usageEventConsentSince, usageEventDetailConsentSince } from '../lib/consent';
 import { loadEntitlementSource } from '../lib/usage-entitlement';
@@ -35,7 +34,7 @@ const INSERT_CHUNK = 25;
  */
 const PROP_COLUMNS = [
   'scope', 'language', 'revision', 'cache_state', 'target_count', 'completed_count', 'bytes', 'duration_ms',
-  'error_code', 'outcome', 'reason', 'method', 'step', 'pack_id', 'is_first', 'prepared', 'reuse_location',
+  'error_code', 'outcome', 'reason', 'method', 'step', 'is_first', 'prepared', 'reuse_location',
   'charged_source', 'usage_month', 'result_id', 'request_id', 'char_count', 'content_mode', 'surface', 'product_id',
   'store_offer', 'from_plan', 'to_plan',
 ] as const satisfies ReadonlyArray<keyof UsageEventProps>;
@@ -50,7 +49,7 @@ const INSERT_COLUMNS = [...BASE_COLUMNS, ...PROP_COLUMNS];
 const INSERT_PREFIX = `INSERT OR IGNORE INTO usage_events (id, user_id, type, occurred_at, alarm_id, voice_profile_id, message_id, detail,
                 schema_version, platform, app_version, feature_version, attempt_id, entitlement_source,
                 scope, language, revision, cache_state, target_count, completed_count, bytes, duration_ms,
-                error_code, outcome, reason, method, step, pack_id, is_first, prepared, reuse_location,
+                error_code, outcome, reason, method, step, is_first, prepared, reuse_location,
                 charged_source, usage_month, result_id, request_id, char_count, content_mode, surface, product_id,
                 store_offer, from_plan, to_plan) VALUES `;
 (function assertInsertColumns() {
@@ -126,6 +125,7 @@ events.post('/', async (c) => {
     return c.json({ success: true, accepted: 0, skipped_reason: 'consent_below_disclosure' });
   }
 
+  // 은퇴한 종류·칸(추가 음성팩의 것)은 스키마가 받고 버린다(`usage-event.ts`) — 400 이면 그 기기의 큐가 영구히 막힌다.
   const parsed = UsageEventBatchSchema.safeParse(raw);
   if (!parsed.success) {
     return jsonError(
@@ -156,33 +156,12 @@ events.post('/', async (c) => {
   const headerPlatform = parseAppPlatformHeader(c.req.header('X-App-Platform'));
   // 권한 출처는 **받는 순간** 한 번 — 2판을 받는 사람에게만, 배치의 2판 사건에 같은 값을 찍는다(`lib/usage-entitlement.ts`).
   const entitlementSource =
-    detailSinceMs === null ? null : await loadEntitlementSource(db, c.env, userPk, new Date(receivedAtMs));
+    detailSinceMs === null ? null : await loadEntitlementSource(db, userPk);
   const isDetailed = (event: UsageEvent) => detailSinceMs !== null && Date.parse(event.occurred_at) >= detailSinceMs;
+  // 재전송은 멱등이다 — 같은 id 는 `INSERT OR IGNORE` 가 버린다. 문구의 사용중/비사용중(`manual_message_attached`·
+  // `released`)도 이 기록으로만 남는다(2026-11-23 — 그 사실을 따로 적던 `message_library.in_use` 는 읽는 곳이 없어 #152 에서
+  // 지웠다. `docs/spec/usage-events.md` §5).
   await withWriteTransaction(db, async (tx) => {
-    // ⚠ **이미 들어 있는 사건은 아래 보관함 갱신에서 건너뛴다 — 재전송은 멱등이어야 한다.**
-    // `INSERT OR IGNORE` 는 중복 사건을 버리지만 그 뒤의 사실 갱신까지 막지는 않는다.
-    // 같은 id를 다른 내용으로 다시 보내더라도 그 사이의 반대 사실(붙임↔해제)을 되돌리지 않는다. 넣기와 갱신은 한
-    // 트랜잭션이라, 이미 저장돼 있다 = 그때 갱신도 끝났다는 뜻이다.
-    // ⚠ **조회는 INSERT 앞에 둔다** — 뒤에 두면 방금 넣은 것까지 '이미 있음' 이 되어
-    //   아무 갱신도 돌지 않는다.
-    // ⚠ **사용자 조건을 걸지 않는다** — 남의 id 와 겹치면 INSERT 도 무시되므로 갱신도
-    //   함께 건너뛰는 것이 맞다.
-    const messageEvents = list.filter((event: UsageEvent) => event.message_id);
-    const alreadyStored = new Set<string>();
-    const lookups: InStatement[] = [];
-    for (let offset = 0; offset < messageEvents.length; offset += INSERT_CHUNK) {
-      const chunk = messageEvents.slice(offset, offset + INSERT_CHUNK);
-      lookups.push({
-        sql: `SELECT id FROM usage_events WHERE id IN (${inPlaceholders(chunk)})`,
-        args: chunk.map((event: UsageEvent) => event.id),
-      });
-    }
-    if (lookups.length) {
-      for (const found of await tx.batch(lookups)) {
-        for (const row of found.rows) alreadyStored.add(String(row.id));
-      }
-    }
-
     const writes: InStatement[] = [];
     for (let offset = 0; offset < list.length; offset += INSERT_CHUNK) {
       const chunk = list.slice(offset, offset + INSERT_CHUNK);
@@ -214,46 +193,6 @@ events.post('/', async (c) => {
       });
     }
 
-    // 문구의 '사용중/비사용중' 은 **폰이 판정한 사실**이다(그 오디오를 쓰는 알람이 폰에
-    // 남아 있는가). 서버는 받아 적을 뿐이다 — 여기서 추측하면 기기마다 다른 사실을
-    // 서로 덮어쓴다.
-    //
-    // ⚠ **이 값은 마지막으로 보고한 *한 기기의* 사실이다.** 두 기기가 같은 문구를 쓰면
-    // 한쪽의 참조 카운트 0 이 계정 전체를 0 으로 만든다 — 아래 시각 비교는 순서만 정하지
-    // 두 기기의 상태를 합치지 못한다. **`in_use = 0` 을 삭제의 근거로 단독으로 쓰지 말 것**
-    // (`docs/spec/usage-events.md` §5).
-    //
-    // ⚠ **본인 보관함 행만 건드린다**(IDOR). `message_id` 는 클라가 준 값이라 소유권을
-    // 조건으로 걸어야 한다 — 남의 문구를 비사용중으로 만들 수 있으면 그 오디오가
-    // 정리 대상이 된다.
-    for (const event of list) {
-      // 이미 저장돼 있던 사건이다 — 그때 같은 트랜잭션에서 갱신까지 끝났다.
-      if (alreadyStored.has(event.id)) continue;
-      alreadyStored.add(event.id);
-      if (!event.message_id) continue;
-      // ⚠ **남기는 것은 도착 순서가 아니라 더 최근 사실이다 — 붙임·해제 양쪽 다.**
-      //   오프라인 큐는 며칠 밀릴 수 있고, 같은 문구(=같은 `message_id`)를 두 기기가
-      //   함께 쓸 수 있다(캐시 히트가 같은 id 를 돌려준다). 그래서 두 갈래 모두
-      //   `in_use_updated_at` 을 비교해 **더 최근 사실만** 남긴다 — 한쪽만 막으면
-      //   뒤늦게 도착한 '붙임' 이 최신 '해제' 를 되돌린다.
-      if (event.type === 'manual_message_attached') {
-        writes.push({
-          sql: `UPDATE message_library
-                   SET in_use = 1, in_use_updated_at = ?, last_used_at = ?
-                 WHERE message_id = ? AND user_id = ?
-                   AND (in_use_updated_at IS NULL OR in_use_updated_at <= ?)`,
-          args: [event.occurred_at, event.occurred_at, event.message_id, userPk, event.occurred_at],
-        });
-      } else if (event.type === 'manual_message_released') {
-        writes.push({
-          sql: `UPDATE message_library
-                   SET in_use = 0, in_use_updated_at = ?
-                 WHERE message_id = ? AND user_id = ?
-                   AND (in_use_updated_at IS NULL OR in_use_updated_at <= ?)`,
-          args: [event.occurred_at, event.message_id, userPk, event.occurred_at],
-        });
-      }
-    }
     await tx.batch(writes);
   });
 
