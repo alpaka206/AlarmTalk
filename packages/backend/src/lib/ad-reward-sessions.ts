@@ -1,8 +1,6 @@
 import type { DbExecutor } from './transactions';
 import type { Env } from '../types';
-import { planWithGrantSql } from './plan-grant-sql';
 import { hasPersonalVoiceAccess } from '../routes/billing-helpers';
-import { resolvePersonalPromo } from './personal-promo';
 import { nextManualQuotaResetAt } from './manual-tts-quota';
 import { UUID_RE } from './validate';
 import {
@@ -493,7 +491,6 @@ async function finishCallback(db: DbExecutor, transactionId: string, outcome: Se
  */
 export async function settleAdRewardCallback(
   db: DbExecutor,
-  env: Env,
   transactionId: string,
   nowMs: number = Date.now(),
   monthlyLimit: number = AD_REWARD_MONTHLY_LIMIT,
@@ -513,7 +510,7 @@ export async function settleAdRewardCallback(
   const nowIso = iso(nowMs);
 
   const userRes = await db.execute({
-    sql: `SELECT ${planWithGrantSql('users')} AS plan FROM users WHERE id = ? AND deletion_status = 'active' LIMIT 1`,
+    sql: `SELECT plan FROM users WHERE id = ? AND deletion_status = 'active' LIMIT 1`,
     args: [userId],
   });
   const user = userRes.rows[0];
@@ -546,8 +543,7 @@ export async function settleAdRewardCallback(
     // 옛 경로 — 승인 없이 온 콜백. 옛 규칙(무료만)을 그대로 쓴다.
     let refusal: SettleOutcome | null = null;
     if (!user) refusal = 'user';
-    else if (hasPersonalVoiceAccess(user.plan == null ? null : String(user.plan), resolvePersonalPromo(env)))
-      refusal = 'plan';
+    else if (hasPersonalVoiceAccess(user.plan == null ? null : String(user.plan))) refusal = 'plan';
     if (refusal) {
       await finishCallback(db, transactionId, refusal, nowMs);
       return refusal;
@@ -600,7 +596,6 @@ export async function settleAdRewardCallback(
 /** cron — 적어 두었지만 정산이 실패한 콜백을 다시 정산한다(내부 재시도). AdMob 의 재전송에 기대지 않는다. */
 export async function retryUnsettledAdRewardCallbacks(
   db: DbExecutor,
-  env: Env,
   nowMs: number = Date.now(),
 ): Promise<{ settled: number; failed: number }> {
   const due = await db.execute({
@@ -612,7 +607,7 @@ export async function retryUnsettledAdRewardCallbacks(
   let failed = 0;
   for (const row of due.rows) {
     try {
-      await settleAdRewardCallback(db, env, String(row.transaction_id), nowMs);
+      await settleAdRewardCallback(db, String(row.transaction_id), nowMs);
       settled++;
     } catch (err) {
       failed++;

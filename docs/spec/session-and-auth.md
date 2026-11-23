@@ -72,7 +72,7 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
     목소리 프리페치 워커. 둘 다 `/auth/me` 를 늘 부르지만(프리페치는 plan 을 지금 받아야 하고,
     안드로이드 주기 워커는 회차마다 계정을 확인한다 — 아래 「탈퇴 유예」) 받은 토큰은 이 판정을
     거쳐서만 저장한다 — 예전에는 콜드 스타트마다 진입 갱신이 방금 굴린 토큰을 한 번 더 굴렸다.
-  - **굴리지 않는다**: 백그라운드에서 돌아올 때의 `/auth/me`(plan·프로모만 받는다), 프로필·계정 설정
+  - **굴리지 않는다**: 백그라운드에서 돌아올 때의 `/auth/me`(plan 만 받는다), 프로필·계정 설정
     저장 뒤의 확인 조회(아래 「프로필 저장은 바꾼 칸만 세션에 적는다」 — iOS 는 굴린다, 그 토큰이 옛 답을 가른다), **Play 자동
     정합화 뒤의 갱신**(H4). 정합화는 앱 시작·알람 탭 진입마다 도는 구독 재확인에서 오는데,
     거기서 굴리면 토큰을 키로 쓰던 탭 효과가 다시 돌아 또 정합화하는 고리가 생겼다(Play 로
@@ -87,12 +87,12 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
 **쓰는 순간의 세션** 위에 얹는다. 요청 **전에** 잡아 둔 세션의 사본을 다시 저장하지 않는다(2026-10-05).
 
 - 사본을 저장하면 요청이 도는 사이 다른 경로가 적은 값을 되돌린다 — `/auth/me`(진입·복귀 갱신, `plan_changed`,
-  다른 기기 결제)가 적은 plan·프로모·받은 시각, 다른 기기에서 바꾼 이름, 계정 설정 올리기가 적은 지역·사주. 다음 `/auth/me` 까지 세션(디스크 포함)에 남는다. plan 은 plan 답만
-  쓴다([billing-lifecycle.md](billing-lifecycle.md) 「plan·프로모 쓰기의 순번 가드」의 프로필 저장 항목).
+  다른 기기 결제)가 적은 plan, 다른 기기에서 바꾼 이름, 계정 설정 올리기가 적은 지역·사주. 다음 `/auth/me` 까지 세션(디스크 포함)에 남는다. plan 은 plan 답만
+  쓴다([billing-lifecycle.md](billing-lifecycle.md) 「plan 답의 순번 가드」의 프로필 저장 항목).
 - 토큰도 저장소의 것을 지킨다(Codex #665 P2 — 그 사이 굴러간 토큰을 옛 것으로 덮지 않는다). 세션이 그 사이
   끝났거나 다른 계정이 됐으면 아무것도 적지 않는다(위 「저장 직전에 세션을 다시 확인한다」).
 - 안드로이드는 읽기·확인·쓰기를 세션 쓰기 락 안에서 한 덩어리로 한다(`AuthSessionStore.updateUserIfAlive` ←
-  `MainViewModelAuthActions` 의 `saveProfileEdit`). 바꾼 칸이 무엇이든 plan·프로모는 저장소의 짝으로 다시
+  `MainViewModelAuthActions` 의 `saveProfileEdit`). 바꾼 칸이 무엇이든 plan 은 저장소의 값으로 다시
   박는다. iOS 는 `MainActor` 라 응답을 기다린 **뒤에** 읽은 세션 위에 얹는다(`AuthViewModel.updateProfile`).
 - 저장이 끝나면 **확인 조회**를 한 번 한다 — 저장 **전에** 떠난 `/auth/me` 가 옛 이름을 싣고 늦게
   와도, 확인 조회가 그 뒤에 덮거나(옛 답이 먼저 온 경우) 옛 답이 순번에 밀려 버려진다(확인 조회가 먼저 온 경우 —
@@ -101,7 +101,7 @@ rolling refresh 는 **같은 세션 안에서** 토큰을 바꾼다. 그러니 "
   가르는 에폭이다.
   - ⚠ **iOS 에서 옛 답이 먼저 오면 토큰이 이미 굴러 있다**(2026-10-05 리뷰). 서버는 `/auth/me` 마다 토큰을 굴리므로
     (`routes/auth.ts`), 확인 조회의 답은 보낸 토큰이 지금 세션 토큰과 달라 '토큰만 구른 같은 로그인' 갈래
-    (`isTokenRolledWithinSignIn`)로 온다. 그 갈래도 밀리지 않은 답이면 plan·프로모와 함께 **프로필 칸(이름·계정
+    (`isTokenRolledWithinSignIn`)로 온다. 그 갈래도 밀리지 않은 답이면 plan 과 함께 **프로필 칸(이름·계정
     설정 — 울타리는 따른다)까지** 지금 토큰 위에 적는다(`AuthViewModel.applyAccountAnswerOnRolledToken` — 토큰·
     탈퇴 유예만 지금 세션 것). 예전에는 그 갈래가 짝만 적어, 저장도 확인 조회도 성공했는데 옛 이름이 다음
     `/auth/me` 까지 남았다. 안드로이드는 토큰이 아니라 세대로 가르므로(`saveSessionIfAlive`) 같은 경우에 응답 전체를 쓴다.
@@ -187,7 +187,7 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 - **철회는 자격증명 로그인에서만**(이메일 `/auth/login`·`/auth/google`·`/auth/apple`·`/auth/kakao` — `cancelPendingDeletionOnSignIn`).
   토큰 갱신(`GET /auth/me`)은 철회하지 않는다 — 사람이 자격증명을 다시 넣은 순간만 '계속 쓰겠다' 로 읽는다.
   비밀번호가 틀린 로그인은 아무것도 바꾸지 않는다. ⚠ **철회는 응답이 다 준비된 뒤 마지막 쓰기다**(코덱스 #904) —
-  토큰 서명·계정 조회·프로모 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면 안 된다.
+  토큰 서명·계정 조회가 실패해 로그인이 실패로 끝났는데 철회만 남으면 안 된다.
   ⚠ **로그인이 처음 읽은 그 상태에 묶는다**(첫 조회의 `deletion_requested_at`·`token_epoch`). active 로 읽은 로그인이
   끝나기 전에 다른 기기가 새로 낸 신청을 조용히 철회하면, 신청한 사람은 성공을 받았는데 파기 예약만 사라진다. 그 사이
   신청·전 기기 로그아웃으로 상태나 세대가 바뀌었으면(`superseded`) 로그인을 실패로 돌린다 — 서명한 토큰을 곧바로 쓸 수
@@ -298,10 +298,10 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 끄고 로그아웃할 수 있다. 표시 해제 뒤 저장 전에 종료되면 저장된 pending 세션이 남아
 다음 조회에서 복구를 다시 완료한다. 다른 계정의 표시는 보존한다.
 ⚠ **복구 저장은 준비를 기다린 뒤의 세션 위에 만든다**(2026-10-05). 탈퇴 상태만 `active` 로 바꾸고 나머지는
-**그때의** 세션 것이다 — 기다리기 **전에** 잡은 사본을 저장하면, 준비를 기다리는 사이 반영된 plan·프로모(결제 전
+**그때의** 세션 것이다 — 기다리기 **전에** 잡은 사본을 저장하면, 준비를 기다리는 사이 반영된 plan(결제 전
 조회·세션 밖 `/auth/me` 처럼 토큰을 굴리지 않고 plan 을 쓰는 답)를 되돌린다(위 「프로필 저장은 바꾼 칸만 세션에
 적는다」와 같은 뿌리). `/auth/me` 로 복구를 확인한 경로는 그 응답을 기다린 뒤 **다시 다듬는다** — 밀린 답이면
-plan·프로모는 지금 세션의 짝, 계정 설정 울타리 이하면 설정도 지금 세션의 것(`AuthViewModel.reconcileAccountAnswer`
+plan 은 지금 세션의 짝, 계정 설정 울타리 이하면 설정도 지금 세션의 것(`AuthViewModel.reconcileAccountAnswer`
 — 일반 조회와 같은 규칙).
 이 순서로 로컬 복구 상태를 확정한 뒤 동기 완료 훅으로 APNs 토큰을 다시 요청한다. 해제는 서버에서
 성공했지만 응답만 유실된 경우에도 같은 토큰을 POST해야 한다. 기기 토큰과 소유자는 남겨
@@ -674,7 +674,7 @@ iOS는 네트워크/5xx/응답 해석 실패를 받으면 `/auth/me`로 현재 �
 | 저장·메모리 세션 수렴 | — | `MainViewModel`의 세션 저장소 관찰 | `AuthViewModel.absorbStoredSession`·`handleUnauthorized` |
 | 전경 push의 첫 인증 실패 중단 — **없다**(2026-10-29 알람 올리기를 지웠다. 401 은 통신 계층이 한 곳에서 받는다 — 아래 「401 중앙 처리」) | — | — | — |
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration`·`saveSessionIfAlive` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
-| 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·프로모·받은 시각·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서) |
+| 프로필 저장은 바꾼 칸만 쓰는 순간의 세션 위에(plan·토큰은 그대로) + 확인 조회 | `PATCH /user/me`(`user.ts`) | `AuthSessionStore.updateUserIfAlive` ← `MainViewModelAuthActions` 의 `saveProfileEdit`(`uploadDynamicPromptSettings`) → `refreshAppSession(rollToken = false)`·`refreshAppSessionNow(rollToken = false)` · 회귀 `ProfileSaveKeepsAccountAnswerTest.kt` | `AuthViewModel.updateProfile`(응답 뒤 `var updated = current`) → `refreshUser`(옛 답이 먼저 와 토큰이 굴렀으면 `isTokenRolledWithinSignIn` → `applyAccountAnswerOnRolledToken` 이 프로필 칸까지) · 회귀 `AuthViewModelTests`(확인 조회와 옛 답의 두 도착 순서) |
 | 다시 로그인하면 탈퇴 철회 · 신청은 모든 기기 세션·푸시 등록을 끊는다 · 유예 세션은 끝난 세션 · 파기 직전 재확인 | `lib/account-deletion.ts` 의 `cancelPendingDeletionOnSignIn` ← `routes/auth.ts` 의 `/login`·`/google`·`/apple`·`/kakao` · `routes/user.ts` 의 `POST /me/deletion`(`token_epoch + 1`·`push_tokens` 삭제, 한 트랜잭션) · `lib/fcm.ts` 의 `sendAccountDeletionRequestedPush`(신청 커밋 뒤) · `index.ts` 파기 트랜잭션의 재확인(유예 + 기한)·커밋 뒤 애플 연결 해제 · `middleware/auth.ts`·`/auth/me` 는 유예면 끊긴 토큰에도 403 · 회귀 `test/sign-in-cancels-deletion.test.ts`·`test/scheduled-purge-isolation.test.ts`·`test/auth-pending-deletion.test.ts` | `ui/main/MainViewModelAuthActions.kt` 의 `checkAccountStatus` → `leaveAccountForPendingDeletion`(알람까지 끄는 떠나기) · 워커 `sync/SyncWorkerFailure.kt` 의 `endWorkerSession` → `leaveAccountAfterPendingDeletion`(백그라운드판) · `fcm/AlarmTalkMessagingService.kt` 의 `account_deletion_requested` → `RemoteAlarmSyncScheduler.runOnce`(→ `RemoteAlarmSyncWorker` 의 계정 확인 `GET /auth/me`) · 유예 화면 없음 | `AuthViewModel.refreshUser` → `leaveAccountForPendingDeletion` · 탈퇴 신청 뒤 `onServerRemovedPushRegistration`(기기 쪽 등록 기록만, 등록과 같은 줄 — `invalidateRegistration`) · `PushNotificationCoordinator` 의 `accountDeletionRequested` → `refreshUser` · 회귀 `PushRegistrationRecoveryTests`(`test_invalidationQueuesBehindAnInFlightRegistration`·`test_accountDeletionRequestedSignalAsksTheServerAgain`) · `RootView` 에 유예 게이트 없음 |
 | 탈퇴 복구 저장은 준비 뒤의 세션 위에(1.2.13 이하에서 올라온 유예 세션) | — (철회는 로그인 — `cancelPendingDeletionOnSignIn`. 철회 라우트는 2026-10-16 에 지웠다) | — (유예 화면·철회 버튼을 2026-10-15 에 지웠다) | `AuthViewModel.completeAccountRecovery`(기다린 뒤 `latest` · `/auth/me` 경로는 `reconcileAccountAnswer` 로 다시 다듬기) · 회귀 `AuthViewModelTests` |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |

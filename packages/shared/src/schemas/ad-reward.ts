@@ -16,7 +16,6 @@ export const AdRewardSessionCreateSchema = z.object({
   platform: z.enum(AD_REWARD_PLATFORMS),
   ad_unit: z.string().regex(AD_UNIT_RE),
 });
-export type AdRewardSessionCreate = z.infer<typeof AdRewardSessionCreateSchema>;
 
 /**
  * 광고 화면이 어떻게 끝났나 — 앱의 **주장**이다. 서버는 이것으로 보상을 주거나 빼앗지 않고, 예약·잠금을 풀지와 어느
@@ -40,4 +39,3 @@ export type AdRewardCloseOutcome = (typeof AD_REWARD_CLOSE_OUTCOMES)[number];
 export const AdRewardSessionCloseSchema = z.object({
   outcome: z.enum(AD_REWARD_CLOSE_OUTCOMES),
 });
-export type AdRewardSessionClose = z.infer<typeof AdRewardSessionCloseSchema>;

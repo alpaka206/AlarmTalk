@@ -200,7 +200,6 @@ async function expectNothingWritten() {
   });
   // 옛 초안 정리(`discardAbandonedDrafts`)도 돌지 않았다.
   expect(oldDraft.rows[0]).toMatchObject({ deleted_at: null, is_draft: 1, status: 'ready', elevenlabs_voice_id: 'elv-old' });
-  expect(await count('SELECT COUNT(*) AS n FROM voice_draft_attempt_usage')).toBe(0);
   expect(await count('SELECT COUNT(*) AS n FROM voice_profile_change_ledger')).toBe(0);
   expect(await count('SELECT COUNT(*) AS n FROM pending_external_deletions')).toBe(0);
   expect(await count('SELECT COUNT(*) AS n FROM voice_uploads')).toBe(0);
@@ -240,7 +239,6 @@ beforeEach(async () => {
   for (const table of [
     'voice_prerender_queue',
     'voice_profile_change_ledger',
-    'voice_draft_attempt_usage',
     'pending_external_deletions',
     'voice_uploads',
     'user_consents',
@@ -349,7 +347,7 @@ describe('POST /voice/clone — 말소리가 없으면 등록하지 않는다', 
     expect(JSON.parse(check!)).toMatchObject({ outcome: 'speech', transcript_chars: SPEECH.length });
   });
 
-  it('다시 녹음하는 데 횟수 제한이 없다 — 거절은 몇 번이든 월 등록 횟수와 초안 집계를 건드리지 않는다', async () => {
+  it('다시 녹음하는 데 횟수 제한이 없다 — 거절은 몇 번이든 월 등록 횟수를 건드리지 않는다', async () => {
     mockSpeechToText.mockResolvedValue('음…');
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const res = await clone();
@@ -367,9 +365,6 @@ describe('POST /voice/clone — 말소리가 없으면 등록하지 않는다', 
     expect(res.status).toBe(201);
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
     expect(await count('SELECT COUNT(*) AS n FROM voice_profile_change_ledger')).toBe(0);
-    expect(
-      Number((await db.execute('SELECT used_count FROM voice_draft_attempt_usage')).rows[0]!.used_count),
-    ).toBe(1);
   });
 
   it('전사는 요청 직전부터 10초 안에 끝나야 한다 — 앱의 60초 대기 안에 provider 등록까지 들어가야 한다', async () => {

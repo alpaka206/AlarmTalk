@@ -89,22 +89,3 @@ export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number 
   if (CLOUD_WMO_CODES.includes(code)) return idx('cloud');
   return idx('nice');
 }
-
-/** 표본 하나를 숫자로. null·undefined·빈 문자열 등 자료가 없으면 NaN — `Number(null) === 0` 을 막는다. */
-export function sampleOrNaN(value: unknown): number {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string' && value.trim() !== '') return Number(value);
-  return Number.NaN;
-}
-
-/**
- * 계열의 최댓값. 쓸 만한 표본이 하나도 없으면 null.
- * ⚠ `null` 표본을 `Number()` 로 읽으면 **0** 이 된다 — 숫자(또는 숫자 문자열)만 센다.
- */
-export function maxFinite(values: unknown[] | undefined): number | null {
-  const numbers = (values ?? [])
-    .filter((value) => typeof value === 'number' || (typeof value === 'string' && value.trim() !== ''))
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value));
-  return numbers.length > 0 ? Math.max(...numbers) : null;
-}

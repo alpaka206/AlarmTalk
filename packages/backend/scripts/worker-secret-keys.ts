@@ -2,7 +2,7 @@
  * `sync-worker-secrets.ts` 가 워커에 올리는 키 목록과 고르는 규칙.
  *
  * 스크립트 본문은 실행하면 곧바로 `wrangler secret bulk` 를 부르므로 테스트가 가져다 쓸 수
- * 없다 — 그래서 **고르는 규칙만** 여기 따로 둔다(`test/personal-promo.test.ts` 가 잠근다).
+ * 없다 — 그래서 **고르는 규칙만** 여기 따로 둔다(`test/worker-secret-keys.test.ts` 가 잠근다).
  */
 
 export const WORKER_SECRET_KEYS = [
@@ -73,9 +73,9 @@ export const WORKER_SECRET_KEYS = [
   'KAKAO_ADMIN_KEY',
   // Perso(랜딩 이벤트 메시지 클립). 비어 있으면 그 라우트만 503.
   'PERSO_API_KEY',
-  // 기간 한정 개인 플랜의 **시작 스위치**(ISO 8601, 시간대 포함). 없으면 프로모는 꺼져 있다.
-  // `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
-  'PERSONAL_PROMO_STARTS_AT',
+  // `PERSONAL_PROMO_STARTS_AT`(기간 한정 개인 플랜의 시작 스위치)는 없앴다(2026-11-23 — 그 행사와 함께). 워커에 남은 값은
+  // 코드가 읽지 않으니 `wrangler secret delete PERSONAL_PROMO_STARTS_AT --env <dev|production>` 로 치운다(`.dev.vars.*` 의
+  // 줄은 여기 없는 키라 올라가지 않는다).
   // 합성 예산(`lib/tts-budget.ts`) — 운영자가 정하는 숫자. 비어 있으면 대량 작업은 dry-run, 공급자 잔여는 조회하지 않는다.
   'TTS_RERENDER_BATCH_MAX_CHARS',
   'TTS_RERENDER_CONCURRENCY',
@@ -85,14 +85,12 @@ export const WORKER_SECRET_KEYS = [
 /**
  * **dev 에만 올리는 키.** production 파일에 값이 있으면 동기화 자체를 거절한다.
  *
- * - `PERSONAL_PROMO_ENDS_AT` — 기간 한정 개인 플랜의 **리허설용 끝**. 제품의 끝은
- *   `@alarmtalk/shared` 의 `PERSONAL_PROMO.endsAt` 하나다. 운영에 리허설 값이 올라가면
- *   프로모가 조용히 조기 종료·연장된다(워커도 production 에서는 이 값을 읽지 않는다 —
- *   `lib/personal-promo.ts` — 이중 잠금이다).
  * - `TTS_DEV_MONTHLY_CHAR_BUDGET` — dev 의 월 합성 글자 상한. 운영 요청을 이 숫자로 막지 않는다(워커도 production 에서는
  *   읽지 않는다 — `lib/tts-budget.ts`).
+ * - `PERSONAL_PROMO_ENDS_AT`(기간 한정 개인 플랜의 리허설용 끝)는 없앴다(2026-11-23). dev 워커에 남은 값은
+ *   `wrangler secret delete PERSONAL_PROMO_ENDS_AT --env dev` 로 치운다.
  */
-export const DEV_ONLY_SECRET_KEYS = ['PERSONAL_PROMO_ENDS_AT', 'TTS_DEV_MONTHLY_CHAR_BUDGET'] as const;
+export const DEV_ONLY_SECRET_KEYS = ['TTS_DEV_MONTHLY_CHAR_BUDGET'] as const;
 
 export const REQUIRED_SECRET_KEYS = [
   'TURSO_DATABASE_URL',

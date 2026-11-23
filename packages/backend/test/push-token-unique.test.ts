@@ -23,6 +23,17 @@ async function registerLike(userId: string, token: string, platform: PushPlatfor
   await db.batch(pushRegisterStatements(userId, token, platform), 'write');
 }
 
+// #71 은 `updated_at` 이 있던 때의 마이그레이션이다(그 칸은 #152 에서 지웠다). 레거시 중복 행을 재현하는 동안만 그 칸을 되살리고,
+// 끝나면 지금 스키마로 돌려 놓는다 — 실패해도 다음 테스트가 지금 스키마에서 돈다.
+async function withLegacyUpdatedAt(body: () => Promise<void>): Promise<void> {
+  await db.execute('ALTER TABLE push_tokens ADD COLUMN updated_at TEXT');
+  try {
+    await body();
+  } finally {
+    await db.execute('ALTER TABLE push_tokens DROP COLUMN updated_at');
+  }
+}
+
 async function ownersOf(token: string): Promise<string[]> {
   const res = await db.execute({
     sql: 'SELECT user_id FROM push_tokens WHERE token = ? ORDER BY user_id',
@@ -125,7 +136,7 @@ describe('push_tokens 전역 단일 소유 (마이그레이션 #71 + 원자 UPSE
     expect(Number(res.rows[0]!.n)).toBe(2);
   });
 
-  it('#71 dedupe 는 레이스로 남은 중복 소유 행에서 최신(updated_at) 행만 남긴다', async () => {
+  it('#71 dedupe 는 레이스로 남은 중복 소유 행에서 최신(updated_at) 행만 남긴다', () => withLegacyUpdatedAt(async () => {
     // 레거시 상태 재현: 유니크 인덱스를 잠시 내리고 중복 소유 2행 삽입
     await db.execute('DROP INDEX IF EXISTS idx_push_tokens_token');
     await db.execute({
@@ -151,9 +162,9 @@ describe('push_tokens 전역 단일 소유 (마이그레이션 #71 + 원자 UPSE
         args: [crypto.randomUUID()],
       }),
     ).rejects.toThrow(/UNIQUE/i);
-  });
+  }));
 
-  it('#71 dedupe 는 타임스탬프 동률이면 나중에 삽입된 행(rowid)이 이긴다 — UUID 순서에 좌우되지 않음', async () => {
+  it('#71 dedupe 는 타임스탬프 동률이면 나중에 삽입된 행(rowid)이 이긴다 — UUID 순서에 좌우되지 않음', () => withLegacyUpdatedAt(async () => {
     // 레이스 중복은 대부분 같은 초에 찍힌다. id(UUID) DESC 타이브레이커라면 'z-first' 가
     // 남았을 어긋난 케이스: 먼저 삽입된 행의 UUID 가 사전순으로 더 크게 만들어 둔다.
     await db.execute('DROP INDEX IF EXISTS idx_push_tokens_token');
@@ -172,5 +183,5 @@ describe('push_tokens 전역 단일 소유 (마이그레이션 #71 + 원자 UPSE
     }
     // 나중 INSERT(pt-b, rowid 큼)가 유일 승자 — 마지막 등록 보존 의도와 일치.
     expect(await ownersOf('tok-tie')).toEqual(['pt-b']);
-  });
+  }));
 });

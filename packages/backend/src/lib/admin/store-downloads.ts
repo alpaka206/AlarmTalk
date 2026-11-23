@@ -79,16 +79,15 @@ function upserts(
 
 function syncOk(platform: StorePlatform, at: string, note: string | null): Stmt {
   return {
-    sql: `INSERT INTO store_download_sync (platform, last_attempt_at, last_success_at, last_error, note) VALUES (?, ?, ?, NULL, ?)
-          ON CONFLICT (platform) DO UPDATE SET last_attempt_at = excluded.last_attempt_at,
-            last_success_at = excluded.last_success_at, last_error = NULL, note = excluded.note`,
-    args: [platform, at, at, note],
+    sql: `INSERT INTO store_download_sync (platform, last_attempt_at, last_error, note) VALUES (?, ?, NULL, ?)
+          ON CONFLICT (platform) DO UPDATE SET last_attempt_at = excluded.last_attempt_at, last_error = NULL, note = excluded.note`,
+    args: [platform, at, note],
   };
 }
 
 function syncFailed(platform: StorePlatform, at: string, message: string): Stmt {
   return {
-    sql: `INSERT INTO store_download_sync (platform, last_attempt_at, last_success_at, last_error, note) VALUES (?, ?, NULL, ?, NULL)
+    sql: `INSERT INTO store_download_sync (platform, last_attempt_at, last_error, note) VALUES (?, ?, ?, NULL)
           ON CONFLICT (platform) DO UPDATE SET last_attempt_at = excluded.last_attempt_at, last_error = excluded.last_error`,
     args: [platform, at, message],
   };
@@ -162,8 +161,8 @@ export async function runStoreDownloadSync(
       const stmts = upserts('ios', result.daily, at, result.sourceDates);
       for (const inst of result.ingested) {
         stmts.push({
-          sql: `INSERT OR IGNORE INTO store_report_instances (instance_id, report, processing_date, ingested_at) VALUES (?, ?, ?, ?)`,
-          args: [inst.id, inst.kind, inst.processingDate, at],
+          sql: `INSERT OR IGNORE INTO store_report_instances (instance_id, report, processing_date) VALUES (?, ?, ?)`,
+          args: [inst.id, inst.kind, inst.processingDate],
         });
       }
       // 목록 창(35일)을 한참 지난 기록은 다시 나열될 일이 없다.

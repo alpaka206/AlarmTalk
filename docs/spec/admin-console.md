@@ -31,10 +31,9 @@
 | 개요(`/admin`) | 전체 가입자(누적 추이), 앱 접속 1·7·30일, **알람이 울린 사람**(7·30일, 안드로이드 울림 횟수 — 켜 둔 알람 수는 세지 않는다), 플러스, **재동의 필요**, 날짜별 가입·울림, 앱 빌드 분포(최신·권장·차단 표시), 알림 받을 수 있는 사람, **알람 문구 종류**(30일 — 알람 저장 기록, 아래), 이번 달(목소리·직접 입력·광고 보상), 사용 기록, **스토어 다운로드**(Play·App Store, 받은 마지막 날까지 30일), 날씨 데이터 상태, 최근 알림 |
 | 사용 지표(`/admin/usage`) | 사용 기록 2판(`usage-events.md` §7)을 **기간·플랫폼·앱 버전·권한 출처**로 거른다: 첫 경험(샘플 시작→끝까지→로그인 성공→저장 시도→알람 준비, 단계별 사람 수와 앞 단계 기준 전환·로그인 결과), 음성 준비(범위별 시작·완료·실패·준비시간 중앙/90%·평균 크기·실패 코드·시작 캐시·끝나지 않은 시작), 알람 저장(시도·막힘·준비 완료·막힌 사유), 직접 입력(새 제작·실패·재사용 기기/서버·평균 글자·정산(새 제작과 서버 재사용 — 서버 재사용도 한 번 센다, 2026-10-27)·보상 사용), 광고 보상(제안·시청·대기·지급과 지연·30분 넘은 누락·사용), 결제와 권한(권한 출처별 사람·결제 화면·구매 확인의 체험/할인/정가·권한 변경), 관측한 알람 상호작용(플랫폼별) |
 | 사용자(`/admin/users`) | 이메일·계정 id 로 찾기(없으면 최근 가입 50명 — 이름 칸은 2026-10-29 에 지웠다). 앱 빌드·마지막 접속·알림 기기·울림(30일)·플랜·상태(재동의 필요·탈퇴 대기), 그 사람에게 시험 발송 |
-| 사용자 상세(`/admin/users/:id`) | 지금 권한의 근거(스토어 구독·관리자 지급), 저장된 등급, 이번 달 직접 입력, 목소리 삭제 예정, **플러스 기간 지급**(7일·1개월·끝나는 날 지정 → 확인 화면 → 지급), 지급 기록과 회수 |
+| 사용자 상세(`/admin/users/:id`) | 지금 권한의 근거(스토어 구독), 저장된 등급, 이번 달 직접 입력, 목소리 삭제 예정 |
 | 알림 보내기(`/admin/push`) | 문구·받는 사람·미리보기·대상 수·시험 발송·전체 발송·발송 기록(이어 보내기) |
 | 합성 운영(JSON — `/admin/tts/render-backlog`·`/admin/tts/usage`) | 다시 구울 목록·예상 글자·한 회차 계획(합성하지 않는다), 요청 종류별 합성 사용량·예산 설정·클론 슬롯 — 규칙은 [tts-render-and-budget.md](tts-render-and-budget.md) §4·§5 |
-| 음성팩(`/admin/voice-packs`) | 추가 음성팩 목록·상세(클립 듣기·해시·크기, 내부 권리 정보, 남은 게시 조건, 검수·게시·중단 전이, 감사 기록) — 규칙은 [`voice-packs.md`](voice-packs.md) §4·§6 |
 
 ⚠ **켜 둔 알람 수를 지표로 쓰지 않는다**(2026-10-29 오너 — 사람마다 켜 두는 수가 달라 쓰임을 말하지 못한다). 알람 쓰임은 실제로
 울린 것(사용 기록)으로 센다.
@@ -187,12 +186,12 @@
 - iOS: APNs alert + `type = admin_notice`. 앱이 앞에 있으면 보이지 않는다(앱이 `willPresent` 로 띄우지 않는다).
 - 실패는 대개 앱을 지운 기기다 — 그런 토큰은 발송 중에 지운다(`pruneStaleTokens`·`pruneDeadApnsTokens`).
 
-## 사용자 상세와 기간 지급
+## 사용자 상세 — **읽기만** 한다
 
-- 목록의 이메일을 누르면 상세로 간다. 지급 전에 **지금 권한이 어디서 오는지**(스토어 구독·기존 지급)를 보여 준다.
-- 지급은 두 걸음이다: 입력 → **확인 화면**(실제 끝 시각·겹침 안내·멱등 키) → 지급. 확인 화면을 두 번 보내도 한 번이다.
-- 회수는 행마다 '회수 확인' 체크를 해야 보낸다. 그 지급만 끝내고, 다른 권한이 없으면 지금부터 3일 뒤 목소리를 지운다.
-- 탈퇴 대기·시스템 계정에는 주지 않는다. 규칙 전문은 [`billing-lifecycle.md`](billing-lifecycle.md) 「관리자 기간 지급」.
+- 목록의 이메일을 누르면 상세로 간다. **지금 권한이 어디서 오는지**(스토어 구독)를 보여 준다.
+- 플러스 기간 지급(7일·1개월·끝나는 날 지정 → 확인 화면 → 지급·회수)은 2026-11-23 에 지웠다(오너 — "무료 체험 한 달 한 번
+  빼고는 없애도 돼", 운영에 나가기 전). 표 `plan_grants` 는 마이그레이션 #154 가 지운다. 고객 보상이 필요하면 스토어의 오퍼
+  코드·프로모션 코드를 쓴다([plan-gates.md](plan-gates.md) 「규칙 — 코드로 유료 기능을 열지 않는다」).
 
 ## 광고 보상 대조 (읽기 전용 JSON)
 
@@ -204,7 +203,7 @@
 
 `ADMIN_UNCONFIGURED`(503) · `ADMIN_UNAUTHORIZED`(401) · `ADMIN_PUSH_COPY_INVALID`(400) ·
 `ADMIN_PUSH_TEST_RECIPIENT_NOT_FOUND`·`ADMIN_PUSH_JOB_NOT_FOUND`(404) · `ADMIN_PUSH_TEST_REQUIRED`·
-`ADMIN_PUSH_OUTSIDE_AD_HOURS`·`ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE`·`ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT`(409) · `ADMIN_PUSH_FAILED`(500) · 음성팩 가져오기의 `ADMIN_VOICE_PACK_INVALID`(400)·`ADMIN_VOICE_PACK_NOT_FOUND`(404)·`ADMIN_VOICE_PACK_LOCKED`(409).
+`ADMIN_PUSH_OUTSIDE_AD_HOURS`·`ADMIN_PUSH_TEST_RECIPIENT_NO_DEVICE`·`ADMIN_PUSH_TEST_RECIPIENT_NO_MARKETING_CONSENT`(409) · `ADMIN_PUSH_FAILED`(500).
 앱은 이 코드를 받지 않는다.
 
 ## 구현 지도
@@ -226,8 +225,7 @@
 | 스토어 보고서 해석(UTF-16LE·BOM·머리줄 변형·gzip TSV) | `lib/admin/store-reports.ts` | `admin-store-downloads.test.ts` 「Play 통계 CSV」·「App Store 분석 보고서」 |
 | 스토어 패널(빈 상태 셋·기록 없음) | `lib/admin/pages.ts` 의 `storePanel`·`lib/admin/ui.ts` 의 `columnChart` | `admin-store-downloads.test.ts` 「화면」 |
 | 스토어 표 | 마이그레이션 #138(`store_download_daily`·`store_download_sync`·`store_report_instances`) | `migrations.lock.json`·`account-purge-residue.test.ts`(개인정보 없음) |
-| 사용자 상세·기간 지급 | `routes/admin.ts`·`lib/admin/user-detail.ts`·`lib/admin/grant-pages.ts`·`lib/plan-grants.ts`(#134) | `plan-grants.test.ts` 「콘솔」 |
+| 사용자 상세 | `routes/admin.ts`·`lib/admin/user-detail.ts` | `admin-console.test.ts` 「화면」 |
 | 합성 운영 보기(JSON) | `routes/admin.ts`·`lib/admin/tts-ops.ts`·`lib/render-backlog.ts`(#139) | `tts-render-budget.test.ts` 「관리자 JSON」 |
 | 사용 지표 | `lib/admin/usage-metrics.ts`(거르기·집계)·`lib/admin/usage-pages.ts`(화면)·`routes/admin.ts` 의 `/usage` | `admin-usage-metrics.test.ts` |
 | 광고 보상 대조(읽기 전용) | `routes/admin.ts`·`lib/admin/ad-rewards.ts`(#141) | `ad-reward-sessions.test.ts` 「관리자 대조」 |
-| 음성팩 검수·게시 | `routes/admin.ts`·`lib/admin/voice-pack-pages.ts`·`lib/voice-packs.ts`(#144) | `voice-packs.test.ts` 「관리자」 |

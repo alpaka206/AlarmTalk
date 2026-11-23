@@ -39,52 +39,6 @@ export type VibrationPattern = (typeof VIBRATION_PATTERNS)[number];
 export const WAKE_MODES = ['sound_then_voice', 'voice_only'] as const;
 export type WakeMode = (typeof WAKE_MODES)[number];
 
-export type AlarmRow = Record<string, unknown> & {
-  repeat_days?: unknown;
-  is_active?: unknown;
-  mode?: unknown;
-  vibration_pattern?: unknown;
-  wake_mode?: unknown;
-  voice_profile_id?: unknown;
-};
-
-export function normalizeAlarmRow(row: AlarmRow) {
-  const rawRepeat = row.repeat_days;
-  let repeatDays: number[] = [];
-  if (typeof rawRepeat === 'string' && rawRepeat.length > 0) {
-    try {
-      const parsed: unknown = JSON.parse(rawRepeat);
-      if (Array.isArray(parsed)) repeatDays = parsed.filter((n): n is number => Number.isInteger(n));
-    } catch {
-      repeatDays = [];
-    }
-  } else if (Array.isArray(rawRepeat)) {
-    repeatDays = rawRepeat.filter((n): n is number => Number.isInteger(n));
-  }
-
-  const mode: AlarmMode =
-    row.mode === 'sound-only' || row.mode === 'tts' ? row.mode : 'tts';
-
-  const vibrationPattern: VibrationPattern = VIBRATION_PATTERNS.includes(row.vibration_pattern as VibrationPattern)
-    ? (row.vibration_pattern as VibrationPattern)
-    : 'default';
-
-  const wakeMode: WakeMode =
-    row.wake_mode === 'sound_then_voice' || row.wake_mode === 'voice_only'
-      ? row.wake_mode
-      : 'sound_then_voice';
-
-  return {
-    ...row,
-    repeat_days: repeatDays,
-    is_active: row.is_active === 1 || row.is_active === true,
-    mode,
-    vibration_pattern: vibrationPattern,
-    wake_mode: wakeMode,
-    voice_profile_id: (row.voice_profile_id ?? null) as string | null,
-  };
-}
-
 // error_code 는 **목록에 있는 코드**여야 한다 — 이 객체가 그대로 400 본문이 된다.
 type FieldError = { error: string; error_code: ErrorCode };
 
@@ -191,24 +145,6 @@ export function validateAlarmFields(body: {
   }
 
   return null;
-}
-
-/**
- * 응원 저장값 — 본문에 온 것만 고른다(`undefined` = 건드리지 않음). 검증은 `validateAlarmFields` 가 먼저 한다.
- *
- * 쓰기는 값이 왔을 때만 칼럼(#143)을 쓰고(없으면 지금과 같은 행), 값이 왔는데 칼럼이 없으면 통째로 실패한다(fail-closed —
- * CLAUDE.md 「배포가 마이그레이션보다 먼저 돈다」).
- */
-export function cheerFieldsOf(body: {
-  cheer_mode?: unknown;
-  cheer_pinned_content_id?: unknown;
-}): { column: 'cheer_mode' | 'cheer_pinned_content_id'; value: string | null }[] {
-  const out: { column: 'cheer_mode' | 'cheer_pinned_content_id'; value: string | null }[] = [];
-  if (body.cheer_mode !== undefined) out.push({ column: 'cheer_mode', value: (body.cheer_mode as string | null) ?? null });
-  if (body.cheer_pinned_content_id !== undefined) {
-    out.push({ column: 'cheer_pinned_content_id', value: (body.cheer_pinned_content_id as string | null) ?? null });
-  }
-  return out;
 }
 
 /**

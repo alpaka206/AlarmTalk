@@ -7,7 +7,6 @@ import {
   type DowngradedAlarm,
 } from './paid-voice-cleanup';
 import { logStructured } from './logger';
-import { activePlanGrantExistsSql } from './plan-grant-sql';
 import type { PlayEnv } from './play-subscriptions';
 import {
   BillingStateUnavailableError,
@@ -15,9 +14,7 @@ import {
   reconcileStoreSubscription,
 } from './billing-reconciliation';
 import { PAID_PLAN_TYPES, planTypeToUserPlan } from '../routes/billing-helpers';
-import { notifyDowngradedAlarms, sendBillingStateSignals, sendPlanChangedPush } from './fcm';
-import { sendVoiceDeletionWarningPush } from './fcm';
-import { resolvePersonalPromo } from './personal-promo';
+import { notifyDowngradedAlarms, sendBillingStateSignals } from './fcm';
 import type { Env } from '../types';
 
 // 만료 크론이 FCM(plan_changed) 을 쏘려면 Play env 외에 FIREBASE 설정도 필요하다. index.ts 의 scheduled
@@ -38,9 +35,6 @@ type ExpiryEnv = PlayEnv &
       | 'APNS_KEY_ID'
       | 'APNS_PRIVATE_KEY'
       | 'APPLE_TEAM_ID'
-      // 기간 한정 개인 플랜 — 보관 판정(`promoCoversFree`).
-      | 'PERSONAL_PROMO_STARTS_AT'
-      | 'PERSONAL_PROMO_ENDS_AT'
     >
   >;
 
@@ -247,12 +241,8 @@ export async function schedulePaidVoiceRetention(
   return deleteAfter;
 }
 
-/**
- * 보관 기한을 **정해진 시각으로** 거는(upsert) 문장 — `schedulePaidVoiceRetention` 과 기간 한정
- * 개인 플랜 종료 전환(`lib/personal-promo-end.ts`, 기한을 끝 + 3일로 미리 정한다)이
- * 같은 문장을 쓴다.
- */
-export function paidVoiceRetentionUpsertStatement(
+/** 보관 기한을 **정해진 시각으로** 거는(upsert) 문장 — [schedulePaidVoiceRetention] 이 쓴다. */
+function paidVoiceRetentionUpsertStatement(
   userPk: string,
   deleteAfterIso: string,
 ): InStatement {
@@ -267,60 +257,21 @@ export function paidVoiceRetentionUpsertStatement(
 /**
  * 지금 유료 권한이 살아 있는가 — 보관 만료 삭제 직전의 마지막 안전장치.
  * 활성 구독(만료 전) 또는 users.plan 이 무료가 아니면 유료로 본다. 둘 중 하나만 봐도
- * 대부분 맞지만, 어느 한쪽만 갱신하고 다른 쪽을 놓친 경로가 있어 둘 다 확인한다.
- *
- * **기간 한정 개인 플랜도 유료로 친다**(`promoCoversFree`) — 원시 plan 이 정확히 `'free'` 인
- * 계정만 덮는다(행 없음·`null` 은 덮지 않는다). 기간 중에는 새 보관이 걸리지 않고, 시작 전부터
- * 걸려 있던 보관은 스윕이 지우지 않고 풀어 준다. 종료 뒤에는 `transitionPersonalPromoEnd`(`lib/personal-promo-end.ts`)가
- * 다시 건다.
+ * 대부분 맞지만, 어느 한쪽만 갱신하고 다른 쪽을 놓친 경로가 있어 둘 다 확인한다(행이 없으면 무료).
  */
-export async function hasActivePaidEntitlement(
-  db: DbExecutor,
-  userPk: string,
-  promoCoversFree: boolean,
-): Promise<boolean> {
-  const res = await db.execute(paidEntitlementStatement(userPk));
-  return isPaidEntitlementRow(res.rows[0], promoCoversFree);
-}
-
-/**
- * [hasActivePaidEntitlement] 의 **조회 문장** — 여러 사람을 한 묶음(`batch`)으로 물을 때
- * (보관 스윕 묶음, `lib/personal-promo-end.ts`) 같은 문장을 쓴다. 판정은 [isPaidEntitlementRow].
- */
-export function paidEntitlementStatement(userPk: string): InStatement {
-  return {
+export async function hasActivePaidEntitlement(db: DbExecutor, userPk: string): Promise<boolean> {
+  const res = await db.execute({
     sql: `SELECT
             (SELECT COUNT(*) FROM subscriptions
               WHERE user_id = ? AND status = 'active'
                 AND datetime(expires_at) > datetime('now')) AS active_subs,
-            (SELECT plan FROM users WHERE id = ?) AS plan,
-            ${activePlanGrantExistsSql('?')} AS active_grant`,
-    args: [userPk, userPk, userPk],
-  };
-}
-
-/** [paidEntitlementStatement] 결과 행 하나로 유료 여부를 판정한다(행이 없으면 무료). */
-export function isPaidEntitlementRow(
-  row: Record<string, unknown> | undefined,
-  promoCoversFree: boolean,
-): boolean {
-  if (!row) return false;
-  const activeSubs = Number(row.active_subs ?? 0);
-  const rawPlan = row.plan as string | null;
-  if (promoCoversFree === true && rawPlan === 'free') return true;
-  // 관리자 기간 지급(`lib/plan-grants.ts`)도 유료 권한이다 — 지급 중에는 보관이 걸리지 않고 스윕이 지우지 않는다.
-  if (Number(row.active_grant ?? 0) === 1) return true;
-  const plan = rawPlan ?? 'free';
-  return activeSubs > 0 || (plan !== 'free' && plan.trim() !== '');
-}
-
-/** 지금 유효한 관리자 기간 지급이 있는가(`lib/plan-grants.ts`). */
-export async function hasActivePlanGrant(db: DbExecutor, userPk: string): Promise<boolean> {
-  const res = await db.execute({
-    sql: `SELECT ${activePlanGrantExistsSql('?')} AS active_grant`,
-    args: [userPk],
+            (SELECT plan FROM users WHERE id = ?) AS plan`,
+    args: [userPk, userPk],
   });
-  return Number(res.rows[0]?.active_grant ?? 0) === 1;
+  const row = res.rows[0];
+  if (!row) return false;
+  const plan = (row.plan as string | null) ?? 'free';
+  return Number(row.active_subs ?? 0) > 0 || (plan !== 'free' && plan.trim() !== '');
 }
 
 export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): Promise<void> {
@@ -340,10 +291,8 @@ export async function syncPaidVoiceRetention(
   db: DbExecutor,
   userPk: string,
   now: Date,
-  /** 기간 한정 개인 플랜이 지금 원시 free 를 덮는가 — `hasActivePaidEntitlement` 에 그대로 넘긴다. */
-  promoCoversFree: boolean,
 ): Promise<string | null> {
-  if (await hasActivePaidEntitlement(db, userPk, promoCoversFree)) {
+  if (await hasActivePaidEntitlement(db, userPk)) {
     await clearPaidVoiceRetention(db, userPk);
     return null;
   }
@@ -368,11 +317,6 @@ export async function syncPaidVoiceRetention(
 export async function sweepPaidVoiceRetention(
   db: Client,
   now: Date,
-  /**
-   * 기간 한정 개인 플랜이 지금 원시 free 를 덮는가. 덮으면 원시 free 사용자의 보관 행은
-   * **지우지 않고 풀어 준다**(삭제 직전 재확인이 유료로 본다) — 종료 뒤 전환이 다시 건다.
-   */
-  promoCoversFree: boolean,
 ): Promise<{
   targets: DowngradedAlarm[];
   cleanedUserPks: string[];
@@ -406,10 +350,9 @@ export async function sweepPaidVoiceRetention(
       //   났다(실측: 24개 중 3개). 지금은 끊기면 전부 되돌아가 다음 틱이 처음부터 한다.
       const revocation = await withWriteTransaction(db, async (tx) => {
         // 삭제 직전에 '지금도 무료인가'를 다시 본다. 보관 행은 해지 시점에 깔리는데, 그 뒤
-        // 보관 행을 지우지 않고 권한만 되살아나는 경우가 있다(기간 한정 개인 플랜 — 시작 전부터
-        // 걸려 있던 보관은 여기서 풀어 준다). 그대로 지우면 지금 유료인 사용자의 목소리를 영구
+        // 보관 행을 지우지 않고 권한만 되살아나는 경로가 있으면 지금 유료인 사용자의 목소리를 영구
         // 삭제하게 된다.
-        if (await hasActivePaidEntitlement(tx, userPk, promoCoversFree)) {
+        if (await hasActivePaidEntitlement(tx, userPk)) {
           await clearPaidVoiceRetention(tx, userPk);
           return null;
         }
@@ -477,10 +420,9 @@ export async function downgradeUserToFree(
 
 /**
  * `downgradeUserToFree` 의 **음성 보존 갈래 쓰기 문장** — 읽기(로그인 id·클론 id)는 호출부가
- * 미리 모아 넘긴다. 여러 사람을 한 묶음으로 내리는 경로(기간 한정 개인 플랜 종료 전환 —
- * `lib/personal-promo-end.ts`)가 **같은 문장**을 쓴다.
+ * 미리 모아 넘긴다.
  */
-export function freeDowngradeWrites(
+function freeDowngradeWrites(
   userPk: string,
   loginId: string | null,
   providerVoiceIds: Array<string | null | undefined>,
@@ -496,20 +438,15 @@ export function freeDowngradeWrites(
 
 /**
  * 반드시 쓰기 트랜잭션 안에서 호출한다. 활성 근거 없는 등급의 복구도 강등 전체를 수행한다.
- *
- * ⚠ **복구 조건은 원시 plan 이다**(`plan <> 'free'`) — 기간 한정 개인 플랜은 DB 에 쓰지 않으므로
- * 여기 닿지 않는다. 보관 기한만 `syncPaidVoiceRetention` 으로 판정해, 기간 중 복구된 계정에
- * 거짓 삭제 예고를 걸지 않는다(프로모가 꺼져 있으면 예전과 같이 예약된다 — 방금 free 로
- * 내렸고 활성 구독이 없다).
+ * 보관 기한은 `syncPaidVoiceRetention` 으로 판정한다(방금 free 로 내렸고 활성 구독이 없으니 예약된다).
  */
 export async function repairOrphanedPaidPlan(
   db: DbExecutor,
   userPk: string,
   now: Date,
-  promoCoversFree: boolean,
 ): Promise<string[]> {
   const repaired = await db.execute({
-    sql: `UPDATE users SET plan = 'free', updated_at = datetime('now')
+    sql: `UPDATE users SET plan = 'free'
           WHERE id = ? AND plan <> 'free' AND NOT EXISTS (
             SELECT 1 FROM subscriptions WHERE user_id = ? AND status = 'active'
           ) RETURNING id`,
@@ -517,7 +454,7 @@ export async function repairOrphanedPaidPlan(
   });
   if (repaired.rows.length === 0) return [];
   await downgradeUserToFree(db, userPk, { deleteVoiceData: false });
-  await syncPaidVoiceRetention(db, userPk, now, promoCoversFree);
+  await syncPaidVoiceRetention(db, userPk, now);
   return [userPk];
 }
 
@@ -558,7 +495,7 @@ async function syncUserPlanAfterCancel(
   const paid = strongestPaidSubscription(remaining);
   if (paid) {
     await db.execute({
-      sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+      sql: `UPDATE users SET plan = ? WHERE id = ?`,
       args: [planTypeToUserPlan(paid.planType), userPk],
     });
     return;
@@ -566,10 +503,6 @@ async function syncUserPlanAfterCancel(
   if (remaining.some((s) => PAID_PLAN_TYPES.has(s.planType))) {
     // 보류·미확인 구독은 회복 가능하다. 다른 구독의 종료로 클론을 반납하지 않는다.
     await resolvePlanAfterSuspend(db, userPk, []);
-  } else if (options.deleteVoiceData !== true && (await hasActivePlanGrant(db, userPk))) {
-    // 관리자 기간 지급이 남아 있다 — 원시 plan 만 free 로 두고 클론은 반납하지 않는다(읽을 때 플러스다). 지급이 끝나면
-    // 지급 뒷정리(`settleEndedPlanGrants`)가 반납과 보관을 맡는다.
-    await db.execute(setUserPlanStatement(userPk, 'free'));
   } else {
     await downgradeUserToFree(db, userPk, options);
   }
@@ -620,7 +553,7 @@ export async function resolvePlanAfterSuspend(
   const remaining = await findActiveSubscriptionsByUserPk(db, userPk);
   const paid = strongestPaidSubscription(remaining);
   await db.execute({
-    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+    sql: `UPDATE users SET plan = ? WHERE id = ?`,
     args: [paid ? planTypeToUserPlan(paid.planType) : 'free', userPk],
   });
   return paid ? paid.planType : null;
@@ -629,7 +562,7 @@ export async function resolvePlanAfterSuspend(
 /** `downgradeUserToFree`·`syncUserPlanAfterCancel` 가 쓰는 것과 같은 등급 갱신 문장. */
 function setUserPlanStatement(userPk: string, plan: string): InStatement {
   return {
-    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+    sql: `UPDATE users SET plan = ? WHERE id = ?`,
     args: [plan, userPk],
   };
 }
@@ -702,7 +635,7 @@ export async function createNewSubscriptionForPlan(
   });
 
   await db.execute({
-    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+    sql: `UPDATE users SET plan = ? WHERE id = ?`,
     args: [planTypeToUserPlan(params.planType), params.userPk],
   });
 
@@ -747,90 +680,13 @@ async function reconcileStoreBeforeExpiry(
 }
 
 /**
- * 강등/플랜변경으로 영향받은 사용자들에게 plan_changed 푸시(즉시성 목적). FIREBASE 설정이
- * 없거나(dev/테스트) 대상이 없으면 no-op. 실패해도 호출부 흐름을 깨지 않게 격리(로깅만).
- * **반드시 DB 트랜잭션 커밋 '후'에** 호출한다 — FCM 은 네트워크 I/O 라 tx 안에서 쏘면 안 된다.
- * (정확성은 클라 로컬 폴백[앱 시작 재조회 + 울림 시점 게이트]이 보장 — 푸시는 즉시성만.)
- */
-/**
- * **목소리 삭제 예고를 보낸다.** 보관 유예가 걸린 사용자에게만 간다.
- *
- * ⚠ **트랜잭션 밖에서 부른다** — FCM 은 tx 안에서 쏘지 않는다(`notifyPlanChanged` 와 같은 규칙).
- * 그래서 예약(`schedulePaidVoiceRetention`)과 같은 자리에 둘 수 없고, 커밋 뒤에 부른다.
- *
- * 유예 행이 없는 사용자는 조용히 건너뛴다 — 강등이라고 다 삭제 예고가 붙는 게 아니다
- * (결제 보류는 유예를 걸지 않으므로 여기서 자연히 빠진다).
- */
-export async function notifyVoiceDeletionScheduled(
-  db: Client,
-  env: ExpiryEnv | undefined,
-  userIds: string[],
-): Promise<void> {
-  const unique = Array.from(new Set(userIds.filter(Boolean)));
-  if (unique.length === 0) return;
-  const hasFirebase = Boolean(env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON);
-  const hasApns = Boolean(env?.APNS_KEY_ID && env?.APNS_PRIVATE_KEY && env?.APPLE_TEAM_ID);
-  if (!hasFirebase && !hasApns) return;
-
-  // ⚠ **조회까지 try 안에 둔다**(2026-09-20). 이 함수는 커밋 **뒤**에 돈다 — 여기서 던지면
-  //   이미 저장된 결제·해지가 500 으로 보이고, 앱은 실패로 읽어 다시 시도한다. 그 재시도는
-  //   바뀐 것이 없어 알림을 다시 보내지도 않는다. 알림은 즉시성일 뿐 정확성은 재조회가 맡는다.
-  try {
-    const ph = unique.map(() => '?').join(', ');
-    const res = await db.execute({
-      sql: `SELECT user_id FROM paid_voice_retention WHERE user_id IN (${ph})`,
-      args: unique,
-    });
-    const scheduled = res.rows.map((r) => String(r.user_id));
-    if (scheduled.length === 0) return;
-    await sendVoiceDeletionWarningPush(db, env as ExpiryEnv, {
-      userPks: scheduled,
-      retentionDays: PAID_VOICE_RETENTION_DAYS,
-    });
-  } catch (err) {
-    // ⚠ 알림 실패로 강등·예약을 되돌리지 않는다 — 데이터는 이미 정리됐다.
-    logStructured('error', {
-      at: 'billing.notify_voice_deletion',
-      action: 'PUSH_FAILED',
-      error: String(err),
-    });
-  }
-}
-
-export async function notifyPlanChanged(
-  db: Client,
-  env: ExpiryEnv | undefined,
-  userIds: string[],
-): Promise<void> {
-  // ⚠ **Firebase 값만 뽑아 넘기지 말 것.** 예전에는 두 필드만 새 객체로 만들어 넘겼는데,
-  // 그러면 APNs 설정(`APNS_*`·`APPLE_TEAM_ID`·`APPLE_BUNDLE_ID`)이 통째로 떨어져
-  // **iOS 기기에는 신호가 영영 안 간다** — 강등/복구가 반영되지 않는다.
-  // env 를 그대로 넘기고, 어느 쪽 키가 없든 발송부가 알아서 건너뛴다.
-  //
-  // ⚠ 게이트도 Firebase 로만 걸면 안 된다. iOS 전용 사용자에게 보낼 때
-  // Firebase 가 비어 있다고 전체를 막으면 APNs 까지 같이 죽는다.
-  const hasFirebase = Boolean(env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON);
-  const hasApns = Boolean(env?.APNS_KEY_ID && env?.APNS_PRIVATE_KEY && env?.APPLE_TEAM_ID);
-  if ((!hasFirebase && !hasApns) || userIds.length === 0) {
-    return;
-  }
-  try {
-    await sendPlanChangedPush(db, env as ExpiryEnv, userIds);
-  } catch (err) {
-    logStructured('error', {
-      at: 'billing.plan_changed_push',
-      action: 'PLAN_CHANGED_PUSH_FAILED',
-      error: String(err),
-    });
-  }
-}
-
-/**
  * 권한 변경과 그 변경으로 생긴 삭제 유예는 커밋 후 **한 번에** 통지한다
  * (`sendBillingStateSignals` — 토큰 조회·OAuth 한 번, 안드로이드 중복 신호 없음).
  *
  * 예고는 **유예 행이 있는 사람만** 받는다 — 전원을 넘겨도 아직 유료인 사람은 알아서 빠진다.
- * ⚠ **던지지 않는다.** 커밋 뒤에 돈다 — 여기서 던지면 저장된 결제·해지가 500 으로 보인다.
+ * ⚠ **던지지 않는다.** 커밋 뒤에 돈다 — 여기서 던지면 저장된 결제·해지가 500 으로 보인다(조회까지 try 안).
+ * ⚠ **env 를 통째로 넘기고, 게이트를 Firebase 하나로 걸지 말 것.** Firebase 값만 뽑아 넘기거나 Firebase 가 비었다고
+ *   막으면 APNs 설정이 떨어져 **iOS 기기에는 신호가 영영 안 간다**.
  */
 export async function notifyBillingStateChanged(
   db: Client,
@@ -876,8 +732,6 @@ export async function processSubscriptionExpiry(
   now: Date = new Date(),
 ): Promise<void> {
   const notifyUserPks = new Set<string>();
-  // 기간 한정 개인 플랜 — 이 실행의 시각으로 한 번 푼다(보관 판정·종료 전환이 같은 값을 본다).
-  const promo = resolvePersonalPromo(env, now);
   // ⚠ **권한이 살아 있는 행을 먼저, 보류·미확인 행은 남는 자리에서 다시 본다**(2026-09-20 실측).
   //   보류 행은 `active` 인 채 만료가 지나 있어 매 틱 다시 뽑힌다. 보류는 스토어 재확인으로만
   //   풀리므로 계속 보되, 새로 만료될 행을 밀어내지 않는다 — 보류 행이 자리를 다 쓰면 다른
@@ -901,23 +755,12 @@ export async function processSubscriptionExpiry(
     });
     if (decision === 'skip') continue;
     // 외부 조회 동안 갱신·전환된 행은 쓰기 트랜잭션에서 다시 검사한다.
-    const affected = await expireSubscriptionIfDue(
-      db,
-      subscriptionId,
-      String(row.expires_at),
-      now,
-      promo.active,
-    );
+    const affected = await expireSubscriptionIfDue(db, subscriptionId, String(row.expires_at), now);
     for (const id of affected) notifyUserPks.add(id);
   }
 
-  // 기간 한정 개인 플랜 **종료 전환**은 여기서 하지 않는다 — 전용 크론과 5분 틱의 폴백이
-  // `lib/personal-promo-end.ts` 의 `runPersonalPromoEnd` 로 한다(`index.ts`). 대상이 수천 명이라
-  // 이 틱의 subrequest 로는 끝 + 3일 약속을 지킬 수 없었다.
-
   // 보관 유예가 끝난 유료 음성 데이터 정리 (같은 cron 주기에서 처리).
-  // 기간 중에는 원시 free 의 보관 행을 지우지 않고 풀어 준다(`promo.active`).
-  const sweptVoiceData = await sweepPaidVoiceRetention(db, now, promo.active);
+  const sweptVoiceData = await sweepPaidVoiceRetention(db, now);
 
   // 강등된 사용자에게 plan_changed 푸시 — 클라가 '강등 시점'에 유료 목소리 알람을 기본 알람으로
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.

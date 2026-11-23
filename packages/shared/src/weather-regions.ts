@@ -23,7 +23,6 @@ import catalogJson from './weather-regions.json';
  * 행·`weather_region_daily` 에 그대로 저장돼 있다. 이름·좌표·별칭은 고쳐도 된다.
  */
 export const WEATHER_REGION_LOCALES = ['ko', 'en', 'ja'] as const;
-export type WeatherRegionLocale = (typeof WEATHER_REGION_LOCALES)[number];
 
 export const WEATHER_COUNTRY_CODES = ['KR', 'JP', 'US'] as const;
 export type WeatherCountryCode = (typeof WEATHER_COUNTRY_CODES)[number];

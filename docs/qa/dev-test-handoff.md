@@ -62,9 +62,9 @@
          넣었다(`chore/forced-update-cleanup`). ⚠ 운영에는 #938 과 **같은 릴리스나 그 뒤**에만 나가야 한다 — 먼저 나가면 옛 앱이
          막히기 전에 호환 응답이 사라진다.
          게재 전에 올리면 받을 새 버전이 없어 앱이 벽돌이 된다.
-3. [ ] **10/31 기간 한정 개인 플랜을 예정대로 끝낸다**(2026-10-16 오너 확정). 절차는
-       [`docs/ops/personal-promo-end-runbook.md`](../ops/personal-promo-end-runbook.md) — 종료 1주 전(10/24) 대상 수 산정,
-       끝 시각 모니터링, 끝 + 3일 확인, 11월 중순 정리 PR.
+3. [x] **10/31 기간 한정 개인 플랜을 예정대로 끝냈다**(2026-10-16 오너 확정). 운영(main)의 종료 전환·끝 + 3일 삭제가
+       돌았고 Sentry 에 종료 작업 경보가 없다(2026-11-23 확인). 정리 PR 몫(종료 코드·1분 크론·런북)은 `fix/ios-android-parity`
+       에서 지웠다 — main 릴리스 직전의 운영 DB 확인 한 줄은 [`v1-3-handoff.md`](v1-3-handoff.md) §2 의 1.
 4. [ ] **탈퇴 오류 수정 배포 뒤 관찰** — [Sentry 확인 기록](sentry-followup-2026-10-18.md).
        10/19 서버 수정 배포는 끝났다. 운영 재발 여부는 별도 관찰한다.
 
@@ -82,10 +82,10 @@
       없는 목소리로 `kind: "love"` → 404). 목록은 `apps/landing/components/event/event-api.ts` 의 `DEPLOY_WINDOW_RETRY_DELAYS_MS` 주석.
 - [ ] 랜딩 이벤트 옛 종류 `comfort`·`chuseok` 호환 제거 — 백엔드 `lib/event-voices.ts` 의 `LEGACY_EVENT_MESSAGE_KINDS`·
       `EVENT_MESSAGES.comfort`·`.chuseok`, 회귀 `event-clips.test.ts` 의 두 케이스, `apps/landing/public/event/voice1.chuseok.jpg`.
-- [ ] 백엔드의 닿지 않는 라이브 생성 코드 삭제 — `/tts/generate` 는 2026-09-23 부터 `random:true` 를 `400 RANDOM_TTS_RETIRED`
-      로 거절한다. 남은 것: `tts.ts` 의 `randomRequested` 갈래·동적 문장 블록, `vertex-translate.ts` 의 동적 생성기,
-      `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`. ⚠ 등록 미리듣기와 같이 쓰는 헬퍼(`presetTextWithListenerTitle` 등)와 사전렌더 검사는 남긴다.
-- [ ] 안 쓰는 워커 시크릿 지우기(있으면): `GOOGLE_VERTEX_MODEL`, `ELEVENLABS_TTS_MODEL_ID` — `npx wrangler secret delete <이름> --env dev`·
+- [x] 백엔드의 닿지 않는 라이브 생성 코드 삭제(2026-11-23) — `tts.ts` 의 `randomRequested` 갈래·동적 문장 블록, `vertex-translate.ts` 의
+      동적 생성기, `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED` 를 지웠다. 400 `RANDOM_TTS_RETIRED` 와 그 코드는 옛 앱 계약이라 남겼고,
+      관계·호칭·지문 판정 테스트는 `prerenderRejectionReason` 으로 옮겼다. 등록 미리듣기 헬퍼(`presetTextWithListenerTitle` 등)는 그대로다.
+- [ ] 안 쓰는 워커 시크릿 지우기(있으면): `GOOGLE_VERTEX_MODEL`, `ELEVENLABS_TTS_MODEL_ID`, `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED` — `npx wrangler secret delete <이름> --env dev`·
       `--env production`, `.dev.vars.*` 의 줄도.
 - [ ] 생성 음성(`generated-tts/`)이 DB 행 없이 R2 에 남는 경로 찾기 — 2026-10-16 prod 에서 살아 있는 계정의 고아 파일 11개를
       지웠다(오너 승인). 목소리 삭제·문구 교체가 R2 를 지우는지 본다.

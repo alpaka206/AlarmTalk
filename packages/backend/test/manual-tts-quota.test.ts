@@ -70,15 +70,6 @@ describe('resolveManualTtsPool', () => {
     const pool = await resolveManualTtsPool(db.client, ['pk-4', 'sub-4'], 'pk-4', 'free');
     expect(pool).toEqual({ poolKey: 'pk-4', planKey: 'free', limit: 3 });
   });
-
-  it('기간 한정 개인 플랜에서만 오는 접근은 구독을 보지 않고 개인 30회·본인 풀이다', async () => {
-    const db = createMockDB();
-    const pool = await resolveManualTtsPool(db.client, ['pk-5', 'sub-5'], 'pk-5', 'plus', {
-      promoOnly: true,
-    });
-    expect(pool).toEqual({ poolKey: 'pk-5', planKey: 'personal', limit: 30 });
-    expect(db.calls).toHaveLength(0);
-  });
 });
 
 describe('reserveManualTtsQuota', () => {

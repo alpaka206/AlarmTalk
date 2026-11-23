@@ -182,7 +182,7 @@ describe('POST /events — 사용 기록 배치 수집', () => {
     expect(mockDB.calls.some((call) => /INSERT/i.test(call.sql))).toBe(false);
   });
 
-  it('문구 이벤트 100건은 개별 DB 요청 없이 두 batch로 처리한다', async () => {
+  it('문구 이벤트 100건은 개별 DB 요청 없이 batch 하나로 넣는다', async () => {
     const transaction = await mockDB.client.transaction();
     const execute = vi.spyOn(transaction, 'execute');
     const batch = vi.spyOn(transaction, 'batch');
@@ -201,29 +201,14 @@ describe('POST /events — 사용 기록 배치 수집', () => {
 
     expect(response.status).toBe(200);
     expect(execute).not.toHaveBeenCalled();
-    expect(batch).toHaveBeenCalledTimes(2);
+    // 25건씩 넣는 INSERT 넷뿐이다 — 보관함 행은 건드리지 않는다(#152).
+    expect(batch).toHaveBeenCalledTimes(1);
     expect(batch.mock.calls[0]?.[0]).toHaveLength(4);
-    expect(batch.mock.calls[1]?.[0]).toHaveLength(104);
     expect(mockDB.transactions.commits).toBe(1);
   });
 
-  it('같은 배치의 중복 UUID는 첫 사실만 보관함에 반영한다', async () => {
-    const attached = event({ type: 'manual_message_attached', message_id: MESSAGE_ID });
-    const response = await buildApp().request(
-      jsonReq('POST', '/events', {
-        events: [attached, { ...attached, type: 'manual_message_released' }],
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(mockDB.calls.filter((call) => call.sql.includes('UPDATE message_library'))).toHaveLength(
-      1,
-    );
-    expect(mockDB.calls.some((call) => call.sql.includes('SET in_use = 0'))).toBe(false);
-  });
-
   it('batch 쓰기 실패는 전체 트랜잭션을 롤백한다', async () => {
-    mockDB.pushErrorFor('UPDATE message_library', new Error('write failed'));
+    mockDB.pushErrorFor('INSERT OR IGNORE INTO usage_events', new Error('write failed'));
     const response = await buildApp().request(
       jsonReq('POST', '/events', {
         events: [event({ type: 'manual_message_attached', message_id: MESSAGE_ID })],
@@ -260,46 +245,20 @@ describe('POST /events — 사용 기록 배치 수집', () => {
     expect(insert!.args).toContain('2026-09-01T21:00:00.000Z');
   });
 
-  it('문구를 붙이면 보관함 행을 사용중으로 표시한다 — 본인 행만', async () => {
-    await buildApp('user-1').request(
+  it('문구 붙임·해제는 기록으로만 남고 보관함 행은 건드리지 않는다', async () => {
+    // 사용중/비사용중을 따로 적던 `message_library.in_use` 는 읽는 곳이 없어 #152 에서 지웠다(`docs/spec/usage-events.md` §5).
+    const res = await buildApp('user-1').request(
       jsonReq('POST', '/events', {
-        events: [event({ type: 'manual_message_attached', message_id: MESSAGE_ID })],
+        events: [
+          event({ type: 'manual_message_attached', message_id: MESSAGE_ID }),
+          event({ type: 'manual_message_released', message_id: MESSAGE_ID }),
+        ],
       }),
     );
-    const update = mockDB.calls.find((c) => c.sql.includes('SET in_use = 1'));
-    expect(update).toBeDefined();
-    expect(update!.sql).toContain('user_id = ?');
-    expect(update!.args).toEqual([
-      '2026-09-06T21:00:00.000Z',
-      '2026-09-06T21:00:00.000Z',
-      MESSAGE_ID,
-      'user-1',
-      '2026-09-06T21:00:00.000Z',
-    ]);
-  });
-
-  it('붙임도 더 최근 사실을 덮지 않는다 — 다른 기기의 최신 해제를 되돌리면 안 된다', async () => {
-    await buildApp('user-1').request(
-      jsonReq('POST', '/events', {
-        events: [event({ type: 'manual_message_attached', message_id: MESSAGE_ID })],
-      }),
-    );
-    const update = mockDB.calls.find((c) => c.sql.includes('SET in_use = 1'));
-    // 해제와 **같은** 가드가 있어야 한다. 한쪽만 막으면 뒤늦게 도착한 붙임이 최신 해제를
-    // 되돌려 그 문구가 영원히 '사용중' 으로 남는다.
-    expect(update!.sql).toContain('in_use_updated_at <= ?');
-  });
-
-  it('해제는 더 최근 사실을 덮지 않는다 — 늦게 도착한 큐가 사용중을 되돌리면 안 된다', async () => {
-    await buildApp('user-1').request(
-      jsonReq('POST', '/events', {
-        events: [event({ type: 'manual_message_released', message_id: MESSAGE_ID })],
-      }),
-    );
-    const update = mockDB.calls.find((c) => c.sql.includes('SET in_use = 0'));
-    expect(update).toBeDefined();
-    // 시각 비교 가드가 있어야 한다(오프라인 큐는 며칠 밀릴 수 있다).
-    expect(update!.sql).toContain('in_use_updated_at <= ?');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accepted: 2 });
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT OR IGNORE INTO usage_events'))).toBe(true);
+    expect(mockDB.calls.some((c) => c.sql.includes('message_library'))).toBe(false);
   });
 
   it.each([1, 5 * 365 * 24 * 60 * 60 * 1000])('도착보다 %s ms 미래인 기록은 시각을 바꿔 저장하지 않고 버린다', async (aheadMs) => {
@@ -360,38 +319,6 @@ describe('POST /events — 사용 기록 배치 수집', () => {
     expect(mockDB.calls.some((call) => call.sql.includes('UPDATE message_library'))).toBe(false);
   });
 
-  it('이미 저장된 사건은 보관함을 다시 건드리지 않는다 — 재전송은 멱등이다', async () => {
-    const dup = event({ type: 'manual_message_attached', message_id: MESSAGE_ID });
-    // 응답만 못 받고 서버는 커밋했던 배치 — 같은 id 가 이미 들어 있다.
-    mockDB.pushResultFor('SELECT id FROM usage_events', [{ id: dup.id }]);
-
-    const res = await buildApp('user-1').request(jsonReq('POST', '/events', { events: [dup] }));
-
-    expect(res.status).toBe(200);
-    // INSERT 는 그대로 시도한다(OR IGNORE 가 버린다).
-    expect(mockDB.calls.some((c) => c.sql.includes('INSERT OR IGNORE INTO usage_events'))).toBe(
-      true,
-    );
-    // 갱신은 없어야 한다 — 재전송이 그 사이에 들어온 해제를 되돌리면 안 된다.
-    expect(mockDB.calls.some((c) => c.sql.includes('SET in_use = 1'))).toBe(false);
-  });
-
-  it('중복 조회는 INSERT 앞에서 돈다 — 뒤로 가면 모든 갱신이 조용히 사라진다', async () => {
-    await buildApp('user-1').request(
-      jsonReq('POST', '/events', {
-        events: [event({ type: 'manual_message_attached', message_id: MESSAGE_ID })],
-      }),
-    );
-    const select = mockDB.calls.findIndex((c) => c.sql.includes('SELECT id FROM usage_events'));
-    const insert = mockDB.calls.findIndex((c) =>
-      c.sql.includes('INSERT OR IGNORE INTO usage_events'),
-    );
-    expect(select).toBeGreaterThanOrEqual(0);
-    expect(select).toBeLessThan(insert);
-    // 새 사건은 그대로 반영된다 — 위 건너뛰기가 정상 경로를 죽이지 않는다.
-    expect(mockDB.calls.some((c) => c.sql.includes('SET in_use = 1'))).toBe(true);
-  });
-
   it('모르는 종류는 400 — 앱이 서버보다 앞서 나가도 조용히 버려지지 않는다', async () => {
     const res = await buildApp().request(
       jsonReq('POST', '/events', { events: [event({ type: 'something_new' })] }),
@@ -427,7 +354,7 @@ describe('POST /events — 사용 기록 배치 수집', () => {
     };
 
     it('준비 기록의 칸을 열마다 옮겨 적고 권한 출처를 서버가 찍는다', async () => {
-      mockDB.pushResultFor('AS has_subscription', [{ raw_plan: 'free', has_subscription: 0, has_grant: 1 }]);
+      mockDB.pushResultFor('AS has_subscription', [{ plan: 'plus', has_subscription: 1 }]);
       const attempt = crypto.randomUUID();
       const response = await buildApp().request(jsonReq('POST', '/events', {
         events: [event({
@@ -443,7 +370,7 @@ describe('POST /events — 사용 기록 배치 수집', () => {
       const row = firstRow();
       expect(row).toMatchObject({
         type: 'voice_preparation_ready', schema_version: 2, platform: 'android', app_version: '41',
-        feature_version: 'prep-1', attempt_id: attempt, entitlement_source: 'admin', scope: 'all_voices',
+        feature_version: 'prep-1', attempt_id: attempt, entitlement_source: 'paid', scope: 'all_voices',
         language: 'ko', revision: 'r20261026', cache_state: 'partial', target_count: 4, completed_count: 4,
         bytes: 123456, duration_ms: 2300, is_first: 1, prepared: null, error_code: null,
       });
@@ -478,7 +405,7 @@ describe('POST /events — 사용 기록 배치 수집', () => {
     });
 
     it('직접 입력 결과는 정산 수단·원래 사용월·결과와 요청 id 를 남긴다', async () => {
-      mockDB.pushResultFor('AS has_subscription', [{ raw_plan: 'plus', has_subscription: 1, has_grant: 1 }]);
+      mockDB.pushResultFor('AS has_subscription', [{ plan: 'plus', has_subscription: 1 }]);
       const requestId = crypto.randomUUID();
       const response = await buildApp().request(jsonReq('POST', '/events', {
         events: [event({
@@ -494,6 +421,30 @@ describe('POST /events — 사용 기록 배치 수집', () => {
         entitlement_source: 'paid', outcome: 'success', charged_source: 'ad', usage_month: '2026-10',
         result_id: MESSAGE_ID, request_id: requestId, char_count: 42,
       });
+    });
+
+    // 추가 음성팩과 함께 없앤 종류(`pack_selected`)와 칸(`pack_id`) — 내부 dev 빌드의 큐에 남아 있을 수 있다. 400 을 주면 그
+    // 기기는 그 뒤로 아무 기록도 못 올린다(앱은 2xx 배치만 큐에서 지운다). 받고 버리고, 나머지는 그대로 저장한다.
+    it('은퇴한 종류는 버리고 은퇴한 칸은 지운 채 받는다 — 배치가 400 으로 막히지 않는다', async () => {
+      const retired = event({ type: 'pack_selected', alarm_id: null, schema_version: 2, props: { pack_id: 'mina' } });
+      const selected = event({
+        type: 'voice_selected', alarm_id: null, schema_version: 2, props: { pack_id: 'mina', is_first: true },
+      });
+      const response = await buildApp().request(jsonReq('POST', '/events', { events: [retired, selected] }));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ accepted: 1 });
+      const call = insertCall();
+      expect(call.sql).not.toContain('pack_id');
+      expect(call.args).not.toContain(retired.id);
+      expect(call.args).not.toContain('mina');
+      expect(firstRow()).toMatchObject({ id: selected.id, type: 'voice_selected', is_first: 1 });
+
+      // 은퇴한 종류만 든 배치도 쓰기 없이 200 이다 — 큐가 빈다.
+      mockDB.reset();
+      const onlyRetired = await buildApp().request(jsonReq('POST', '/events', { events: [retired] }));
+      expect(onlyRetired.status).toBe(200);
+      expect(await onlyRetired.json()).toEqual({ accepted: 0 });
+      expect(mockDB.calls.some((c) => /INSERT/i.test(c.sql))).toBe(false);
     });
 
     it('2판 열이 아직 없으면(배포 직후 창) 500 이고 아무것도 커밋하지 않는다 — 옛 열만 넣는 갈래가 없다', async () => {

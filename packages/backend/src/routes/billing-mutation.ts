@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { personalPromoCoversFree } from '../lib/personal-promo';
 import {
   cancelActiveSubscriptionsForUser,
   cancelSubscriptionImmediate,
@@ -105,7 +104,7 @@ async function createPaidSubscription(
   });
 
   await db.execute({
-    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+    sql: `UPDATE users SET plan = ? WHERE id = ?`,
     args: [planTypeToUserPlan(params.plan.plan_type), params.userPk],
   });
 
@@ -323,8 +322,6 @@ billingMutation.post('/cancel', async (c) => {
     }
   }
 
-  // 기간 한정 개인 플랜이 덮는 동안에는 무료가 돼도 보관을 걸지 않는다(응답 기한도 null).
-  const promoCoversFree = personalPromoCoversFree(c.env, now);
   const voiceRetentionUntil = await withWriteTransaction(db, async (tx) => {
     // 트랜잭션 안에서 '사용자 전체 활성 구독'을 다시 조회해 취소하지 않는다 — Play
     // 호출 동안 새 결제 confirm 으로 생긴 활성 구독은 위 revoke 대상이 아니었으므로
@@ -338,7 +335,7 @@ billingMutation.post('/cancel', async (c) => {
     // '지금 삭제'는 /voice-data/delete-now 로 분리.
     // 새 결제가 살아남으면 유예·응답 기한도 없다. 스윕까지 기다리면 그 전에 거짓
     // 삭제 예고가 나가므로 plan 재계산과 같은 트랜잭션에서 보관 상태를 결정한다.
-    return syncPaidVoiceRetention(tx, userPk, now, promoCoversFree);
+    return syncPaidVoiceRetention(tx, userPk, now);
   });
   // 해지한 당사자에게 plan_changed 푸시(커밋 후). 해지 직후가 예고를 보낼 자리다 — 3일 뒤
   // 지워진다는 걸 지금 말해야 되돌릴 시간이 있다.

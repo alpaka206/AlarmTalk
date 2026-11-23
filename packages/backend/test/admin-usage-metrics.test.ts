@@ -69,7 +69,7 @@ beforeAll(async () => {
   for (const [id, plan] of [
     ['u-free', 'free'],
     ['u-paid', 'plus'],
-    ['u-admin', 'free'],
+    ['u-hold', 'free'],
   ] as const) {
     await run(`INSERT INTO users (id, email, plan) VALUES (?, ?, ?)`, [id, `${id}@example.com`, plan]);
     for (const type of ['terms', 'privacy', 'age14']) {
@@ -82,9 +82,10 @@ beforeAll(async () => {
   await run(
     `INSERT INTO subscriptions (id, user_id, plan_id, status, expires_at) VALUES ('sub-1', 'u-paid', '70000000-0000-4000-8000-000000000002', 'active', '2099-01-01T00:00:00Z')`,
   );
+  // 결제 보류 — 구독 행은 active 로 남고 권한 상태만 막혔다(등급은 free 로 회수됐다). 결제 권한이 아니다.
   await run(
-    `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
-     VALUES ('g-1', 'u-admin', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z', 'support', 'admin-console', 'k-1')`,
+    `INSERT INTO subscriptions (id, user_id, plan_id, status, expires_at, entitlement_state)
+     VALUES ('sub-hold', 'u-hold', '70000000-0000-4000-8000-000000000002', 'active', '2099-01-01T00:00:00Z', 'suspended')`,
   );
 
   const prepAttempt = crypto.randomUUID();
@@ -126,21 +127,22 @@ beforeAll(async () => {
     ],
     'ios',
   );
-  await post('u-admin', [ev('sample_started', 10, { platform: 'android', app_version: '40' })]);
+  await post('u-hold', [ev('sample_started', 10, { platform: 'android', app_version: '40' })]);
 });
 
 describe('권한 출처', () => {
-  it('결제 > 관리자 지급 > 기간 한정 > 무료 — 한 기록에 하나', () => {
-    expect(entitlementSourceFrom({ rawPlan: 'plus', hasSubscription: true, hasGrant: true, promoActive: true })).toBe('paid');
-    expect(entitlementSourceFrom({ rawPlan: 'free', hasSubscription: false, hasGrant: true, promoActive: true })).toBe('admin');
-    expect(entitlementSourceFrom({ rawPlan: 'free', hasSubscription: false, hasGrant: false, promoActive: true })).toBe('promo');
-    expect(entitlementSourceFrom({ rawPlan: 'free', hasSubscription: false, hasGrant: false, promoActive: false })).toBe('free');
+  it('결제 > 무료 — 한 기록에 하나', () => {
+    expect(entitlementSourceFrom({ plan: 'plus', hasSubscription: true })).toBe('paid');
+    // 유료 등급인데 권한 있는 구독 행이 없는 옛 계정도 결제로 본다.
+    expect(entitlementSourceFrom({ plan: 'plus', hasSubscription: false })).toBe('paid');
+    expect(entitlementSourceFrom({ plan: 'free', hasSubscription: false })).toBe('free');
+    expect(entitlementSourceFrom({ plan: null, hasSubscription: false })).toBe('free');
   });
 
   it('받는 순간 계정 상태로 찍는다', async () => {
     const rows = await db.execute(`SELECT user_id, entitlement_source FROM usage_events GROUP BY user_id`);
     const map = Object.fromEntries(rows.rows.map((r) => [String(r.user_id), String(r.entitlement_source)]));
-    expect(map).toEqual({ 'u-free': 'free', 'u-paid': 'paid', 'u-admin': 'admin' });
+    expect(map).toEqual({ 'u-free': 'free', 'u-paid': 'paid', 'u-hold': 'free' });
   });
 });
 
@@ -148,7 +150,7 @@ describe('사용 지표', () => {
   it('퍼널은 사람 수와 앞 단계 기준 전환을 낸다', async () => {
     const m = await loadUsageMetrics(db, parseUsageFilter(() => undefined));
     const step = (key: string) => m.funnel.find((s) => s.key === key)!;
-    expect(step('sample_started').users).toBe(2); // u-free, u-admin
+    expect(step('sample_started').users).toBe(2); // u-free, u-hold
     expect(step('sample_completed')).toMatchObject({ users: 2, fromPrevious: 1, previousUsers: 2 });
     expect(step('auth_success')).toMatchObject({ users: 1, fromPrevious: 1, previousUsers: 2 });
     expect(step('alarm_ready')).toMatchObject({ users: 1, fromPrevious: 1, previousUsers: 1 });
@@ -197,8 +199,10 @@ describe('사용 지표', () => {
     expect(ios.funnel.find((s) => s.key === 'sample_completed')!.users).toBe(1);
     const v40 = await loadUsageMetrics(db, parseUsageFilter((k) => ({ version: '40' })[k as 'version']));
     expect(v40.funnel.find((s) => s.key === 'sample_started')!.users).toBe(1);
-    const admin = await loadUsageMetrics(db, parseUsageFilter((k) => ({ source: 'admin' })[k as 'source']));
-    expect(admin.usersBySource).toEqual([{ source: 'admin', users: 1 }]);
+    const paid = await loadUsageMetrics(db, parseUsageFilter((k) => ({ source: 'paid' })[k as 'source']));
+    expect(paid.usersBySource).toEqual([{ source: 'paid', users: 1 }]);
+    // 없앤 출처(관리자 지급 `admin`·기간 한정 `promo`)는 모르는 값으로 버린다.
+    expect(parseUsageFilter((k) => ({ source: 'admin' })[k as 'source']).source).toBeNull();
   });
 
   it('모르는 거르기 값은 버리고, 조각은 값을 바인딩으로만 넣는다', () => {

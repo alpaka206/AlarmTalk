@@ -213,6 +213,9 @@ describe('강제 업데이트 뒤 지운 호환 응답 — 이제 코드가 있�
     expect(res.json.subscription).toMatchObject({ id: 'sub-me', status: 'active' });
     expect(res.json.plan).toMatchObject({ key: 'personal', plan_type: 'personal' });
     expect(res.json.plan).not.toHaveProperty('max_members');
+    // 최상위 칸은 이게 전부다 — 기간 한정 개인 플랜·관리자 기간 지급의 칸은 2026-11-23 에 뺐다(옛 앱은 없으면 넘긴다).
+    // `user_plan` 은 스토어를 다시 확인한 요청(`refresh_store=1`)에만 싣는다.
+    expect(Object.keys(res.json).sort()).toEqual(['next_plan', 'plan', 'store_renewal_providers', 'subscription']);
   });
 });
 

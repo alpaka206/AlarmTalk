@@ -74,10 +74,12 @@ export const WEATHER_READ_DEADLINE_MS = 5_000;
 
 export type WeatherSlotKind = keyof typeof WEATHER_SLOT_HOURS;
 
+// 원천 값(`weather_code`·`precip_*`)은 읽는 곳이 없지만 남긴다 — 분류 결과(`variant_index`)를 낸 근거라 잘못 고른 날을 조사할 수
+// 있다. 먼지(`dust_level`)는 원천을 쓰지 않아 늘 NULL 이었으므로 #152 에서 지웠다.
 const UPSERT_SQL = `INSERT INTO weather_region_daily_official (
     region_key, target_date, variant_index, weather_code, temp_max, temp_min,
-    precip_prob, precip_sum, dust_level, computed_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    precip_prob, precip_sum, computed_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(region_key, target_date) DO UPDATE SET
     variant_index = excluded.variant_index,
     weather_code = excluded.weather_code,
@@ -85,7 +87,6 @@ const UPSERT_SQL = `INSERT INTO weather_region_daily_official (
     temp_min = excluded.temp_min,
     precip_prob = excluded.precip_prob,
     precip_sum = excluded.precip_sum,
-    dust_level = excluded.dust_level,
     computed_at = excluded.computed_at`;
 
 /** 숫자 칸 하나 — '재지 않음'(NaN) 은 NULL 로 적는다. SQLite 는 NaN 을 담지 못한다. */
@@ -111,8 +112,6 @@ function upsertStatement(
       input.minTemp,
       input.rainProbability,
       sqlNumber(input.precipitation),
-      // 먼지는 끈다 — 원천을 쓰지 않으므로 '재지 않음'(NULL)이다. 'ok' 로 적지 않는다.
-      null,
       computedAt,
     ],
   };

@@ -38,7 +38,6 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   voice_profiles: 'per-user',
   voice_uploads: 'per-user',
   voice_prerender_queue: 'per-user',
-  voice_draft_attempt_usage: 'per-user',
   voice_profile_change_ledger: 'per-user',
   manual_tts_usage: 'per-user',
   ad_reward_credits: 'per-user',
@@ -50,16 +49,12 @@ const TABLES: Record<string, 'per-user' | 'no-personal-data' | 'retained-pseudon
   email_verification_codes: 'per-user',
   push_tokens: 'per-user',
   user_app_presence: 'per-user', // 앱 빌드·접속 기록(#133)
-  plan_grants: 'per-user', // 관리자 기간 지급(#134)
   manual_tts_requests: 'per-user', // 직접 입력 같은 요청 표식(#135)
   apple_server_notifications: 'per-user', // 애플 서버 알림 수신 기록 — 주인을 찾은 행만 계정 id 를 담는다(#136)
   admin_push_jobs: 'no-personal-data', // 관리자 알림 기록 — 대상 토큰·받는 사람을 적지 않는다(#133)
   tts_synthesis_usage: 'no-personal-data', // 합성 사용량 장부 — 종류·날짜·숫자뿐, 사람을 가리키지 않는다(#139)
   tts_dev_budget_holds: 'no-personal-data', // dev 예산에서 합성 직전에 잡는 몫 — 월·글자 수뿐(#139)
   stock_content_releases: 'no-personal-data', // 환경마다 공개한 문구 묶음(#143) — 사람과 묶이지 않는 운영 표
-  voice_packs: 'no-personal-data', // 추가 음성팩 카탈로그 — 누구에게나 같은 콘텐츠다(#144)
-  voice_pack_clips: 'no-personal-data', // 팩 클립 — 사람과 묶이지 않는다(#144)
-  voice_pack_events: 'no-personal-data', // 팩 감사 기록 — 행위자는 'admin-console' 같은 고정 값이다(#144)
   subscriptions: 'per-user',
   store_transactions: 'per-user',
   promo_code_redemptions: 'per-user',
@@ -178,10 +173,8 @@ async function seed(): Promise<void> {
 
   // ── 구독·결제 ─────────────────────────────────────────────────────────────
   await run(
-    `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at,
-                                apple_transaction_id, apple_original_transaction_id, apple_product_id)
-     VALUES ('sub-a', ?, ?, 'active', '2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z',
-             'apple-tx-a-sub', 'apple-tx-a-sub', 'com.alarmtalk.app.personal_monthly')`,
+    `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+     VALUES ('sub-a', ?, ?, 'active', '2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')`,
     [A_PK, PERSONAL],
   );
   await run(
@@ -292,7 +285,6 @@ async function seed(): Promise<void> {
   // 위 문구의 보관함 행 — messages 의 FK 자식이라 문구보다 먼저 지워져야 한다.
   await run(`INSERT INTO message_library (id, user_id, message_id) VALUES ('ml-b-on-a', ?, 'msg-b-on-a')`, [B_PK]);
   await run(`INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language) VALUES ('vp-a', ?, 'ko')`, [A_PK]);
-  await run(`INSERT INTO voice_draft_attempt_usage (owner_user_id, attempt_month, used_count) VALUES (?, '2026-09', 1)`, [A_PK]);
   await run(
     `INSERT INTO voice_profile_change_ledger (id, owner_user_id, change_month, change_type, status)
      VALUES ('vcl-a', ?, '2026-09', 'create', 'succeeded')`,
@@ -345,16 +337,6 @@ async function seed(): Promise<void> {
   await run(`INSERT INTO push_tokens (id, user_id, token, platform) VALUES ('pt-b', ?, 'push-token-b', 'ios')`, [B_PK]);
   await run(`INSERT INTO user_app_presence (user_id, platform, app_version) VALUES (?, 'android', 35)`, [A_PK]);
   await run(`INSERT INTO user_app_presence (user_id, platform, app_version) VALUES (?, 'ios', 13)`, [B_PK]);
-  await run(
-    `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
-     VALUES ('pg-a', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-a-000001')`,
-    [A_PK],
-  );
-  await run(
-    `INSERT INTO plan_grants (id, user_id, starts_at, ends_at, reason, granted_by, request_key)
-     VALUES ('pg-b', ?, '2026-10-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', 'support', 'admin', 'key-b-000001')`,
-    [B_PK],
-  );
   await run(
     `INSERT INTO manual_tts_requests (user_id, request_id, input_hash, status, claimed_at)
      VALUES (?, 'req-a', 'h', 'done', '2026-10-01T00:00:00.000Z'), (?, 'req-b', 'h', 'done', '2026-10-01T00:00:00.000Z')`,
@@ -460,7 +442,6 @@ describe('탈퇴 파기 뒤 잔존물 (실제 SQLite)', () => {
       expect(await ids(`SELECT id FROM users WHERE id IN (?, ?, ?)`, [A_PK, B_PK, C_PK])).toEqual([B_PK, C_PK].sort());
       expect(await ids(`SELECT id FROM push_tokens`)).toEqual(['pt-b']);
       expect(await ids(`SELECT user_id FROM user_app_presence`)).toEqual([B_PK]);
-      expect(await ids(`SELECT id FROM plan_grants`)).toEqual(['pg-b']);
       expect(await ids(`SELECT request_id AS id FROM manual_tts_requests`)).toEqual(['req-b']);
       expect(await ids(`SELECT user_id FROM apple_server_notifications`)).toEqual([B_PK]);
       expect(await ids(`SELECT id FROM ad_reward_sessions`)).toEqual(['ads-b']);

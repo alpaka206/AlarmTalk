@@ -725,6 +725,12 @@ describe('POST /auth/email-code/verify', () => {
   });
 });
 
+/**
+ * 계정 응답의 `user` 칸 — 이게 전부다. 기간 한정 개인 플랜·관리자 기간 지급의 칸은 2026-11-23 에 뺐다(옛 앱(1.2.16)은 그
+ * 칸이 없으면 넘긴다). 칸을 더하거나 빼면 두 앱의 디코더와 함께 본다.
+ */
+const SIGN_IN_USER_KEYS = ['dynamic_prompt_settings', 'email', 'id', 'name', 'plan'];
+
 describe('POST /auth/register', () => {
   it('신규 가입 성공 → 201 + 토큰 반환', async () => {
     await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
@@ -743,6 +749,7 @@ describe('POST /auth/register', () => {
     expect(body.token).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
     expect(body.user.email).toBe('kim@test.com');
     expect(body.user.plan).toBe('free');
+    expect(Object.keys(body.user).sort()).toEqual(SIGN_IN_USER_KEYS);
     const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
     expect(insertCall?.args[0]).toBe(body.user.id);
   });
@@ -891,6 +898,7 @@ describe('POST /auth/login', () => {
     const body = await res.json();
     expect(body.token).toBeTruthy();
     expect(body.user.plan).toBe('plus');
+    expect(Object.keys(body.user).sort()).toEqual(SIGN_IN_USER_KEYS);
   });
 
   it('존재하지 않는 이메일 → 401', async () => {
@@ -1014,6 +1022,7 @@ describe('POST /auth/google', () => {
     });
     expect(body.user.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.user.id).not.toBe('google-user-1');
+    expect(Object.keys(body.user).sort()).toEqual(SIGN_IN_USER_KEYS);
     const insertArgs = mockDB.calls[1]?.args ?? [];
     expect(insertArgs[0]).toBe(body.user.id); // id = 서버 생성 UUID
     expect(insertArgs[1]).toBe('google-user-1'); // google_id = 외부 식별자
@@ -1181,6 +1190,8 @@ describe('GET /auth/me', () => {
     expect(meRes.status).toBe(200);
     const meBody = await meRes.json();
     expect(meBody.user.email).toBe('kim@test.com');
+    // `/auth/me` 는 탈퇴 유예 상태를 하나 더 싣는다.
+    expect(Object.keys(meBody.user).sort()).toEqual([...SIGN_IN_USER_KEYS, 'deletion_status'].sort());
   });
 
   // 세션을 굴려 준다(rolling refresh). 앱을 열 때마다 만료가 뒤로 밀려야, 오래 안 열었다가

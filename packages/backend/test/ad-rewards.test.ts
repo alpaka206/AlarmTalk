@@ -278,7 +278,7 @@ describe('적립·사용·환불 (실제 SQLite) — 승인 id 없는 옛 경로
   const grant = async (transactionId: string) => {
     const cb = { transactionId, userId: USER, adUnit: '1234567890', customData: '', rewardedAtMs: null };
     await recordAdRewardCallback(db, cb);
-    return (await settleAdRewardCallback(db, { ENVIRONMENT: 'test' } as unknown as Env, transactionId)) === 'granted';
+    return (await settleAdRewardCallback(db, transactionId)) === 'granted';
   };
 
   it('같은 거래는 한 번만 적립한다', async () => {

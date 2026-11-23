@@ -62,20 +62,12 @@ vi.mock('../src/lib/billing-cancel', () => ({
     h.state.order.push('subscription_expiry');
   }),
 }));
-vi.mock('../src/lib/personal-promo-end', () => ({
-  runPersonalPromoEnd: vi.fn(async () => {
-    h.state.order.push('personal_promo_end');
-    return { transitioned: [], sweep: null };
-  }),
-  isPromoEndAlertSlot: () => false,
-}));
 vi.mock('../src/lib/account-deletion', () => ({
   purgeUserAccount: vi.fn(),
   pseudonymizeBillingForRetention: vi.fn(),
 }));
 vi.mock('../src/lib/transactions', () => ({ withWriteTransaction: vi.fn() }));
 vi.mock('../src/lib/fcm', () => ({
-  sendAlarmPush: vi.fn().mockResolvedValue(undefined),
   notifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
 }));
 // 라우트가 상수(`CLONE_CLIP_SEEDS` …)를 정적으로 가져가므로 드레인만 바꾼다.
