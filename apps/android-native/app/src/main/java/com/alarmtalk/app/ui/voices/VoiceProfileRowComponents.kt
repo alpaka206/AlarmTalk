@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Stop
@@ -30,6 +31,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -41,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +67,21 @@ internal enum class VoiceRegistrationStep {
     Prerendering,
 }
 
+/**
+ * 목소리 등록 세부 정보의 칸 위 라벨 — 칸 안에 떠 있는 M3 라벨을 쓰지 않는다(2026-11-15). 첫 칸의 떠 있는 라벨이 상단바에
+ * 붙어 보였고, 빈 칸만 라벨이 칸 안에 있어 칸마다 모양이 달랐다. iOS `VoiceCloneUploadFlow.fieldLabel` 과 같은 결이다
+ * (12 · 굵게 · 흐린 글자).
+ */
+@Composable
+internal fun VoiceFieldLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RelationshipDropdownField(
@@ -73,6 +91,8 @@ internal fun RelationshipDropdownField(
     var expanded by remember { mutableStateOf(false) }
     val presetLabel = selection.preset?.let { stringResource(it.labelRes) }.orEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // 라벨은 칸 **위에** 둔다 — 등록 세부 정보의 다른 칸과 같은 모양이다(`VoiceFieldLabel`).
+        VoiceFieldLabel(stringResource(R.string.voicesr_relationship_label_required))
         ExposedDropdownMenuBox(
             expanded = expanded,
             onExpandedChange = { expanded = !expanded },
@@ -83,7 +103,6 @@ internal fun RelationshipDropdownField(
                 onValueChange = {},
                 readOnly = true,
                 // 관계는 선택 입력 — 비워도 등록할 수 있다.
-                label = { Text(stringResource(R.string.voicesr_relationship_label_required)) },
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_placeholder)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 shape = WakerInputShape,
@@ -127,7 +146,7 @@ internal fun RelationshipDropdownField(
                         ),
                     )
                 },
-                label = { Text(stringResource(R.string.voicesr_relationship_custom_label)) },
+                // 직접 입력 칸은 위 드롭다운('직접 입력')이 무엇인지 말하므로 라벨 없이 예시만 둔다(iOS 와 같다).
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_custom_placeholder)) },
                 singleLine = true,
                 shape = WakerInputShape,
@@ -350,6 +369,39 @@ internal fun VoiceCatalogRow(
 /** 목소리 행의 내용 높이 — 미리듣기 IconButton(48dp) 기준. */
 private val VoiceCatalogRowContentHeight = 48.dp
 
+/**
+ * 목소리 행 아래의 '알람 음성 준비 중 n%' — **막대와 숫자를 함께** 보인다(스펙 voice-and-message §4-1). 2026-11-22 두 앱
+ * 통일 전에는 스피너 알약이라 얼마나 남았는지가 숫자로만 읽혔다. iOS `VoicePrerenderStatusRow` 와 같은 값이다 — 막대는 최대
+ * 120·강조색, 사이 8, 글자 `bodySmall`·흐린 색. 막대 모양은 등록 마지막 단계의 막대와 같다(끝 점·틈 없음).
+ */
+@Composable
+private fun VoicePrerenderProgressLine(percent: Int) {
+    val fraction = percent.coerceIn(0, 100) / 100f
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LinearProgressIndicator(
+            progress = { fraction },
+            // 남는 폭이 120 보다 좁으면(큰 글씨) 막대가 줄고 글자는 그대로다.
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .widthIn(max = 120.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            strokeCap = StrokeCap.Round,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
+        )
+        Text(
+            text = stringResource(R.string.voicesr_prerender_progress, percent),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 internal fun VoiceProfileRow(
     profile: VoiceProfile,
@@ -402,9 +454,7 @@ internal fun VoiceProfileRow(
             // 알람 음성(사전렌더 클립) 준비 상태 — 서버·로컬 둘 다 끝났으면 아무것도 표시하지 않는다.
             // 실패는 그리지 않는다 — 목소리 탭이 스스로 다시 걸고(`VoiceAutoRetry`) 그동안 '준비 중' 으로 보인다.
             when (readiness) {
-                is CloneVoiceReadiness.Progress -> VoiceProgressMessage(
-                    stringResource(R.string.voicesr_prerender_progress, readiness.percent),
-                )
+                is CloneVoiceReadiness.Progress -> VoicePrerenderProgressLine(readiness.percent)
 
                 null -> Unit
             }
@@ -442,36 +492,39 @@ private fun VoiceProfileMenuSheet(
     onDismiss: () -> Unit,
 ) {
     WakerSelectionSheet(title = profileName, onDismiss = onDismiss) { dismiss ->
-        if (onCreateAlarm != null) {
+        // 행은 `WakerSheetOptionGroup` 안에 — 밖에 두면 시트 간격(14)이 행마다 끼어 구분선 아래가 빈다(편집기 목소리 시트와 같은 수정).
+        WakerSheetOptionGroup {
+            if (onCreateAlarm != null) {
+                WakerSheetOptionRow(
+                    title = stringResource(R.string.voicesr_create_alarm_with_voice),
+                    selected = false,
+                    onClick = {
+                        dismiss()
+                        onCreateAlarm()
+                    },
+                    divider = true,
+                )
+            }
             WakerSheetOptionRow(
-                title = stringResource(R.string.voicesr_create_alarm_with_voice),
+                title = stringResource(R.string.voicesr_edit_name),
                 selected = false,
                 onClick = {
                     dismiss()
-                    onCreateAlarm()
+                    onRename()
                 },
                 divider = true,
             )
+            WakerSheetOptionRow(
+                title = stringResource(R.string.voicesr_delete),
+                selected = false,
+                onClick = {
+                    dismiss()
+                    onDelete()
+                },
+                // 파괴적 항목은 색으로만 구분한다 — 아이콘을 붙이면 나머지 행에도 장식용
+                // 아이콘을 달아야 균형이 맞고, 그때부터 시트가 아이콘 목록처럼 보인다.
+                destructive = true,
+            )
         }
-        WakerSheetOptionRow(
-            title = stringResource(R.string.voicesr_edit_name),
-            selected = false,
-            onClick = {
-                dismiss()
-                onRename()
-            },
-            divider = true,
-        )
-        WakerSheetOptionRow(
-            title = stringResource(R.string.voicesr_delete),
-            selected = false,
-            onClick = {
-                dismiss()
-                onDelete()
-            },
-            // 파괴적 항목은 색으로만 구분한다 — 아이콘을 붙이면 나머지 행에도 장식용
-            // 아이콘을 달아야 균형이 맞고, 그때부터 시트가 아이콘 목록처럼 보인다.
-            destructive = true,
-        )
     }
 }

@@ -101,7 +101,6 @@ export const ERROR_CODES = [
   'MESSAGE_AUDIO_MISSING',
   'MESSAGE_AUDIO_NOT_FOUND',
   'NO_VOICE_ID',
-  'RANDOM_CATEGORY_REQUIRED',
   'RANDOM_TTS_RETIRED',
   'TEXT_PREPARATION_FAILED',
   'TEXT_TOO_LONG',
@@ -259,16 +258,9 @@ export const ERROR_CODES = [
   // 푸시 (push.ts)
   'INVALID_PLATFORM',
   'INVALID_PUSH_TOKEN',
-  // 추가 음성팩 (voice-packs.ts) — `docs/spec/voice-packs.md` §3. 받을 수 없는 팩(비게시·권리 끝·지역·빌드)은 있다는 사실도
-  // 드러내지 않고 이 코드로 답한다.
-  'VOICE_PACK_CLIP_NOT_FOUND',
-  'VOICE_PACK_NOT_FOUND',
+  // 추가 음성팩(VOICE_PACK_CLIP_NOT_FOUND·VOICE_PACK_NOT_FOUND·ADMIN_VOICE_PACK_*)은 음성팩과 함께 2026-11-23 에 지웠다 —
+  // 스토어 앱에 실린 적이 없어 그 코드로 분기하는 앱이 없다.
   // 관리자 (admin.ts) — 콘솔 화면만 받는다. 앱은 이 코드를 보지 않는다(`docs/spec/admin-console.md`).
-  /** 음성팩 가져오기·권리·전이의 입력이 틀렸다(가져오기 스크립트가 받는다). */
-  'ADMIN_VOICE_PACK_INVALID',
-  /** draft 가 아니라 클립·공개 정보를 못 바꾸거나, 지금 상태에서 할 수 없는 전이다. */
-  'ADMIN_VOICE_PACK_LOCKED',
-  'ADMIN_VOICE_PACK_NOT_FOUND',
   /** 광고 알림 스위치(`ADMIN_AD_PUSH_ENABLED`)가 꺼져 있는데 광고 알림을 보내려 했다. */
   'ADMIN_PUSH_AD_DISABLED',
   'ADMIN_PUSH_COPY_INVALID',

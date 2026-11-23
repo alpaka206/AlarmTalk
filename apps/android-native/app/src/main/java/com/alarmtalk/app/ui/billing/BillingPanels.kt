@@ -42,9 +42,10 @@ import androidx.compose.ui.unit.sp
 import com.alarmtalk.app.billing.PlayBillingProducts
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.BillingSubscription
-import com.alarmtalk.app.network.PersonalPromo
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.LineBreak
+
+// 이용권 화면(`BillingPanels`) — 요금제 카드·시작 버튼·복원·해지와 그 알럿들. iOS 짝은 `Views/Settings/BillingPanel.swift`.
 
 @Composable
 internal fun SubscriptionPanel(
@@ -59,29 +60,15 @@ internal fun SubscriptionPanel(
     onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onRestorePurchases: () -> Unit,
-    /**
-     * 지금 살아 있는 기간 한정 개인 플랜 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
-     * (`planScreenPersonalPromoOf`). 날짜는 서버 `ends_at − 1초` 의 기기 날짜다.
-     *
-     * 어디에 보이는지는 [planScreenCurrentOf] 가 정한다: 프로모만 쓰는 계정은 **개인 카드가
-     * '현재 이용권'** 이고 문구는 그 카드의 상태 한 줄이다. 산 이용권·보류 행이 있는 계정은
-     * 예전처럼 카드 목록 위의 한 줄이다.
-     *
-     * ⚠ **구독처럼 그리지 말 것.** 서버가 구독 객체를 만들지 않으므로(`subscription` 은 null)
-     * 해지 버튼은 산 이용권으로만 가른다 — 원시 plan 은 여전히 무료이고, 개인 결제도 그대로
-     * 열려 있다(개인 카드의 결제 버튼이 남는다).
-     */
-    personalPromo: PersonalPromo? = null,
-    /**
-     * 관리자 기간 지급의 끝(`plan_grant.ends_at`, 배타). 지금 지급 중이면 프로모와 같은 자리에 "플러스 이용 중 · …까지" 를
-     * 말한다 — 구독처럼 그리지 않는다(해지 버튼은 산 이용권으로만 가른다). 프로모와 함께 오지 않는다.
-     */
-    planGrantEndsAt: String? = null,
     /** 탭 화면이 남은 높이를 준다(`weight(1f)`) — 아래 시작 버튼 영역을 화면 바닥에 고정하려면 높이가 정해져야 한다. */
     modifier: Modifier = Modifier,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
+    // 시작 버튼을 눌렀는데 다른 스토어(App Store)가 갱신을 쥐고 있다 — 결제 확인 알럿 대신 이 알럿을 띄운다([otherStoreOwnsRenewal]).
+    var showCrossStoreBlock by remember { mutableStateOf(false) }
+    // 해지 버튼을 눌렀는데 App Store 로 결제한 구독이다 — 해지 시점을 묻지 않고 아이폰에서 해지하라고 말한다.
+    var showAppStoreCancelNotice by remember { mutableStateOf(false) }
     val subscription = subscriptionResponse?.subscription
     val currentPlan = subscriptionResponse?.plan
     val nextPlan = subscriptionResponse?.nextPlan
@@ -126,31 +113,11 @@ internal fun SubscriptionPanel(
     // ── 요금제 화면 A안(2026-11-15 오너 — 고르기 시안 '플러스 한 장 + 아래 고정 버튼', 캔버스 proposal-10) ──
     // 위: 플러스를 큰 카드 한 장으로, 무료는 그 아래 한 줄 카드로. 아래(고정): 시작 버튼 · 자동 결제 안내 · 복원 · 해지.
     // iOS 짝은 `BillingPanel`(같은 배치 — 아래 영역은 `safeAreaInset`).
-    // 기간 한정 플러스 무료 이용 — "플러스 무료 이용 중 · 10월 31일까지". 날짜는 서버 값.
-    val promoLastDay = personalPromoLastDay(personalPromo, java.time.ZoneId.systemDefault())
-    val promoLineText = promoLastDay?.let { lastDay ->
-        val locale = LocalConfiguration.current.locales[0]
-            ?: java.util.Locale.getDefault()
-        stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
-    } ?: planGrantLastDay(planGrantEndsAt, java.time.ZoneId.systemDefault(), System.currentTimeMillis())?.let { lastDay ->
-        val locale = LocalConfiguration.current.locales[0]
-            ?: java.util.Locale.getDefault()
-        // 지급도 같은 문구다 — 결제 없이 쓰는 플러스라 iOS(같은 자리로 읽는다)와 같은 말을 한다.
-        stringResource(R.string.personal_promo_plan_line, formatPersonalPromoDay(lastDay, locale))
-    }
-    // '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 [planScreenCurrentOf] 한 곳이다(스펙 D4).
-    // ⚠ 산 이용권(`currentPlan`·`hasActive`)은 그대로 둔다 — 해지 버튼은 그 값으로만 가른다.
-    //   프로모는 산 이용권이 아니다.
-    val planScreen = planScreenCurrentOf(
-        purchasedPlanKey = currentPlan?.key,
-        promoActive = promoLineText != null,
-        hasHeldSubscriptionRow = personalPromo?.deletesVoicesAtEnd == false,
-    )
+    // '현재 이용권' 카드 — 산 이용권(구독 응답의 `plan.key`)으로 가른다([planScreenCurrentOf]). 해지 버튼도 그 값으로만 가른다.
+    val planScreen = planScreenCurrentOf(purchasedPlanKey = currentPlan?.key)
     val statusContext = LocalContext.current
     val currentExpiresAt = formatPass(subscription?.expiresAt, PassDateFormatter)
     val currentStatusText = when {
-        // 프로모만 쓰는 계정 — 플러스 카드가 현재이고, 그 카드의 상태 문구가 프로모 한 줄이다.
-        planScreen.promoOnPersonalCard -> promoLineText
         cancelScheduled && nextPlan != null -> {
             val nextName = passPlanName(statusContext, nextPlan.key, nextPlan.name)
             if (currentExpiresAt != null) {
@@ -175,9 +142,6 @@ internal fun SubscriptionPanel(
     val plusIsCurrent = planScreen.isCurrent(plusOption.key)
     val plusShowsPurchase = planScreen.showsPurchase(plusOption.key)
     val trial = plusOption.trialPeriod?.takeIf { plusShowsPurchase }
-    // 카드 위 한 줄은 산 이용권·보류 행이 있는 계정의 프로모 줄뿐이다(예전 자리 그대로). 지금 무료인 것은 무료 카드의
-    // '현재 이용권' 배지가 말한다 — 같은 사실을 두 번 말하지 않는다(iOS UI 테스트 `PersonalPromoNoticeUITests` 가 지킨다).
-    val topLine = promoLineText.takeIf { planScreen.promoLineAboveList }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Column(
@@ -185,18 +149,11 @@ internal fun SubscriptionPanel(
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 16.dp),
+                // 상단바 아래 간격(24)은 상단바가 갖는다(`WakerTopBarBottomGap`) — 위 여백을 더하지 않는다(2026-11-22 두 앱 통일,
+                // 예전의 위 8 은 다른 하위 화면보다 첫 카드를 8 더 내렸다).
+                .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (topLine != null) {
-                Text(
-                    text = topLine,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                )
-            }
             PlusPlanHeroCard(
                 option = plusOption,
                 isCurrent = plusIsCurrent,
@@ -216,11 +173,18 @@ internal fun SubscriptionPanel(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // ⚠ **`!isCurrent` 로 되돌리지 말 것**(2026-09-29). 프로모만 쓰는 계정은 플러스가 '현재' 인데 산 이용권이 아니라
-            //   시작 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야 한다([PlanScreenCurrent.showsPurchase]).
+            // 시작 버튼은 플러스를 사지 않았을 때만 있다([PlanScreenCurrent.showsPurchase]).
             if (plusShowsPurchase) {
                 Button(
-                    onClick = { purchaseTarget = plusOption },
+                    onClick = {
+                        // **누르는 순간 한 번, 결제 직전에 한 번** 본다(iOS `BillingPanel.beginPurchase` 와 같은 차례). 여기서는 받아 둔
+                        // 응답으로, 결제 직전에는 서버에 새로 물어 본다(`startPlayPurchase` 의 결제 전 조회).
+                        if (otherStoreOwnsRenewal(subscriptionResponse)) {
+                            showCrossStoreBlock = true
+                        } else {
+                            purchaseTarget = plusOption
+                        }
+                    },
                     enabled = !billingBusy,
                     colors = wakerButtonColors(),
                     modifier = Modifier
@@ -265,7 +229,17 @@ internal fun SubscriptionPanel(
                     )
                 }
                 if (hasActive) {
-                    TextButton(onClick = { showCancelDialog = true }, enabled = !billingBusy) {
+                    TextButton(
+                        onClick = {
+                            // App Store 로 결제한 구독은 서버도 이 기기도 끊을 수 없다 — 해지 시점을 묻지 않는다(`store_provider`).
+                            if (subscription?.storeProvider == APP_STORE_PROVIDER) {
+                                showAppStoreCancelNotice = true
+                            } else {
+                                showCancelDialog = true
+                            }
+                        },
+                        enabled = !billingBusy,
+                    ) {
                         Text(
                             text = stringResource(R.string.billing_cancel_pass),
                             style = MaterialTheme.typography.bodyMedium,
@@ -306,6 +280,66 @@ internal fun SubscriptionPanel(
             },
         )
     }
+
+    if (showCrossStoreBlock) {
+        CrossStoreRenewalBlockDialog(onDismiss = { showCrossStoreBlock = false })
+    }
+
+    if (showAppStoreCancelNotice) {
+        AppStoreCancelNoticeDialog(onDismiss = { showAppStoreCancelNotice = false })
+    }
+}
+
+/** 구독 응답의 `store_provider`·`store_renewal_providers` 에서 App Store 를 뜻하는 값. */
+private const val APP_STORE_PROVIDER = "apple"
+
+/**
+ * 지금 이 계정의 갱신을 **Google Play 가 아닌 스토어**(App Store)가 쥐고 있는가 — 그러면 Play 결제를 열지 않는다(두 곳에서
+ * 함께 청구된다 — 코덱스 #730). 판정은 서버의 `store_renewal_providers` 하나다. 모르면(구버전 서버·아직 못 받은 응답) false 다 —
+ * 결제 직전에 서버에 새로 물어 다시 본다(`crossStoreRenewalBlocked`).
+ */
+internal fun otherStoreOwnsRenewal(response: BillingSubscriptionResponse?): Boolean =
+    response?.storeRenewalProviders?.any { it != "google" } == true
+
+/**
+ * 다른 스토어가 갱신 중이라 Play 결제를 막았다 — 시작 버튼을 누르는 순간과 결제 직전 조회가 같은 알럿을 쓴다(2026-11-22 두 앱
+ * 통일 — iOS `BillingPanel` 의 `purchaseBlock` 알럿과 같은 문장이다, 스토어 이름만 반대). 예전에는 결제 직전에만 보고 한 줄로 말했다.
+ */
+@Composable
+internal fun CrossStoreRenewalBlockDialog(onDismiss: () -> Unit) {
+    IosAlertDialog(
+        title = stringResource(R.string.billing_cross_store_block_title),
+        message = stringResource(R.string.billing_cross_store_block_message),
+        onDismiss = onDismiss,
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.auth_confirm),
+                emphasized = true,
+                onClick = onDismiss,
+            ),
+        ),
+    )
+}
+
+/**
+ * App Store 로 결제한 이용권의 해지 — 서버도 이 기기도 그 구독을 끊을 수 없다(애플 구독은 서버가 못 끊는다 —
+ * `docs/spec/billing-lifecycle.md`). 아이폰의 App Store 구독에서 해지하라고 말한다(2026-11-22 두 앱 통일). 버튼은 확인 하나다 —
+ * 이 기기에서 열 수 있는 관리 화면이 없다.
+ */
+@Composable
+internal fun AppStoreCancelNoticeDialog(onDismiss: () -> Unit) {
+    IosAlertDialog(
+        title = stringResource(R.string.billing_app_store_cancel_title),
+        message = stringResource(R.string.billing_app_store_cancel_message),
+        onDismiss = onDismiss,
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.auth_confirm),
+                emphasized = true,
+                onClick = onDismiss,
+            ),
+        ),
+    )
 }
 
 /**
@@ -348,32 +382,18 @@ private fun PlayPurchaseDialog(
 }
 
 /**
- * 이용권 화면의 **'현재 이용권' 카드**와 기간 한정 개인 플랜 문구의 자리 — [planScreenCurrentOf] 의 답.
- * 규칙은 `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」 D4 「이용권 화면의 프로모 문구」 이고,
- * iOS `PlanScreenCurrent.resolve`(`Views/Common/PlanTier.swift`)가 같은 입력에 같은 답을 낸다.
+ * 이용권 화면의 **'현재 이용권' 카드** — [planScreenCurrentOf] 의 답. iOS `PlanScreenCurrent.resolve`
+ * (`Views/Common/PlanTier.swift`)가 같은 입력에 같은 답을 낸다.
  */
 internal data class PlanScreenCurrent(
     /** '현재 이용권' 뱃지·강조를 다는 카드의 key(`free`·`personal`). */
     val currentKey: String,
-    /**
-     * 프로모가 이 계정의 **유일한** 이용권이라 개인 카드가 현재가 됐다 — 그 카드의 상태 문구가
-     * 프로모 한 줄이고, 결제 버튼은 남는다(산 이용권이 아니다).
-     */
-    val promoOnPersonalCard: Boolean,
-    /**
-     * 프로모 한 줄을 카드 목록 **위에** 그린다 — 프로모가 있는데 개인 카드에 앉지 않는 계정
-     * (산 이용권·보류 행). 예전 그대로다. [promoOnPersonalCard] 와 동시에 참이 되지 않는다.
-     */
-    val promoLineAboveList: Boolean,
 ) {
     fun isCurrent(planKey: String): Boolean = planKey == currentKey
 
-    /**
-     * 결제 버튼 — 무료 카드엔 없고, **산** 현재 이용권 카드에도 없다(다시 살 것이 없다).
-     * 프로모로 현재가 된 개인 카드에는 **있다** — '현재' 와 '결제 버튼 숨김' 은 다른 질문이다.
-     */
+    /** 결제 버튼 — 무료 카드엔 없고, 산 현재 이용권 카드에도 없다(다시 살 것이 없다). */
     fun showsPurchase(planKey: String): Boolean =
-        planKey != FREE_PLAN_KEY && (!isCurrent(planKey) || promoOnPersonalCard)
+        planKey != FREE_PLAN_KEY && !isCurrent(planKey)
 
     companion object {
         const val FREE_PLAN_KEY = "free"
@@ -382,38 +402,15 @@ internal data class PlanScreenCurrent(
 }
 
 /**
- * 이용권 화면에서 어느 카드가 **'현재 이용권'** 인가, 기간 한정 개인 플랜 문구는 **어디에** 앉나.
+ * 이용권 화면에서 어느 카드가 **'현재 이용권'** 인가 — 산 이용권이다. 플러스를 무료로 쓰는 길은 스토어의 무료 체험 하나이고,
+ * 체험도 스토어 구독이라 구독 응답에 실린다.
  *
- * 프로모가 이 계정의 **유일한 이용권**일 때만 개인 카드가 현재가 된다 — 산 이용권이 없고
- * ([purchasedPlanKey] 가 없거나 free), 보류 행도 없다. 그 밖(산 이용권·보류 행·프로모 없음/끝남)은
- * 예전 그대로다 — 현재 카드는 산 이용권, 프로모는 카드 위 한 줄.
+ * ⚠ **여기 답으로 해지를 가르지 말 것.** 해지 버튼은 산 이용권(구독 응답)으로만 가른다.
  *
- * ⚠ **여기 답으로 해지를 가르지 말 것.** 해지 버튼은 산 이용권(구독 응답)으로만 가른다 — 프로모는
- *   산 이용권이 아니다.
- *
- * @param purchasedPlanKey 산 이용권의 key — 구독 응답의 `plan.key`(없으면 null = 무료). 예전에 현재
- *   카드를 고르던 값 그대로다.
- * @param promoActive 이용권 화면에 보일 프로모가 **지금** 살아 있다(`planScreenPersonalPromoOf` 가
- *   끝난 것을 이미 걸렀고, 마지막 날을 읽을 수 있다).
- * @param hasHeldSubscriptionRow 그 프로모의 `deletes_voices_at_end == false` — 원시 free 인데 `active`
- *   구독 행이 남은 계정(결제 보류 등). 보류 행은 구독 응답에 실리지 않아(`strongestPaidSubscription`)
- *   이 값이 아니면 프로모 계정과 구별되지 않는다. 키를 모르는 서버(null)는 보류가 아닌 것으로 읽는다.
+ * @param purchasedPlanKey 산 이용권의 key — 구독 응답의 `plan.key`(없으면 null = 무료).
  */
-internal fun planScreenCurrentOf(
-    purchasedPlanKey: String?,
-    promoActive: Boolean,
-    hasHeldSubscriptionRow: Boolean,
-): PlanScreenCurrent {
-    val purchasedKey = purchasedPlanKey ?: PlanScreenCurrent.FREE_PLAN_KEY
-    val promoIsOnlyPlan = promoActive &&
-        purchasedKey == PlanScreenCurrent.FREE_PLAN_KEY &&
-        !hasHeldSubscriptionRow
-    return PlanScreenCurrent(
-        currentKey = if (promoIsOnlyPlan) PlanScreenCurrent.PERSONAL_PLAN_KEY else purchasedKey,
-        promoOnPersonalCard = promoIsOnlyPlan,
-        promoLineAboveList = promoActive && !promoIsOnlyPlan,
-    )
-}
+internal fun planScreenCurrentOf(purchasedPlanKey: String?): PlanScreenCurrent =
+    PlanScreenCurrent(currentKey = purchasedPlanKey ?: PlanScreenCurrent.FREE_PLAN_KEY)
 
 /** Compose Context 에서 결제 시트 호출에 필요한 Activity 를 찾는다. */
 private tailrec fun Context.findActivity(): Activity? = when (this) {
@@ -445,7 +442,7 @@ private fun PlanCheckRow(text: String) {
 
 /**
  * 플러스 큰 카드(A안). 배지는 지금 쓰는 중이면 '현재 이용권', 체험을 줄 수 있으면 '1개월 무료'.
- * 가격 줄은 체험이 있으면 "1개월 무료, 이후 월 ₩3,900", 없으면 "월 ₩3,900". 상태 한 줄(만료·해지 예정·프로모)은 가격 아래다.
+ * 가격 줄은 체험이 있으면 "1개월 무료, 이후 월 ₩3,900", 없으면 "월 ₩3,900". 상태 한 줄(만료·해지 예정)은 가격 아래다.
  */
 @Composable
 internal fun PlusPlanHeroCard(
@@ -600,7 +597,11 @@ private fun CancelSubscriptionDialog(
     onConfirm: (atPeriodEnd: Boolean) -> Unit,
 ) {
     var confirmImmediate by remember { mutableStateOf(false) }
-    val endDate = formatPass(subscription?.expiresAt, PassShortDateFormatter)
+    // "11월 22일" — 체험 안내와 같은 꼴이다([formatPassDay]).
+    val endDate = formatPassDay(
+        subscription?.expiresAt,
+        LocalConfiguration.current.locales[0] ?: java.util.Locale.getDefault(),
+    )
     // 로그아웃 확인과 같은 iOS 알럿 스타일(IosAlertDialog)로 통일 — 확인형 모달은 전부 이 계열.
     if (confirmImmediate) {
         IosAlertDialog(

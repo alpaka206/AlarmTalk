@@ -31,10 +31,6 @@ struct AlarmTalkApp: App {
     @StateObject private var socialFeatures = BackgroundDependencies.shared.socialFeatures
     /// 기본 목소리 교체가 아직 안 끝났는가 — 차단 화면과 재시도 축(`stockClipLanguageKey`).
     @StateObject private var stockReplacement = StockReplacementStatus.shared
-    /// 진입 번호 — 세는 곳은 아래 `scenePhase` 한 곳이고 여기서는 **읽기만** 한다. 전경 무료 잠금이
-    /// '이 진입의 plan 이 반영됐나' 를 이 번호로 가른다(`freePlanVoiceLockKey`) — 관찰하지 않으면
-    /// 진입이 바뀌어도 그 키가 다시 계산되지 않는다.
-    @StateObject private var appEntrySignal = AppEntrySignal.shared
     /// 백엔드 최소지원버전 게이팅. 로그인 여부와 무관하게 앱 진입을 막을 수 있어
     /// 앱 lifetime 동안 떠 있어야 한다. Android `MainViewModel.checkAppVersion()`.
     @StateObject private var versionGate = AppVersionGate()
@@ -297,15 +293,6 @@ struct AlarmTalkApp: App {
                         stockClipPrefetcher.cancel()
                         // 앞 계정에 넘겨 둔 백그라운드 다운로드를 버린다(로그아웃·전환·탈퇴). 같은 계정의 콜드 스타트는 그대로 둔다.
                         BackgroundClipDownloader.shared.accountChanged(to: auth.session?.user.id)
-                        // 받은 추가 음성팩 목록도 계정 것이다 — 선다운로드보다 먼저 갈아 끼운다(그 회차의 팩 단계가 이 목록을 본다).
-                        // '받기' 는 이 프리페처 회차를 깨운다(`docs/spec/voice-packs.md` §7 — 새 프리페처를 만들지 않는다).
-                        VoicePackStore.shared.activate(userID: auth.session?.user.id)
-                        VoicePackStore.shared.wakePrefetch = {
-                            stockClipPrefetcher.start(
-                                session: auth.session,
-                                ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
-                            )
-                        }
                         voiceStudio.clearUserScopedRemoteState(preservingManifestFor: auth.session?.user.id)
                         socialFeatures.restoreAccessSnapshot(session: auth.session)
                         // 이 시점의 내 목소리 목록은 대개 비어 있다(방금 지웠고 서버 응답 전) —
@@ -507,9 +494,8 @@ struct AlarmTalkApp: App {
             AppEntrySignal.shared.observe(phase)
         }
         .onChange(of: scenePhase) { _, newPhase in
-            // ⚠ **계정 요청보다 먼저 센다.** 아래 `/auth/me` 는 보낼 때 진입 번호를 받아 가는데
-            //   (`AuthViewModel.beginAccountRequest`), 두 `onChange` 의 순서는 보장되지 않는다.
-            //   늦게 세면 복귀의 응답이 앞 진입의 것으로 찍혀 이번 진입의 종료 안내가 영영 안 뜬다.
+            // ⚠ **아래 갱신보다 먼저 센다.** 진입 갱신은 보낼 때 진입 번호를 받아 가는데(`EntryRefreshFreshness`),
+            //   두 `onChange` 의 순서는 보장되지 않는다. 늦게 세면 복귀의 갱신이 앞 진입의 창으로 읽혀 건너뛸 수 있다.
             AppEntrySignal.shared.observe(newPhase)
             switch newPhase {
             case .active:
@@ -555,9 +541,6 @@ struct AlarmTalkApp: App {
                     //   iOS 만 한 번이었다. 전부 멱등이라 여기서 또 돌아도 안전하다.
                     await rebindStockClipsIfNeeded()
                     guard auth.session != nil else { return }
-                    // 게시 기한이 지난 추가 음성팩은 네트워크 없이 받아 둔 기한으로 미나로 대체한다(`docs/spec/voice-packs.md` §5).
-                    // 예약은 `scheduleReconcileRevision` 태스크가 다시 건다.
-                    VoicePackStore.shared.retireExpired(alarmStore: alarmStore, voiceStudio: voiceStudio)
                     // ⚠ **보충은 재바인딩 뒤에 시작한다**(2026-09-29 효율 감사 M1 — iOS). 재바인딩은
                     //   매니페스트를 **강제로** 받아 공개하므로(의도), 그 뒤에 도는 선다운로드는
                     //   신선도 창(`StockClipPrefetcher.manifestFreshnessWindow`)으로 그 공개본을 쓴다.
@@ -1055,36 +1038,7 @@ struct AlarmTalkApp: App {
             // **그대로 두고** 이 값만 free 로 바꾼다 — 키에 없으면 `/auth/me` 가 갱신해도
             // 키가 같아 이 태스크가 **다시 돌지 않고**, 판정기에 새 입력을 넣은 의미가 없다.
             auth.session?.user.plan ?? "no-user-plan",
-            // 기간 한정 개인 플랜의 끝도 판정 입력이다 — 끝 **전에** 받아 둔 낡은 캐시는 판정기가
-            // (활성 구독 행이 없으면) free 로 읽는다. 원래 값이 아니라 **지금 시각 기준으로 낡았는가**
-            // 를 넣어, 화면이 다시 그려질 때 끝이 지났으면 키가 바뀌도록 한다(서버 갱신을 못 받는
-            // 오프라인 기기). 끝 뒤에 새 답을 받으면 다시 '낡지 않음' 이 되어 복원 갈래가 돈다.
-            auth.session?.user.personalPromo.map { $0.isStale(at: Date()) ? "promo-stale" : "promo-live" }
-                ?? "no-personal-promo",
-            auth.session?.user.personalPromo?.endsAt ?? "no-personal-promo-end",
-            promoLapseLockWaitKey
         ].joined(separator: "|")
-    }
-
-    /// 전경 무료 잠금의 **낡은 프로모 대기**(D1·D12) — 이 진입의 계정 응답이 세션 plan 에 반영되면
-    /// 이 칸이 바뀌어 잠금 태스크가 다시 돈다(반영된 답이 plan 을 바꾸지 않아도 — 여전히 낡은
-    /// `plus` 면 그때 잠근다). 판정은 `PaidVoiceGate.freePlanLockMayApply` 하나다.
-    ///
-    /// ⚠ **캐시된 프로모가 낡았을 때만** 값이 움직인다. 진입 번호를 늘 키에 넣으면 복귀할 때마다
-    ///   복원 갈래까지 다시 돈다(안드로이드가 `planAnsweredEntry` 를 잠금 이펙트의 키에 넣지 않는
-    ///   이유와 같다). 안드로이드는 대기 뒤의 재확인을 **따로 둔 이펙트**로 하지만, 여기서는 같은
-    ///   태스크의 키로 한다 — `.task(id:)` 는 키가 바뀌면 앞 회차를 취소하므로 잠금이 두 태스크에서
-    ///   겹쳐 돌지 않는다(겹치면 새로 잠근 개수를 두 번 세어 강등 안내의 개수가 부푼다).
-    private var promoLapseLockWaitKey: String {
-        guard auth.session?.user.personalPromo?.isStale(at: Date()) == true else {
-            return "no-promo-lapse-wait"
-        }
-        let answered = PaidVoiceGate.freePlanLockMayApply(
-            freeOnlyByPromoLapse: true,
-            planAnsweredEntry: auth.planAnsweredEntry,
-            entry: appEntrySignal.counter.entry
-        )
-        return answered ? "promo-lapse-plan-answered" : "promo-lapse-plan-awaited"
     }
 
     @MainActor
@@ -1110,11 +1064,7 @@ struct AlarmTalkApp: App {
             subscriptionResponse: socialFeatures.subscription,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
-            userPlan: auth.session?.user.plan,
-            // 계산 시각(`PersonalPromo.fetchedAt` — 서버의 `computed_at`)까지 함께 실린다.
-            // 서버가 끝 **뒤에** 계산한 답이면 낡은 것으로 보지 않는다 — 방금 받은 서버 답을
-            // 기기 시계로 뒤집어 잠그지 않는다.
-            personalPromo: auth.session?.user.personalPromo
+            userPlan: auth.session?.user.plan
         )
         let access = PaidVoiceGate.resolve(snapshot: snapshot)
         // ⚠ **세 갈래를 분명히 가른다**(2026-09-01 리뷰 2차 정정). 31차에 입구 가드에서
@@ -1143,18 +1093,6 @@ struct AlarmTalkApp: App {
             return
         }
         guard access == .notEntitled, subscriptions.hasLoadedEntitlements else { return }
-        // ⚠ **무료의 근거가 낡은 프로모 하나뿐이면 이 진입의 답을 기다린다**(D1·D12 — 안드로이드
-        //   잠금 이펙트의 `freePlanLockMayApply` 와 같은 규칙). 콜드 스타트·복귀 직후의 plan 은 지난
-        //   실행의 캐시라, 그 사이 다른 기기에서 결제로 원시 유료가 된 사람도 종료
-        //   시각만 지나면 여기서 잠기고 강등 안내가 적힌다 — 저장된 구독 스냅샷과 StoreKit 이
-        //   `/auth/me` 보다 먼저 준비되면 그렇게 된다. 기다리는 동안은 아무것도 하지 않는다 —
-        //   답이 세션 plan 에 반영되면 키(`promoLapseLockWaitKey`)가 바뀌어 다시 본다.
-        //   서버가 free 라고 답한 무료·구독 만료 같은 다른 갈래는 기다리지 않는다.
-        guard PaidVoiceGate.freePlanLockMayApply(
-            freeOnlyByPromoLapse: PaidVoiceGate.isFreeOnlyByPromoLapse(snapshot: snapshot),
-            planAnsweredEntry: auth.planAnsweredEntry,
-            entry: appEntrySignal.counter.entry
-        ) else { return }
         let ownerID = auth.session?.user.id
         let locked = await socialFeatures.applyFreePlanVoiceLock(
             alarmStore: alarmStore,

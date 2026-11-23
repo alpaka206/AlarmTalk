@@ -192,6 +192,8 @@ internal suspend fun Task<Void>.awaitCompletion() {
 
 internal sealed interface AuthRoute {
     data object Landing : AuthRoute
+    // '시작하기' 다음의 로그인 수단 고르기(카카오·구글·이메일로 계속하기 — `AuthMethodsScreen`). 2026-11-22.
+    data object Methods : AuthRoute
     data object ResetPassword : AuthRoute
     data class Auth(val mode: AuthMode) : AuthRoute
 }

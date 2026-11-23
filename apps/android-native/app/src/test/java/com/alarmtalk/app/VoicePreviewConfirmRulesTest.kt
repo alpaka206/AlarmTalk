@@ -50,7 +50,7 @@ class VoicePreviewConfirmRulesTest {
         // 남아 있어도 다 쓴 것으로 읽힌다.
         assertFalse(
             monthlyRegistrationUsedUp(
-                VoiceDraftQuotaResponse(limit = 3, used = 3, remaining = 0, registrationLimit = 1, registrationRemaining = 1),
+                VoiceDraftQuotaResponse(limit = 3, remaining = 0, registrationLimit = 1, registrationRemaining = 1),
             ),
         )
     }

@@ -141,27 +141,34 @@ internal fun PermissionGateDialog(
         PermissionTarget.RecordAudio -> stringResource(R.string.common_permission_gate_mic_title)
     }
     // 로그아웃·계정삭제 등 확인형 모달과 동일한 iOS 알럿 스타일(IosAlertDialog)로 통일한다.
-    // 설명(message)은 없애고 제목=결론만 노출. 취소 / 허용하기(강조) 2버튼.
+    // 설명(message)은 없애고 제목=결론만 노출.
+    val allow = IosAlertAction(
+        label = stringResource(R.string.common_permission_gate_allow_action),
+        emphasized = true,
+        onClick = onOpenSettings,
+    )
+    // ⚠ **알람 권한 셋(알림·정확한 알람·잠금 화면)은 앱 진입을 막는다**(2026-11-16 오너 — "권한 게이트를 항상 켜두고 진입
+    // 못하게… 닫기를 누르면 앱이 꺼지도록"). 그래서 바깥 탭·뒤로가기로 닫히지 않고, 버튼은 [닫기][허용하기] 둘이다.
+    // '닫기' 는 취소가 아니라 **앱을 끈다**(`finishAndRemoveTask`) — 허용하지 않으면 쓸 수 없다는 뜻이다. 다 채워지면
+    // 호출부(`AlarmTalkApp`)가 스스로 닫는다. 예전에는 알람 기능만 막고 바깥 탭으로 닫혔다(목록 위 배너가 대신 말했다).
+    // 마이크(`RecordAudio`)는 녹음할 때만 묻는 요청이라 예전 그대로다 — 허용하기 하나, 바깥 탭·뒤로가기로 닫힌다.
+    // iOS 에는 없다 — 앱이 스스로 꺼지는 버튼·권한을 앱 사용 조건으로 거는 것은 App Store 심사에 걸린다.
+    val blocksApp = target != PermissionTarget.RecordAudio
+    val context = LocalContext.current
     IosAlertDialog(
         title = title,
         message = null,
-        onDismiss = onDismiss,
-        // 알람 권한 셋(알림·정확한 알람·잠금 화면)은 **전부 필수**다 — 하나라도 빠지면
-        // 알람이 안 울리거나 늦거나 잠금 화면을 못 덮는다. 그래서 '그대로 진행' 같은
-        // 우회 액션은 두지 않는다. 다만 막는 건 **알람 기능뿐**이고 앱 전체가 아니다
-        // (목소리 등록·이용권 등록·설정은 권한과 무관하게 쓸 수 있어야 한다).
-        //
-        // 취소 액션은 두지 않는다. 대신 **바깥 탭·뒤로가기로는 닫힌다**(실기기 확인).
-        // 즉 이건 못 빠져나가는 차단 게이트가 아니라 '허용해 달라' 는 요청이고, 안드로이드의
-        // 표준 탈출구(뒤로가기)를 그대로 남겨 둔 것이다. 화면 안에 취소를 또 그리면 버튼 두
-        // 개가 같은 일을 하게 되고, 정작 눌러야 할 '허용하기' 와 무게가 같아진다.
-        // (닫으면 호출부가 대기 중이던 알람 추가도 함께 비운다 — AlarmTalkApp 의 onDismiss.)
-        actions = listOf(
-            IosAlertAction(
-                label = stringResource(R.string.common_permission_gate_allow_action),
-                emphasized = true,
-                onClick = onOpenSettings,
-            ),
-        ),
+        onDismiss = if (blocksApp) ({}) else onDismiss,
+        actions = if (blocksApp) {
+            listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.common_permission_gate_close_app),
+                    onClick = { context.findHostActivity()?.finishAndRemoveTask() },
+                ),
+                allow,
+            )
+        } else {
+            listOf(allow)
+        },
     )
 }

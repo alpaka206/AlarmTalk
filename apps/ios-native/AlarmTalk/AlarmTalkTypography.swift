@@ -11,10 +11,6 @@ import SwiftUI
 ///   - Pretendard-SemiBold
 ///   - Pretendard-Bold
 struct AlarmTalkTypography {
-    let displayLarge: Font
-    let displayMedium: Font
-    let displaySmall: Font
-
     let headlineLarge: Font
     let headlineMedium: Font
     let headlineSmall: Font
@@ -29,6 +25,9 @@ struct AlarmTalkTypography {
 
     let labelLarge: Font
     let labelMedium: Font
+    /// 11 · Medium — M3 `labelSmall`. 톤 카드의 `추천`·`낮게·원래·높게` 처럼 가장 작은 보조 글자(안드로이드
+    /// `ui/voices/VoiceTuningCard.kt` 의 `labelSmall` 자리)에 쓴다.
+    let labelSmall: Font
 }
 
 enum PretendardWeight: String {
@@ -113,9 +112,6 @@ extension AlarmTalkTypography {
     /// `.body`(17)에 묶은 글자보다 덜 커진다. 아무 스타일에나 묶으면 같은 화면 안에서
     /// 글자들이 서로 다른 속도로 자라 위계가 뒤집힌다.
     static let `default` = AlarmTalkTypography(
-        displayLarge: .pretendard(.bold, size: 57, relativeTo: .largeTitle),
-        displayMedium: .pretendard(.bold, size: 45, relativeTo: .largeTitle),
-        displaySmall: .pretendard(.semibold, size: 36, relativeTo: .largeTitle),
 
         headlineLarge: .pretendard(.semibold, size: 32, relativeTo: .title),
         headlineMedium: .pretendard(.semibold, size: 28, relativeTo: .title),
@@ -130,6 +126,7 @@ extension AlarmTalkTypography {
         bodySmall: .pretendard(.regular, size: 12, relativeTo: .caption),
 
         labelLarge: .pretendard(.medium, size: 14, relativeTo: .subheadline),
-        labelMedium: .pretendard(.medium, size: 12, relativeTo: .caption)
+        labelMedium: .pretendard(.medium, size: 12, relativeTo: .caption),
+        labelSmall: .pretendard(.medium, size: 11, relativeTo: .caption2)
     )
 }

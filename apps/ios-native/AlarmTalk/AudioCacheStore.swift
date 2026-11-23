@@ -60,13 +60,9 @@ enum AudioCacheError: LocalizedError {
      * 말고 그 키를 낡은 채로 두면 된다 — 다음 회차가 새 매니페스트로 다시 받는다.
      */
     case superseded
-    /// 받은 바이트의 해시·크기가 서버가 말한 값과 다르다(추가 음성팩) — 쓰지 않았다. 다음 회차가 다시 받는다.
-    case integrityMismatch
 
     var errorDescription: String? {
         switch self {
-        case .integrityMismatch:
-            return String(localized: "받은 오디오가 맞지 않아요. 다시 받아 주세요.")
         case .superseded:
             return String(localized: "더 새 목소리가 게시돼 이 음원은 쓰지 않았어요.")
         case .invalidBase64:
@@ -225,43 +221,6 @@ final class AudioCacheStore {
         )
     }
 
-    /// 추가 음성팩 클립(`GET /voice-packs/:packId/clips/:clipId/audio`)을 캐싱한다(`docs/spec/voice-packs.md` §7).
-    ///
-    /// ⚠ **해시·크기를 먼저 대조한다** — 상세가 말한 `sha256`·`size_bytes` 와 다르면 아무것도 쓰지 않고 던진다. 맞으면 스톡
-    /// 클립과 같은 순서(정본 `pack_<clipId>` → 옛 별칭 `<clipId>.<ext>`)로 쓴다 — 편집기 저장 경로가 그 별칭을 쓴다.
-    /// 원격 식별자는 `VoicePacks.remoteIdentity` 다(해시가 바뀌면 낡은 것으로 읽힌다).
-    @discardableResult
-    nonisolated static func cacheVoicePackClip(
-        audio response: VoicePackAudioResponse,
-        expected clip: VoicePackClip,
-        packID: String
-    ) throws -> CachedVoiceAudio {
-        guard let data = Data(base64Encoded: response.audioBase64),
-              !data.isEmpty else {
-            throw AudioCacheError.invalidBase64
-        }
-        guard VoicePacks.bytesMatch(data, sha256: clip.sha256, sizeBytes: clip.sizeBytes) else {
-            throw AudioCacheError.integrityMismatch
-        }
-        return try cacheServerAudio(
-            base64: response.audioBase64,
-            format: response.audioFormat,
-            messageId: clip.clipId,
-            rawAudioUri: VoicePacks.remoteIdentity(packID: packID, clipID: clip.clipId, sha256: clip.sha256),
-            cacheKey: VoicePacks.cacheKey(clipID: clip.clipId)
-        )
-    }
-
-    static func cacheVoicePackClipOffMain(
-        audio response: VoicePackAudioResponse,
-        expected clip: VoicePackClip,
-        packID: String
-    ) async throws -> CachedVoiceAudio {
-        try await Task.detached(priority: .utility) {
-            try AudioCacheStore.cacheVoicePackClip(audio: response, expected: clip, packID: packID)
-        }.value
-    }
-
     /// 서버가 준 음원(base64)을 `cacheKey` 자리(정본)와 옛 별칭 `<messageId>.<ext>` 에 쓴다.
     /// 생성 TTS(`cache(tts:cacheKey:)`)와 스톡 클립(`cacheStockClip`)이 같은 순서를 쓴다.
     /// - cacheKey: nil 이면 바이트 해시로 만든다.
@@ -321,6 +280,11 @@ final class AudioCacheStore {
 
     /// 스톡 클립 캐시 키 접두. 안드로이드 `AlarmAudioStore.STOCK_CACHE_KEY_PREFIX` 와 같다.
     nonisolated static let stockCacheKeyPrefix = "stock_"
+
+    /// 미리 구운 **고정 클립**(기본 목소리·내 클론의 사전렌더 — `stock_<messageId>`)의 캐시 키인가. 테마 알람의 저장·복원이 본다.
+    nonisolated static func isFixedClipCacheKey(_ key: String?) -> Bool {
+        key?.hasPrefix(stockCacheKeyPrefix) == true
+    }
 
     /// 스톡 클립 미리듣기용 cacheKey (`stock_preview_<messageId>`). Android 와 동일.
     nonisolated static func stockPreviewCacheKey(messageId: String) -> String { "stock_preview_\(messageId)" }
@@ -989,9 +953,6 @@ final class AudioCacheStore {
             // **다시 받을 방법이 없었다**(2026-08-11 확인). 안드로이드
             // `AlarmAudioStore.sweepStaleCache` 도 같은 예외를 갖고 있다 — iOS 만 빠져 있었다.
             if base.hasPrefix(Self.stockCacheKeyPrefix) { continue }
-            // 추가 음성팩 클립도 같다 — 받은 팩의 파일은 알람이 아직 안 물었어도 편집기에서 고를 자산이다.
-            // 팩을 지우거나 대체할 때 `VoicePackStore` 가 직접 지운다(`docs/spec/voice-packs.md` §7).
-            if base.hasPrefix(VoicePacks.cacheKeyPrefix) { continue }
 
             let audioNames = grouped.filter { Self.splitName($0).ext != "meta.json" }
 

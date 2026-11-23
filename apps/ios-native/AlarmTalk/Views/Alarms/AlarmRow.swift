@@ -5,8 +5,8 @@ import SwiftUI
 ///
 /// Android `ui/components/ControlsAndPermissions.kt` 의 `AlarmRow` 미러.
 /// 본문 탭은 알람 편집 진입, 토글·삭제 액션은 부모(AlarmsListView)에 위임해 본
-/// 컴포넌트는 순수 표시 + 콜백 호출만 책임진다. 표면은 surface + outlineVariant 테두리에
-/// WakerCardShape(22) 라운드, 18 패딩으로 그 자체가 한 장의 카드다.
+/// 컴포넌트는 순수 표시 + 콜백 호출만 책임진다. 표면은 surface + 카드 테두리(`cardBorder`)에
+/// WakerCardShape(22) 라운드, 20 패딩으로 그 자체가 한 장의 카드다.
 struct AlarmRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let alarm: LocalAlarmRecord
@@ -35,91 +35,124 @@ struct AlarmRow: View {
     /// 지금 이 행에 손가락이 닿아 있는가(축소 표시용). 아래 `.pressScale` 주석 참조.
     @State private var isRowPressed = false
 
-    /// 드러나는 삭제 버튼 폭. 이 값을 넘겨 밀면 버튼이 고정 노출된다.
-    private let deleteRevealWidth: CGFloat = 88
+    /// 드러나는 삭제 버튼 폭. 이 값을 넘겨 밀면 버튼이 고정 노출된다. 안드로이드 `AlarmRow` 의 `deleteWidth`(92)와 같다.
+    private let deleteRevealWidth: CGFloat = 92
+
+    /// 삭제 버튼이 얼마나 드러났나(0~1) — 카드 오른쪽 모서리를 이만큼 편다.
+    private var revealFraction: CGFloat {
+        min(max(-dragOffset / deleteRevealWidth, 0), 1)
+    }
+
+    /// 카드 모양 — 왼쪽은 언제나 22, **오른쪽은 드러난 만큼 22 → 0** 으로 펴져 삭제 버튼과 한 덩어리가 된다
+    /// (안드로이드 `AlarmRow` 의 `endCornerRadius` — 형태가 툭 바뀌지 않고 이어서 변한다).
+    private var cardShape: UnevenRoundedRectangle {
+        let end = theme.shapes.vocaCard * (1 - revealFraction)
+        return UnevenRoundedRectangle(
+            topLeadingRadius: theme.shapes.vocaCard,
+            bottomLeadingRadius: theme.shapes.vocaCard,
+            bottomTrailingRadius: end,
+            topTrailingRadius: end,
+            style: .continuous
+        )
+    }
 
     var body: some View {
         // SwiftUI `.swipeActions(edge:)` 는 `List` 행에서만 동작하는데, 알람 리스트는
         // ScrollView+VStack 구조라 `List` 가 아니다. 따라서 Android `draggable` reveal 과
         // 동일하게 DragGesture 기반 트레일링 스와이프를 직접 구현한다. 삭제는 스와이프
-        // 버튼/길게 누르기 메뉴 어느 쪽이든 즉시 실행된다(Android 즉시 삭제 미러 — 별도
-        // 확인 다이얼로그 없음, 스와이프 제스처 자체가 안전장치).
-        ZStack(alignment: .trailing) {
-            swipeDeleteBackground
-            rowContent
-                .background(theme.palette.surface)
-                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-                        // ⚠ `outlineVariant` 로 되돌리지 말 것 — 다크에서 배경 대비
-                        // 1.7:1 이라 카드가 없는 것처럼 보였다(2026-08-17 실측).
-                        .stroke(theme.palette.cardBorder, lineWidth: 1)
-                )
-                .offset(x: dragOffset)
-                // ⚠ **탭은 행 전체가 받는다.** `contentShape` 로 빈 자리까지 히트영역에
-                // 넣는다. 토글 스위치는 자식이라 제 탭을 먼저 가져가므로, 스위치를 눌러
-                // 알람을 켜고 끄는 것과 충돌하지 않는다.
-                .contentShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
-                // ⚠ **누름은 축소로만 알린다**(2026-09-06, 안드로이드 `AlarmRow` 의
-                // `pressScale` 미러). 이 행은 `Button` 이 아니라 탭 제스처로 만들어져
-                // 버튼 스타일이 닿지 않으므로, 누름 상태만 따로 받아 같은 축소를 건다.
-                // 스와이프로 삭제가 드러난 동안에는 걸지 않는다 — 카드가 줄면 뒤의 삭제
-                // 버튼과 사이가 벌어져 두 조각으로 보인다.
-                .pressScale(isRowPressed && dragOffset == 0)
-                .onTapGesture {
-                    guard !deleteRevealed else { return }
-                    if selectionMode { onToggleSelected() } else { onTap() }
+        // 버튼에서 즉시 실행된다(Android 즉시 삭제 미러 — 별도 확인 다이얼로그 없음, 스와이프
+        // 제스처 자체가 안전장치). 길게 누르기는 **선택 모드**다(삭제 메뉴가 아니다).
+        rowContent
+            .background(theme.palette.surface)
+            .clipShape(cardShape)
+            .overlay(
+                cardShape
+                    // ⚠ `outlineVariant` 로 되돌리지 말 것 — 다크에서 배경 대비
+                    // 1.7:1 이라 카드가 없는 것처럼 보였다(2026-08-17 실측).
+                    .stroke(theme.palette.cardBorder, lineWidth: 1)
+            )
+            .offset(x: dragOffset)
+            // ⚠ **탭은 행 전체가 받는다.** `contentShape` 로 빈 자리까지 히트영역에
+            // 넣는다. 토글 스위치는 자식이라 제 탭을 먼저 가져가므로, 스위치를 눌러
+            // 알람을 켜고 끄는 것과 충돌하지 않는다.
+            .contentShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
+            // ⚠ **누름은 축소로만 알린다**(2026-09-06, 안드로이드 `AlarmRow` 의
+            // `pressScale` 미러). 이 행은 `Button` 이 아니라 탭 제스처로 만들어져
+            // 버튼 스타일이 닿지 않으므로, 누름 상태만 따로 받아 같은 축소를 건다.
+            // 스와이프로 삭제가 드러난 동안에는 걸지 않는다 — 카드가 줄면 뒤의 삭제
+            // 버튼과 사이가 벌어져 두 조각으로 보인다.
+            .pressScale(isRowPressed && dragOffset == 0)
+            .onTapGesture {
+                guard !deleteRevealed else { return }
+                if selectionMode { onToggleSelected() } else { onTap() }
+            }
+            // ⚠ **`highPriorityGesture` 로 되돌리지 말 것 — 그러면 탭이 죽는다.**
+            // 그건 자식보다 **먼저** 터치를 claim 하는데, `minimumDistance 12` 라
+            // 손가락이 안 움직이면 제스처가 실패한다. 그 순간 아래 탭으로 **되돌아가지
+            // 않아**, 행의 빈 자리를 눌러도 아무 일이 없었다(2026-08-11 실측: 탭 지점
+            // x=226 은 글자 끝 139 와 스위치 313 사이의 확실한 빈 자리인데 무반응).
+            // `simultaneousGesture` 면 탭과 드래그가 공존한다 — 12pt 넘게 끌면 스와이프,
+            // 안 움직이면 탭. 토글 스위치는 여전히 제 탭을 먼저 가져간다.
+            .simultaneousGesture(swipeGesture)
+            // 길게 눌러 선택 모드로. 선택 모드에서는 이미 탭이 '고르기' 라 필요 없다.
+            //
+            // ⚠ **누름 표시를 위해 제스처를 새로 달지 말 것**(2026-09-06). 처음에는
+            // `simultaneousGesture(DragGesture(minimumDistance: 0))` 로 누름 상태를
+            // 받았는데, 그러면 **행의 빈 자리를 눌러도 편집기가 열리지 않는다**
+            // (`AlarmRowHitAreaUITests.test_행의_빈_자리를_눌러도_편집기가_열린다` 실패).
+            // 이미 달려 있는 길게 누르기의 `pressing:` 이 같은 신호를 공짜로 준다 —
+            // 제스처가 하나도 늘지 않으므로 위 탭·스와이프 조합을 건드리지 않는다.
+            // 스위치는 자식이 터치를 먼저 가져가 여기가 불리지 않는다(안드로이드와 같다).
+            .onLongPressGesture(
+                minimumDuration: 0.5,
+                pressing: { pressing in isRowPressed = pressing },
+                perform: {
+                    guard !selectionMode else { return }
+                    onEnterSelection()
                 }
-                // ⚠ **`highPriorityGesture` 로 되돌리지 말 것 — 그러면 탭이 죽는다.**
-                // 그건 자식보다 **먼저** 터치를 claim 하는데, `minimumDistance 12` 라
-                // 손가락이 안 움직이면 제스처가 실패한다. 그 순간 아래 탭으로 **되돌아가지
-                // 않아**, 행의 빈 자리를 눌러도 아무 일이 없었다(2026-08-11 실측: 탭 지점
-                // x=226 은 글자 끝 139 와 스위치 313 사이의 확실한 빈 자리인데 무반응).
-                // `simultaneousGesture` 면 탭과 드래그가 공존한다 — 12pt 넘게 끌면 스와이프,
-                // 안 움직이면 탭. 토글 스위치는 여전히 제 탭을 먼저 가져간다.
-                .simultaneousGesture(swipeGesture)
-                // 길게 눌러 선택 모드로. 선택 모드에서는 이미 탭이 '고르기' 라 필요 없다.
-                //
-                // ⚠ **누름 표시를 위해 제스처를 새로 달지 말 것**(2026-09-06). 처음에는
-                // `simultaneousGesture(DragGesture(minimumDistance: 0))` 로 누름 상태를
-                // 받았는데, 그러면 **행의 빈 자리를 눌러도 편집기가 열리지 않는다**
-                // (`AlarmRowHitAreaUITests.test_행의_빈_자리를_눌러도_편집기가_열린다` 실패).
-                // 이미 달려 있는 길게 누르기의 `pressing:` 이 같은 신호를 공짜로 준다 —
-                // 제스처가 하나도 늘지 않으므로 위 탭·스와이프 조합을 건드리지 않는다.
-                // 스위치는 자식이 터치를 먼저 가져가 여기가 불리지 않는다(안드로이드와 같다).
-                .onLongPressGesture(
-                    minimumDuration: 0.5,
-                    pressing: { pressing in isRowPressed = pressing },
-                    perform: {
-                        guard !selectionMode else { return }
-                        onEnterSelection()
-                    }
-                )
-                // ⚠ **히트테스트는 제스처 체인 *끝*에서 끈다**(2026-08-16).
-                // 예전에는 `rowContent` 안쪽에 걸어 뒀는데, 그러면 바깥쪽 `.contentShape` +
-                // `.onTapGesture` 는 살아 있다. 그 히트 영역은 `.offset` 뒤에 붙어 있어
-                // **밀리지 않고 삭제 버튼 자리까지 덮었고**, 그 핸들러는 `guard
-                // !deleteRevealed` 로 아무 일도 안 한다 — 그래서 삭제 버튼을 눌러도
-                // **아무 반응이 없었다**(실기기 로그: "행 본문 탭 revealed=true").
-                .allowsHitTesting(!deleteRevealed)
-
-            // 열린 동안 본문 자리만 덮어 '탭하면 닫힘' 을 준다.
-            // ⚠ **삭제 버튼 자리(88)는 비워 둔다** — 덮으면 원래 버그로 돌아간다.
-            if deleteRevealed {
-                HStack(spacing: 0) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(.snappy(duration: 0.2)) { resetSwipe() }
-                        }
-                        .simultaneousGesture(swipeGesture)
-                    Color.clear
-                        .frame(width: deleteRevealWidth)
-                        .allowsHitTesting(false)
+            )
+            // ⚠ **히트테스트는 제스처 체인 *끝*에서 끈다**(2026-08-16).
+            // 예전에는 `rowContent` 안쪽에 걸어 뒀는데, 그러면 바깥쪽 `.contentShape` +
+            // `.onTapGesture` 는 살아 있다. 그 히트 영역은 `.offset` 뒤에 붙어 있어
+            // **밀리지 않고 삭제 버튼 자리까지 덮었고**, 그 핸들러는 `guard
+            // !deleteRevealed` 로 아무 일도 안 한다 — 그래서 삭제 버튼을 눌러도
+            // **아무 반응이 없었다**(실기기 로그: "행 본문 탭 revealed=true").
+            .allowsHitTesting(!deleteRevealed)
+            // 삭제 버튼은 카드 **뒤**, 오른쪽 끝에 고정된다(카드만 밀린다). 배경 자리에 두어 행 높이를 그대로 받는다.
+            // ⚠ **드러난 동안에만 그린다**(안드로이드 `deleteVisible`). 늘 깔아 두면 누를 때 카드가 줄어드는 사이(0.98)로
+            //   빨강이 비친다. 빨강은 **버튼 폭만**이다 — 행 전체를 칠하면 카드 둥근 모서리 뒤로 빨강이 비친다.
+            // ⚠ 히트테스트를 끄는 줄(위) **뒤에** 단다 — 앞에 달면 열린 삭제 버튼까지 눌리지 않는다.
+            .background(alignment: .trailing) {
+                if dragOffset < -0.5 {
+                    swipeDeleteButton
+                        .transition(.opacity)
                 }
             }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
+            // 열린 동안 본문 자리만 덮어 '탭하면 닫힘' 을 준다.
+            // ⚠ **삭제 버튼 자리(92)는 비워 둔다** — 덮으면 원래 버그로 돌아간다.
+            .overlay {
+                if deleteRevealed {
+                    HStack(spacing: 0) {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.snappy(duration: 0.2)) { resetSwipe() }
+                            }
+                            .simultaneousGesture(swipeGesture)
+                        Color.clear
+                            .frame(width: deleteRevealWidth)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
+            // 선택 모드로 들어가면 열려 있던 삭제 버튼을 닫는다 — 선택 모드에서는 밀어서 지우지 않는다(`swipeGesture`).
+            .onChange(of: selectionMode) { _, active in
+                guard active, dragOffset != 0 || deleteRevealed else { return }
+                withAnimation(.snappy(duration: 0.2)) { resetSwipe() }
+            }
+        // ⚠ **바깥을 둥글게 자르지 않는다**(2026-11-22, 안드로이드와 같다). 예전에는 행 전체를 22 로 잘라, 밀린 카드의
+        //   왼쪽 테두리가 잘린 자리에 선 없이 남았다(다크에서는 카드와 배경 대비가 1:1 이라 테두리가 유일한 경계다).
+        //   지금은 카드가 테두리째 왼쪽으로 밀려 나간다.
     }
 
     private var timeColor: Color {
@@ -134,7 +167,8 @@ struct AlarmRow: View {
     }
 
     private var rowContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // 시각 줄 ↔ 실패 안내 10 · 카드 안 여백 20 — 안드로이드 `AlarmRow` 의 `padding(20)`·`spacedBy(10)` 과 같다.
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
                 // ⚠ **여기에 `Button` 을 다시 두지 말 것.** 예전에는 이 블록을 `Button`
                 // 으로 감쌌는데 그 버튼의 실제 폭이 **글자 폭에서 멈춰**(실측 x=38..197,
@@ -168,6 +202,8 @@ struct AlarmRow: View {
                 // 행 전체가 하나의 버튼으로 읽히게 한다(VoiceOver).
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isButton)
+                // 밀어서 지우기를 못 하는 사람의 삭제 길 — VoiceOver 동작 목록의 '삭제'(길게 누르기는 선택 모드다).
+                .accessibilityAction(named: Text(String(localized: "삭제")), onDelete)
 
                 if selectionMode {
                     // 선택 모드에선 켜기/끄기 대신 선택 표시를 **같은 자리**에 둔다 —
@@ -184,7 +220,7 @@ struct AlarmRow: View {
                         )
                     )
                     .labelsHidden()
-                    // ⚠ **스위치는 제 폭(캡슐 51)만 갖는다.** 공용 스타일(`Views/Common/AlarmTalkSwitch.swift`)의
+                    // ⚠ **스위치는 제 폭(트랙 52)만 갖는다.** 공용 스타일(`Views/Common/AlarmTalkSwitch.swift`)의
                     // 본체가 `HStack { 라벨; Spacer; 캡슐 }` 이라 라벨을 숨겨도 토글이 **남는 폭을 달라고**
                     // 한다. 옆의 글자 칸도 `maxWidth: .infinity` 라 둘이 **반씩** 나눠 가져, 둘째 줄
                     // ("날짜 · 목소리")이 폭이 남는데도 잘렸다(2026-11-03 시뮬레이터 실측 — 글자 칸 ≈ 행의 절반).
@@ -220,51 +256,57 @@ struct AlarmRow: View {
                 )
             }
         }
-        .padding(18)
-        // Android 길게 누르기 삭제 메뉴와 동치인 접근성 대체 경로(스와이프 외).
-        .contextMenu {
-            Button(String(localized: "삭제"), role: .destructive, action: onDelete)
-        }
+        .padding(20)
+        // ⚠ **길게 누르기에 '삭제' 메뉴를 되살리지 말 것**(2026-11-22 두 앱 통일). 길게 누르기는 선택 모드 하나다 —
+        //   안드로이드 `AlarmRow` 의 `onLongClick` 도 그렇다. 메뉴가 뜨는 동안 선택 모드에도 들어가 두 동작이 겹쳤다.
     }
 
-    /// 스와이프로 드러나는 삭제 버튼. 탭하면 즉시 삭제한다(Android DeleteRevealButton 미러).
-    private var swipeDeleteBackground: some View {
-        HStack {
-            Spacer(minLength: 0)
-            Button {
-                resetSwipe()
-                onDelete()
-            } label: {
-                VStack(spacing: 4) {
-                    Image(systemName: "trash")
-                        .font(.title3)
-                    Text(String(localized: "삭제"))
-                        .font(.pretendard(.semibold, size: 12))
-                }
-                .foregroundStyle(theme.palette.onError)
-                .frame(width: deleteRevealWidth)
-                .frame(maxHeight: .infinity)
-                // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
-                .contentShape(Rectangle())
+    /// 스와이프로 드러나는 삭제 버튼. 탭하면 즉시 삭제한다(Android `DeleteRevealButton` 미러).
+    /// 왼쪽은 각지고 오른쪽만 22 로 둥글다 — 카드의 펴진 오른쪽 모서리와 맞붙어 한 덩어리로 보인다.
+    private var swipeDeleteButton: some View {
+        let shape = UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: theme.shapes.vocaCard,
+            topTrailingRadius: theme.shapes.vocaCard,
+            style: .continuous
+        )
+        return Button {
+            resetSwipe()
+            onDelete()
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "trash")
+                    .font(.title3)
+                Text(String(localized: "삭제"))
+                    .font(.pretendard(.semibold, size: 12))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(String(localized: "알람 삭제")))
+            .foregroundStyle(theme.palette.onError)
+            .frame(width: deleteRevealWidth)
+            .frame(maxHeight: .infinity)
+            .background(theme.palette.error, in: shape)
+            // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+            .contentShape(shape)
         }
-        .background(theme.palette.error)
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(String(localized: "알람 삭제")))
     }
 
     /// 안드로이드 `AlarmRow`(ui/components/ControlsAndPermissions.kt) 의 `flingVelocityPx = 420.dp` 짝.
     private static let flingVelocity: CGFloat = 420
 
+    /// ⚠ **선택 모드에서는 밀어서 지우지 않는다**(안드로이드 `AlarmRow` 의 `draggable(enabled = !selectionMode)`).
+    /// 고르는 중에 행이 밀려 삭제 버튼이 드러나면, 고른 것과 상관없이 그 한 행만 지워질 수 있다.
     private var swipeGesture: some Gesture {
         DragGesture(minimumDistance: 12)
             .onChanged { value in
+                guard !selectionMode else { return }
                 let base = deleteRevealed ? -deleteRevealWidth : 0
                 // 왼쪽(트레일링)으로만 끌리도록 0 이상은 막는다.
                 dragOffset = min(0, max(-deleteRevealWidth, base + value.translation.width))
             }
             .onEnded { value in
+                guard !selectionMode else { return }
                 // 안드로이드와 같은 판정: **튕김의 부호가 먼저**다. 짧고 빠른 왼쪽 플릭은 이동량이
                 // 모자라도 열리고, 임계를 넘긴 뒤 오른쪽으로 되튕긴 손은 취소로 읽힌다.
                 // 느리면 위치로 — 삭제 버튼 폭의 0.42(안드로이드와 같은 값. 전에는 0.5 였다).
@@ -347,10 +389,8 @@ private extension LocalAlarmRecord {
             snoozeEnabled: true,
             snoozeMinutes: 5,
             snoozeRepeatLimit: SnoozeRepeatLimit.three.rawValue,
-            snoozeCount: 0,
             vibrationPattern: VibrationPattern.default.rawValue,
             playMode: AlarmPlayMode.alarmOnly.rawValue,
-            defaultAlarmSoundId: DefaultAlarmSounds.bundledDefault,
             localAudioUri: nil,
             audioCacheKey: nil,
             rawAudioUri: nil,
@@ -409,25 +449,30 @@ struct AlarmSelectionBar: View {
     let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
+        // 안드로이드 `AlarmSelectionBar` 와 같은 값 — 글자 버튼 둘(M3 `TextButton`: 좌우 12 · 높이 40 · labelLarge 14)이 사이 없이
+        // 붙고 바깥 여백 4. '취소' 는 primary, '삭제' 는 error · SemiBold(2026-11-22 전 iOS 는 16 글자에 취소가 회색이었다).
+        HStack(spacing: 0) {
             Spacer(minLength: 0)
             Button(String(localized: "취소"), action: onCancel)
-                .font(theme.typography.titleMedium)
+                .font(theme.typography.labelLarge)
                 .buttonStyle(.plain)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .foregroundStyle(theme.palette.primary)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .frame(minHeight: 40)
                 // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
                 .contentShape(Rectangle())
 
             Button(String(localized: "삭제"), action: onDelete)
-                .font(theme.typography.titleMedium.weight(.semibold))
+                .font(theme.typography.labelLarge)
+                .fontWeight(.semibold)
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.palette.error)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
                 .disabled(count == 0)
         }
+        .padding(4)
         .frame(minHeight: 48)
     }
 }

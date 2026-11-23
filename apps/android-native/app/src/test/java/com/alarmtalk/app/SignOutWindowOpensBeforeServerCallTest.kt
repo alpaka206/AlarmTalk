@@ -40,6 +40,51 @@ class SignOutWindowOpensBeforeServerCallTest {
         )
     }
 
+    /**
+     * 2026-11-22 두 앱 통일(iOS `AuthViewModel.signOutExplicitly`): 로그아웃은 **로컬 세션을 먼저 비워 화면을 닫고**, 푸시 해제·
+     * 서버 폐기는 뒤에서 한다. 예전에는 두 왕복을 다 기다린 뒤에 비워, 느린 망에서 로그아웃이 멈춘 것처럼 보였다.
+     * 비우면서 세대가 오르므로, 뒤늦은 폐기가 부른 워커의 401 은 세대 문에서 걸린다.
+     */
+    @Test
+    fun `로그아웃은 로컬 세션을 먼저 비우고 서버 뒷정리는 뒤에서 한다`() {
+        val body = bodyOf(authActions, "internal fun MainViewModel.logout(")
+        val clear = body.indexOf("clearSignedInSession(")
+        val background = body.indexOf("serverSignOutCleanup = viewModelScope.launch {")
+        val unregister = body.indexOf("unregisterCurrentToken(")
+        val revoke = body.indexOf("api.logout(")
+        assertTrue("로그아웃에 세션 정리가 없다.", clear >= 0)
+        assertTrue("서버 뒷정리가 뒤에서 도는 작업이 아니다 — 로그인이 기다릴 수 없다.", background > clear)
+        assertTrue("세션을 비우기 전에 서버를 부른다 — 화면이 왕복을 기다린다.", unregister > background && revoke > background)
+        assertTrue(
+            "푸시 해제가 폐기보다 뒤다 — 폐기가 token_epoch 를 먼저 올리면 해제가 401 로 죽어 기기가 그 계정에 묶인다.",
+            unregister < revoke,
+        )
+    }
+
+    /**
+     * 늦게 처리된 `/auth/logout` 은 그 계정의 `token_epoch` 를 올린다 — 그 전에 같은 계정으로 다시 받은 세션도 죽는다. 세션을
+     * 받는 요청은 앞선 뒷정리를 기다린 뒤에 보낸다(iOS `serializeAuthServerMutation` 과 같은 이유).
+     */
+    @Test
+    fun `세션을 받는 요청은 앞선 로그아웃 뒷정리를 기다린 뒤에 보낸다`() {
+        mapOf(
+            "internal fun MainViewModel.login(" to "api.login(",
+            "internal fun MainViewModel.register(" to "api.register(",
+            "internal fun MainViewModel.finishGoogleLogin(" to "api.loginGoogle(",
+            "internal fun MainViewModel.finishKakaoLogin(" to "api.loginKakao(",
+        ).forEach { (header, request) ->
+            assertOrderInBody(
+                source = authActions,
+                header = header,
+                first = "awaitServerSignOutCleanup()",
+                second = request,
+                why = "앞선 로그아웃의 폐기가 이 요청 뒤에 처리되면 방금 받은 세션이 401 로 죽는다.",
+            )
+        }
+        val wait = bodyOf(authActions, "internal suspend fun MainViewModel.awaitServerSignOutCleanup(")
+        assertTrue("뒷정리 대기가 그 작업을 기다리지 않는다.", wait.contains("serverSignOutCleanup?.join()"))
+    }
+
     @Test
     fun `탈퇴 신청도 서버를 부르기 전에 창을 연다`() {
         assertOrderInBody(

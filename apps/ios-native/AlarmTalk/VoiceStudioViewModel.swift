@@ -85,7 +85,6 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 추천은 0(그대로)이다.
     @Published var pendingDraftSourceMeasurement: (draftID: String, measurement: VoiceTuningAnalyzer.Measurement?)?
     @Published var ttsText = "좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!"
-    @Published var ttsCategory = "morning"
     @Published var ttsLanguage = "ko"
     @Published var randomPrompt = false
     /// 랜덤 프롬프트 컨텍스트. Android `TtsApi.kt` randomContext 와 동일.
@@ -161,7 +160,15 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 하나로 합치면 목록을 불러오는 사이에 누른 버튼이 조용히 무시된다.
     @Published private(set) var isRefreshing = false
 
-    @Published var statusMessage: String?
+    /// 안내·실패 한 줄. ⚠ 실패를 적으면 미리듣기 준비 안내(`greetingPreviewNotice`)는 걷는다 — 한 자리에 둘이 남아 옛 안내가
+    /// 실패 뒤에 되살아나지 않게.
+    @Published var statusMessage: String? {
+        didSet { if statusMessage != nil { greetingPreviewNotice = nil } }
+    }
+    /// 목소리 탭 미리듣기의 **안내**(실패가 아니다) — 클론의 인사말 클립이 아직 없을 때 "이 목소리의 미리듣기를 준비 중이에요."
+    /// 목소리 탭은 이것을 흐린 글자로, `statusMessage` 는 빨간 글자로 '내 목소리' 머리 아래에 그린다(안드로이드
+    /// `ui/voices/VoiceProfileManagementPanel.kt` 의 `localMessage` 자리).
+    @Published var greetingPreviewNotice: String?
     /// 마지막 `generateTTS` 가 서버에서 받은 `error_code`(성공·코드 없음이면 nil). 편집기가 429 `MANUAL_TTS_QUOTA_EXCEEDED`
     /// 뒤의 갈래(광고 제안·보상 확인 중·다음 제공일 — `docs/spec/ad-rewards.md` §1-1)를 고를 때 쓴다.
     var lastGenerateErrorCode: String?
@@ -330,11 +337,6 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 있고 서버 /tts/stock-clips 는 language ASC 정렬이라, 무필터 first 는 항상 영어(en)를 잡는다.
     /// 앱 언어 → ko → 아무 greeting → 그 보이스의 아무 클립 순. Android `greetingStockClipFor` 미러.
     func greetingClip(voiceId: String) -> StockClip? {
-        // 받은 추가 음성팩의 미리듣기 샘플(인사말 0번) — 편집기 목소리 시트의 '듣기'(`docs/spec/voice-packs.md` §7).
-        if isVoicePackVoiceID(voiceId) {
-            return VoicePackStore.shared.held.first { $0.voiceId == voiceId }?
-                .stockClips.first { $0.category == "greeting" }
-        }
         let greetings = stockClips.filter { $0.voiceProfileId == voiceId && $0.category == "greeting" }
         let appLanguage = Self.appVoiceLanguage()
         return greetings.first { ($0.language ?? "ko") == appLanguage }
@@ -367,6 +369,8 @@ final class VoiceStudioViewModel: ObservableObject {
     ///   원래대로 기본 크기 — 목소리를 고르는 자리에서는 '어떤 목소리인가' 를 듣는 것이라
     ///   크기를 건드리지 않는다.
     func previewGreeting(voiceId: String, session: AuthSession?, volumePercent: Int? = nil) async {
+        // 지난 누름의 '준비 중' 안내는 이번 누름의 이야기가 아니다.
+        greetingPreviewNotice = nil
         if previewingGreetingVoiceId == voiceId {
             greetingPreviewRequestId += 1
             previewPlayer.stop()
@@ -402,8 +406,8 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         guard let clip = greetingClip(voiceId: voiceId) else {
             // 클론은 사전렌더가 끝나야 인사말 클립이 생긴다 — 조용히 아무 일도 안 하면
-            // 버튼이 고장 난 것처럼 보인다.
-            statusMessage = String(localized: "미리듣기를 준비하고 있어요. 잠시 뒤에 다시 눌러 주세요.")
+            // 버튼이 고장 난 것처럼 보인다. 실패가 아니라 안내다(흐린 글자) — 안드로이드 `voices_greeting_preview_preparing`.
+            greetingPreviewNotice = String(localized: "이 목소리의 미리듣기를 준비 중이에요.")
             return
         }
         greetingPreviewRequestId += 1
@@ -492,7 +496,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 alreadyConfirmed: response.previewPlaybackConfirmed == true
             ))
         } catch {
-            return .failed(mapVoiceError(error))
+            return .failed(userFacingErrorMessage(error, fallback: String(localized: "미리듣기를 재생하지 못했어요.")))
         }
     }
 
@@ -506,12 +510,13 @@ final class VoiceStudioViewModel: ObservableObject {
             // 토큰 없이 왔으면 서버가 이미 기록해 둔 경우뿐이다 — 아니면 저장이 열리지 않으니 다시 받게 한다.
             return clip.alreadyConfirmed ? nil : String(localized: "미리듣기 확인에 실패했어요. 다시 들어 주세요.")
         }
-        guard let token = session?.token else { return String(localized: "로그인이 필요해요.") }
+        // 기록이 안 됐다 — 이유가 무엇이든(토큰 없음·네트워크) 다시 들어 달라고 말한다(안드로이드 `voices_preview_confirm_failed`).
+        guard let token = session?.token else { return String(localized: "미리듣기 확인에 실패했어요. 다시 들어 주세요.") }
         do {
             _ = try await api.confirmVoicePreviewPlayed(id: draft.id, playbackToken: playbackToken, token: token)
             return nil
         } catch {
-            return mapVoiceError(error)
+            return APIErrorMessages.message(for: error, fallback: String(localized: "미리듣기 확인에 실패했어요. 다시 들어 주세요."))
         }
     }
 
@@ -536,11 +541,9 @@ final class VoiceStudioViewModel: ObservableObject {
             (fortuneBirthTime).nilIfBlank != nil
     }
 
-    /// 편집기가 **기본 목소리처럼**(무료·테마 클립·기본 개수표) 다루는 목소리인가 — 기본 목소리 4종과 추가 음성팩
-    /// (`docs/spec/voice-packs.md` §2 — 팩은 기본 목소리와 같은 구조로만 게시된다).
+    /// 편집기가 **기본 목소리처럼**(무료·테마 클립·기본 개수표) 다루는 목소리인가 — 기본 목소리 4종.
     func isSystemVoiceProfile(id: String?) -> Bool {
         guard let id else { return false }
-        if isVoicePackVoiceID(id) { return true }
         return profiles.first { $0.id == id }.map(isSystemVoice) ?? isSystemVoiceId(id)
     }
 
@@ -563,19 +566,6 @@ final class VoiceStudioViewModel: ObservableObject {
             if entryFreshness.isFresh(userID: userID, entry: clock.entry, now: clock.now) { return }
         }
         await refresh(session: session)
-    }
-
-    /// 목록을 새로 받은 뒤에도 지금 선택을 둘 것인가 — 서버 목록에 있거나, **이 계정이 받은 추가 팩 목소리**다.
-    ///
-    /// ⚠ 팩 목소리는 `GET /voice` 에 없다(스펙 voice-packs §1). 그걸 '삭제됨' 으로 읽으면 팩 알람을 여는 것만으로 편집기의
-    /// 목소리가 다른 것으로 바뀌고, 시각만 고쳐 저장해도 팩 목소리를 잃는다(코덱스 #960). 고를 수 있는지(다 받았는지·게시
-    /// 중인지)는 편집기가 자기 목록으로 다시 본다(`AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded`).
-    nonisolated static func selectionSurvivesRefresh(
-        _ selectedID: String,
-        serverProfileIDs: [String],
-        heldPackVoiceIDs: Set<String>
-    ) -> Bool {
-        serverProfileIDs.contains(selectedID) || (isVoicePackVoiceID(selectedID) && heldPackVoiceIDs.contains(selectedID))
     }
 
     /// ⚠ **성공을 알리지 않는다.** 이 새로고침은 사용자가 누른 것이 아니라 화면 진입에서
@@ -667,13 +657,8 @@ final class VoiceStudioViewModel: ObservableObject {
             // 목록·한도를 **다** 받았을 때만 창을 연다(반쪽이면 다음 진입이 다시 받는다).
             // 여는 것은 아래 강등 정합화가 끝난 **뒤**다.
             let freshnessRecordable = quotaResult != nil
-            // 받은 추가 팩 목소리는 서버 목록에 없다(편집기가 합친다) — '지워졌다' 로 읽지 않는다(코덱스 #960).
             if let selectedProfileID,
-               !Self.selectionSurvivesRefresh(
-                   selectedProfileID,
-                   serverProfileIDs: profiles.map(\.id),
-                   heldPackVoiceIDs: Set(VoicePackStore.shared.held.map(\.voiceId))
-               ) {
+               !profiles.contains(where: { $0.id == selectedProfileID }) {
                 self.selectedProfileID = nil
             }
             if selectedProfileID == nil {
@@ -952,14 +937,13 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 선택한 스톡 클립의 음원을 받아 캐싱하고, 알람 저장 경로가 그대로 쓸 수 있는
     /// `PreparedAlarmTalk` 을 만든다. 생성 TTS 와 동일하게 `preparedAlarm` 에 실어
     /// 저장 흐름(AlarmEditorSheet saveFlow)이 server_tts 로 병합하게 한다.
-    /// Android `selectStockClip` 의 다운로드 → base64 decode → 캐시 → setStockClipAudio
-    /// 경로 미러. cacheKey 는 `stock_<messageId>`.
+    /// 받기(다운로드 → base64 decode → 캐시)는 안드로이드가 `AlarmEditorScreen.bindStockBucketClips` 안에서 하는 것과 같고,
+    /// 안드로이드는 받은 클립을 `AlarmEditorState.setBucketAudio` 로 묶는다. cacheKey 는 `stock_<messageId>`.
     func prepareStockClip(_ clip: StockClip, session: AuthSession?) async -> PreparedAlarmTalk? {
         guard let token = session?.token else {
             statusMessage = String(localized: "로그인이 필요해요.")
             return nil
         }
-        // 추가 음성팩 클립은 `pack_<clipId>` 자리다(`StockClip.cacheKey`).
         let stockKey = clip.cacheKey
         do {
             // ⚠ **선다운로드해 둔 캐시를 먼저 본다.** 예전에는 이 확인이 없어서
@@ -976,17 +960,6 @@ final class VoiceStudioViewModel: ObservableObject {
                 //   '재생 중' 으로 멈췄고, 테마 알람을 저장해도 `alarm_ready` 가 적히지 않았다(울림은 캐시 키로 찾아 멀쩡했다).
                 let cached = try legacyAliasedStockAudio(canonicalURL: url, messageId: clip.messageId, cacheKey: stockKey)
                 let prepared = makeStockPrepared(clip: clip, cached: cached, rawAudioURL: nil)
-                preparedAlarm = prepared
-                return prepared
-            }
-            // 추가 음성팩 — 받아 둔 팩이 정상 경로다. 캐시가 비었을 때만 팩 오디오 경로로 받는다(해시·크기 대조).
-            if isVoicePackVoiceID(clip.voiceProfileId) {
-                guard let packID = VoicePacks.packID(fromIdentity: clip.audioUrl),
-                      let expected = VoicePackStore.shared.heldPack(packID: packID)?.clips.first(where: { $0.clipId == clip.messageId })
-                else { throw LocalAlarmAudioError.missingSource }
-                let audio = try await api.getVoicePackClipAudio(packID: packID, clipID: clip.messageId, token: token)
-                let cached = try await AudioCacheStore.cacheVoicePackClipOffMain(audio: audio, expected: expected, packID: packID)
-                let prepared = makeStockPrepared(clip: clip, cached: cached, rawAudioURL: clip.audioUrl)
                 preparedAlarm = prepared
                 return prepared
             }
@@ -1007,7 +980,7 @@ final class VoiceStudioViewModel: ObservableObject {
             preparedAlarm = prepared
             return prepared
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "미리듣기를 재생하지 못했어요."))
             return nil
         }
     }
@@ -1077,7 +1050,7 @@ final class VoiceStudioViewModel: ObservableObject {
             // 없는 고정 문구가 카드 아래에 한 줄 더 생긴다.
             statusMessage = nil
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "녹음을 시작할 수 없어요."))
         }
     }
 
@@ -1114,6 +1087,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         cloneName = fields.name
         guard let url = recorder.latestRecordingURL, let durationMs = recorder.latestDurationMs else {
+            // 안드로이드 `voices_prepare_recording_first` 와 같은 말.
             statusMessage = String(localized: "먼저 목소리를 녹음해 주세요.")
             return nil
         }
@@ -1141,7 +1115,7 @@ final class VoiceStudioViewModel: ObservableObject {
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
-        tooShortMessage: String = String(localized: "12초 이상 준비해 주세요.")
+        tooShortMessage: String = String(localized: "12초 이상 2분 이하 구간을 선택해 주세요.")
     ) async -> VoiceProfile? {
         // 지난 등록의 말소리 거절을 이번 등록에 들고 가지 않는다([noSpeechRejected]) — 아래에서 일찍 돌아가도.
         noSpeechRejected = false
@@ -1206,7 +1180,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 // `VoiceCloneUploadFlow.submitOutcome`). 서버는 아무것도 쓰지 않았다 — 이번 달 등록이 그대로라 남은 횟수는
                 // 다시 읽지 않는다.
                 noSpeechRejected = isNoSpeechRejection(error)
-                statusMessage = mapVoiceError(error)
+                statusMessage = mapVoiceError(error, fallback: String(localized: "목소리를 만들지 못했어요"))
             }
             return nil
         }
@@ -1229,11 +1203,11 @@ final class VoiceStudioViewModel: ObservableObject {
             return nil
         }
         guard let profileID = selectedProfileID else {
-            statusMessage = String(localized: "사용할 목소리를 먼저 선택해 주세요.")
+            statusMessage = String(localized: "사용할 목소리를 선택해 주세요.")
             return nil
         }
         guard randomPrompt || !ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            statusMessage = String(localized: "깨워줄 말을 입력하거나 문구 종류를 골라 주세요.")
+            statusMessage = String(localized: "알람 문구를 입력하거나 문구 종류를 골라 주세요.")
             return nil
         }
         let promptContext = RandomPromptContext.normalized(randomContext)
@@ -1242,7 +1216,7 @@ final class VoiceStudioViewModel: ObservableObject {
             return nil
         }
         if randomPrompt && promptContext.usesFortune && !hasFortuneInfo {
-            statusMessage = String(localized: "운세에 쓸 정보를 모두 입력해 주세요.")
+            statusMessage = String(localized: "운세가 들어간 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요.")
             return nil
         }
         guard !isBusy else { return nil }
@@ -1334,7 +1308,7 @@ final class VoiceStudioViewModel: ObservableObject {
         } catch {
             if !answerRecorded { recordManualGenerationFailure(error) }
             lastGenerateErrorCode = serverErrorCode(of: error)
-            statusMessage = mapVoiceError(error)
+            statusMessage = mapVoiceError(error, fallback: String(localized: "음성 생성에 실패했어요."))
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             return nil
         }
@@ -1460,7 +1434,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 try target.play(url: url)
             }
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "미리듣기를 재생하지 못했어요."))
         }
     }
 
@@ -1476,7 +1450,7 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             try previewPlayer.play(url: url)
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "미리듣기를 재생하지 못했어요."))
         }
     }
 
@@ -1517,7 +1491,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 await refresh(session: session, force: true)
                 return true
             }
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "목소리 삭제에 실패했어요"))
             return false
         }
     }
@@ -1667,10 +1641,9 @@ final class VoiceStudioViewModel: ObservableObject {
             // 소유자 미기록(옛 행)은 이 계정 것으로 본다(안드로이드·잠금 경로와 같은 관용).
             guard record.ownerUserId == nil || record.ownerUserId == owner else { return false }
             guard let voiceID = record.voiceProfileId?.nilIfBlank else { return false }
-            // 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다.
-            // 추가 음성팩 목소리는 `GET /voice` 에 **원래 없다**(목소리 프로필이 아니다 — `docs/spec/voice-packs.md` §1).
-            // 여기서 잃은 것으로 읽으면 받아 둔 팩 알람이 새로고침마다 미나로 바뀐다. 팩의 게시 끝은 `VoicePackStore` 가 본다.
-            return !isSystemVoiceId(voiceID) && !isVoicePackVoiceID(voiceID) && !accessible.contains(voiceID)
+            // 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다. 그 밖에 목록에 없는 id 는 전부 잃은 목소리다 —
+            // 내부 시험 기기에만 남은 옛 추가 음성팩 목소리(`70000000-0000-4000-9100-…`)도 여기서 기본 목소리가 된다.
+            return !isSystemVoiceId(voiceID) && !accessible.contains(voiceID)
         }
         // 무료 잠금으로 기본 목소리가 된 행은 **보관본의 원래 목소리**로 본다 — 그 목소리가 지워졌으면
         // 잠금을 확정한다(보관본을 버리고 기본 목소리로 남긴다. 알람음으로 내리지 않는다).
@@ -1765,24 +1738,6 @@ final class VoiceStudioViewModel: ObservableObject {
         guard !targets.isEmpty else { return [] }
         degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
         return targets.map(\.id)
-    }
-
-    /// **추가 음성팩**을 지우거나 게시 기한이 지나 대체할 때 — 그 팩 목소리 알람을 기본 목소리(미나)로 바꾼다
-    /// (`docs/spec/voice-packs.md` §5-3, 목소리를 잃은 알람과 같은 모양 — `degrade`). 지금 계정의 행만 본다(소유자 미기록 옛 행 포함)
-    /// — 받은 팩 목록이 계정별이라, 다른 계정의 알람은 그 계정이 자기 목록에서 대체한다.
-    /// 안드로이드 짝은 `AlarmRepository.degradeAlarmsUsingVoicePack`.
-    @discardableResult
-    func degradeVoicePackAlarms(
-        voiceID: String,
-        alarmStore: LocalAlarmStore,
-        audioCache: AudioCacheStore?,
-        ownerUserId: String?
-    ) -> Int {
-        guard isVoicePackVoiceID(voiceID) else { return 0 }
-        let targets = VoicePackStore.alarmsUsing(voiceID: voiceID, in: alarmStore.alarms, ownerUserId: ownerUserId)
-        guard !targets.isEmpty else { return 0 }
-        degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
-        return targets.count
     }
 
     func degradeAlarms(usingVoiceProfileIDs ids: [String], alarmStore: LocalAlarmStore, audioCache: AudioCacheStore?) {
@@ -1891,13 +1846,12 @@ final class VoiceStudioViewModel: ObservableObject {
 
         if let audioCache, !releasedKeys.isEmpty {
             // 참조로 세는 것: 대표 클립, **목소리로 우는** 알람의 클립 세트(알람 모드 행은 틀지 않는다),
-            // 무료 잠금 보관본이 붙든 원래 오디오 — 지우면 재결제 때 복원할 소리가 없다. 받은 추가 팩(어느 계정이든)이 쥔
-            // 클립도 남긴다 — 팩 파일은 팩 지우기·개정 정리·기한 대체가 놓는다(코덱스 #960).
+            // 무료 잠금 보관본이 붙든 원래 오디오 — 지우면 재결제 때 복원할 소리가 없다.
             let stillReferenced = Set(
                 alarmStore.alarms.compactMap { $0.audioCacheKey }
                     + alarmStore.alarms.filter { $0.playModeEnum != .alarmOnly }.flatMap { $0.bucketClipKeys ?? [] }
                     + alarmStore.alarms.flatMap { $0.preLockVoice?.referencedCacheKeys ?? [] }
-            ).union(VoicePackStore.heldClipCacheKeysOnDevice())
+            )
             let toRemove = releasedKeys.subtracting(stillReferenced)
             for key in toRemove {
                 try? audioCache.deleteCachedAudio(cacheKey: key)
@@ -1981,7 +1935,7 @@ final class VoiceStudioViewModel: ObservableObject {
             }
             await refresh(session: session, force: true)
         } catch {
-            statusMessage = mapVoiceError(error)
+            statusMessage = userFacingErrorMessage(error, fallback: String(localized: "정보 수정에 실패했어요"))
         }
     }
 

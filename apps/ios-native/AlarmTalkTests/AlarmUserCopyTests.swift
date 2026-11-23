@@ -6,7 +6,8 @@ final class AlarmUserCopyTests: XCTestCase {
     func test_voiceRecorderMicrophoneDeniedCopy_isKorean() {
         XCTAssertEqual(
             VoiceRecorderError.microphoneDenied.errorDescription,
-            "녹음하려면 마이크 권한이 필요해요."
+            // 안드로이드 `voices_mic_permission_required` 와 같은 말(2026-11-22 두 앱 통일).
+            "마이크 권한이 필요해요."
         )
     }
 
@@ -51,43 +52,22 @@ final class AlarmUserCopyTests: XCTestCase {
 
 /// 목소리 등록 폼의 동의 게이트.
 ///
-/// ⚠ **권리 보증 확인(attestation)은 여기 없다 — 의도된 변경이다.**
-/// 그 내용(본인/권한 있는 목소리만, 무단 등록 책임은 이용자)은 **약관 제7조**가 이미 담고
-/// 있고 약관은 가입 필수 동의다. 등록마다 체크박스로 다시 받는 것은 계약상 중복이었다.
-/// 화면에는 비차단 안내로 남아 업로드 시점 고지만 유지한다.
-/// 되돌리려면 약관 제7조를 먼저 확인할 것 — 그 조항이 사라졌다면 체크박스가 다시 필요하다.
+/// 빠진 법정 동의와 목소리 권리 확인은 '등록' 을 누를 때 **시트 하나**(`VoiceConsentSheet`)로 받는다(2026-11-15 오너).
+/// 이름 화면의 생체정보 체크칸과 '추가' 입구의 권리 확인 모달은 없앴다 — 폼이 직접 보는 것은 '동의 상태 응답이 왔는가'
+/// 하나다. 시트를 띄우는 판정은 `AuthViewModelTests` 의 `requestSensitiveConsent`·`agreeToPendingSensitiveConsent` 가 고정한다.
 final class VoiceRegistrationConsentGateTests: XCTestCase {
 
     /// 동의 상태 응답 **전에는 등록을 열지 않는다.**
-    /// 그 창에서는 `needsBiometric` 이 항상 false 라, 가입 때 거절한 사람에게 체크박스가
-    /// 안 그려진 채 제출이 열려 403 을 맞는다(CLAUDE.md 「확인이 끝난 뒤에만 판단한다」).
+    /// 그 창에서는 빠진 동의 목록이 늘 비어 있어, 가입 때 거절한 사람에게 시트를 못 띄운 채 제출이 나가 403 을 맞는다
+    /// (CLAUDE.md 「확인이 끝난 뒤에만 판단한다」).
     func test_blockedUntilConsentStatusArrives() {
         XCTAssertFalse(
-            VoiceCloneUploadFlow.registrationConsentSatisfied(
-                statusChecked: false, needsBiometric: false, biometricAgreed: false
-            ),
+            VoiceCloneUploadFlow.registrationConsentSatisfied(statusChecked: false),
             "응답 전에는 열면 안 된다"
         )
         XCTAssertTrue(
-            VoiceCloneUploadFlow.registrationConsentSatisfied(
-                statusChecked: true, needsBiometric: false, biometricAgreed: false
-            ),
-            "가입 때 동의한 사람은 추가 체크 없이 등록된다"
-        )
-    }
-
-    /// 가입 때 거절한 사람은 인라인 생체정보 동의가 있어야 등록이 열린다.
-    func test_biometricRequiredOnlyWhenMissing() {
-        XCTAssertFalse(
-            VoiceCloneUploadFlow.registrationConsentSatisfied(
-                statusChecked: true, needsBiometric: true, biometricAgreed: false
-            ),
-            "거절한 사람은 동의 없이 등록되면 안 된다"
-        )
-        XCTAssertTrue(
-            VoiceCloneUploadFlow.registrationConsentSatisfied(
-                statusChecked: true, needsBiometric: true, biometricAgreed: true
-            )
+            VoiceCloneUploadFlow.registrationConsentSatisfied(statusChecked: true),
+            "빠진 동의는 등록을 누를 때 시트가 받는다 — 폼에서 막지 않는다"
         )
     }
 }

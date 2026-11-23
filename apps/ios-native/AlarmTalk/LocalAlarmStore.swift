@@ -164,25 +164,8 @@ final class LocalAlarmStore: ObservableObject {
         }
     }
 
-    /// `AlarmRepository.requireUniqueTime` 와 동일 의미 — hour+minute 가 같으면 중복이다
-    /// (요일은 보지 않는다. Android 원본 의도와 동일). 판정은 `conflictingAlarms` 하나다.
-    ///
-    /// ⚠ **소유자를 반드시 넘긴다 — 목록만 거르면 뚫린다**(Codex #699 P1).
-    /// 목록에서 남의 알람을 감춰도 이 판정이 저장소 전체를 보면, B 가 A 의 **숨은** 알람과
-    /// 같은 시각을 고르는 순간 "중복" 으로 막힌다. 보이지도 않는 알람 때문에 막히니
-    /// 사용자는 이유를 알 길이 없다.
-    func requireUniqueTime(
-        hour: Int,
-        minute: Int,
-        excludingID: String? = nil,
-        ownerUserId: String?
-    ) throws {
-        if !conflictingAlarms(hour: hour, minute: minute, excludingID: excludingID, ownerUserId: ownerUserId).isEmpty {
-            throw LocalAlarmValidationError.duplicateTime
-        }
-    }
-
-    /// 같은 시각(hour+minute)의 기존 알람들. "한 시각에는 알람 하나" 교체 흐름에서
+    /// 같은 시각(hour+minute)의 기존 알람들 — `AlarmRepository.requireUniqueTime` 과 같은 뜻으로 hour+minute 가 같으면
+    /// 중복이다(요일은 보지 않는다. Android 원본 의도와 동일). "한 시각에는 알람 하나" 교체 흐름에서
     /// 충돌 대상을 찾아 라벨 표시·삭제에 쓴다.
     /// ⚠ **소유자를 반드시 넘긴다**(Codex #699 P1). 이 결과는 화면에 **남의 알람 이름을
     /// 그대로 띄우고**(교체 모달의 `existingLabel`), 사용자가 '교체' 를 누르면
@@ -464,7 +447,6 @@ final class LocalAlarmStore: ObservableObject {
             Self.prepareCheerForNextOccurrence(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].state = AlarmRuntimeState.armed.rawValue
             alarms[index].enabled = true
-            alarms[index].snoozeCount = 0
             // PR3: `.fixed` 서브셋만 alarmKitID 를 비워 "OS 재무장 필요" 신호를 남긴다.
             // rearmIfHolidayOffOneShot 가 이 nil 을 guard 로 보고 schedule() 한다.
             // 네이티브 `.relative` 반복 알람은 AlarmKit 이 여전히 소유하므로 비우지 않는다.
@@ -480,14 +462,11 @@ final class LocalAlarmStore: ObservableObject {
     }
 
     /// Snooze 갱신. fireAtMillis 는 호출자가 미리 계산해서 전달 (now + snoozeMinutes*60s).
-    func markSnoozed(id: String, newFireAtMillis: Int64, incrementCount: Bool = true) {
+    func markSnoozed(id: String, newFireAtMillis: Int64) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
         alarms[index].fireAtMillis = newFireAtMillis
         alarms[index].state = AlarmRuntimeState.snoozed.rawValue
         alarms[index].enabled = true
-        if incrementCount {
-            alarms[index].snoozeCount += 1
-        }
         alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
         persist()
     }
@@ -541,7 +520,6 @@ final class LocalAlarmStore: ObservableObject {
                 Self.prepareCheerForNextOccurrence(&alarms[index], nextFireAtMillis: nextFireAt)
                 alarms[index].state = AlarmRuntimeState.armed.rawValue
                 alarms[index].enabled = true
-                alarms[index].snoozeCount = 0
             } else {
                 alarms[index].enabled = false
                 alarms[index].state = AlarmRuntimeState.failed.rawValue
@@ -616,7 +594,6 @@ final class LocalAlarmStore: ObservableObject {
             Self.invalidateWeatherVariantIfFireDateChanges(&alarms[index], nextFireAtMillis: nextFireAt)
             alarms[index].fireAtMillis = nextFireAt
             alarms[index].enabled = true
-            alarms[index].snoozeCount = 0
             alarms[index].state = AlarmRuntimeState.armed.rawValue
             alarms[index].alarmKitID = nil
         } else {

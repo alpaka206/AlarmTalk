@@ -18,7 +18,6 @@ import contentJson from './stock-content.json';
  * 앱은 이 파일을 번들하지 않는다 — 매니페스트의 표지(`theme`·`content_id`·`selectable`)로 받는다.
  */
 export const STOCK_CONTENT_LANGUAGES = ['ko', 'en', 'ja'] as const;
-export type StockContentLanguage = (typeof STOCK_CONTENT_LANGUAGES)[number];
 
 const ID_RE = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
@@ -45,8 +44,6 @@ const fileSchema = z.object({
   $comment: z.string().optional(),
   sets: z.array(setSchema).min(1),
 });
-
-export type StockContentItem = z.infer<typeof itemSchema>;
 export type StockContentSet = z.infer<typeof setSchema>;
 
 const parsed = fileSchema.parse(contentJson);

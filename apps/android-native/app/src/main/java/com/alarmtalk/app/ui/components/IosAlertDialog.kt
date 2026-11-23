@@ -2,21 +2,14 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -124,11 +117,6 @@ internal fun IosAlertDialog(
     actions: List<IosAlertAction>,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    // 떠 있는 동안 [OpenModalRegistry] 에 '모달이 떠 있다' 고 적는가. 끄는 것은 **다른
-    // 모달이 없을 때만 뜨는 안내 자신**(개인 플랜 종료 안내)뿐이다 — 자기를 세면 떠 있는
-    // 자기 때문에 스스로 걷힌다. (⚠ `content` 뒤로 옮기지 말 것 — 호출부가 `content` 를
-    // 후행 람다로 넘긴다.)
-    tracksAsOpenModal: Boolean = true,
     // 요청이 실패한 이유 — 본문 바로 아래에 **본문과 같은 여백·정렬**로 빨갛게 그린다.
     // ⚠ **`content` 슬롯에 넣지 말 것**(2026-11-09 오너 "왼쪽 간격이 왜 달라"). 그 슬롯은 입력칸 자리라
     // 여백이 버튼 기준(16)이고 가운데 정렬이어서, 본문(30·왼쪽) 아래 한 줄만 시작선이 어긋났다.
@@ -137,10 +125,7 @@ internal fun IosAlertDialog(
     // 본문과 액션 사이에 들어가는 입력 영역. 없으면 예전과 똑같은 순수 알럿이다.
     content: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
-    if (tracksAsOpenModal) TrackOpenModal()
     val scheme = MaterialTheme.colorScheme
-    // 본문이 몇 줄로 그려졌는지. 정렬을 그 결과로 정한다(위 주석 참조).
-    var messageLineCount by remember(message) { mutableIntStateOf(0) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -187,23 +172,14 @@ internal fun IosAlertDialog(
                             ),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        // ⚠ **여러 줄 본문은 가운데가 아니라 왼쪽 정렬이다.**
-                        // iOS 알럿은 본문이 한 줄이면 가운데, **여러 줄이면 제목까지 왼쪽
-                        // 정렬**로 바뀐다(2026-08-11 실측 — 탈퇴 알럿의 여러 줄 본문이 왼쪽
-                        // 정렬이었다). 긴 문단을 가운데 정렬하면 줄마다 시작점이 달라 읽는
-                        // 눈이 매 줄 다시 왼쪽을 찾아야 한다.
-                        //
-                        // ⚠ **줄 수 기준을 3 으로 두지 말 것.** 알럿 폭이 기기마다 달라
-                        // 같은 문장이 아이폰에서 3줄, 갤럭시에서 2줄로 감긴다 — 3 으로 두면
-                        // 같은 알럿이 한쪽만 가운데 정렬로 뜬다(실제로 그랬다).
-                        // 판정은 **한 줄인가 아닌가**로만 한다.
-                        //
-                        // ⚠ **입력이 있는 알럿은 줄 수와 무관하게 왼쪽이다**(2026-08-17 지시).
-                        // 입력칸 안의 글자는 언제나 왼쪽에서 시작하는데 그 위의 제목·본문만
-                        // 가운데면, 한 모달 안에 시작점이 두 개가 된다. 알럿보다 **폼**에
-                        // 가까운 물건이라 폼처럼 왼쪽 한 줄로 세운다.
-                        val longMessage = messageLineCount >= 2
-                        val blockAlign = if (longMessage || content != null) TextAlign.Start else TextAlign.Center
+                        // ⚠ **본문이 있으면 제목·본문은 언제나 왼쪽이다 — 줄 수를 보지 않는다**(2026-11-22 오너 "어떤 건 가운데고
+                        // 어떤 건 왼쪽이야, 통일해"). 아이폰(iOS 27) 시스템 알럿이 그렇다: 본문이 한 줄이어도 왼쪽이고, **제목 한 줄만
+                        // 있는 확인 알럿**('로그아웃할까요?')만 가운데다(2026-11-22 시뮬레이터 실측 — `-UIPreviewEditorAlert`).
+                        // 예전에는 iOS 26 실측(2026-08-11)대로 본문이 한 줄이면 가운데·여러 줄이면 왼쪽이라, 같은 제목('목소리를
+                        // 골라주세요')의 알럿이 본문 길이 하나로 가운데·왼쪽을 오갔다. ⚠ 줄 수를 재서 정렬을 바꾸는 판정을 되살리지 말 것.
+                        // 입력이 있는 알럿은 폼이라 제목뿐이어도 왼쪽이다(2026-08-17 — 입력칸 글자와 시작점을 맞춘다).
+                        val titleOnly = message.isNullOrBlank() && errorMessage.isNullOrBlank() && content == null
+                        val blockAlign = if (titleOnly) TextAlign.Center else TextAlign.Start
                         if (!title.isNullOrBlank()) {
                             Text(
                                 text = title,
@@ -223,8 +199,6 @@ internal fun IosAlertDialog(
                                 textAlign = blockAlign,
                                 style = IosAlertType.Message,
                                 modifier = Modifier.fillMaxWidth(),
-                                // 줄 수는 그려 봐야 안다 — 재 보고 다음 배치에서 정렬을 정한다.
-                                onTextLayout = { messageLineCount = it.lineCount },
                             )
                         }
                         if (!errorMessage.isNullOrBlank()) {
@@ -291,16 +265,6 @@ internal fun IosAlertField(
     modifier: Modifier = Modifier,
     placeholder: String? = null,
     enabled: Boolean = true,
-    singleLine: Boolean = true,
-    minHeight: Dp = 48.dp,
-    /// 모서리. 한 줄 칸은 캡슐이다.
-    ///
-    /// ⚠ **캡슐은 한 줄일 때만이다**(2026-08-20). 캡슐 반경은 999 라 실제 반경이 높이의
-    /// 절반으로 잘리는데, 직접 입력처럼 `minHeight = 108` 인 여러 줄 칸에서는 그게 **반경
-    /// 54** 가 되어 좌우가 통째로 반원이 된다 — 아래 실측 근거(h=48·r=24)는 한 줄 칸의
-    /// 것이고, 여러 줄에 그대로 쓰면 근거 없는 모양이 나온다. 여러 줄은 앱 표준 입력
-    /// 반경(`WakerInputShape`)을 쓴다.
-    shape: Shape = if (singleLine) WakerPillShape else WakerInputShape,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -309,7 +273,9 @@ internal fun IosAlertField(
         value = value,
         onValueChange = onValueChange,
         enabled = enabled,
-        singleLine = singleLine,
+        // ⚠ **한 줄이다 — 여러 줄 칸을 되살리지 말 것**(2026-11-22 오너 "빈칸 디자인도 통일"). iOS 시스템 알럿 입력칸은 한 줄이라
+        // 바꿀 수 없다. 직접 입력이 높이 108 의 여러 줄 상자였을 때 두 앱의 칸이 다른 물건처럼 보였다.
+        singleLine = true,
         keyboardOptions = keyboardOptions,
         textStyle = textStyle,
         cursorBrush = SolidColor(scheme.primary),
@@ -318,18 +284,18 @@ internal fun IosAlertField(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = minHeight)
+                    .heightIn(min = 48.dp)
                     // ⚠ **캡슐이다 — 8dp 같은 각진 값으로 되돌리지 말 것**(2026-08-11 실측).
                     // iOS `UIAlertController` 를 띄워 계층을 훑어 보니 입력칸 컨테이너는
                     // **h=48, cornerRadius=24** 즉 완전한 캡슐이었다(액션 버튼도 h=48·r=24,
-                    // 알럿 컨테이너는 r=34). 예전 주석은 "컨테이너(14)보다 작은 반경" 이라
-                    // 적었는데 **컨테이너가 14였던 적이 없다** — 34다. 근거가 틀렸으니
-                    // 거기서 나온 8도 틀렸다.
-                    .border(0.5.dp, scheme.onSurface.copy(alpha = 0.22f), shape)
-                    .background(scheme.surface.copy(alpha = 0.5f), shape)
+                    // 알럿 컨테이너는 r=34).
+                    // ⚠ **선 없이 채운다**(2026-11-22 iOS 27 시뮬레이터 실측 — 칸은 알럿 바탕보다 한 단계 밝게(라이트는 어둡게)
+                    // 채운 캡슐이고 테두리가 없다: 다크 #2A3244 → #41495D, 라이트 #E6EAEF → #C3C9D2). 예전의 0.5 선 + 바탕 50% 는
+                    // 아이폰 칸과 다른 물건이었다(오너 "빈칸 디자인도 통일").
+                    .background(scheme.onSurface.copy(alpha = 0.12f), WakerPillShape)
                     // 캡슐이라 좌우가 둥글게 파고들어, 10 이면 글자가 모서리에 닿는다.
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
+                contentAlignment = Alignment.CenterStart,
             ) {
                 if (value.isEmpty() && !placeholder.isNullOrBlank()) {
                     Text(

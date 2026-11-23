@@ -664,7 +664,7 @@ private fun RingingRoute(
                 )
                 Spacer(Modifier.height(6.dp))
                 // 오전·오후는 위 날짜 줄이 말한다 — 시계는 숫자만(가운데).
-                RingingClock(ampm = "", time = uiState.timeText, spokenTime = uiState.spokenTime)
+                RingingClock(time = uiState.timeText, spokenTime = uiState.spokenTime)
 
                 // 문구는 시계와 컨트롤 사이의 빈 공간에서 **위쪽 1/3 지점**에 앉는다(실기 S23 Ultra 에서
                 // 시계 바로 아래 붙이니 화면 가운데가 통째로 비어 보였다). 위 0.5 : 아래 1 비율.
@@ -727,37 +727,17 @@ private fun ringingEdge(): BorderStroke =
  * 읽히게 두면 자다 깬 사람이 첫 정보를 두 번에 나눠 듣고, '6:00' 은 TTS 마다 발음이 다르다.
  */
 @Composable
-private fun RingingClock(ampm: String, time: String, spokenTime: String) {
-    // '오전' + 104sp 시각이 여유롭게 들어가는 폭. Pretendard 숫자는 시스템 글꼴보다 넓어
+private fun RingingClock(time: String, spokenTime: String) {
+    // 104sp 시각이 여유롭게 들어가는 폭. Pretendard 숫자는 시스템 글꼴보다 넓어
     // "10:00" 기준 324dp 가 필요하다(실측) — 여유를 두고 340. 이보다 넓으면 줄이지 않는다.
+    // (오전·오후는 위 날짜 줄이 말한다 — 시계 옆에 그리던 갈래는 2026-11-23 에 지웠다.)
     val referenceWidth = 340.dp
-    // 영어는 '6:30 AM' 이다 — 로케일의 시각 패턴에서 오전/오후 자리를 읽는다.
-    val ampmFirst = remember {
-        val pattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "hma")
-        pattern.indexOf('a') < pattern.indexOf('h')
-    }
     BoxWithConstraints {
         val scale = fitToWidthScale(maxWidth, referenceWidth)
         Row(
             modifier = Modifier.clearAndSetSemantics { contentDescription = spokenTime },
             verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(10.dp * scale),
         ) {
-            val ampmText: @Composable () -> Unit = {
-                if (ampm.isNotBlank()) {
-                    Text(
-                        text = ampm,
-                        modifier = Modifier.padding(bottom = 18.dp * scale),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 26.sp * scale,
-                        lineHeight = 30.sp * scale,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
-                }
-            }
-            if (ampmFirst) ampmText()
             Text(
                 text = time,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -769,7 +749,6 @@ private fun RingingClock(ampm: String, time: String, spokenTime: String) {
                 maxLines = 1,
                 softWrap = false,
             )
-            if (!ampmFirst) ampmText()
         }
     }
 }

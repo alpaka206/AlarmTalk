@@ -47,7 +47,9 @@ private struct PaneScaffold<Content: View>: View {
                 content()
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            // 상단바 → 첫 카드 24 — 안드로이드 `WakerTopBar` 의 아래 간격(`WakerTopBarBottomGap`)과 같다(2026-11-22 전 16).
+            .padding(.top, 24)
+            .padding(.bottom, 16)
         }
         // ⚠ **입력창 밖을 눌러 키보드를 닫을 길을 둔다.** iOS 는 바깥 탭으로 키보드가
         // 자동으로 닫히지 않아서, 없으면 키보드가 화면 절반을 가린 채 버튼에 닿지 못한다
@@ -143,9 +145,10 @@ struct AlarmSoundSettingsPane: View {
         }
     }
 
-    /// 행 = [이름] … [체크] [미리듣기]
-    /// ⚠ 목소리 선택 시트와 **같은 순서**다 — 체크가 먼저, 재생이 끝이다. 순서를 뒤집으면
-    /// 고를 때마다 체크가 끼어들며 재생 버튼이 손가락 밑에서 움직인다.
+    /// 행 = [고른 표시] [이름] … [미리듣기]
+    /// ⚠ **고른 표시는 글자 왼쪽이다**(2026-11-22 두 앱 통일 — 문구 목록의 `RadioRow` 와 같은 표시·같은 자리, 스펙
+    /// `docs/spec/alarm-editor.md` 의 "하나를 고르는 목록 행" 줄). 예전에는 이름 오른쪽 끝에 체크가 붙었다. 미리듣기는 그대로
+    /// 행 끝이다 — 고를 때 표시가 켜져도 재생 버튼이 손가락 밑에서 움직이지 않는다.
     @ViewBuilder
     private func soundRow(
         title: String,
@@ -155,19 +158,20 @@ struct AlarmSoundSettingsPane: View {
     ) -> some View {
         HStack(spacing: 10) {
             Button(action: onSelect) {
-                Text(title)
-                    .font(theme.typography.bodyLarge)
-                    .foregroundStyle(theme.palette.onSurface)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                HStack(spacing: RadioRow.markSpacing) {
+                    RadioMark(selected: selected)
+                    Text(title)
+                        .font(theme.typography.bodyLarge)
+                        .foregroundStyle(theme.palette.onSurface)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                // 최소 높이 56(위아래 8 포함) — `RadioRow`·안드로이드 `SnoozeRadioRow` 와 같다(2026-11-22 전 52).
+                .padding(.vertical, 8)
+                .frame(minHeight: 56)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            if selected {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(theme.palette.primary)
-            }
+            .accessibilityAddTraits(selected ? .isSelected : [])
 
             if let previewURL {
                 Button {
@@ -188,7 +192,6 @@ struct AlarmSoundSettingsPane: View {
                 Color.clear.frame(width: 44, height: 44)
             }
         }
-        .frame(minHeight: 52)
     }
 }
 
@@ -224,16 +227,20 @@ struct VoiceOutputSettingsPane: View {
 
     var body: some View {
         PaneScaffold(title: AlarmSettingsPane.voiceOutput.title) {
-            EditorCard {
-                VStack(alignment: .leading, spacing: 8) {
+            // 카드 반경 18 · 안 여백 좌우 14 · 위아래 12 · 줄 사이 6 — 안드로이드 `VoiceOutputSettingsPane`(`WakerPanelShape`)과
+            // `VoiceVolumeSelector`(padding 14/12 · spacedBy 6)와 같다(2026-11-22 전 iOS 는 22 · 16 · 8/12).
+            EditorCard(verticalPadding: 12, horizontalPadding: 14, cornerRadius: theme.shapes.medium) {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text(String(localized: "목소리 크기"))
                             .font(theme.typography.bodyLarge)
                             .fontWeight(.semibold)
                         Spacer()
+                        // 값은 회색 굵은 글씨 — 안드로이드 `VoiceVolumeSelector` 와 같다(2026-11-22 전 iOS 만 강조색 보통 글씨).
                         Text("\(volumePercent)%")
                             .font(theme.typography.bodyMedium)
-                            .foregroundStyle(theme.palette.primary)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
                             .monospacedDigit()
                     }
                     // ⚠ **하한은 10% 다.** 30% 로 막아 두면 안드로이드에서 10~29% 로 맞춘
@@ -242,7 +249,9 @@ struct VoiceOutputSettingsPane: View {
                     // ⚠ **눈금은 10단위**(안드로이드 `VoiceVolumeSelector` 와 같은 stop).
                     // 5단위로 두면 iOS 에서만 만들 수 있는 값(15·25…)이 생겨, 같은 알람을
                     // 두 기기에서 열었을 때 숫자가 달라 보인다.
-                    Slider(
+                    // 손잡이는 안드로이드와 같은 흰 동그라미(`WakerStepSlider`) — 시스템 `Slider` 의 넓적한 알약은 100% 에서 막대
+                    // 끝에 얼룩처럼 붙었다(2026-11-22 오너).
+                    WakerStepSlider(
                         value: Binding(
                             get: { Double(volumePercent) },
                             set: {
@@ -251,24 +260,21 @@ struct VoiceOutputSettingsPane: View {
                                 onVolumeLive?(next)
                             }
                         ),
-                        in: 10...100,
+                        range: 10...100,
                         step: 10,
-                        onEditingChanged: { editing in
-                            if !editing { onVolumeSettled?() }
-                        }
+                        accessibilityLabel: String(localized: "목소리 크기"),
+                        accessibilityValue: "\(volumePercent)%",
+                        onEditingEnded: { onVolumeSettled?() }
                     )
-                    .tint(theme.palette.primary)
-                }
-                .padding(.vertical, 12)
 
-                // ⚠ **무엇이 들리는지 미리 말한다.** 손을 떼면 곧바로 소리가 나는데
-                // 자기가 쓴 문구가 아니면 고장으로 읽힌다. 날씨·운세처럼 조건으로 고르는
-                // 문구는 울릴 때에야 정해지므로 여기서 들려줄 수 없다.
-                Text(String(localized: "실제 알람 문구가 아니라 인사말로 들려드려요."))
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 12)
+                    // ⚠ **무엇이 들리는지 미리 말한다.** 손을 떼면 곧바로 소리가 나는데
+                    // 자기가 쓴 문구가 아니면 고장으로 읽힌다. 날씨·운세처럼 조건으로 고르는
+                    // 문구는 울릴 때에야 정해지므로 여기서 들려줄 수 없다.
+                    Text(String(localized: "실제 알람 문구가 아니라 인사말로 들려드려요."))
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .onDisappear { onLeave?() }
@@ -280,6 +286,11 @@ struct VoiceOutputSettingsPane: View {
 
 // MARK: - 공용 라디오 행
 
+/// 하나를 고르는 목록의 한 행 — [고른 표시] → 12 → [글자]. 안드로이드 `SnoozeRadioRow` 와 같은 치수다.
+///
+/// ⚠ **행이 자기 좌우 여백(14)을 갖는다**(2026-11-22 두 앱 통일). 담는 카드는 좌우 여백 없이(`horizontalPadding: 0`) 쌓고,
+/// 행 사이 구분선은 글자 시작선(`textInset` = 44)부터 카드 끝까지 긋는다(`AlarmSettingDivider(leadingInset:)`). 그전 iOS 는
+/// 카드가 좌우 16 을 갖고 구분선이 카드 안쪽 폭 그대로였다.
 struct RadioRow: View {
     // ⚠ **`LocalizedStringKey` 로 바꾸지 말 것.** 이 행은 진동 `displayName` 처럼
     // **이미 번역된** 문자열도 받는다 — 키로 받으면 번역 결과를 한 번 더 조회한다.
@@ -289,20 +300,52 @@ struct RadioRow: View {
     let selected: Bool
     let onTap: () -> Void
 
+    /// 행의 좌우 여백 — 안드로이드 `SnoozeRadioRow` 의 padding(horizontal 14).
+    static let horizontalPadding: CGFloat = 14
+    /// 고른 표시 ↔ 글자 — 안드로이드 `SnoozeRadioRow` 의 Spacer(12).
+    static let markSpacing: CGFloat = 12
+    /// 글자 시작선 — 14 + 표시 18 + 12. 구분선이 여기서 시작한다(안드로이드 `SnoozeOptionDivider` 의 start 44).
+    static let textInset: CGFloat = horizontalPadding + RadioMark.width + markSpacing
+
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
+            // ⚠ **고르는 표시는 글자 왼쪽이다** — 안드로이드 `SnoozeRadioRow`(라디오 버튼 → 12 → 글자)와 같은 자리.
+            // 2026-11-15 두 앱 화면 대조 전까지 iOS 만 글자 오른쪽에 체크 동그라미를 두어, 같은 문구 목록이 두 앱에서
+            // 좌우가 달랐다. 글리프는 각 OS 것(SF 의 라디오 모양 `largecircle.fill.circle`)을 쓴다.
+            HStack(spacing: Self.markSpacing) {
+                RadioMark(selected: selected)
                 Text(label)
                     .font(theme.typography.bodyLarge)
                     .foregroundStyle(theme.palette.onSurface)
                 Spacer(minLength: 8)
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(selected ? theme.palette.primary : theme.palette.outline)
             }
-            .padding(.vertical, 14)
+            // 최소 높이 56(위아래 8 포함) — 안드로이드 `SnoozeRadioRow`(heightIn 56 · 세로 8)와 같다. 2026-11-22 전에는 위아래
+            // 14 로 50 이라 같은 '문구' 목록이 iOS 만 촘촘했다(두 앱 대조).
+            .padding(.horizontal, Self.horizontalPadding)
+            .padding(.vertical, 8)
+            .frame(minHeight: 56)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleButtonStyle())
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// 하나를 고르는 목록의 '고른 표시' — SF 의 라디오 모양. 문구 목록(`RadioRow`)과 알람음 목록이 같은 것을 쓴다.
+///
+/// 칸 폭은 안드로이드 `CompactSelectionDot` 과 같은 18 로 잡는다 — 글자 시작선이 두 앱에서 같은 자리(44)에 오게 한다.
+/// 글리프(20pt)는 칸보다 살짝 커 양옆으로 1pt 쯤 넘친다.
+struct RadioMark: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    let selected: Bool
+
+    static let width: CGFloat = 18
+
+    var body: some View {
+        Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+            .font(.system(size: 20))
+            .foregroundStyle(selected ? theme.palette.primary : theme.palette.outline)
+            .frame(width: Self.width)
+            .accessibilityHidden(true)
     }
 }

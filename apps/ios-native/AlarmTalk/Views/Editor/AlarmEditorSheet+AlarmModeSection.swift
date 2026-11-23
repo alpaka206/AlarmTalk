@@ -2,12 +2,15 @@ import SwiftUI
 
 // AlarmEditorSheet 의 '재생 방식' 섹션 분리(파일 길이 축소).
 extension AlarmEditorSheet {
-    @ViewBuilder
+    /// '재생 방식' 묶음 — 제목 → 세그먼트 **10**, 세그먼트 → 목소리 카드 → 문구 카드 **12**. 안드로이드 `PlayModeCard`
+    /// (spacedBy 10)·`VoiceAudioCard`(위 12, 카드 사이 12)와 같다. ⚠ 조각을 편집기 바깥 `VStack(spacing: 20)` 에 낱개로 흘리지
+    /// 말 것 — 2026-11-22 전에는 그래서 제목·세그먼트·카드 사이가 모두 20 으로 벌어져 안드로이드보다 성겼다(두 앱 대조).
     var alarmModeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
             // 제목은 **'재생 방식'** 이다 — 안드로이드 `editor_play_mode_title` 과 같은
             // 말로 맞춘다('알람 방식' 은 iOS 에만 있던 표현이었다).
             EditorSectionTitle(text: "재생 방식")
-            Group {
                 VoicePlayModePicker(
                     mode: $draft.playMode,
                     voiceLocked: voiceModeBlocked,
@@ -33,6 +36,7 @@ extension AlarmEditorSheet {
                             coerceFreeVoiceTierConstraints()
                         }
                     }
+            }
 
                 if draft.playMode != .alarmOnly {
                     // ⚠ **'목소리 / 녹음·파일' 세그먼트를 되살리지 말 것.** 안드로이드에는
@@ -47,6 +51,7 @@ extension AlarmEditorSheet {
                         AlarmSettingRow(
                             title: String(localized: "alarm.editor.voice", defaultValue: "목소리"),
                             subtitle: voiceRowSubtitle,
+                            subtitleMuted: settlingSelectedVoiceName != nil,
                             onTap: { voiceSheetOpen = true }
                         )
                         // 화면 순회 캡처가 하단 탭바의 '목소리' 와 헷갈리지 않게 하는 식별자.
@@ -65,7 +70,7 @@ extension AlarmEditorSheet {
                         //  2. 그 준비 결과가 곧 '무엇을 골랐는가' 였다. 그래서 회선이 느리거나
                         //     끊기면 고른 테마가 화면에서 사라지고 "불러오는 중이에요" 로 보였다.
                         // 지금은 선택이 값 하나(`selectedBucketDraft`)이고 음원은 저장할 때
-                        // 받는다. 저장 버튼이 그동안 '저장 중…' 을 보여준다.
+                        // 받는다. 저장 버튼이 그동안 '저장 중' 을 보여준다.
 
                         // ⚠ '음성 탭에서 만들기' 버튼을 상시로 두지 않는다 — 목소리가 이미
                         // 있는 사람에게는 매번 다른 탭으로 보내는 버튼이 편집기에 남는다.
@@ -74,12 +79,23 @@ extension AlarmEditorSheet {
                         // 목록을 아직 불러오는 중에 "없음" 으로 단정해 버튼을 내면 안 된다 —
                         // 목소리가 있는 사람에게 잠깐 깜빡였다가 사라진다.
                         if voiceProfileOptions.isEmpty && !voiceStudio.isRefreshing {
-                            Button {
-                                onJumpToVoices()
-                            } label: {
-                                Label(String(localized: "목소리 탭에서 만들기"), systemImage: "waveform")
+                            // 안드로이드 `VoiceAudioCard` 의 `NoUsableVoiceProfileCallout` 과 같은 한 줄 — 안내 + '목소리 만들기'
+                            // (2026-11-22 두 앱 통일. 그전 iOS 는 '목소리 탭에서 만들기' 버튼 하나였다).
+                            HStack(spacing: 12) {
+                                Text(String(localized: "아직 사용할 목소리가 없어요."))
+                                    .font(theme.typography.bodyMedium)
+                                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Button(String(localized: "목소리 만들기")) { onJumpToVoices() }
+                                    .buttonStyle(EditorActionButtonStyle(kind: .filled))
+                                    .fixedSize()
                             }
-                            .buttonStyle(.bordered)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                                    .fill(theme.palette.surfaceVariant.opacity(0.42))
+                            )
                         }
                     }
 
@@ -122,8 +138,8 @@ extension AlarmEditorSheet {
                         // 두면 알람을 만들 때마다 "너는 무료다" 를 읽게 된다.
                         //
                         // ⚠ **"기본 목소리는 준비된 문구로만" 안내도 지웠다**(2026-09-02).
-                        // 유료 사용자는 기본 목소리로도 직접 입력을 쓸 수 있고(`manualLocked`
-                        // 은 무료 단독), 문구 목록도 이제 같다 — 그 안내는 사실이 아니었다.
+                        // 기본 목소리로도 직접 입력을 쓸 수 있고(잠그는 행이 없다 — 무료도 월 한도로 쓴다),
+                        // 문구 목록도 이제 같다 — 그 안내는 사실이 아니었다.
                     } else {
                         LocalAlarmAudioEditor(
                             isRecording: localRecorder.isRecording,
@@ -145,7 +161,7 @@ extension AlarmEditorSheet {
                     // 예전 iOS 는 본문에 인라인으로 두고 **세부 설정에도 '음성 출력' 행**을
                     // 둬서, 같은 값을 바꾸는 자리가 셋이었다.
                 }
-            }
+        }
     }
 
     /// 목소리 크기 요약 행 — 누르면 음량·반복을 함께 다루는 상세로 간다.

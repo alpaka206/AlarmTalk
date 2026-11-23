@@ -16,7 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -73,10 +73,13 @@ internal fun UpdateRequiredScreen(
                         color = GlassFill,
                         border = BorderStroke(1.dp, GlassBorder),
                     ) {
+                        // 그림은 두 앱이 같은 **아래 화살표**다(2026-11-22 오너 "업데이트가 필요해요 디자인도 통일"). 예전에는 안드로이드가
+                        // 폰 + 화살표(`SystemUpdate`), iOS 가 네모 + 화살표(`arrow.down.app`)라 같은 화면이 다른 그림이었다. 글리프는
+                        // 각 OS 것을 쓴다(CLAUDE.md) — 안드로이드 `ArrowDownward`, iOS `arrow.down` 은 같은 모양이다.
                         Icon(
-                            imageVector = Icons.Outlined.SystemUpdate,
+                            imageVector = Icons.Outlined.ArrowDownward,
                             contentDescription = null,
-                            modifier = Modifier.padding(24.dp),
+                            modifier = Modifier.padding(22.dp),
                             tint = BrandAccentOnScene,
                         )
                     }

@@ -34,11 +34,7 @@ import {
 } from '../src/lib/billing-cancel';
 import { applyStoreEntitlement, loadPlanByKey } from '../src/lib/store-billing';
 import { withWriteTransaction } from '../src/lib/transactions';
-import {
-  sendPaymentFailedPush,
-  sendPlanChangedPush,
-  sendVoiceDeletionWarningPush,
-} from '../src/lib/fcm';
+import { sendPaymentFailedPush } from '../src/lib/fcm';
 
 vi.mock('../src/lib/apple-storekit', async (original) => ({
   ...(await original<typeof import('../src/lib/apple-storekit')>()),
@@ -52,7 +48,8 @@ vi.mock('../src/lib/play-subscriptions', async (original) => ({
 }));
 // 커밋 뒤 알림은 이제 `sendBillingStateSignals` 한 번이다(재조회 신호 + 유예 행이 있는 사람의
 // 삭제 예고). 이 파일의 단언은 **누가 신호를 받고 누가 예고를 받는가** 를 본다 — 그 뜻을
-// 그대로 지키려고, 합친 호출을 예전 두 발송부의 관찰값으로 나눠 기록한다. 실제 메시지 구성
+// 그대로 지키려고, 합친 호출을 예전 두 발송부의 관찰값으로 나눠 기록한다(두 기록기의 이름은 2026-11-23 에 지운
+// 옛 발송 함수의 이름이다 — 이 파일 안의 가짜일 뿐 `lib/fcm.ts` 에는 없다). 실제 메시지 구성
 // (안드로이드 중복 제거·예고 먼저)은 `billing-state-signals.test.ts` 가 따로 고정한다.
 const pushMocks = vi.hoisted(() => {
   const sendPlanChangedPush = vi.fn().mockResolvedValue(undefined);
@@ -74,10 +71,9 @@ const pushMocks = vi.hoisted(() => {
   );
   return { sendPlanChangedPush, sendVoiceDeletionWarningPush, sendBillingStateSignals };
 });
+const { sendPlanChangedPush, sendVoiceDeletionWarningPush } = pushMocks;
 vi.mock('../src/lib/fcm', () => ({
   sendPaymentFailedPush: vi.fn().mockResolvedValue(undefined),
-  sendPlanChangedPush: pushMocks.sendPlanChangedPush,
-  sendVoiceDeletionWarningPush: pushMocks.sendVoiceDeletionWarningPush,
   sendBillingStateSignals: pushMocks.sendBillingStateSignals,
   notifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
 }));
@@ -809,7 +805,7 @@ describe('경계값·재시도·독립 이용권 보존', () => {
       sql: "UPDATE subscriptions SET expires_at=? WHERE id='sub-owner'",
       args: [FUTURE],
     });
-    expect(await expireSubscriptionIfDue(db, 'sub-owner', PAST, NOW, false)).toEqual([]);
+    expect(await expireSubscriptionIfDue(db, 'sub-owner', PAST, NOW)).toEqual([]);
     expect(await rows("SELECT status,expires_at FROM subscriptions WHERE id='sub-owner'")).toEqual(
       [{ status: 'active', expires_at: FUTURE }],
     );
@@ -1218,7 +1214,6 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
         startsAt: new Date(PAID),
         expiresAt: new Date(FUTURE),
         lastPaidAt: new Date(PAID),
-        promoCoversFree: false,
       };
       // 다른 구독으로 이미 유료라 등급이 그대로다 — 다시 읽으라고 알릴 이유가 없다.
       const recovered = await withWriteTransaction(db, (tx) => applyStoreEntitlement(tx, input));
@@ -1349,7 +1344,6 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
           plan: plan!,
           startsAt: NOW,
           expiresAt: new Date(FUTURE),
-          promoCoversFree: false,
         });
       });
       return {
@@ -1609,7 +1603,7 @@ describe('결제 전 HTTP 응답', () => {
         args: [expiry],
       });
       expect(
-        await withWriteTransaction(db, (tx) => repairOrphanedPaidPlan(tx, 'owner', NOW, false)),
+        await withWriteTransaction(db, (tx) => repairOrphanedPaidPlan(tx, 'owner', NOW)),
       ).toEqual([]);
       expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('plus');
       expect(

@@ -130,6 +130,72 @@ describe('POST /auth/password-reset', () => {
   });
 });
 
+describe('POST /auth/password-reset/verify', () => {
+  it('유효한 재설정 코드 + 비밀번호 계정이면 200 이고 코드를 쓰지 않는다', async () => {
+    await pushValidEmailVerification('kim@test.com'); // checkEmailVerificationCode SELECT
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash' }]); // classify → password
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/verify', { email: 'KIM@test.com', code: EMAIL_CODE }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+    // 재설정 용도로 판정한다(가입 코드로는 통과하지 않는다).
+    const select = mockDB.calls.find((c) => c.sql.includes('FROM email_verification_codes'));
+    expect(select?.args).toEqual(['kim@test.com', 'reset']);
+    // 소모는 확정이 한다 — 확인은 코드도 비밀번호도 건드리지 않는다.
+    expect(mockDB.calls.some((c) => c.sql.includes('consumed_at = '))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE users'))).toBe(false);
+    expect(countedIncrement()).toBe(0);
+  });
+
+  it('코드가 없거나 틀리면 400 AUTH_EMAIL_CODE_INVALID', async () => {
+    mockDB.pushResult([]); // checkEmailVerificationCode → no row
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/verify', { email: 'kim@test.com', code: '000000' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+  });
+
+  it('비밀번호 계정이 아니면 확정과 같은 400 AUTH_EMAIL_CODE_INVALID', async () => {
+    await pushValidEmailVerification('kim@test.com');
+    mockDB.pushResult([]); // classify → 계정 없음
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/verify', { email: 'kim@test.com', code: EMAIL_CODE }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+  });
+
+  it('형식이 틀린 코드는 횟수를 세지 않고 400 AUTH_VALIDATION_FAILED', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/verify', { email: 'kim@test.com', code: '12ab' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_VALIDATION_FAILED');
+    expect(mockDB.calls).toHaveLength(0);
+  });
+});
+
 describe('POST /auth/password-reset/confirm', () => {
   it('유효한 코드 + 비밀번호 계정이면 비밀번호 교체 + token_epoch 증가', async () => {
     await pushValidEmailVerification('kim@test.com'); // checkEmailVerificationCode SELECT
@@ -659,6 +725,12 @@ describe('POST /auth/email-code/verify', () => {
   });
 });
 
+/**
+ * 계정 응답의 `user` 칸 — 이게 전부다. 기간 한정 개인 플랜·관리자 기간 지급의 칸은 2026-11-23 에 뺐다(옛 앱(1.2.16)은 그
+ * 칸이 없으면 넘긴다). 칸을 더하거나 빼면 두 앱의 디코더와 함께 본다.
+ */
+const SIGN_IN_USER_KEYS = ['dynamic_prompt_settings', 'email', 'id', 'name', 'plan'];
+
 describe('POST /auth/register', () => {
   it('신규 가입 성공 → 201 + 토큰 반환', async () => {
     await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
@@ -677,6 +749,7 @@ describe('POST /auth/register', () => {
     expect(body.token).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
     expect(body.user.email).toBe('kim@test.com');
     expect(body.user.plan).toBe('free');
+    expect(Object.keys(body.user).sort()).toEqual(SIGN_IN_USER_KEYS);
     const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
     expect(insertCall?.args[0]).toBe(body.user.id);
   });
@@ -825,6 +898,7 @@ describe('POST /auth/login', () => {
     const body = await res.json();
     expect(body.token).toBeTruthy();
     expect(body.user.plan).toBe('plus');
+    expect(Object.keys(body.user).sort()).toEqual(SIGN_IN_USER_KEYS);
   });
 
   it('존재하지 않는 이메일 → 401', async () => {
@@ -948,6 +1022,7 @@ describe('POST /auth/google', () => {
     });
     expect(body.user.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.user.id).not.toBe('google-user-1');
+    expect(Object.keys(body.user).sort()).toEqual(SIGN_IN_USER_KEYS);
     const insertArgs = mockDB.calls[1]?.args ?? [];
     expect(insertArgs[0]).toBe(body.user.id); // id = 서버 생성 UUID
     expect(insertArgs[1]).toBe('google-user-1'); // google_id = 외부 식별자
@@ -1115,6 +1190,8 @@ describe('GET /auth/me', () => {
     expect(meRes.status).toBe(200);
     const meBody = await meRes.json();
     expect(meBody.user.email).toBe('kim@test.com');
+    // `/auth/me` 는 탈퇴 유예 상태를 하나 더 싣는다.
+    expect(Object.keys(meBody.user).sort()).toEqual([...SIGN_IN_USER_KEYS, 'deletion_status'].sort());
   });
 
   // 세션을 굴려 준다(rolling refresh). 앱을 열 때마다 만료가 뒤로 밀려야, 오래 안 열었다가

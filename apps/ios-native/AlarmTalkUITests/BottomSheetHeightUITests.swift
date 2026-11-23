@@ -80,7 +80,7 @@ final class BottomSheetHeightUITests: XCTestCase {
         }
         row.tap()
 
-        let japan = app.segmentedControls.buttons["일본"]
+        let japan = app.buttons["일본"]
         XCTAssertTrue(japan.waitForExistence(timeout: 5), "나라 세그먼트가 없다")
         XCTAssertFalse(app.textFields.firstMatch.exists, "지역 시트에 직접 입력칸이 되살아났다")
         japan.tap()

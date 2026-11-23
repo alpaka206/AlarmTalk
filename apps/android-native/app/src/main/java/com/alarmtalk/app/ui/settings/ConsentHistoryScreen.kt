@@ -382,12 +382,15 @@ private fun formatConsentDate(value: String?): String? {
     }.getOrNull()
 }
 
-/** 동의 내역의 행 아래에 붙는 실패 이유(빨간 글자). */
+/**
+ * 동의 내역의 행 아래에 붙는 실패 이유(빨간 글자). 시작선은 **행 이름과 같다**(행의 안쪽 여백 12) — 2026-11-22 두 앱 통일 전에는
+ * 4 라 이름보다 8 앞에서 시작했다. iOS `ConsentHistoryView` 의 `inlineError` 와 같은 값이다(좌우 12·아래 10).
+ */
 @Composable
 private fun ConsentActionErrorText(text: String) {
     Text(
         text = text,
-        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
+        modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.error,
     )

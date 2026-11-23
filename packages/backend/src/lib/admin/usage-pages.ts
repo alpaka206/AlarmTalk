@@ -9,8 +9,6 @@ import { emptyState, escapeHtml, fmtDateTime, fmtNum, hbarList, page } from './u
 const SOURCE_LABELS: Record<string, string> = {
   paid: '결제',
   trial: '무료 체험',
-  admin: '관리자 지급',
-  promo: '기간 한정 개인 플랜',
   free: '무료',
 };
 

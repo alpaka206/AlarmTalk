@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import XCTest
 @testable import AlarmTalk
 
@@ -29,6 +30,65 @@ final class EntryRefreshFreshnessTests: XCTestCase {
 
         freshness.reset()
         XCTAssertFalse(freshness.isFresh(userID: "u1", entry: 1, now: t0.addingTimeInterval(1)))
+    }
+
+    // MARK: - 진입 번호·권한 팝업 신호
+
+    /// '앱에 들어왔다' 는 콜드 스타트와 **백그라운드에서 돌아온 것**뿐이다.
+    func test_진입_번호는_콜드_스타트와_백그라운드_복귀만_센다() {
+        var counter = AppEntryCounter()
+        XCTAssertEqual(counter.entry, 0)
+
+        XCTAssertFalse(counter.observe(.inactive))
+        XCTAssertTrue(counter.observe(.active), "콜드 스타트")
+        XCTAssertEqual(counter.entry, 1)
+
+        // 알림 센터·제어 센터·시스템 권한 팝업 — 들어온 것이 아니다.
+        counter.observe(.inactive)
+        XCTAssertFalse(counter.observe(.active))
+        XCTAssertEqual(counter.entry, 1)
+
+        // 홈으로 나갔다가 돌아옴.
+        counter.observe(.inactive)
+        counter.observe(.background)
+        counter.observe(.inactive)
+        XCTAssertTrue(counter.observe(.active))
+        XCTAssertEqual(counter.entry, 2)
+
+        // 같은 active 가 두 번 와도 한 번이다(앱의 두 `onChange` 가 같은 전이를 넘긴다).
+        XCTAssertFalse(counter.observe(.active))
+        XCTAssertEqual(counter.entry, 2)
+    }
+
+    /// 앱은 같은 전이를 두 `onChange` 로 넘긴다(콜드 스타트용 `initial` · 전경 복귀 처리) — 두 번 받아도 한 진입이어야
+    /// 한다. 한 번의 복귀가 두 진입이 되면 신선도 창이 어긋난다.
+    func test_같은_전이를_두_번_받아도_한_진입이다() {
+        let signal = AppEntrySignal()
+        for phase in [ScenePhase.inactive, .inactive, .active, .active] { signal.observe(phase) }
+        XCTAssertEqual(signal.counter.entry, 1)
+        for phase in [ScenePhase.inactive, .inactive, .background, .background, .inactive, .active, .active] {
+            signal.observe(phase)
+        }
+        XCTAssertEqual(signal.counter.entry, 2)
+    }
+
+    /// 권한 팝업 추적 — 첫 알림 권한 확인이 끝나기 전·요청 중에는 '곧 뜰 수 있다' 다.
+    func test_권한_팝업은_첫_확인_전과_요청_중에_떠_있는_것으로_센다() async {
+        let prompts = SystemPermissionPrompts()
+        XCTAssertTrue(prompts.isPending, "메인 탭의 첫 알림 권한 확인 전")
+        prompts.markNotificationRequestSettled()
+        XCTAssertFalse(prompts.isPending)
+
+        var sawPending = false
+        await prompts.track {
+            sawPending = prompts.isPending
+        }
+        XCTAssertTrue(sawPending, "요청이 떠 있는 동안")
+        XCTAssertFalse(prompts.isPending, "끝나면 내린다")
+
+        struct Denied: Error {}
+        _ = try? await prompts.track { throw Denied() }
+        XCTAssertFalse(prompts.isPending, "실패해도 내린다")
     }
 
     // MARK: - 이용권 새로고침
@@ -119,17 +179,16 @@ final class EntryRefreshFreshnessTests: XCTestCase {
             let before = meCalls()
             await vm.refreshAllThenUserIfIncomplete(auth: auth)
             XCTAssertFalse(vm.entitlementSnapshotComplete)
-            // 이용권 쪽 `/auth/me` 는 구독 조회와 **나란히** 나가고(효율 감사 M7) 그 답은 이 진입의 결과로
-            // 적는다(코덱스 #827) — 스냅샷이 미완이라 사용자 새로고침이 한 번 더 부른다.
+            // 이용권 쪽 `/auth/me` 는 구독 조회와 **나란히** 나가고(효율 감사 M7) 그 답(plan)은 세션에 넘긴다
+            // (코덱스 #827) — 스냅샷이 미완이라 사용자 새로고침이 한 번 더 부른다.
             XCTAssertEqual(meCalls(), before + 2, "이용권 쪽 한 번 + 사용자 새로고침 한 번")
             XCTAssertEqual(auth.session?.user.plan, "plus", "서버의 지금 plan 이 세션에 들어간다")
         }
     }
 
     /// 회귀(코덱스 #827): 두 조회를 한꺼번에 보내므로 구독 조회가 실패해도 `/auth/me` 는 표와 함께
-    /// 이미 나갔다 — 그 답을 **이 진입의 결과로** 적는다(성공 → `onFreshPlan`, 실패 → `onAccountRequestFailed`).
-    /// 버리면 이 진입의 첫 결과가 비어, 뒤에 오는 다른 응답이 세션 한가운데서 종료 안내를 판정한다(D11).
-    /// 권한 스냅샷은 여전히 미완이다(구독 없는 반쪽 스냅샷 금지).
+    /// 이미 나갔다 — 그 답(plan)을 **보내기 전에 뜬 그 표로** 세션에 넘긴다(`onFreshPlan`). `/auth/me` 도 실패했으면
+    /// 넘길 것이 없다. 권한 스냅샷은 여전히 미완이다(구독 없는 반쪽 스냅샷 금지).
     func test_구독_조회가_실패해도_나간_계정_요청의_결과를_적는다() async throws {
         let subscriptionFails = LockedFlag()
         subscriptionFails.value = true
@@ -137,28 +196,24 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         try await withSocialViewModel(
             clock: TestClock(now: t0), meFails: meFails, subscriptionFails: subscriptionFails
         ) { vm, current, meCalls, _ in
-            let ticket = AuthViewModel.AccountRequest(seq: 7, entry: 1)
+            let ticket = AuthViewModel.AccountRequest(seq: 7)
             vm.beginAccountRequest = { ticket }
             var answeredPlans: [String] = []
             var answeredTickets: [AuthViewModel.AccountRequest?] = []
-            var failedTickets: [AuthViewModel.AccountRequest?] = []
-            vm.onFreshPlan = { _, _, plan, _, request in
+            vm.onFreshPlan = { _, _, plan, request in
                 answeredPlans.append(plan)
                 answeredTickets.append(request)
             }
-            vm.onAccountRequestFailed = { _, request in failedTickets.append(request) }
 
             await vm.refreshAll(session: current)
             XCTAssertFalse(vm.entitlementSnapshotComplete, "구독을 못 받았으니 스냅샷은 미완이다")
             XCTAssertEqual(meCalls(), 1)
             XCTAssertEqual(answeredPlans, ["plus"], "나간 `/auth/me` 의 답을 세션에 넘긴다")
             XCTAssertEqual(answeredTickets, [ticket], "보내기 전에 뜬 그 표로 넘긴다")
-            XCTAssertTrue(failedTickets.isEmpty)
 
             meFails.value = true
             await vm.refreshAll(session: current)
-            XCTAssertEqual(answeredPlans, ["plus"])
-            XCTAssertEqual(failedTickets, [ticket], "`/auth/me` 도 실패했으면 그 실패를 이 진입의 결과로 적는다")
+            XCTAssertEqual(answeredPlans, ["plus"], "`/auth/me` 도 실패했으면 넘길 것이 없다")
         }
     }
 
@@ -189,7 +244,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
             var sentBeforeTicket: [Int] = []
             vm.beginAccountRequest = {
                 sentBeforeTicket.append(meCalls())
-                return AuthViewModel.AccountRequest(seq: sentBeforeTicket.count, entry: 1)
+                return AuthViewModel.AccountRequest(seq: sentBeforeTicket.count)
             }
             await vm.refreshAll(session: current)
             XCTAssertEqual(sentBeforeTicket, [0], "표는 한 번, `/auth/me` 가 서버에 닿기 전에 뜬다")

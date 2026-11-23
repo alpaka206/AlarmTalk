@@ -51,18 +51,14 @@ struct LocalAlarmAudioEditor: View {
             maxDurationMs: Int(AlarmAudioLimits.maxDurationMillis),
             hasRecording: sourceReady,
             isPreviewing: isPreviewing,
-            // 카드 제목이 이미 상태를 말한다 — 남기는 건 아직 아무것도 없고 녹음 중도
-            // 아닐 때뿐이다(마이크 권한 거부처럼 달리 나타나지 않는 사실).
-            note: (isRecording || sourceReady) ? existingNote : (message ?? existingNote),
+            // 카드 제목이 이미 상태를 말한다('녹음을 저장했어요') — 아래 줄은 **실패·거부 같은 사실만** 말한다. 녹음이 있어도
+            // 보인다: 예전에는 녹음이 있으면 이 줄을 '저장된 녹음/파일 음성을 사용 중이에요.' 가 차지해 저장 실패가 말없이
+            // 묻혔다(2026-11-22). 그 안내 줄은 안드로이드에 없어 지웠다.
+            note: isRecording ? nil : message,
             onRecord: onRecord,
             onPreview: onPreview,
             onRedo: onClear
         )
-    }
-
-    /// 알람에 이미 붙어 있는 오디오 이름 — 방금 녹음한 것이 없을 때만 알린다.
-    private var existingNote: String? {
-        hasRecording ? nil : existingAudioLabel
     }
 }
 

@@ -27,6 +27,10 @@ struct ConsentHistoryView: View {
     @State private var withdrawBusy = false
     /// 광고 개인정보 선택(UMP)을 다시 열 자리가 필요한가 — 규정 지역에서만(안드로이드 `ConsentHistoryScreen` 의 '광고' 카드).
     @State private var adPrivacyOptionsRequired = false
+    /// 철회가 끝났다는 안내 — 화면 위쪽 토스트로 띄운다(안드로이드는 같은 때 앱 전체 스낵바 `msg_voice_consent_withdrawn`).
+    /// 예전 iOS 는 이 문장을 `AuthViewModel.statusMessage` 에만 적었는데, 로그인한 동안에는 그 값을 그리는 곳이 없어
+    /// 철회가 됐는지 화면이 말해 주지 않았다. 실패는 그대로 철회 행 아래 빨간 글자다(`docs/spec/consent.md`).
+    @State private var withdrawnNotice: String?
 
     var body: some View {
         ScrollView {
@@ -53,10 +57,13 @@ struct ConsentHistoryView: View {
                 }
                 weatherAttributionLine
             }
+            // 네비게이션 바 아래 24 · 좌우 20 · 아래 12 — 안드로이드 `ConsentHistoryScreen` 의 상단바 아래 간격과 목록 여백이다.
             .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .padding(.top, 24)
+            .padding(.bottom, 12)
         }
         .homeGradientBackground()
+        .authToast(message: withdrawnNotice, style: .success) { withdrawnNotice = nil }
         .navigationTitle(String(localized: "약관 및 개인정보 처리 동의"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: reloadTick) { await load() }
@@ -66,7 +73,9 @@ struct ConsentHistoryView: View {
         // 그 시스템 알럿을 Compose 로 흉내 낸 것이므로, 여기서 커스텀 껍데기를 만들면
         // 오히려 원본에서 멀어진다.
         .alert(String(localized: "철회하면 등록한 목소리가 모두 삭제돼요"), isPresented: $withdrawConfirmOpen) {
-            Button(String(localized: "취소"), role: .cancel) { }
+            // 주행동 = 기본 액션(파란 채움) — 안드로이드 `ConsentHistoryScreen` 의 `emphasized = true` 짝(스펙 alarm-editor §4). `.cancel` 역할은 빼고 선언 순서로 자리를 맞춘다.
+            Button(String(localized: "취소")) { }
+                .keyboardShortcut(.defaultAction)
             Button(String(localized: "철회하고 삭제"), role: .destructive) {
                 Task { await withdraw() }
             }
@@ -191,7 +200,10 @@ struct ConsentHistoryView: View {
         )
         withdrawBusy = false
         // 성공했으면 기록을 다시 읽어 '미동의' 로 바뀐 것을 그 자리에서 보여준다.
-        if ok { reloadTick += 1 }
+        if ok {
+            withdrawnNotice = AuthViewModel.voiceConsentWithdrawnMessage
+            reloadTick += 1
+        }
     }
 }
 
@@ -259,18 +271,21 @@ private struct ConsentRow: View {
 
             // 철회는 동의한 상태에서만 뜻이 있다.
             if let onWithdraw, record?.agreed == true {
-                Button(String(localized: "동의 철회"), action: onWithdraw)
-                    .font(theme.typography.bodyMedium)
-                    .fontWeight(.semibold)
-                    .tint(theme.palette.error)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(theme.palette.error)
+                Button(action: onWithdraw) {
+                    Text(String(localized: "동의 철회"))
+                        .font(theme.typography.bodyMedium)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(theme.palette.error)
+                        // 안드로이드 `ConsentRow` 의 철회 글자와 같은 4 여백 — 누르는 자리를 글자보다 조금 넓힌다.
+                        .padding(4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
 
             if onOpen != nil {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                // 설정·더보기와 같은 꺾쇠 칸(20)이다(`SettingsChevron`).
+                SettingsChevron()
             }
         }
         .padding(.horizontal, 12)

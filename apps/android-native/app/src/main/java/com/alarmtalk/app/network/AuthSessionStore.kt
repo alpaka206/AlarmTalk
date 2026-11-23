@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
-import com.alarmtalk.app.planAnswerStampMillis
 import java.util.Base64
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.callbackFlow
@@ -19,26 +18,10 @@ data class AuthSession(
     val provider: String,
     val user: AuthUser,
     /**
-     * [user] 를 **서버에서 받은 시각**(epoch millis). 모르면 null.
-     * 서버가 `personal_promo.computed_at` 을 줬으면 그 시각(서버 시계)이고, 아니면 기기가 받은
-     * 시각이다(D7 — `planAnswerStampMillis`, 이 저장소의 `save` 가 바꿔 적는다).
-     *
-     * 기간 한정 개인 플랜의 오프라인 차단이 이 값을 본다(`resolvePaidVoiceAccess` 의
-     * `userPlanPromo`) — 캐시된 계산값 `plus` 는 **종료 전에 받은 것**일 때만, 종료가 지나면
-     * 무료로 읽는다. 종료 **뒤에** 받은 답은 서버가 이미 계산한 것이라 그대로 믿는다.
-     *
-     * 서버 응답을 저장하는 자리(로그인·`/auth/me`)가 새로 찍는다. 프로필만 고친 저장
-     * ([AuthSessionStore.updateUserIfAlive])은 plan 답이 아니라 **저장소의 값을 그대로** 둔다 —
-     * plan·프로모와 한 벌이라, 셋 중 하나만 옛 답의 것이 되면 오프라인 차단이 엉뚱한 답을 자른다.
-     */
-    val userFetchedAtMillis: Long? = null,
-    /**
      * 이 세션을 적은 **저장 순번** — 저장할 때마다 1씩 오르고 줄지 않는다(세션이 끝나도 이어진다).
      *
-     * 계정 설정 받아 적기가 "새 응답이 왔다" 를 가르는 축이다(`AccountSettingsReceipt`).
-     * ⚠ [userFetchedAtMillis] 로 가르지 말 것(Codex #837) — 개인 프로모 계정은 그 값이 서버의
-     * `computed_at`(초 단위)으로 바뀌어 같은 초의 `/auth/me` 두 번이 **같은 값**이 되고, 값이 같은
-     * 응답은 받아 적기를 다시 돌리지 않는다 — 앞 업로드가 실패했으면 밀린 변경이 남는다.
+     * 계정 설정 받아 적기가 "새 응답이 왔다" 를 가르는 축이다(`AccountSettingsReceipt`). 내용이 똑같은 응답도 새 순번을
+     * 받는다 — 값이 같은 응답은 받아 적기를 다시 돌리지 않으므로, 앞 업로드가 실패했으면 밀린 변경이 남는다(Codex #837).
      * 플랜·시계와 무관한 순번이어야 한다.
      */
     val accountAnswerSeq: Long = 0L,
@@ -242,40 +225,20 @@ class AuthSessionStore internal constructor(
                 name = prefs.getString(KEY_NAME, "") ?: "",
                 plan = prefs.getString(KEY_PLAN, "free") ?: "free",
                 dynamicPromptSettings = readDynamicPromptSettings(),
-                personalPromo = readPersonalPromo(),
-                planGrant = prefs.getString(KEY_PLAN_GRANT_ENDS_AT, null)?.takeIf { it.isNotBlank() }
-                    ?.let { PlanGrant(endsAt = it) },
             ),
-            userFetchedAtMillis = prefs.getLong(KEY_USER_FETCHED_AT, 0L).takeIf { it > 0L },
             accountAnswerSeq = prefs.getLong(KEY_ACCOUNT_ANSWER_SEQ, 0L),
         )
     }
 
     fun saveAppSession(response: AuthTokenResponse): AuthSession =
-        save(
-            token = response.token,
-            provider = PROVIDER_APP,
-            user = response.user,
-            // 방금 받은 응답이다(서버가 계산 시각을 줬으면 `save` 가 그것으로 바꿔 적는다).
-            userFetchedAtMillis = System.currentTimeMillis(),
-        )
+        save(token = response.token, provider = PROVIDER_APP, user = response.user)
 
     fun saveGoogleSession(response: AuthTokenResponse): AuthSession =
-        save(
-            token = response.token,
-            provider = PROVIDER_GOOGLE,
-            user = response.user,
-            userFetchedAtMillis = System.currentTimeMillis(),
-        )
+        save(token = response.token, provider = PROVIDER_GOOGLE, user = response.user)
 
     /** 카카오 로그인 세션 — 로그아웃·탈퇴 신청 때 기기의 카카오 토큰도 버리려고 공급자를 따로 적는다(`signOutKakao`). */
     fun saveKakaoSession(response: AuthTokenResponse): AuthSession =
-        save(
-            token = response.token,
-            provider = PROVIDER_KAKAO,
-            user = response.user,
-            userFetchedAtMillis = System.currentTimeMillis(),
-        )
+        save(token = response.token, provider = PROVIDER_KAKAO, user = response.user)
 
     fun clear() = synchronized(sessionWriteLock) {
         // '소유자 미정 알람의 임자'만 남기고 토큰·프로필은 전부 지운다. 세션이 끝날 때
@@ -520,9 +483,8 @@ class AuthSessionStore internal constructor(
      *
      * @param rolledToken 서버가 이번 응답으로 **새로 준** 토큰. 없으면(null·공백) 저장소의
      *   현재 토큰을 지킨다 — 호출부가 시작할 때 잡아 둔 토큰으로 되돌리면 안 된다. 그 사이
-     *   굴러간 토큰을 옛 것으로 덮는 것이기 때문이다.
-     * @param userFetchedAtMillis [user] 를 서버에서 받은 시각([AuthSession.userFetchedAtMillis]) — 방금 받은
-     *   응답이면 지금. 들고 있던 세션의 프로필만 고친 저장은 이 함수가 아니라 [updateUserIfAlive] 다.
+     *   굴러간 토큰을 옛 것으로 덮는 것이기 때문이다. 들고 있던 세션의 프로필만 고친 저장은 이 함수가
+     *   아니라 [updateUserIfAlive] 다.
      *
      * 저장하지 않는 경우(모두 null 반환):
      *  - 시작할 때의 세션이 이미 끝났다([sessionSurvivedForWrite]).
@@ -534,7 +496,6 @@ class AuthSessionStore internal constructor(
         user: AuthUser,
         provider: String,
         rolledToken: String?,
-        userFetchedAtMillis: Long?,
         /**
          * 계정 설정만 이 값으로 적는다(정규화 뒤에 덮는다). 계정 설정 올리기가 끝나기 전에 보낸 `/auth/me` 의
          * 옛 설정을 쓰지 않을 때(`fencedAccountSettings`). null 이면 [user] 의 것 그대로.
@@ -553,7 +514,6 @@ class AuthSessionStore internal constructor(
             token = rolledToken?.takeIf { it.isNotBlank() } ?: storedToken.orEmpty(),
             provider = provider,
             user = user,
-            userFetchedAtMillis = userFetchedAtMillis,
             dynamicPromptSettingsOverride = dynamicPromptSettingsOverride,
         )
     }
@@ -562,14 +522,14 @@ class AuthSessionStore internal constructor(
      * 프로필 저장(`PATCH /user/me` — 닉네임·계정 설정)의 결과를 적는다 — **지금 저장된 세션 위에
      * 바꾼 칸만** 얹는다. 시작할 때의 세션이 살아 있지 않거나 다른 계정이 됐으면 아무것도 쓰지 않고 null.
      *
-     * ⚠ **요청 전에 잡아 둔 세션의 사본을 저장하지 말 것**(2026-10-05). 그 사본에는 plan·프로모·받은 시각·다른 칸이
+     * ⚠ **요청 전에 잡아 둔 세션의 사본을 저장하지 말 것**(2026-10-05). 그 사본에는 plan·다른 칸이
      * 요청을 보낼 때의 값으로 들어 있어, 그 사이 `/auth/me`(결제 뒤의 갱신, `plan_changed`, 복귀 갱신,
      * 다른 기기 결제)가 적은 더 새 답을 다음 `/auth/me` 까지 되돌린다 — 판정 스냅샷은 그대로여도, 세션 plan 을
      * 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 유료가 된 사람을 무료로 그렸다.
      * 예전에는 계정 설정 한 칸만 지켰다(Codex #837 검증의 `keepStoredPromptSettings`).
      *
-     * - **plan·프로모·받은 시각은 저장소의 짝 그대로다** — 프로필 저장은 plan 답이 아니다. [change] 가 무엇을
-     *   돌려주든 plan·프로모·계정 id 는 저장소의 값으로 다시 박는다(받은 시각과 한 벌 — [AuthSession.userFetchedAtMillis]).
+     * - **plan 은 저장소의 값 그대로다** — 프로필 저장은 plan 답이 아니다. [change] 가 무엇을 돌려주든 plan·계정 id 는
+     *   저장소의 값으로 다시 박는다.
      * - 토큰·provider 도 저장소의 것이다(Codex #665 P2 — 그 사이 굴러간 토큰을 옛 것으로 덮지 않는다).
      * - 읽기·확인·쓰기를 [saveSessionIfAlive]·[clear] 와 같은 락 안에서 한다 — 따로 하면 그 사이 끼어든 쓰기를 되돌린다.
      *
@@ -594,10 +554,7 @@ class AuthSessionStore internal constructor(
             user = change(stored.user).copy(
                 id = stored.user.id,
                 plan = stored.user.plan,
-                personalPromo = stored.user.personalPromo,
-                planGrant = stored.user.planGrant,
             ),
-            userFetchedAtMillis = stored.userFetchedAtMillis,
         )
     }
 
@@ -606,26 +563,14 @@ class AuthSessionStore internal constructor(
             token = session.token,
             provider = session.provider,
             user = session.user,
-            userFetchedAtMillis = session.userFetchedAtMillis,
         )
 
     private fun save(
         token: String,
         provider: String,
         user: AuthUser,
-        userFetchedAtMillis: Long?,
         dynamicPromptSettingsOverride: DynamicPromptSettings? = null,
     ): AuthSession = synchronized(sessionWriteLock) {
-        // 서버가 계산 시각(`personal_promo.computed_at`)을 줬으면 그것이 이 답의 시각이다(D7).
-        // **정규화 전에** 읽는다 — 정규화가 그 키를 뺀다. 프로필만 고친 저장([updateUserIfAlive])은
-        // 저장소에서 읽은 user 라 키가 없어, 저장소의 받은 시각이 그대로 남는다.
-        val answeredAtMillis = userFetchedAtMillis?.let { received ->
-            planAnswerStampMillis(
-                runCatching { user.personalPromo }.getOrNull(),
-                received,
-                runCatching { user.planGrant }.getOrNull(),
-            )
-        }
         // 정규화한 뒤에 덮는다 — 정규화 전의 서버 응답은 Gson 이 빈 칸을 null 로 채워 `copy` 가 깨질 수 있다.
         val normalizedUser = normalizeUser(user).let { normalized ->
             dynamicPromptSettingsOverride?.let { normalized.copy(dynamicPromptSettings = normalizeDynamicPromptSettings(it)) }
@@ -657,64 +602,12 @@ class AuthSessionStore internal constructor(
             // 옛 버전이 적어 둔 가족 알람 설정(커플·가족 이용권 폐지로 읽지 않는다)을 저장할 때 걷어낸다.
             .also { editor -> RETIRED_FAMILY_KEYS.forEach(editor::remove) }
             .putString(KEY_DYNAMIC_PROMPT_SETTINGS, encodeDynamicPromptSettings(normalizedUser.dynamicPromptSettings))
-            // ⚠ **없으면 지운다.** 남겨 두면 기간이 끝났거나 결제한 뒤에도 옛 프로모가 되살아나
-            //   plan 과 짝이 어긋난다(`resolvePaidVoiceAccess` 의 `userPlanPromo`).
-            .also { editor ->
-                val promo = normalizedUser.personalPromo
-                if (promo == null) {
-                    editor.remove(KEY_PERSONAL_PROMO_ENDS_AT)
-                        .remove(KEY_PERSONAL_PROMO_NOTICE_FROM)
-                        .remove(KEY_PERSONAL_PROMO_DELETES_VOICES)
-                } else {
-                    editor.putString(KEY_PERSONAL_PROMO_ENDS_AT, promo.endsAt)
-                    if (promo.noticeFrom == null) {
-                        editor.remove(KEY_PERSONAL_PROMO_NOTICE_FROM)
-                    } else {
-                        editor.putString(KEY_PERSONAL_PROMO_NOTICE_FROM, promo.noticeFrom)
-                    }
-                    val deletes = promo.deletesVoicesAtEnd
-                    if (deletes == null) {
-                        editor.remove(KEY_PERSONAL_PROMO_DELETES_VOICES)
-                    } else {
-                        editor.putBoolean(KEY_PERSONAL_PROMO_DELETES_VOICES, deletes)
-                    }
-                }
-                // 관리자 기간 지급의 끝도 plan 과 한 벌이다 — 없으면 지운다(남기면 지급이 끝난 뒤 받은 plan 에 옛 끝이 붙는다).
-                val grantEndsAt = normalizedUser.planGrant?.endsAt
-                if (grantEndsAt == null) editor.remove(KEY_PLAN_GRANT_ENDS_AT) else editor.putString(KEY_PLAN_GRANT_ENDS_AT, grantEndsAt)
-                // plan·프로모와 **한 벌로** 적는다 — 받은 시각이 다른 답에 붙으면 오프라인 차단이
-                //   엉뚱한 답을 자른다([AuthSession.userFetchedAtMillis]).
-                if (answeredAtMillis == null || answeredAtMillis <= 0L) {
-                    editor.remove(KEY_USER_FETCHED_AT)
-                } else {
-                    editor.putLong(KEY_USER_FETCHED_AT, answeredAtMillis)
-                }
-            }
             .apply()
         AuthSession(
             token = token,
             provider = provider,
             user = normalizedUser,
-            userFetchedAtMillis = answeredAtMillis?.takeIf { it > 0L },
             accountAnswerSeq = answerSeq,
-        )
-    }
-
-    /**
-     * 세션과 함께 저장한 기간 한정 개인 플랜. **plan 과 한 쌍이다** — 같은 응답에서 온 값만
-     * 함께 저장되고, plan 을 새로 쓸 때 같이 덮인다([save]).
-     */
-    private fun readPersonalPromo(): PersonalPromo? {
-        val endsAt = prefs.getString(KEY_PERSONAL_PROMO_ENDS_AT, null)?.takeIf { it.isNotBlank() }
-            ?: return null
-        return PersonalPromo(
-            endsAt = endsAt,
-            noticeFrom = prefs.getString(KEY_PERSONAL_PROMO_NOTICE_FROM, null)?.takeIf { it.isNotBlank() },
-            deletesVoicesAtEnd = if (prefs.contains(KEY_PERSONAL_PROMO_DELETES_VOICES)) {
-                prefs.getBoolean(KEY_PERSONAL_PROMO_DELETES_VOICES, true)
-            } else {
-                null
-            },
         )
     }
 
@@ -772,8 +665,6 @@ class AuthSessionStore internal constructor(
             ),
             deletionStatus = runCatching { user.deletionStatus }.getOrNull()
                 ?.takeIf { it.isNotBlank() } ?: "active",
-            personalPromo = normalizePersonalPromo(runCatching { user.personalPromo }.getOrNull()),
-            planGrant = normalizePlanGrant(runCatching { user.planGrant }.getOrNull()),
         )
     }
 
@@ -910,38 +801,8 @@ class AuthSessionStore internal constructor(
             "family_alarm_quiet_windows",
         )
         private const val KEY_DYNAMIC_PROMPT_SETTINGS = "dynamic_prompt_settings"
-        private const val KEY_PERSONAL_PROMO_ENDS_AT = "personal_promo_ends_at"
-        private const val KEY_PLAN_GRANT_ENDS_AT = "plan_grant_ends_at"
-        private const val KEY_PERSONAL_PROMO_NOTICE_FROM = "personal_promo_notice_from"
-        private const val KEY_PERSONAL_PROMO_DELETES_VOICES = "personal_promo_deletes_voices_at_end"
-        private const val KEY_USER_FETCHED_AT = "user_fetched_at_millis"
         private const val KEY_ACCOUNT_ANSWER_SEQ = "account_answer_seq"
     }
-}
-
-/**
- * 서버가 준 `personal_promo` 를 저장할 모양으로 다듬는다. **종료 시각이 없으면 없는 것이다** —
- * 끝을 모르는 프로모는 표시할 날짜도, 오프라인 차단 기준도 없다.
- *
- * Gson 은 JSON 에 없는 필드를 non-null 선언과 무관하게 null 로 채우므로 필드마다 감싼다.
- *
- * `computed_at` 은 **싣지 않는다** — 그 값은 받는 자리에서 답의 시각으로 바뀌어
- * [AuthSession.userFetchedAtMillis]·`AccessSnapshot.userPlanFetchedAtMillis` 에 적힌다
- * (`planAnswerStampMillis`). 응답마다 달라지는 값을 들고 있으면 같은 프로모가 응답마다
- * '다른 값' 이 되어, 저장본을 다시 읽은 값과도 어긋난다.
- */
-internal fun normalizePersonalPromo(promo: PersonalPromo?): PersonalPromo? {
-    val endsAt = runCatching { promo?.endsAt }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-        ?: return null
-    val noticeFrom = runCatching { promo?.noticeFrom }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-    val deletesVoicesAtEnd = runCatching { promo?.deletesVoicesAtEnd }.getOrNull()
-    return PersonalPromo(endsAt = endsAt, noticeFrom = noticeFrom, deletesVoicesAtEnd = deletesVoicesAtEnd)
-}
-
-/** [PlanGrant] 정규화 — 끝을 못 읽으면 null, 응답마다 다른 `computed_at` 은 뺀다([normalizePersonalPromo] 와 같은 이유). */
-internal fun normalizePlanGrant(grant: PlanGrant?): PlanGrant? {
-    val endsAt = runCatching { grant?.endsAt }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    return PlanGrant(endsAt = endsAt)
 }
 
 internal fun normalizeDynamicPromptSettings(settings: DynamicPromptSettings?): DynamicPromptSettings {

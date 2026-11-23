@@ -72,8 +72,8 @@ export async function enqueueExternalDeletionsBatch(
     });
   }
   if (statements.length === 0) return;
-  // 청크가 여럿이어도 **왕복 한 번**이다 — 여러 사람을 묶어 지우는 보관 스윕
-  // (`lib/personal-promo-end.ts`)은 파일이 수백 개라 청크마다 왕복하면 그것만으로 한도를 넘는다.
+  // 청크가 여럿이어도 **왕복 한 번**이다 — 목소리 하나를 지울 때도 사전렌더 클립 등 파일이 수십~수백 개라
+  // 청크마다 왕복하면 그것만으로 워커 subrequest 한도(~50)에 다가간다.
   if (statements.length === 1) await tx.execute(statements[0]!);
   else await tx.batch(statements);
 }

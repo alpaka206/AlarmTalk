@@ -8,40 +8,26 @@ import Foundation
 // ⚠ **여기에는 목소리 화면에서만 다르게 말할 코드만 둔다.** 나머지는 두 앱이 공유하는
 // 표(`APIErrorMessages`)가 받는다 — 같은 코드에 두 벌의 문구를 두면 한쪽만 고쳐진다.
 extension VoiceStudioViewModel {
+    /// **공용 표를 부르는 자리**(TTS 생성·목소리 등록·목소리 승격 — 스펙 `docs/spec/error-codes.md` §4)의 문구. 층은 셋이고 위에서부터
+    /// 이긴다 — ① 목소리 화면 문구 ② 공용 표(`APIErrorMessages`) — 둘 다 `localizedVoiceMessage(forCode:)` — ③ 그 자리의 폴백.
+    /// 안드로이드 `apiErrorMessage(context, code) ?: userFacingError(error, fallback)` 와 같다.
+    ///
+    /// ⚠ **오류 종류로 말하는 갈래를 되살리지 말 것**(2026-11-22 두 앱 통일). 그전에는 폴백 대신 네트워크·5xx·401 을 가려
+    /// "네트워크가 불안정해요"·"서버가 응답하지 않아요"·"권한이 없어요" 로 말했는데, 안드로이드는 같은 실패를 그 자리의 폴백
+    /// ("음성 생성에 실패했어요." 등 — **무엇을 못 했는지**)으로 말해 두 앱이 달랐다.
+    /// 공용 표를 부르지 않는 자리(이름 변경·삭제·미리듣기·녹음 시작·문구 수정)는 이걸 쓰지 않고
+    /// `userFacingErrorMessage(error, fallback:)` 를 그 자리의 폴백과 함께 부른다(안드로이드 `userFacingError` 짝).
     /// 외부에서도 테스트하기 위해 nonisolated.
-    nonisolated func mapVoiceError(_ error: Error) -> String {
-        // 1) ServerError.errorCode 가 디코드되어 APIError.server 에 실린 경우.
-        if let code = extractServerErrorCode(from: error) {
-            return Self.localizedVoiceMessage(forCode: code)
+    nonisolated func mapVoiceError(_ error: Error, fallback: String) -> String {
+        if let code = extractServerErrorCode(from: error),
+           let message = Self.localizedVoiceMessage(forCode: code) {
+            return message
         }
-        if let recorderError = error as? VoiceRecorderError {
-            return userFacingErrorMessage(recorderError, fallback: String(localized: "녹음 중 오류가 발생했어요."))
-        }
-        if let urlError = error as? URLError {
-            switch urlError.code {
-            case .notConnectedToInternet, .networkConnectionLost, .timedOut:
-                return String(localized: "네트워크가 불안정해요. 잠시 후 다시 시도해 주세요.")
-            default:
-                return String(localized: "연결에 실패했어요. 다시 시도해 주세요.")
-            }
-        }
-        if let apiError = error as? APIError {
-            switch apiError {
-            case .invalidResponse:
-                return String(localized: "서버 응답을 해석하지 못했어요.")
-            case .server(let status, _, _):
-                if status == 401 || status == 403 {
-                    return String(localized: "권한이 없어요. 로그인 상태를 확인해 주세요.")
-                }
-                if status >= 500 { return String(localized: "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.") }
-                return String(localized: "처리 중 오류가 발생했어요.")
-            }
-        }
-        return userFacingErrorMessage(error, fallback: String(localized: "처리 중 오류가 발생했어요."))
+        return userFacingErrorMessage(error, fallback: fallback)
     }
 
-    /// 코드 -> 현재 앱 언어의 메시지. 테스트가 직접 호출할 수 있게 static.
-    nonisolated static func localizedVoiceMessage(forCode code: String) -> String {
+    /// 코드 -> 현재 앱 언어의 메시지. 정해 둔 문구가 없으면 nil — 부르는 자리의 폴백이 받는다. 테스트가 직접 호출할 수 있게 static.
+    nonisolated static func localizedVoiceMessage(forCode code: String) -> String? {
         // 목소리 등록·확정 화면에서만 다르게 말해야 하는 코드들. 나머지는 공용 표가 받는다.
         switch code {
         case "VOICE_PROFILE_NOT_FOUND":
@@ -54,7 +40,6 @@ extension VoiceStudioViewModel {
             return String(localized: "음성과 이름을 모두 입력해 주세요.")
         default:
             return APIErrorMessages.message(for: code)
-                ?? String(localized: "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.")
         }
     }
 

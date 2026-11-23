@@ -12,6 +12,17 @@
 글자 크기는 선택 57 / 이웃 45 로 다르다 — 알파만으로 초점을 만들면 굴러가는 중에
 어느 숫자가 골라질지 흐릿하다.
 
+색은 두 앱이 같다: 선택 숫자·콜론은 `onSurface` 그대로, 이웃 숫자·고르지 않은 오전/오후는 **알파 0.18**(고쳐 쓰는
+칸이 비었을 때 깔리는 지금 값은 0.28). 칼럼은
+테두리에서 **자르기만** 하고 위아래를 그라데이션으로 지우지 않는다(2026-11-15 오너가 두 앱의 휠 색이 다르다고 짚었다.
+iOS 만 위아래 22% 를 지우는 페이드 마스크를 씌워 같은 이웃 숫자가 더 흐렸다).
+
+끄는 동안에도 밝기·크기는 **칸 단위**다 — 그 칸의 숫자가 1.0·57 이고 칸을 넘는 순간 바뀐다(거리에 따라 이어
+바꾸지 않는다). 배치도 같다: 칼럼 간격 **12**(배율을 곱하지 않는다), 오전/오후 칸 96·콜론 36(배율을 곱한다),
+축소 배율은 **휠 전체 폭**(가로 여백 12 포함)을 392 로 나눠 0.78~1. 오전/오후가 시 칼럼 때문에 바뀔 때는
+155ms `(0.16, 1, 0.3, 1)` 로 옮긴다(2026-11-15 오너: "통일할수 있으면 모두 통일해" — iOS 만 거리 보간·간격
+16×배율·여백 안쪽 폭·0.25초 스프링이었다). 손을 뗀 뒤의 정착 곡선·튕김 판정은 그대로 다르다(「의도된 차이」).
+
 ### 1-1. 튕기면 **굴러가서** 멎는다
 
 손을 뗀 뒤 숫자가 **한 칸씩 지나가며** 감속해 멎는다. N칸을 즉시 대입하고 남은
@@ -71,10 +82,9 @@
 
 - **목소리가 왼쪽**이고 새 알람의 기본값이다. 읽는 순서와 기본 선택이 어긋나면 첫 화면에서
   오른쪽 칸이 켜져 있어 무엇이 기본인지 흐려진다.
-- **칸마다 아이콘**(2026-11-09 오너 — 고르기 시안 A). 목소리는 사람 + 음파(안드로이드 `RecordVoiceOver`, iOS
-  `person.wave.2` — 하단 목소리 탭과 같은 아이콘), 알람은 종(`Notifications` / `bell`). ⚠ **아래 설명 줄은 두지 않는다** —
-  같은 날 "고른 목소리가 문구를 읽어 줘요." / "알람음만 울려요." 를 붙였다가 오너가 지웠다. 카드 두 장·목소리 고르기에 합치기
-  안은 고르지 않았다.
+- **칸에는 글자만 둔다 — 아이콘 없음**(2026-11-22 오너 "목소리, 알람 앞에 이모지 떼"). 11-09 고르기 시안 A 로 붙였던
+  사람 + 음파·종 아이콘을 두 앱에서 걷었다. ⚠ **아래 설명 줄도 두지 않는다** — 11-09 에 "고른 목소리가 문구를 읽어 줘요." /
+  "알람음만 울려요." 를 붙였다가 오너가 지웠다. 카드 두 장·목소리 고르기에 합치기 안은 고르지 않았다.
 - 목소리 목록 마지막의 **'직접 녹음' 에는 설명 줄이 없다**(2026-11-09 오너 — '이 알람에만 쓸 소리를 직접 녹음하기' 삭제).
 - 선택 표시는 **트랙 안에서 배경 하나가 미끄러져 옮겨간다.** 칸마다 색을 즉시 바꾸면
   전환이 툭 끊긴다.
@@ -93,6 +103,10 @@
 
 v1.3 W10(#955)이 요일 칩 아래에 두었던 '날짜 지정' 스위치·날짜 줄·날짜 고르기 시트를 출시 전에 오너 결정으로 지웠다. 반복
 자리는 요일 칩과 '공휴일에는 끄기'(요일을 고른 알람에만)뿐이다. 기록은 [alarm-lifecycle.md](alarm-lifecycle.md) §4.
+
+- 반복 카드 간격(두 앱 같다): 요약 줄 → 요일 칩 **10**(한 덩어리), 요일 칩 → '공휴일에는 끄기' **16**, 카드 위·아래 **18**.
+  2026-11-22 전에는 칩 → 공휴일 줄도 10 이라 줄이 칩에 붙어 칩의 일부처럼 보였다(오너 "공휴일에는 끄기 위 간격"). 공휴일 줄
+  제목은 다른 편집기 줄과 같은 16 SemiBold 다(그전 iOS 만 14).
 
 ## 3. 음성 출력
 
@@ -114,14 +128,33 @@ v1.3 W10(#955)이 요일 칩 아래에 두었던 '날짜 지정' 스위치·날�
 | 입력이 여러 개인 폼 | **바텀시트 + 상단바** — 좌 `취소` · 가운데 제목(17 SemiBold) · 우 확정 | 취소 · 스크림 탭 · 아래로 끌기 |
 | 확인 한 번 | **시스템 알럿**(iOS) / `IosAlertDialog`(안드로이드) | 액션 |
 
+- **주행동의 모양은 두 앱이 같아야 한다.** 안드로이드가 `emphasized = true` 로 파란 채움을 그리는 버튼은 iOS 에서
+  `.keyboardShortcut(.defaultAction)`(시스템이 그 하나만 채운 캡슐로 그린다), `destructive = true` 는 iOS 의
+  `role: .destructive`(빨간 글자)다. 같은 시각 교체 확인의 '교체하기' 는 **강조**다 — 2026-11-15 까지 iOS 만 빨간
+  파괴적 버튼이라 오너가 두 앱이 다르다고 짚었다.
+  - **버튼 하나짜리 안내도 그 버튼이 강조다**(안드로이드의 '확인'·'닫기' 가 `emphasized = true`).
+  - **순서도 같다.** iOS 는 `.cancel` 역할 버튼을 두 버튼 알럿의 **왼쪽**으로 옮긴다. 안드로이드에서 오른쪽인 버튼
+    ('그래도 쓰기'·'계속 만들기'·개인 플랜 안내의 '확인')에 그 역할을 주면 좌우가 뒤집히므로, 그런 버튼은 역할을
+    빼고 선언 순서로 맞춘다.
+  - **말도 같다** — 같은 알럿의 버튼 이름을 두 앱이 다르게 쓰지 않는다('닫기'·'취소'·'지금 해지').
+  - 2026-11-15 오너("통일할수 있으면 모두 통일해")에 따라 두 앱 알럿을 제목으로 짝지어 iOS 를 맞췄다. 껍데기
+    자체(시스템 `.alert` vs `IosAlertDialog`)와 바깥 탭 닫기는 「의도된 차이」다.
 - ⚠ **선택 시트에 '닫기' 버튼을 두지 말 것.** 고르면 어차피 닫히므로 취소와 같은 일을
   하는 두 번째 액션이 된다. 2026-08-11 에 목소리 고르기 시트만 상단바 + '닫기' 였다.
+- 진행을 보여 주는 대기 창(편집기에서 여는 목소리 준비 페이지)은 이 셋에 들지 않는다 — 고를 것·입력할 것·확인할 것이 없어
+  두 앱 모두 가운데 카드 대화창이다(2026-11-22 — iOS 는 그전 시스템 시트였다. [voice-and-message.md](voice-and-message.md)
+  「준비 페이지」).
 - ⚠ **폼을 가운데 카드 + X 로 되돌리지 말 것.** 그건 안드로이드·웹 문법이다. 아이폰의
   폼 모달은 시트로 올라오고 상단바에 좌 `취소` · 가운데 제목 · 우 확정을 둔다(애플 캘린더
   '새로운 이벤트'). 2026-08-11 에 양쪽 다 이쪽으로 통일했다.
 - ⚠ **확정 버튼을 본문 아래에 두지 말 것.** 본문이 길어 스크롤되면 저장이 화면 밖으로
   밀린다 — 상단바는 항상 보인다. 그래서 폼의 초안 상태는 **모달 밖**에 둔다(안에만 있으면
   상단바가 그 값을 볼 수 없다).
+- **폼의 확정은 언제나 눌린다.** 빈 필수 칸이 있으면 닫지 않고 그 칸 제목에 빨간 `· 필수 입력` 을 단다 — 끈 버튼은 왜
+  못 누르는지 말하지 않는다(편집기 저장 버튼과 같은 규약). 운세 정보 폼은 어디서 열든(설정·편집기 문구 화면) 같은 껍데기다 —
+  좌 `취소` · 가운데 `운세 정보` · 우 `저장`, 처음부터 내용 높이로 연다(안드로이드 `FortuneInfoDialog`, iOS `formSheet` +
+  `FortunePromptInputFields(submitted:)`). 2026-11-22 전 iOS 문구 화면의 운세 폼만 반쪽(.medium) 시스템 시트였고, 셋이 다 차기
+  전에는 `확인` 이 꺼져 있었다.
 - 시트 높이는 **내용만큼**, 화면의 **90%**(`BottomSheetMetrics.maxFraction`)를 넘으면 그 안에서 스크롤한다.
   (2026-08-13 에 0.5 → 0.9. 낮추면 짧은 시트는 어차피 자연 높이라 그대로이고 **긴 목록만 반쪽으로 잘린다**.)
   ⚠ 상수를 더해 계산하지 말 것 — 글꼴·기기마다 달라 맞출 수 없다. **스크롤 안의 내용**과
@@ -151,7 +184,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 제목 글자 | 17 | |
 | 본문 글자 | **14.5** | ⚠ 13 이 아니다 — 그려진 글리프를 재서 확인했다 |
 | 자간 | **0** | ⚠ SF Pro 트래킹(-0.4 등)을 쓰지 말 것. 한글이 붙어 안 읽힌다 |
-| 본문 정렬 | 한 줄이면 가운데, **여러 줄이면 왼쪽**(제목도 함께) | |
+| 본문 정렬 | **본문이 있으면 언제나 왼쪽**(제목도 함께, 한 줄이어도) · 제목 한 줄뿐이면 가운데 · 입력이 있으면 왼쪽 | 2026-11-22 iOS 27 실측·오너 "통일". 그전 iOS 26 은 본문 줄 수로 갈랐다 |
 
 ⚠ **폰트는 "선언한 크기" 가 아니라 "그려진 글리프" 로 비교한다.** 오래 "본문 13" 으로
 알고 썼는데 실제로는 15% 작게 그려지고 있었고, 그래서 같은 문장이 아이폰 3줄 /
@@ -170,6 +203,16 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   수 없어요. 다른 목소리를 골라 주세요." 버튼은 죽이지 않는다(`CLAUDE.md` 「잠그는 것은
   '저장 중' 일 때뿐이다」). 정리 중인 교체 목소리는 이 갈래가 아니라 "아직 준비 중이에요" 로
   따로 말한다.
+  - **정리 중인 교체 목소리는 목소리 줄이 미리 말한다**(2026-11-16 오너: "준비가 안 되었으면 안 보여 주거나 회색 처리해서
+    준비 중을 띄우면 된다"). 그 목소리는 고르기 목록에 없으므로(11-15), 그 목소리를 쓰던 알람을 열면 줄의 값이 **이름 그대로
+    흐린 '○○ · 준비 중'** 이다 — 예전에는 안드로이드가 목록의 첫 목소리를, iOS 가 '고르기' 를 보여 줘서 고른 적 없는 것처럼
+    보였고 저장을 눌러야 알았다. 저장은 그대로 막는다(새 알람이 정리에 휩쓸리지 않게). 안드로이드 `VoiceAudioCard` 의
+    `settlingSelectedName`·`EditorChevronRow.valueMuted`, iOS `AlarmEditorSheet.settlingSelectedVoiceName`·`AlarmSettingRow.subtitleMuted`.
+  - **고른 목소리가 고르기 목록에 없으면 줄 값은 '목소리 선택' 이다**(2026-11-22 오너 "기본으로 항상 골라져 있는 거 아냐?").
+    안드로이드는 목록의 첫 목소리 이름으로 떨어뜨려, 지운·쓸 수 없는 목소리를 쓰던 알람이 '시우' 가 골라진 것처럼 보였는데 저장하면
+    "목소리를 골라주세요" 가 떴다. iOS 는 '고르기' 였다 — 두 앱 모두 '목소리 선택'(안드로이드 `editor_voice_select`). 새 알람은 직전에
+    쓴 목소리 → 내 목소리 → 기본 목소리 순으로 저절로 고르고 기본 목소리 4종은 앱에 들어 있어, 아무것도 안 골라진 상태는 내 목소리를
+    목록을 받아 오는 동안뿐이다(그때 저장을 누르면 "목소리를 골라주세요 / 알람을 읽어 줄 목소리를 먼저 골라 주세요.").
   - **테마를 골랐어도 막는다.** 테마 클립은 그 목소리의 클립이라 목소리가 사라지면 받을 수 없다
     (서버 오디오 라우트가 삭제·접근 불가 목소리를 거절한다). 판정은 테마 갈래보다 **먼저** 한다 —
     안드로이드 `editorSaveBlockReason` 이 `usableTtsProfileIds` 를 테마 갈래 앞에서 보는 것과 같다.
@@ -190,6 +233,57 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
   화면이 없지만 같은 18종 enum 으로 읽고 편집기 저장 때 그 값으로 다시 적는다 — enum 에 없는 값은 '기본' 으로 덮인다. 그래서
   패턴을 더하면 **세 곳**(안드로이드·iOS·서버)을 같이 고친다 — `scripts/check-vibration-patterns.py`(CI lint)가 세 목록을
   비교한다(서버 목록은 옛 앱 호환 경로를 지울 때 함께 뺀다).
+
+## 5-1. 편집기 틀 — 여백과 아래 버튼은 **두 앱이 같다** (2026-11-15)
+
+오너: "통일할건 통일해봐봐". 그전에는 iOS 만 여백 20·섹션 사이 16·시스템 캡슐 버튼이었다.
+
+- 본문: 좌우 **16**, 위 **20**(휠 위 — iOS 는 2026-11-22 전 12), 섹션 사이 **20**, 아래 **24**(안드로이드 `editorHorizontalPadding`·
+  `spacedBy(20.dp)`·`editorBottomPadding`).
+- 아래 고정 바: 위에 1 굵기 구분선(`outlineVariant`), 좌우 16·위 10, 버튼 사이 **12**. 버튼은 높이 **40**, 모서리
+  **18**(`WakerButtonShape`). '취소' 는 테두리(`outline`)만 있고 글자는 `primary`, '저장' 은 `primary` 채움에
+  `onPrimary` 글자. 저장 중에는 둘 다 잠기고 저장 버튼은 잠긴 색(`surfaceVariant`/`onSurfaceVariant`)이다. 그때 저장 버튼의
+  글자는 **'저장 중' 하나**다 — 음성을 만드는 동안에도 같다(안드로이드 `editor_saving`. iOS 는 2026-11-22 전 '음성 만드는 중…'·
+  '저장 중…' 둘이었다 — 덧붙인 말이 길면 라벨이 줄어든다). iOS 는 눌리는 영역만 44 로 둔다(그려지는 버튼은 40).
+- 배경: 두 앱 모두 밤하늘 그라데이션(`homeGradientBrush` / `homeGradientBackground`). 2026-11-15 두 기기 화면 대조 전까지는
+  안드로이드 편집기만 칠하지 않아 단색이었다 — 같은 알파 0.18 의 휠 이웃 숫자가 두 앱에서 다른 색으로 보인 까닭 중 하나다.
+- 카드와 재생 방식 칸의 테두리는 **카드 테두리**(`wakerCardBorder` / `cardBorder`, 다크 #5A6A9C — 홈 카드와 같은 선),
+  재생 방식 칸 바탕은 surfaceVariant 55%. 카드 안 구분선·요일 칩 테두리는 `outlineVariant` 그대로다.
+- 섹션 제목('재생 방식'·'세부 설정')은 titleSmall · SemiBold · `onSurfaceVariant`. 반복 요약(카드 첫 줄)은
+  titleMedium · SemiBold · `onSurface`. 하위 화면 안의 구역 제목(알람음 화면의 구역들·문구 화면의 '응원 문구' 등)도 같은 한 벌이다(`EditorSectionTitle` —
+  안드로이드 `SnoozeOptionSection` 의 제목은 2026-11-22 전 Bold · `onSurface` 였다).
+- 반복 요약 표기: '매일' / '매주 월, 수'(요일은 ', ' 로 잇는다) / '내일 · 11월 16일 (월)'(괄호 앞을 띄운다 — 홈 목록과
+  같은 꼴). 2026-11-15 전까지 iOS 는 '매주: 월 수', 안드로이드 편집기는 '16일(월)' 이었다.
+- 편집기 안의 하위 화면(알람음·진동·문구·목소리 크기)도 같은 그라데이션이다 — 안드로이드 pane 은 편집기 위로 밀려
+  들어오므로 불투명해야 하는데, 그라데이션도 불투명하다(그전에는 단색 `background`). 본문은 상단바 아래 **24** 에서 시작하고
+  좌우 20·구역 사이 16 이다(2026-11-22 — iOS 는 그전 위 16, 안드로이드 알람음 화면은 좌우 16·구역 사이 8 이었다).
+- 하나를 고르는 목록 행(문구 종류·알람음·진동 등)은 **고르는 표시가 글자 왼쪽**이다(안드로이드 `SnoozeRadioRow` ·
+  iOS `RadioRow`). 그전에는 iOS 만 오른쪽 체크였다. 행 높이는 최소 **56**(위아래 8 포함) — 2026-11-22 전 iOS 는 50 이었다.
+  iOS 알람음 목록은 2026-11-22 까지 이 규칙 밖이었다(이름 오른쪽 체크·높이 52) — 이제 같은 표시(`RadioMark`)가 글자 왼쪽이고,
+  미리듣기 버튼은 그대로 행 끝이다(고를 때 표시가 켜져도 재생 버튼이 손가락 밑에서 움직이지 않는다).
+  행은 좌우 여백 14 를 스스로 갖고, 행 사이 구분선은 **글자 시작선(44)부터 카드 끝까지**다(안드로이드 `SnoozeOptionDivider`). 문구
+  화면의 카드(목록·상세·응원)는 모서리 **18**(`WakerPanelShape`)이다 — iOS 는 2026-11-22 전 22 · 카드 좌우 16 · 구분선은 카드 안쪽
+  폭이었다.
+- **문구 화면의 상세 카드**(목록 아래 — 등록한 값을 바꾸는 유일한 길 `변경하기`): 제목은 `지역`·`운세 정보`·`직접 입력 문구`
+  다. 값이 비면 지역은 `아직 고르지 않았어요`, 운세는 `아직 입력하지 않았어요` 이고, 운세는 셋(성별·생년월일·태어난 시간)이 다
+  있을 때만 `성별 · 날짜 · 시간` 순으로 줄여 보인다 — 하나라도 비면 운세 문구가 울리지 않으므로 다 넣은 것처럼 보이지 않게
+  한다. 직접 입력이 비면 카드를 그리지 않는다(고르는 순간 입력창이 뜨고, 취소하면 종류가 되돌아간다). 2026-11-22 전 iOS 는
+  제목 '문구'·빈 값 '아직 정하지 않았어요' 였고, 운세는 날짜만 있어도 `날짜 · 시간 · 성별` 로 줄였다. 안드로이드
+  `RandomPromptDetailRow`(`fortuneInfoSummary`), iOS `PromptDetailCard`(`MessageSettingsPane` 의 `fortuneSummary`·`weatherSummary`).
+- **운세 입력의 드롭다운(연·월·일·태어난 시간)은 지금 고른 값을 표시한다** — 안드로이드는 그 항목을 강조색·굵게, iOS 는 시스템 메뉴의
+  체크 표시다(시스템 메뉴는 항목 색을 바꿀 수 없다 — 같은 사실을 그 플랫폼 문법으로 말한다). iOS 는 2026-11-22 전 표시가 없었다.
+  안드로이드 `ui/editor/AlarmFortuneSettings.kt` 의 `FortuneUnitDropdown`, iOS `FortunePromptInputFields.menuOption`.
+- **묶음 안 간격**(2026-11-22 두 앱 대조): '재생 방식' 제목 → 세그먼트 **10**, 세그먼트 → 목소리 카드 → 문구 카드 **12**,
+  '세부 설정' 제목 → 카드 **10**. 바깥 섹션 사이 20 은 묶음 **사이**에만 쓴다 — iOS 는 묶음의 조각을 바깥 `VStack(spacing: 20)`
+  에 낱개로 흘려 모두 20 으로 벌어져 있었다(`alarmModeSection`·`detailSettingsSection`).
+- **요일 카드 여백은 18**(사방). 다른 편집기 카드는 좌우 16 이다. 2026-11-22 전 iOS 요일 카드는 위아래 14·좌우 16 이었다.
+- **목소리 고르기 시트**: 행은 구분선만 두고 붙어 있다(행 사이에 시트 간격 14 를 끼우지 않는다 — 안드로이드는 `WakerSheetOptionGroup`
+  안에 둔다). 행 끝 버튼은 **스피커 ↔ 정지, 주 색**이다(목소리 탭 목록과 같은 '들어보기'. 2026-11-22 전 안드로이드 시트만 검정 ▶).
+  행 높이는 안드로이드 69·iOS 64 로 남는다 — 그 버튼의 최소 누르는 영역이 OS 마다 48 / 44 라서다.
+- **목소리 크기** 화면의 값('100%')은 회색 굵은 글씨(`onSurfaceVariant` · SemiBold). 2026-11-22 전 iOS 만 강조색 보통 글씨였다.
+  막대는 두 앱 같은 `WakerStepSlider`(트랙 4 · 흰 동그라미 손잡이 20 · 옅은 그림자 · 손잡이 반지름만큼 들여 그림). iOS 는 시스템
+  `Slider` 였는데 iOS 26 손잡이가 넓적한 흰 알약이라 100% 에서 막대 끝에 얼룩처럼 붙었다(2026-11-22 오너) — 손잡이 모양을 바꿀 수
+  없어 직접 그린 막대로 바꿨다('톤 조절' 막대와 같은 부품).
 
 ## 6. 저장 버튼 — 파일을 읽는 확인은 **메인 밖에서, 저장 잠금 안에서** (안드로이드, 2026-10-11)
 
@@ -252,6 +346,8 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 - **어디에·얼마나**: 화면 아래(하단 탭 위, ＋버튼 위) 가운데에 약 3초. **두 앱 모두 글자 폭만큼의 캡슐이고 아이콘이 없다**(2026-11-09
   오너 — iOS 모양으로 맞추고 앞의 ⓘ 는 뺐다. 안드로이드는 그전까지 아이콘 달린 스낵바였다). 보조 컨테이너 색·`labelLarge`.
   누르거나 화면을 옮겨도 막지 않는다. 스크린 리더에는 같은 문장을 알린다.
+  **움직임도 같다** — Material 스낵바의 것(0.8 배에서 커지며 0.15 초에 나타나고 0.075 초 만에 줄며 흐려진다, `FastOutSlowInEasing`).
+  iOS 는 2026-11-22 전 12pt 올라오며 0.28 초였다(`RingInNotice.swift` 의 `transition`). 동작 줄이기를 켜면 흐려지기만 한다.
 - **권한이 모자랄 때**: 안드로이드는 그래도 울리므로(CLAUDE.md 「알람 권한 3종」) 같은 문장을 띄운다. iOS 는 AlarmKit 권한이 없으면
   예약이 안 되므로 띄우지 않는다(헤드라인과 같은 판단).
 - 켜기가 실패해 켜지지 않은 경우에는 띄우지 않는다.
@@ -279,6 +375,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 확인 알럿의 껍데기 | iOS 는 시스템 `.alert`, 안드로이드는 그걸 흉내 낸 `IosAlertDialog`. iOS 에서 껍데기를 새로 만들면 오히려 원본에서 멀어진다 |
 | 숫자 입력 확정 키 | iOS 숫자 키패드에는 완료 키가 없어 **키보드 툴바**로, 안드로이드는 IME 의 **Done** 으로 |
 | 타임휠 **정착 곡선·튕김 판정** | **곡선**: 안드로이드 `TimeWheelEasing = (0.3, 0.6, 0.3, 1)`(`ui/editor/DraggableTimeWheelColumn.kt`) / iOS `TimeWheelSettle.ease` 의 `(0.16, 1, 0.3, 1)`. **튕김**: 안드로이드는 **px/s** 를 받아 최소 `칸높이 × 4.2/s`·칸수 `(속도/칸높이) × 0.09`(`flingStepsFor`), iOS 는 SwiftUI 가 주는 **남은 이동 거리**를 받아 최소 `칸높이 × 0.63`·칸수 `(거리/칸높이) × 0.8`(`TimeWheelPicker.snapStep`). 저사양 실기(SM-A325N) 프레임 예산에 맞춰 2026-08-15 에 **안드로이드만** 0.12 → 0.09 로 낮췄다. 같은 기기 조건도 아니고 들어오는 양 자체가 다른 값이라 **맞추지 않는다** — 한쪽 숫자를 그대로 옮기면 안 된다 |
+| 하위 화면(문구·목소리 크기·알람음)의 **뒤로가기** | iOS 는 시스템 내비게이션 바(iOS 26 은 둥근 유리 단추)를 그대로 쓴다 — 가장자리 밀어 뒤로가기가 딸려 온다. 안드로이드는 화살표만 있는 `WakerBackButton` 이다(2026-11-15 "동그라미 빼고"). 우리 단추로 바꾸면 iOS 의 밀어 뒤로가기를 잃는다 |
 | 알럿을 **바깥 탭으로 닫기** | iOS 는 **안 된다** — 시스템 알럿은 명시적 선택을 요구하고 그 동작을 바꾸는 공개 API 가 없다. 안드로이드는 닫힌다(플랫폼 관례). 2026-08-11 에 확인하고 **각자 표준을 따르기로 정했다** — 맞추려면 iOS 시스템 알럿을 버리고 직접 그려야 하는데, 그건 우리가 맞춰 온 원본을 버리는 것이다 |
 
 ## 구현 지도
@@ -289,6 +386,8 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 켜면 "N 후에 울려요" 하단 안내(§7) | 저장 성공·목록 켜기 → 하단 캡슐(`RingInCapsule` — `ringInSnackbarHostState` 에 실어 띄운다, 문장은 `remainingDurationLabel`·`hs_status_ring_in`) | 저장 성공(`runAlarmSaveSteps` 가 `.completed` 일 때만 — `RingInNoticePresenter.present(after:)`)·목록 켜기(`AlarmToggleCoalescer` 의 `settled` → `listToggleSettled`) → 하단 캡슐(`Views/Alarms/RingInNotice.swift`, 문장은 `NextAlarmHeadline.remainingLabel`) · 끄기·삭제는 그 알람 것만 `withdraw` · 하위 화면은 `MainTabsView` 가 `hostHidden`·`hostShown` 으로 알린다 |
 | 교체 중 충돌 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`(`deleteLocal` 하나 — 서버 삭제 단계는 2026-10-29 에 지웠다)·`rollbackAlarmReplacement` — 회귀 `DuplicateAlarmReplacementTests` |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
+| 휠 색(이웃 0.18·자르기만, 페이드 없음) | `DraggableTimeWheelColumn`·`AmPmWheelColumn` 의 `clipToBounds` | `DraggableNumberColumn` 의 `.clipped()`·`textAlpha`, `AmPmWheelColumn` |
+| 같은 시각 교체 확인('교체하기' = 강조) | `ui/components/DuplicateAlarmDialog.kt`(`emphasized = true`) | `Views/Editor/AlarmEditorSheet.swift` 의 `DuplicateAlarmReplaceAlert`(`.keyboardShortcut(.defaultAction)`) |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
 | 한 칸마다 햅틱 | `ui/editor/DraggableTimeWheelColumn.kt` 의 `performWheelTick` | `Views/Editor/TimeWheelPicker.swift` 의 `selectionGenerator` |
 | 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `AmPmWheelColumn` |
@@ -302,6 +401,10 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |
 | 폼 시트 | `ui/components/WakerModal.kt` 의 `WakerFormSheet` | `Views/Common/FormSheet.swift` |
+| 폼의 확정은 언제나 눌린다(빈 필수 칸은 제목에 `· 필수 입력`) · 운세 정보 폼은 설정·문구 화면이 같은 껍데기(§4) | `ui/editor/AlarmFortuneSettings.kt` 의 `FortuneInfoDialog`(`submitted` · `editorp_fortune_required_suffix`) ← `WakerFormSheet` | `Views/Common/FormSheet.swift` 의 `formSheet` + `Views/Common/FortunePromptInputFields.swift`(`submitted:`) ← `MessageSettingsPane` 의 `saveFortuneSheet` · `SettingsView` 의 `saveFortuneDraft` |
+| 문구 화면 상세 카드 — 제목·빈 값·운세는 셋 다 있을 때만 요약·빈 직접 입력은 카드 없음(§5-1) | `ui/editor/AlarmRandomPromptSettings.kt` 의 `RandomPromptDetailRow`·`ui/editor/AlarmFortuneSettings.kt` 의 `fortuneInfoSummary` | `Views/Common/PromptDetailCard.swift` ← `MessageSettingsPane` 의 `fortuneSummary`·`weatherSummary` |
+| 고르는 표시는 글자 왼쪽(알람음 목록 포함) · 행 좌우 14 · 구분선은 글자 시작선(44)부터 · 문구 화면 카드 18(§5-1) | `ui/editor/AlarmSnoozeSettings.kt` 의 `SnoozeRadioRow`·`SnoozeOptionDivider`·`SnoozeOptionSection`(제목 `EditorSectionTitle`) | `Views/Editor/AlarmSettingsPanes.swift` 의 `RadioRow`(`textInset`)·`RadioMark`·`AlarmSoundSettingsPane` · `Views/Editor/EditorCards.swift` 의 `AlarmSettingDivider(leadingInset:)`·`EditorCard(cornerRadius:)` |
+| 저장 중 글자는 '저장 중' 하나(§5-1) | `ui/editor/AlarmSnoozeSettings.kt` 의 `EditorActionButtons`(`editor_saving`) | `Views/Editor/EditorCards.swift` 의 `EditorActionBar` ← `AlarmEditorSheet` 의 `savingLabel` |
 | 알럿 | `ui/components/IosAlertDialog.kt` | 시스템 `.alert`(직접 그리지 않는다) |
 | 시트 높이 재기 | (Compose 가 내용만큼 올린다) | `Views/Common/SheetContentHeight.swift` |
 

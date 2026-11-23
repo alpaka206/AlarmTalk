@@ -227,6 +227,26 @@ struct UsageEventQueueTests {
         #expect(batch.first?.props == nil)
     }
 
+    /// 사건 종류를 지운 뒤(추가 음성팩과 함께 지운 팩 선택 기록 등) 그 종류로 적어 둔 건이 큐 파일에 남아 있다. 배열째 읽으면
+    /// 한 건 때문에 큐 전체가 빈 것으로 읽히고, 다음 기록이 그 빈 목록을 저장해 밀린 기록을 잃었다 — 그 건만 버린다.
+    @Test("이 빌드가 모르는 종류의 건만 버린다 — 나머지는 그대로 읽고, 새 기록이 옛 건을 지우지 않는다")
+    func dropsOnlyUnknownEventTypes() throws {
+        let (queue, url) = makeQueue()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let stored = """
+        [{"id":"e1","type":"alarm_created","occurredAt":"2026-11-01T00:00:00Z","alarmID":"a","userID":"u1"},\
+        {"id":"e2","type":"removed_event_type","occurredAt":"2026-11-01T00:01:00Z","userID":"u1","props":{"removed_field":"x"}},\
+        {"id":"e3","type":"alarm_rang","occurredAt":"2026-11-01T00:02:00Z","alarmID":"b","userID":"u1"}]
+        """
+        try Data(stored.utf8).write(to: url)
+
+        #expect(queue.oldest(userID: "u1", limit: 10).map(\.id) == ["e1", "e3"])
+
+        queue.record(.alarmDeleted, alarmID: "c", userID: "u1")
+        try waitUntil { queue.count == 3 }
+        #expect(queue.oldest(userID: "u1", limit: 10).map(\.alarmID) == ["a", "b", "c"])
+    }
+
     @Test("칸은 서버 모양으로 다듬는다 — 한 칸이 틀려 배치째 400 이 나면 큐가 영영 막힌다")
     func sanitizesPropsToServerShape() throws {
         let (queue, url) = makeQueue()

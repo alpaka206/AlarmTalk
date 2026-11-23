@@ -19,7 +19,7 @@ final class EmailCodeErrorMessageTests: XCTestCase {
     private let mismatch = "맞지 않아요"
     private let verifyFallback = APIErrorMessages.temporaryFailure
     private let registerFallback = "회원가입에 실패했어요"
-    private let resetFallback = "비밀번호 재설정에 실패했어요"
+    private let resetFallback = "비밀번호 재설정에 실패했어요."
     private let sendFallback = "인증 코드를 보내지 못했어요"
 
     private func refusal(_ status: Int, _ code: String) -> APIError {
@@ -33,7 +33,7 @@ final class EmailCodeErrorMessageTests: XCTestCase {
             for: refusal(400, "AUTH_EMAIL_CODE_INVALID"), fallback: verifyFallback
         )
 
-        XCTAssertEqual(message, "인증 코드가 맞지 않아요. 다시 확인해 주세요.")
+        XCTAssertEqual(message, "인증 코드가 맞지 않아요.")
         XCTAssertEqual(message, APIErrorMessages.message(for: "AUTH_EMAIL_CODE_INVALID"))
     }
 
@@ -320,6 +320,40 @@ final class EmailCodeErrorMessageTests: XCTestCase {
         XCTAssertEqual(model.emailCodeFieldClearTick, before + 1)
     }
 
+    func test_재설정_코드를_확인하면_새_비밀번호_단계가_열리고_거절되면_칸을_비운다() async {
+        let api = StubEmailCodeAPI()
+        let model = makeModel(api)
+        await model.requestPasswordReset(email: "old@example.test")
+        XCTAssertEqual(model.statusMessage, "인증 코드를 보냈어요. 메일을 확인해 주세요.")
+
+        let ok = await model.verifyPasswordResetCode(email: "old@example.test", code: "123456")
+        XCTAssertTrue(ok)
+        XCTAssertEqual(model.passwordResetVerifiedEmail, "old@example.test")
+
+        // 다시 받으면 앞의 확인은 끝난다 — 서버는 가장 새 코드만 본다.
+        await model.requestPasswordReset(email: "old@example.test")
+        XCTAssertNil(model.passwordResetVerifiedEmail)
+
+        let before = model.emailCodeFieldClearTick
+        api.verifyError = refusal(400, "AUTH_EMAIL_CODE_INVALID")
+        let refused = await model.verifyPasswordResetCode(email: "old@example.test", code: "000000")
+        XCTAssertFalse(refused)
+        XCTAssertNil(model.passwordResetVerifiedEmail)
+        XCTAssertEqual(model.statusMessage, "인증 코드가 맞지 않아요.")
+        XCTAssertTrue(model.statusIsError)
+        XCTAssertEqual(model.emailCodeFieldClearTick, before + 1)
+    }
+
+    func test_동의_기록은_응답이_없거나_서버_오류일_때만_다시_보낸다() {
+        XCTAssertTrue(AuthViewModel.isTransientConsentFailure(URLError(.notConnectedToInternet)))
+        XCTAssertTrue(AuthViewModel.isTransientConsentFailure(APIError.server(status: 503, message: "x", errorCode: nil)))
+        XCTAssertFalse(AuthViewModel.isTransientConsentFailure(
+            APIError.server(status: 409, message: "x", errorCode: "POLICY_VERSION_MISMATCH")
+        ))
+        XCTAssertFalse(AuthViewModel.isTransientConsentFailure(APIError.invalidResponse))
+        XCTAssertEqual(AuthViewModel.consentSubmitAttempts, 3)
+    }
+
     func test_재설정_코드를_다시_받으면_코드_칸을_비운다() async {
         let api = StubEmailCodeAPI()
         let model = makeModel(api)
@@ -491,6 +525,11 @@ private final class StubEmailCodeAPI: EmailCodeAPIProviding, @unchecked Sendable
     func requestPasswordReset(email: String) async throws -> RequestEmailVerificationResponse {
         if let resetRequestError { throw resetRequestError }
         return RequestEmailVerificationResponse(success: true)
+    }
+
+    func verifyPasswordResetCode(email: String, code: String) async throws -> VerifyEmailCodeResponse {
+        if let verifyError { throw verifyError }
+        return VerifyEmailCodeResponse(success: true, verified: true)
     }
 
     func confirmPasswordReset(email: String, code: String, password: String) async throws -> PasswordResetConfirmResponse {

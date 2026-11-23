@@ -19,7 +19,6 @@ import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.observeSession
 import com.alarmtalk.app.network.shouldAbsorbStoredSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.PersonalPromo
 import com.alarmtalk.app.network.VoiceDraftQuotaResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
@@ -178,6 +177,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     @Volatile
     internal var signingOut = false
+
+    /**
+     * 로그아웃의 **서버 뒷정리**(푸시 해제 → 토큰 폐기, 구글·카카오 로그아웃). 로그아웃은 로컬 세션을 먼저 비우고 이 일을
+     * 뒤에서 한다(`logout`). 로그인은 이게 끝난 뒤에 요청을 보낸다([awaitServerSignOutCleanup]) — 늦게 처리된 `/auth/logout`
+     * 이 `token_epoch` 를 올리면 **방금 같은 계정으로 받은 세션이 죽는다**(iOS `AuthViewModel` 의 `authServerMutation` 과 같은 이유).
+     */
+    internal var serverSignOutCleanup: kotlinx.coroutines.Job? = null
 
     /**
      * 저장소에만 반영된 세션 갱신을 메모리로 끌어온다.
@@ -478,6 +484,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var passwordResetCodeSentTo by mutableStateOf<String?>(null)
         internal set
 
+    // 재설정 코드를 확인한 이메일. 입력 이메일과 같으면 새 비밀번호 단계를 노출한다(가입의 [registerEmailVerified] 와 같다).
+    var passwordResetVerified by mutableStateOf<String?>(null)
+        internal set
+
     /**
      * **인증 코드 칸을 비우라는 신호** — 값이 바뀔 때마다 가입·비밀번호 재설정 화면이 코드 칸을 비운다
      * (`AuthScreen`·`PasswordResetScreen` 의 `codeFieldClearTick`). 규칙은 스펙 session-and-auth
@@ -618,26 +628,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var stockClips by mutableStateOf<List<com.alarmtalk.app.network.StockClip>>(emptyList())
 
     /**
-     * 이 계정이 **받은 추가 팩**(`docs/spec/voice-packs.md` §7) — 목소리 탭·편집기가 본다. 원본은 `VoicePackStore` 이고
-     * 화면은 그 변화 신호를 보고 [refreshHeldVoicePacks] 로 다시 읽는다. ⚠ [stockClips] 에 섞지 않는다 — 기본 목소리
-     * 관문·선다운로드가 그 목록을 센다. 편집기에 넘길 때만 합친다(`AlarmTalkApp` 의 편집기 라우트).
-     */
-    var heldVoicePacks by mutableStateOf<List<com.alarmtalk.app.data.HeldVoicePack>>(emptyList())
-        internal set
-
-    /** 지금 받을 수 있는 추가 팩(`GET /voice-packs` 의 `packs`). */
-    var voicePackCatalog by mutableStateOf<List<com.alarmtalk.app.network.VoicePackSummary>>(emptyList())
-        internal set
-
-    /** 카탈로그 조회가 한 번이라도 끝났는가 / 마지막 조회가 실패했는가 — 빈 상태와 '못 불러옴' 을 가른다. */
-    var voicePackCatalogLoaded by mutableStateOf(false)
-        internal set
-    var voicePackCatalogFailed by mutableStateOf(false)
-        internal set
-
-    internal val voicePackStore by lazy { com.alarmtalk.app.data.VoicePackStore(getApplication()) }
-
-    /**
      * 카테고리별 **완전한 세트의 클립 수**(서버가 내려준다).
      *
      * ⚠ **앱에 개수를 박지 않는다.** 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 한다.
@@ -728,15 +718,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var storeSnapshotUserPlan by mutableStateOf<String?>(initialAccessSnapshot.userPlan)
         internal set
 
-    /**
-     * [storeSnapshotUserPlan] 과 **짝인** 프로모 표지(`AccessSnapshot.userPlanPromoStamp` —
-     * 종료 시각과 그 답을 받은 시각).
-     * ⚠ plan 을 바꾸는 자리에서 **항상 함께** 바꾼다 — 짝이 어긋나면 진짜 유료 사용자가 옛
-     * 종료 시각에 잠긴다.
-     */
-    internal var storeSnapshotUserPlanPromo by mutableStateOf<PlanPromoStamp?>(initialAccessSnapshot.userPlanPromoStamp())
-        internal set
-
     /** [storePlanKey] 의 유효기한(epoch millis). 지나면 없는 것으로 본다. */
     var storeEntitlementUntilMillis by mutableStateOf<Long?>(initialAccessSnapshot.storeEntitlementUntilMillis)
         internal set
@@ -777,44 +758,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val effectiveUserPlan: String?
         get() = storeSnapshotUserPlan ?: authSession?.user?.plan
 
-    /**
-     * [effectiveUserPlan] 과 **같은 출처의** 프로모 표지. plan 을 스냅샷에서 읽었으면
-     * 스냅샷의 짝을, 세션에서 읽었으면 세션의 짝을 쓴다 — 섞으면 짝이 어긋난다.
-     */
-    private val effectiveUserPlanPromo: PlanPromoStamp?
-        get() = if (storeSnapshotUserPlan != null) {
-            storeSnapshotUserPlanPromo
-        } else {
-            authSession?.planPromoStamp()
-        }
-
     internal fun paidVoiceAccess(nowMillis: Long = System.currentTimeMillis()): PaidVoiceAccess =
         resolvePaidVoiceAccess(
             subscriptionResponse = subscriptionResponse,
             userPlan = effectiveUserPlan,
             storeEntitled = isStoreEntitledNow(nowMillis),
             nowMillis = nowMillis,
-            userPlanPromo = effectiveUserPlanPromo,
         )
-
-    /**
-     * 무료 판정이 **기간 한정 개인 플랜의 오프라인 차단(D1) 때문만**인가 — 판정에 쓰는 plan 이
-     * 종료 전에 받은 프로모 계산값이라 무료로 읽혔고, 그 표지를 빼고 다시 판정하면 무료가 아니다.
-     *
-     * 전경 무료 잠금이 이 갈래를 **이 진입의 `/auth/me` 가 plan 에 반영될 때까지** 미룬다
-     * ([freePlanLockMayApply]).
-     */
-    internal fun isFreeOnlyByPromoLapse(nowMillis: Long = System.currentTimeMillis()): Boolean {
-        if (!personalPromoLapsed(effectiveUserPlanPromo, nowMillis)) return false
-        val withoutLapse = resolvePaidVoiceAccess(
-            subscriptionResponse = subscriptionResponse,
-            userPlan = effectiveUserPlan,
-            storeEntitled = isStoreEntitledNow(nowMillis),
-            nowMillis = nowMillis,
-            userPlanPromo = null,
-        )
-        return withoutLapse != PaidVoiceAccess.NotEntitled
-    }
 
     /**
      * 스토어 신호가 **지금** 유효한가 — 화면에 넘길 때는 언제나 이 값을 쓴다.
@@ -838,6 +788,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 서버가 Play 구독을 직접 해지하지 못했을 때(PLAY_CANCEL_FAILED 등) 띄우는
     // "Google Play에서 직접 관리" 안내 다이얼로그의 구독 관리 URL. null 이면 숨김.
     var billingPlayManageUrl by mutableStateOf<String?>(null)
+    // 해지가 App Store 구독이라 거절됐다(`STORE_CANCEL_UNSUPPORTED`) — "아이폰의 App Store 구독에서 해지" 알럿(`AppStoreCancelNoticeDialog`).
+    var billingAppStoreCancelNoticeOpen by mutableStateOf(false)
+    // 결제 직전 조회에서 다른 스토어가 갱신을 쥐고 있었다 — 결제를 열지 않고 알럿으로 말한다(`CrossStoreRenewalBlockDialog`).
+    var billingCrossStoreBlockOpen by mutableStateOf(false)
 
     // planKey("personal") → Play 실제 표시가격(formattedPrice). preloadProducts
     // 성공 시 채워지며, 비면 UI 가 문자열 리소스로 폴백한다. 하드코딩 대신 청구 통화·금액을 정확히 표기.
@@ -967,7 +921,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * collect 에는 marketing 이 들어가는데 화면은 뜨지 않아 약속한 재수집이 영영 일어나지
      * 않는다(Codex #660). 받을 게 하나라도 있으면 띄우되, 선택 항목은 체크 없이 통과할 수 있다.
      *
-     * 오버레이(권한·프로모)도 이 값을 봐야 한다 — needsConsent 만 보면 마케팅만 묻는 화면 위에
+     * 오버레이(권한)도 이 값을 봐야 한다 — needsConsent 만 보면 마케팅만 묻는 화면 위에
      * 권한 모달이 겹친다.
      */
     val showConsentScreen: Boolean
@@ -996,121 +950,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
 
     /**
-     * 기간 한정 개인 플랜의 **진입별 장부** — 계정 응답의 진입·순번, 종료 안내, 이용권 화면의 프로모 문구.
-     * 규칙은 전부 [PersonalPromoLedger] 에 있고 아래 멤버는 그 위임이다(뷰모델을 단위 테스트에서
-     * 세울 수 없어 규칙을 떼어 두었다 — `PersonalPromoLedgerTest`).
+     * 계정 요청(`/auth/me`·결제 전 조회)의 **순번 장부** — plan 쓰기 순서, 이번 실행의 plan 답, 계정 설정 올리기의 울타리.
+     * 규칙은 전부 [AccountRequestLedger] 에 있고 아래 멤버는 그 위임이다(뷰모델을 단위 테스트에서 세울 수 없어 규칙을
+     * 떼어 두었다 — `AccountRequestLedgerTest`).
      */
-    internal val personalPromoLedger = PersonalPromoLedger(currentEntry = { AppSignals.appEntries.value })
+    internal val accountRequestLedger = AccountRequestLedger()
 
     /**
-     * 떠 있는 **기간 한정 개인 플랜 종료 안내**. null 이면 닫혀 있다.
-     *
-     * 소진 플래그가 아니다 — 안내 기간(`notice_from ≤ now < ends_at`) 동안 **앱에 진입할
-     * 때마다** 한 번씩 뜬다. 멈추는 방법은 '다시 보지 않기'(계정별·종료 시각별 저장) 하나다.
+     * 이번 실행에서 서버의 plan 답이 **plan 스냅샷에 반영됐는가**(`refreshAppSessionNow`·결제 전 조회). 받았던 알람의 승격이
+     * 이걸 기다린다(`promoteFormerReceivedAlarms`).
      */
-    val personalPromoEndNotice: PersonalPromo?
-        get() = personalPromoLedger.shownEndNotice
+    internal val planAnsweredThisRun: Boolean
+        get() = accountRequestLedger.planAnsweredThisRun
 
-    internal val personalPromoNoticeStore = PersonalPromoNoticeStore(application)
-
-    /**
-     * 이 계정의 **가장 최근 계정 응답**(`/auth/me`)이 준 `personal_promo`. 응답 전이면 null.
-     *
-     * 종료 안내는 저장된 세션이 아니라 **이 값**으로 판정한다 — 세션의 promo 는 지난 실행의
-     * 것이라, 그 사이 다른 기기에서 결제했으면 이미 끝난 프로모의 안내를 띄우게 된다.
-     * `/auth/me` 를 받는 **모든** 자리(진입마다의 갱신·`checkAccountStatus`·결제·쿠폰 뒤
-     * `refreshAppSessionNow`)가 [recordAccountAnswer] 로 적는다 — 한 자리만 적으면 쿠폰을
-     * 등록한 뒤에도 옛 응답의 안내가 남는다(리뷰 지적).
-     */
-    val latestAccountPromo: PersonalPromo?
-        get() = personalPromoLedger.latestAccountPromo
-
-    /**
-     * 이 진입(`AppSignals.appEntries`)에 보낸 계정 요청의 **첫 결과**([AccountEntryAnswer]).
-     * 종료 안내는 이 값이 지금 진입의 것일 때만 판정한다([decidePersonalPromoEndNotice]) —
-     * 응답이 안 오면 기다리고, 첫 결과가 실패면(오프라인) 그 진입은 띄우지 않는다. 같은 진입의
-     * 뒤 성공으로 다시 판정하지 않는다(D11). 다음 진입이 다시 판정한다.
-     */
-    internal val accountEntryAnswer: AccountEntryAnswer?
-        get() = personalPromoLedger.accountEntryAnswer
-
-    /**
-     * 이 진입의 계정 응답이 **plan 스냅샷에 반영된** 진입 번호(`refreshAppSessionNow`). 0 = 아직.
-     * 전경 무료 잠금의 오프라인 차단 갈래가 이 값을 기다린다([freePlanLockMayApply]).
-     */
-    val planAnsweredEntry: Long
-        get() = personalPromoLedger.planAnsweredEntry
-
-    /** `/auth/me` 를 **보내기 직전에** 뜬다. 보낸 진입·순번을 응답까지 들고 간다. */
-    internal fun beginAccountRequest(): AccountRequest = personalPromoLedger.beginAccountRequest()
-
-    /**
-     * 계정 응답을 적는다. **지금 이 계정의 응답일 때만** 부른다(부르는 쪽이 세션·세대를 본다).
-     * 규칙(늦게 온 옛 응답 버리기·이 진입의 첫 결과인지·떠 있는 안내 맞추기)은
-     * [PersonalPromoLedger.recordAccountAnswer].
-     *
-     * @return 적었으면 true, 더 새 계정 응답이 이미 적혀 버렸으면 false.
-     */
-    internal fun recordAccountAnswer(
-        request: AccountRequest,
-        promo: PersonalPromo?,
-        nowMillis: Long = System.currentTimeMillis(),
-    ): Boolean = personalPromoLedger.recordAccountAnswer(request, promo, nowMillis)
-
-    /**
-     * 계정 요청이 실패했다 — 그 진입의 첫 결과면 그 진입은 종료 안내를 띄우지 않는다(D11).
-     * **지금 이 계정의 요청일 때만** 부르고, 세션이 끝난 실패(401·파기된 계정)에서는 부르지
-     * 않는다. 규칙은 [PersonalPromoLedger.recordAccountFailure].
-     *
-     * @return 적었으면 true, 옛 요청이라 버렸으면 false.
-     */
-    internal fun recordAccountFailure(request: AccountRequest): Boolean =
-        personalPromoLedger.recordAccountFailure(request)
-
-    /**
-     * 종료 안내 이펙트(`AlarmTalkApp`)의 한 번 — 준비 신호·다른 창이 막혀 있으면 떠 있는 안내를
-     * 걷고 기다리고, 열려 있으면 이번 진입을 판정한다([PersonalPromoLedger.evaluateEndNotice]).
-     * 로그인한 계정이 없으면 막힌 것으로 본다('다시 보지 않기' 는 계정별이다).
-     */
-    internal fun evaluatePersonalPromoEndNotice(
-        gates: PersonalPromoNoticeGates,
-        entry: Long,
-        nowMillis: Long = System.currentTimeMillis(),
-    ) {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
-        val ready = userId != null && gates.ready()
-        personalPromoLedger.evaluateEndNotice(
-            gatesReady = ready,
-            entry = entry,
-            // 막혀 있으면 판정하지 않으니 저장소를 읽을 까닭이 없다.
-            optedOutEndsAt = if (ready) userId?.let { personalPromoNoticeStore.optedOutEndsAt(it) } else null,
-            nowMillis = nowMillis,
-        )
-    }
-
-    /**
-     * 종료 안내를 닫는다. [dontShowAgain] 이면 이 계정·이 종료 시각에 대해 다시 띄우지 않는다.
-     * 바깥 탭·뒤로가기는 '확인' 과 같다 — 다음 진입에 다시 뜬다.
-     */
-    internal fun dismissPersonalPromoEndNotice(dontShowAgain: Boolean) {
-        val promo = personalPromoLedger.dismissEndNotice()
-        if (!dontShowAgain) return
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        val endsAt = promo?.endsAt?.takeIf { it.isNotBlank() } ?: return
-        personalPromoNoticeStore.optOut(userId, endsAt)
-    }
-
-    /**
-     * 이용권 화면에 보일 프로모 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
-     * ([PersonalPromoLedger.planScreenPromo]). 방금 결제·쿠폰 등록으로 새 계정 응답에 promo 가
-     * 없으면, 결제 전에 캐시된 구독 응답의 promo 가 대신 보이지 않는다.
-     */
-    internal fun planScreenPersonalPromo(nowMillis: Long = System.currentTimeMillis()): PersonalPromo? =
-        personalPromoLedger.planScreenPromo(
-            sessionPromo = authSession?.user?.personalPromo,
-            billingPromo = subscriptionResponse?.personalPromo,
-            nowMillis = nowMillis,
-        )
+    /** `/auth/me` 를 **보내기 직전에** 뜬다. 보낸 순번을 응답까지 들고 간다. */
+    internal fun beginAccountRequest(): AccountRequest = accountRequestLedger.beginAccountRequest()
 
     // 설정의 '광고성 정보 수신' 토글 상태. null = 아직 서버에서 못 읽음(로딩 전).
     var marketingConsentAgreed by mutableStateOf<Boolean?>(null)
@@ -1223,8 +1077,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     var weatherAttribution by mutableStateOf<String?>(null)
         internal set
-    // FLEXIBLE In-App Update 다운로드가 끝나면 InAppUpdateManager 가 true 로 세팅 →
-    // AlarmTalkApp 이 '재시작' 스낵바를 띄우고, 액션 시 completeUpdate() 를 호출한다.
+    // FLEXIBLE In-App Update 다운로드가 끝나면 InAppUpdateManager 가 true 로 세팅 → 앱이 뒤로 갈 때
+    // (알람이 울리는 중이 아니면) completeUpdate() 로 조용히 설치하고 내린다. 화면에 띄우는 것은 없다.
     var flexibleUpdateDownloaded by mutableStateOf(false)
         internal set
     // 권장(FLEXIBLE) 업데이트를 사용자가 취소하면 true → 이 세션(프로세스)에서는 onResume
@@ -1306,7 +1160,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      *
      * ⚠ **파일은 메인 밖에서 센다**([voiceSetupProbe] — 2026-10-10 Sentry 조사). 그래서 `suspend` 다 —
      * 부르는 쪽(`AlarmTalkApp` 의 세션 효과)이 **이 답을 받은 뒤에** 계정·동의 조회를 띄운다. 1회성
-     * 오버레이(첫 권한 안내·강등 안내·개인 플랜 종료 안내)는 그 두 응답을 기다리므로, [showVoiceSetup] 의
+     * 오버레이(첫 권한 안내·강등 안내)는 그 두 응답을 기다리므로, [showVoiceSetup] 의
      * 응답 전 기본값 `false` 를 '받기 화면 없음' 으로 읽는 틈이 생기지 않는다
      * (`docs/spec/gates-and-overlays.md` — 응답 전 기본값은 '아니오' 가 아니다).
      * 세는 사이 계정이 바뀌었으면 옛 계정의 답이라 적지 않는다.
@@ -1430,8 +1284,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             //   (`AlarmEditorScreen` 의 `chosen`) **직전에 고른 테마가 밀려난다** —
             //   CLAUDE.md 가 회귀라고 못 박은 「직전 선택 유지」 증상 그대로다.
             //   두 저장소가 어긋날 수 있는 상태 자체를 없앤다.
-            // 추가 팩도 같다 — 기본 목소리처럼 테마를 고른다(`docs/spec/voice-packs.md` §7).
-            bucket != null && com.alarmtalk.app.data.isFreeFixedVoiceId(draft.voiceProfileId) -> {
+            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) -> {
                 dynamicPromptStore.saveLastFreeBucket(userId, bucket)
                 randomPromptContextForBucket(bucket)
                     ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
@@ -1515,7 +1368,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
         // plan 도 계정에 묶인다 — 안 바꾸면 앞 사람의 등급으로 판정한다([effectiveUserPlan]).
         storeSnapshotUserPlan = snapshot.userPlan
-        storeSnapshotUserPlanPromo = snapshot.userPlanPromoStamp()
         // 새 계정으로는 아직 물어본 적이 없다 — 확인 전에는 영구 잠금을 하지 않는다.
         storeEntitlementChecked = false
     }
@@ -1532,18 +1384,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ): EntitlementWrite {
         var persisted: AccessSnapshot? = null
         val result = entitlementWriter.write(ticket, "subscription snapshot") {
-            it.withBillingResponse(response, receivedAtMillis = System.currentTimeMillis())
-                .also { snapshot -> persisted = snapshot }
+            it.withBillingResponse(response).also { snapshot -> persisted = snapshot }
         }
-        // 부르는 쪽은 문을 통과하면 곧바로 화면 사본(`subscriptionResponse`)을 이 응답으로 바꾼다 —
-        // 이용권 화면의 프로모 문구가 '나중에 받은 답' 을 고를 수 있게 순서를 적는다(문을 지난 응답만 —
-        // 장부가 결과를 보고 가른다).
-        personalPromoLedger.recordBillingAnswer(result)
         if (result == EntitlementWrite.Applied && response?.userPlan != null) {
             // 화면과 울림이 같은 결과를 보도록, 문을 통과한 스냅샷에서만 사본을 발행한다.
             val snapshot = checkNotNull(persisted)
             storeSnapshotUserPlan = snapshot.userPlan
-            storeSnapshotUserPlanPromo = snapshot.userPlanPromoStamp()
             storePlanKey = snapshot.storePlanKey
             storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
         }
@@ -1554,11 +1400,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 권한 스냅샷을 쓰려면 **요청 전에** 이걸 뜬다(`EntitlementWriter` 참조). */
     internal fun accessTicket(): AccessTicket? = entitlementWriter.ticket()
-
-    internal fun clearCurrentAccessSnapshot() {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        accessSnapshotStore.clear(userId)
-    }
 
     internal fun clearCurrentDefaultVoicePreferences() {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
@@ -1609,6 +1450,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         storeEntitlementUntilMillis = null
         storeEntitlementChecked = false
         billingPlayManageUrl = null
+        billingAppStoreCancelNoticeOpen = false
+        billingCrossStoreBlockOpen = false
         registerEmailVerificationSentTo = null
         registerEmailVerified = null
         // 세션이 비워지는 모든 경로(로그아웃/만료/탈퇴)에서 동의 게이트 상태도 함께 초기화한다.
@@ -1631,10 +1474,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 로그인해 '동의' 를 누르는 순간 앞 사용자의 녹음이 그 계정으로 업로드된다(Codex #660).
         sensitiveConsentMissing = emptyList()
         pendingSensitiveConsent = null
-        // 종료 안내·계정 응답 장부도 계정별 상태다. 앞 계정의 안내가 새 계정 화면에 남으면
-        // 안 되고, 떠 있던 요청의 응답은 앞 계정의 것이라 순번을 앞질러 버린다
-        // ([PersonalPromoLedger.resetForAccountSwitch]).
-        personalPromoLedger.resetForAccountSwitch()
+        // 계정 요청 장부도 계정별 상태다. 떠 있던 요청의 응답은 앞 계정의 것이라 순번을 앞질러 버린다
+        // ([AccountRequestLedger.resetForAccountSwitch]).
+        accountRequestLedger.resetForAccountSwitch()
         accountStatusChecked = false
         consentStatusChecked = false
         // 마케팅 수신 토글도 user-scoped — 옛 사용자의 동의값이 다음 사용자 화면에 잔존하지 않게
@@ -1736,24 +1578,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         // BillingClient 연결 + 상품 정보 선로드 — 이용권 패널의 구매 시트가 즉시 뜨게 한다.
-        viewModelScope.launch {
-            runCatching { playBilling.preloadProducts() }
-                .onSuccess {
-                    billingPlanPrices = listOf("personal")
-                        .mapNotNull { key -> playBilling.formattedPriceForPlan(key)?.let { key to it } }
-                        .toMap()
-                    billingPlanTrials = listOf("personal")
-                        .mapNotNull { key -> playBilling.freeTrialPeriodForPlan(key)?.let { key to it } }
-                        .toMap()
-                }
-                .onFailure { error -> Log.w(TAG, "Failed to preload Play products", error) }
-        }
-        // **앱에 들어올 때마다**(콜드 스타트·백그라운드에서 복귀) `/auth/me` 를 새로 받는다.
-        // 예전에는 콜드 스타트에 한 번만 불렀다 — 그 자리를 이것이 대신한다(StateFlow 라 이미
-        // 들어와 있는 진입도 곧바로 한 번 받는다. 진입 전(0)이면 첫 ON_START 를 기다린다).
-        // 기간 한정 개인 플랜 종료 안내는 **그 진입의 새 응답**이 온 뒤에만 판정한다
-        // (`docs/spec/gates-and-overlays.md` 「개인 플랜 종료 안내」) — 복귀할 때 받지 않으면
-        // 지난 실행의 프로모로 판정해, 그 사이 결제한 사람에게도 "곧 끝나요" 를 띄운다.
+        // 이용권 화면에 들어올 때도 다시 받는다(`reloadPlayProducts` 주석).
+        reloadPlayProducts()
+        // **앱에 들어올 때마다**(콜드 스타트·백그라운드에서 복귀) `/auth/me` 를 새로 받는다 — 그 사이 다른 기기에서
+        // 바뀐 plan·계정 설정을 따라간다. 예전에는 콜드 스타트에 한 번만 불렀다 — 그 자리를 이것이 대신한다(StateFlow 라
+        // 이미 들어와 있는 진입도 곧바로 한 번 받는다. 진입 전(0)이면 첫 ON_START 를 기다린다).
         // ⚠ 토큰은 **이 뷰모델의 첫 갱신에서만** 굴린다(예전 콜드 스타트 한 번과 같다 —
         //   `docs/spec/session-and-auth.md` 「앱 오픈 갱신」). 복귀할 때마다 굴려도 얻는 것이 없다
         //   (`refreshAppSessionNow` 의 `rollToken`). 굴러간 토큰이 화면 효과를 다시 부르지 않는
@@ -1764,14 +1593,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (entry <= 0L) return@collect
                 refreshAppSession(rollToken = firstEntryRefresh)
                 firstEntryRefresh = false
-            }
-        }
-        // 받은 추가 팩의 재생 기한은 백그라운드에 있는 동안에도 지난다 — **진입마다** 저장된 기한으로 대체한다(네트워크 없이,
-        // `docs/spec/voice-packs.md` §5). 세션·동의를 키로 거는 화면 효과는 일반 복귀에서 다시 돌지 않는다(코덱스 #960).
-        // 위 `/auth/me` 갱신을 기다리지 않도록 따로 구독한다.
-        viewModelScope.launch {
-            AppSignals.appEntries.collect { entry ->
-                if (entry > 0L) retireDueVoicePacksOnEntry()
             }
         }
     }

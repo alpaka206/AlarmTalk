@@ -29,7 +29,6 @@ data class UsageEventProps(
     val reason: String? = null,
     val method: String? = null,
     val step: String? = null,
-    @SerializedName("pack_id") val packId: String? = null,
     @SerializedName("is_first") val isFirst: Boolean? = null,
     val prepared: Boolean? = null,
     // 직접 입력
@@ -66,7 +65,6 @@ data class UsageEventProps(
         reason = code(reason),
         method = code(method),
         step = code(step),
-        packId = code(packId),
         reuseLocation = reuseLocation.oneOf(REUSE_LOCATIONS),
         chargedSource = chargedSource.oneOf(CHARGED_SOURCES),
         usageMonth = usageMonth?.takeIf { USAGE_MONTH.matches(it) },

@@ -27,8 +27,8 @@ struct BottomSheetTitle: View {
 
     var body: some View {
         Text(text)
-            // 안드로이드 titleLarge = 22 Bold.
-            .font(.system(size: 22, weight: .bold))
+            // 안드로이드 titleLarge = 22 Bold — 앱 글꼴(Pretendard)로, 글자 크기 설정을 따른다(2026-11-22 전에는 시스템 글꼴 고정 22).
+            .font(.pretendard(.bold, size: 22, relativeTo: .title2))
             .foregroundStyle(theme.palette.onSurface)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Self.horizontalPadding)

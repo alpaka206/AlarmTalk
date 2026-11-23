@@ -46,8 +46,6 @@ export interface RenderSettings {
   pipeline: string;
 }
 
-export type RenderPipeline = 'pcm_44100>bake>mp3_128' | 'provider_mp3' | 'preview_mp3>boost';
-
 /** 렌더 지문 + 전역 세대 — 원장 행에 함께 적는다. */
 export interface RenderStamp {
   fingerprint: string;

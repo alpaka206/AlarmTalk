@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// **화면 진입 새로고침의 신선도 창.** 같은 계정의 **완결된** 갱신이 같은 앱 진입 안에서
 /// `window` 안에 있었으면 진입 갱신을 다시 보내지 않는다. 규칙은 `docs/spec/plan-gates.md` §4.
@@ -45,3 +46,57 @@ struct EntryRefreshFreshness {
 /// 신선도 창이 보는 **지금** — 진입 번호와 시각. 테스트가 바꿔 끼운다.
 typealias EntryRefreshClock = @MainActor () -> (entry: Int, now: Date)
 
+/// **앱에 들어온 횟수**(이 프로세스 안에서). 콜드 스타트가 1이고, 백그라운드에 갔다가 다시
+/// 활성이 될 때마다 1씩 오른다(안드로이드 `AppSignals.appEntries`). 진입 갱신의 신선도 창(`EntryRefreshFreshness`)과
+/// 루트의 강등 안내 재판정(`RootView.overlayKey`)이 이 번호를 본다.
+///
+/// ⚠ **`inactive → active` 는 세지 않는다.** 알림 센터·제어 센터를 내렸다 올리거나 시스템
+/// 알럿이 떴다 사라질 때도 그 전이가 나는데, 그걸 들어온 것으로 치면 신선도 창이 그때마다 닫혀 같은 목록을 또 받는다.
+/// 백그라운드를 거쳤을 때만 센다(`.background → .active`).
+struct AppEntryCounter: Equatable {
+    private(set) var entry = 0
+    /// 콜드 스타트도 '들어옴' 으로 세도록 처음에는 백그라운드에 있던 것으로 둔다.
+    private var cameFromBackground = true
+
+    enum Phase { case active, inactive, background }
+
+    /// - Returns: 이번 전이로 새 진입이 생겼는가.
+    @discardableResult
+    mutating func observe(_ next: Phase) -> Bool {
+        switch next {
+        case .active:
+            guard cameFromBackground else { return false }
+            cameFromBackground = false
+            entry += 1
+            return true
+        case .background:
+            cameFromBackground = true
+            return false
+        case .inactive:
+            return false
+        }
+    }
+}
+
+/// 진입 번호의 **유일한 출처**. 장면 상태를 받는 곳은 앱(`AlarmTalkApp`)의 `scenePhase` 하나다 —
+/// 화면(`RootView`)은 읽기만 한다.
+///
+/// ⚠ **두 곳에서 세지 말 것.** 뷰의 `scenePhase` 는 앱의 것보다 늦게·건너뛰며 올 수 있어
+/// 둘이 따로 세면 한 번의 복귀가 두 진입이 된다.
+@MainActor
+final class AppEntrySignal: ObservableObject {
+    static let shared = AppEntrySignal()
+
+    @Published private(set) var counter = AppEntryCounter()
+
+    /// 같은 전이를 두 번 받아도 한 번이다(`AppEntryCounter.observe` 가 멱등).
+    func observe(_ phase: ScenePhase) {
+        var next = counter
+        switch phase {
+        case .active: next.observe(.active)
+        case .background: next.observe(.background)
+        default: next.observe(.inactive)
+        }
+        if next != counter { counter = next }
+    }
+}

@@ -7,11 +7,10 @@ import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.isSystemVoiceId
-import com.alarmtalk.app.data.isFreeFixedVoiceId
-import com.alarmtalk.app.data.isVoicePackVoiceId
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.appVoiceLanguageOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -29,10 +28,6 @@ internal fun googleSignInErrorMessage(context: android.content.Context, statusCo
     12502 -> context.getString(R.string.r3ed_google_signin_error_in_progress)
     else -> context.getString(R.string.r3ed_google_signin_error_failed_status, statusCode)
 }
-
-// 매핑 단일 출처는 data.appVoiceLanguageOf. MainViewModel 과 어긋나지 않도록 여기서도 그걸 위임한다.
-internal fun supportedAppVoiceLanguage(language: String?): String =
-    com.alarmtalk.app.data.appVoiceLanguageOf(language)
 
 internal class AlarmEditorState(
     label: String,
@@ -97,7 +92,7 @@ internal class AlarmEditorState(
     // 고리를 끊되, **생성 문구일 때만** 벗긴다 — 직접 입력한 문구의 대괄호는 사용자 것이라
     // 건드리면 저장 시 영구히 사라진다(Codex #660).
     var voiceText by mutableStateOf(voiceText?.stripDeliveryTags(generated = voiceRandomPrompt) ?: "")
-    var voiceLanguage by mutableStateOf(supportedAppVoiceLanguage(voiceLanguage))
+    var voiceLanguage by mutableStateOf(appVoiceLanguageOf(voiceLanguage))
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
     var voiceRandomContext by mutableStateOf(normalizedRandomPromptContext(voiceRandomContext ?: DefaultRandomPromptContext))
     var voiceWeatherCountry by mutableStateOf(voiceWeatherCountry ?: "")
@@ -144,7 +139,7 @@ internal class AlarmEditorState(
                 profileId = voiceProfileId.orEmpty(),
                 text = voiceText.orEmpty(),
                 category = if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom",
-                language = supportedAppVoiceLanguage(voiceLanguage),
+                language = appVoiceLanguageOf(voiceLanguage),
                 listenerTitle = voiceListenerTitle,
             )
         },
@@ -426,8 +421,7 @@ internal class AlarmEditorState(
         clearAudio()
         clearTtsMeta()
         selectVoiceProfile(profileId)
-        // 추가 팩 목소리는 직접 입력을 쓸 수 없다 — 직전이 직접 입력이었어도 문구 대신 직전 테마를 잇는다(스펙 voice-packs §7).
-        if (adopts) adoptLastMessageChoiceIfUnset(lastMessageContext, lastManualText.takeUnless { isVoicePackVoiceId(profileId) })
+        if (adopts) adoptLastMessageChoiceIfUnset(lastMessageContext, lastManualText)
     }
 
     /**
@@ -517,8 +511,7 @@ internal class AlarmEditorState(
         voiceProfileId = profileId
         // 시스템(기본) 보이스는 날씨+약 버킷만 허용 → 이전에 고른 운세/사랑/직접입력 잔여 컨텍스트를
         // 비워 무효 카테고리가 저장되지 않게 한다. 실제 버킷은 편집 화면 LaunchedEffect 가 재해석한다.
-        // 추가 팩도 같다 — 직접 입력이 없고 테마는 그 팩의 클립으로 다시 붙는다(`docs/spec/voice-packs.md` §7).
-        if (changed && isFreeFixedVoiceId(profileId)) {
+        if (changed && isSystemVoiceId(profileId)) {
             voiceRandomPrompt = false
             voiceText = ""
             clearBucketSelection()
@@ -565,7 +558,7 @@ internal class AlarmEditorState(
 
     fun hasSelectedStockClipAudio(profileId: String, text: String): Boolean =
         !localAudioUri.isNullOrBlank() &&
-            (audioCacheKey?.startsWith("stock_") == true || isVoicePackVoiceId(profileId)) &&
+            audioCacheKey?.startsWith("stock_") == true &&
             generatedTtsKey == buildTtsKey(
                 profileId = profileId,
                 text = text,
@@ -591,25 +584,6 @@ internal class AlarmEditorState(
         this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
         ttsMessageId = messageId.takeIf { it.isNotBlank() }
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage(), listenerTitle)
-    }
-
-    fun setStockClipAudio(
-        audio: CachedAlarmAudio,
-        profileId: String,
-        messageId: String,
-        text: String,
-    ) {
-        voiceSource = VoiceSources.TTS_PROFILE
-        voiceProfileId = profileId
-        voiceListenerTitleOverride = ""
-        voiceRandomPrompt = false
-        clearBucketSelection()
-        voiceText = text
-        localAudioUri = audio.localAudioUri
-        audioCacheKey = audio.cacheKey
-        rawAudioUri = audio.rawAudioUri
-        ttsMessageId = messageId.takeIf { it.isNotBlank() }
-        generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
     /**
@@ -665,7 +639,7 @@ internal class AlarmEditorState(
      * 반면 이 함수가 정하는 건 **어느 언어의 스톡 클립을 고를지**와 캐시 키다. 축이 다르다 —
      * 번역을 없앴다고 이걸 같이 지우면 en·ja 기기에서 한국어 클립이 재생된다.
      */
-    fun activeVoiceLanguage(): String = supportedAppVoiceLanguage(voiceLanguage)
+    fun activeVoiceLanguage(): String = appVoiceLanguageOf(voiceLanguage)
 
     fun activeVoiceCategory(): String =
         if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
@@ -780,9 +754,8 @@ internal fun ttsCategoryForRandomContext(context: String?): String =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
         "cheer" -> "cheer"
         "medication" -> "medication"
-        // 기본값(preset)·날씨·운세는 모두 'morning' 으로 보낸다. 서버가 preset 경로에서
-        // greeting 문구로 이어 붙이고(stockPresetCategory), 날씨·운세는 동적 생성이라
-        // 카테고리는 저장 라벨로만 쓰인다.
+        // 기본값(preset)·날씨·운세는 모두 'morning' 으로 보낸다. 서버는 이 값을 저장 라벨로만
+        // 쓴다(라이브 랜덤·동적 생성은 서버가 400 `RANDOM_TTS_RETIRED` 로 막는다).
         else -> "morning"
     }
 

@@ -3,8 +3,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
 const ALLOWED_ORIGINS = [
-  'http://localhost:8081',
-  'exp://localhost:8081',
+  'http://localhost:3100',
   'https://alarm-talk.com',
   'https://www.alarm-talk.com',
 ];
@@ -15,7 +14,7 @@ function createApp() {
     '*',
     cors({
       origin: (origin) => (ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]),
-      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE'],
       allowHeaders: ['Content-Type', 'Authorization'],
       maxAge: 86400,
     }),
@@ -30,19 +29,10 @@ describe('CORS configuration', () => {
     const app = createApp();
     const res = await app.request('/test', {
       method: 'GET',
-      headers: { Origin: 'http://localhost:8081' },
+      headers: { Origin: 'http://localhost:3100' },
     });
     expect(res.status).toBe(200);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:8081');
-  });
-
-  it('returns correct headers for expo origin', async () => {
-    const app = createApp();
-    const res = await app.request('/test', {
-      method: 'GET',
-      headers: { Origin: 'exp://localhost:8081' },
-    });
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('exp://localhost:8081');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3100');
   });
 
   it('returns correct headers for production landing origin', async () => {
@@ -60,7 +50,7 @@ describe('CORS configuration', () => {
       method: 'GET',
       headers: { Origin: 'https://evil.com' },
     });
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:8081');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3100');
   });
 
   it('handles preflight OPTIONS with allowed methods', async () => {
@@ -68,7 +58,7 @@ describe('CORS configuration', () => {
     const res = await app.request('/test', {
       method: 'OPTIONS',
       headers: {
-        Origin: 'http://localhost:8081',
+        Origin: 'http://localhost:3100',
         'Access-Control-Request-Method': 'POST',
         'Access-Control-Request-Headers': 'Content-Type,Authorization',
       },
@@ -85,7 +75,7 @@ describe('CORS configuration', () => {
     const res = await app.request('/test', {
       method: 'OPTIONS',
       headers: {
-        Origin: 'http://localhost:8081',
+        Origin: 'http://localhost:3100',
         'Access-Control-Request-Method': 'GET',
         'Access-Control-Request-Headers': 'Authorization',
       },
@@ -100,7 +90,7 @@ describe('CORS configuration', () => {
     const res = await app.request('/test', {
       method: 'OPTIONS',
       headers: {
-        Origin: 'http://localhost:8081',
+        Origin: 'http://localhost:3100',
         'Access-Control-Request-Method': 'GET',
       },
     });

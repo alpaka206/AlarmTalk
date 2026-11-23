@@ -9,15 +9,15 @@ import XCTest
 /// 검증 대상
 ///   1. `refreshUser` 의 status code 별 분기
 ///      - 401 → signOut + statusMessage 설정
-///      - 403 → 세션 유지 + `lastNetworkError`
-///      - 5xx → 세션 유지 + `lastNetworkError`
-///      - URLError(네트워크 단절) → 세션 유지 + `lastNetworkError`
-///      - APIError.invalidResponse → 세션 유지 + `lastNetworkError`
+///      - 403 → 세션 유지
+///      - 5xx → 세션 유지
+///      - URLError(네트워크 단절) → 세션 유지
+///      - APIError.invalidResponse → 세션 유지
 ///   2. `verifyAppleCredentialStateIfNeeded`
-///      - .authorized → no-op (세션 유지, lastNetworkError 변화 없음)
+///      - .authorized → no-op (세션 유지)
 ///      - .revoked → signOut
 ///      - .notFound → signOut
-///      - .transferred → 세션 유지 + 안내 메시지
+///      - .transferred → 세션 유지
 ///      - appleUserId nil(이메일/Google) → 즉시 return, credentialState 호출 안 함
 @MainActor
 final class AuthViewModelTests: XCTestCase {
@@ -50,20 +50,14 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(model.session?.user.plan, "personal")
     }
 
-    /// 기간 한정 개인 플랜은 plan 의 **짝**이다 — 배경 갱신이 plan(계산값 `plus`)만 적고
-    /// 프로모를 흘리면, 끝난 뒤 예약 게이트가 캐시된 `plus` 를 걷어낼 근거(`ends_at`)가 없다.
-    func testBackgroundRenewalCarriesPersonalPromoWithPlan() async throws {
+    /// 배경 갱신이 받은 plan 은 세션과 **예약 게이트가 읽는 권한 스냅샷**에 함께 적힌다 — 세션에만 적으면 예약·울림
+    /// 게이트가 옛 등급으로 돈다(`EntitlementWriter.renewSession`).
+    func testBackgroundRenewalWritesPlanToAccessSnapshot() async throws {
         PendingSignOutStore.removeAll()
         let api = MockAuthAPI()
         let original = makeEmailSession()
-        let promo = PersonalPromo(
-            endsAt: "2026-10-31T15:00:00Z",
-            noticeFrom: "2026-10-24T15:00:00Z",
-            fetchedAt: Date(timeIntervalSince1970: 1_790_000_000)
-        )
         var refreshedUser = original.user
         refreshedUser.plan = "plus"
-        refreshedUser.personalPromo = promo
         api.meResult = .success(refreshedUser)
         api.meRolledToken = "rolled-token"
         let model = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
@@ -77,99 +71,8 @@ final class AuthViewModelTests: XCTestCase {
         await BackgroundSyncTask.renewSessionTokenIfNeeded(api: api, auth: model)
 
         XCTAssertEqual(model.session?.user.plan, "plus")
-        XCTAssertEqual(model.session?.user.personalPromo, promo)
-        XCTAssertEqual(KeychainStore.readSession()?.user.personalPromo, promo)
-        let snapshot = AccessSnapshotStore().read(userID: original.user.id)
-        XCTAssertEqual(snapshot.userPlan, "plus")
-        XCTAssertEqual(snapshot.personalPromo, promo, "예약 게이트가 읽는 스냅샷에도 짝으로 적는다")
-        XCTAssertEqual(
-            snapshot.personalPromo?.fetchedAt, promo.fetchedAt,
-            "계산 시각도 함께 저장된다 — 낡은 캐시인지 가르는 근거다"
-        )
-    }
-
-    /// 기간 중 결제하면 plan 은 `plus` 그대로인데 프로모만 사라진다 — 그것도 반영해야 한다
-    /// (안 그러면 이용권 화면이 방금 산 개인 이용권을 '현재' 로 못 그린다).
-    func testFreshPlanAppliesPromoChangeEvenWhenPlanIsUnchanged() throws {
-        let model = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
-        var session = makeEmailSession()
-        session.user.plan = "plus"
-        session.user.personalPromo = PersonalPromo(
-            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date()
-        )
-        model._setSessionForTesting(session)
-        addTeardownBlock { KeychainStore.deleteSession() }
-
-        model.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: nil)
-
-        XCTAssertEqual(model.session?.user.plan, "plus")
-        XCTAssertNil(model.session?.user.personalPromo)
-        XCTAssertEqual(model.session?.user.purchasedPlan, "plus")
-    }
-
-    /// 내용이 같은 프로모라도 **새로 받은 시각**은 반영한다. 안 그러면 끝 **뒤에** 받은 답
-    /// (서버가 이미 계산했다)이 옛 시각에 묶여 낡은 캐시로 읽히고, 기기 시계가 앞선 기기에서
-    /// 방금 받은 답으로 무료 잠금이 걸린다.
-    func testFreshPlanRecordsNewReceiptTimeForSamePromo() throws {
-        let model = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
-        let end = try XCTUnwrap(PaidVoiceGate.parseTimestamp("2026-10-31T15:00:00Z"))
-        var session = makeEmailSession()
-        session.user.plan = "plus"
-        session.user.personalPromo = PersonalPromo(
-            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z",
-            fetchedAt: end.addingTimeInterval(-3_600)
-        )
-        model._setSessionForTesting(session)
-        addTeardownBlock { KeychainStore.deleteSession() }
-        XCTAssertEqual(model.session?.user.personalPromo?.isStale(at: end.addingTimeInterval(60)), true)
-
-        let fresh = PersonalPromo(
-            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z",
-            fetchedAt: end.addingTimeInterval(30)
-        )
-        model.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: fresh)
-
-        XCTAssertEqual(model.session?.user.personalPromo?.fetchedAt, fresh.fetchedAt)
-        XCTAssertEqual(model.session?.user.personalPromo?.isStale(at: end.addingTimeInterval(60)), false)
-    }
-
-    /// 종료 안내의 준비 신호는 **이 진입에 보낸** 계정 요청의 **첫 결과**다
-    /// (`accountEntryAnswer`). 답을 받으면 `answered`, 오프라인·5xx 면 `failed` 다.
-    func testAccountEntryAnswerRecordsTheFirstOutcomeOfThisEntry() async {
-        let api = MockAuthAPI()
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        entries.enter()
-        vm.appEntryState = { entries.counter }
-        let session = makeEmailSession()
-        vm._setSessionForTesting(session)
-        addTeardownBlock { KeychainStore.deleteSession() }
-        XCTAssertNil(vm.accountEntryAnswer)
-
-        api.meResult = .success(session.user)
-        await vm.refreshUser()
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 1, outcome: .answered))
-
-        // 다음 진입 — 오프라인이면 실패로 끝난다.
-        entries.leaveAndReturn()
-        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
-        await vm.refreshUser()
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 2, outcome: .failed))
-
-        // 회귀(2026-09-27 리뷰 2차): 같은 진입에서 제어 센터로 와이파이를 켠 뒤의 재조회가
-        // 성공해도 **이 진입은 이미 실패로 끝났다** — 세션 한가운데서 안내가 뜨지 않는다.
-        entries.counter.observe(.inactive)
-        entries.counter.observe(.active)
-        api.meResult = .success(session.user)
-        await vm.refreshUser()
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 2, outcome: .failed))
-        XCTAssertEqual(PersonalPromoNotice.entryAnswer(vm.accountEntryAnswer, entry: 2), .failed)
-
-        // 5xx 도 답이 아니다.
-        entries.leaveAndReturn()
-        api.meResult = .failure(.server(status: 503, message: "", errorCode: nil))
-        await vm.refreshUser()
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 3, outcome: .failed))
+        XCTAssertEqual(KeychainStore.readSession()?.user.plan, "plus")
+        XCTAssertEqual(AccessSnapshotStore().read(userID: original.user.id).userPlan, "plus")
     }
 
     /// **계정 응답마다 받아 적기를 다시 깨운다 — 값이 같아도**(Codex #837). 이 기기의 지역 변경을 올리다
@@ -450,70 +353,20 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertTrue(promotions.pendingIDs(for: userID).isEmpty, "떠난 계정의 승격 기록이 남았다")
     }
 
-    /// 회귀(2026-09-27 리뷰 2차): **앞 진입에 보낸** `/auth/me` 가 백그라운드를 건너 복귀 뒤에
-    /// 도착하면 이번 진입의 답이 아니다(안드로이드 `accountAnswerEntryFor`). 그 답으로 판정하면
-    /// 나가 있는 동안 다른 기기에서 결제한 사람에게 "무료 이용이 곧 끝나요" 가 뜬다.
-    func testResponseSentInPreviousEntryDoesNotCountForThisEntry() async {
+    /// 회귀(2026-09-27 리뷰 2차): **먼저 보낸 요청의 응답이 늦게 오면 방금 반영한 새 답의 plan 을 덮지 않는다.** 결제 직후
+    /// 갱신이 plan 을 올렸는데, 그보다 먼저 떠난 전경 복귀의 `/auth/me` 가 뒤늦게 옛 free 를 되살리면 결제한 사람이 무료로
+    /// 읽힌다.
+    func testOlderAccountResponseDoesNotOverwriteNewerSessionPlan() async {
         let api = MockAuthAPI()
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        entries.enter()
-        vm.appEntryState = { entries.counter }
         let session = makeEmailSession()
-        vm._setSessionForTesting(session)
-        addTeardownBlock { KeychainStore.deleteSession() }
-        // 첫 진입의 답은 이미 받았다.
-        api.meResult = .success(session.user)
-        await vm.refreshUser()
-        XCTAssertEqual(vm.accountEntryAnswer?.entry, 1)
-
-        // 첫 진입에서 보낸 요청이 떠 있는 사이 홈으로 나갔다가 돌아온다.
-        api.beforeMeResponse = { entries.leaveAndReturn() }
-        await vm.refreshUser()
-        XCTAssertEqual(entries.counter.entry, 2)
-        XCTAssertEqual(
-            PersonalPromoNotice.entryAnswer(vm.accountEntryAnswer, entry: 2), .pending,
-            "앞 진입의 요청은 이번 진입의 답이 아니다"
-        )
-
-        // 이번 진입에 보낸 요청의 답이 와야 판정한다.
-        api.beforeMeResponse = nil
-        await vm.refreshUser()
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 2, outcome: .answered))
-
-        // 백그라운드에서 보낸 요청(푸시 등)도 어느 진입의 답이 아니다.
-        entries.counter.observe(.inactive)
-        entries.counter.observe(.background)
-        await vm.refreshUser()
-        entries.counter.observe(.inactive)
-        entries.counter.observe(.active)
-        XCTAssertEqual(PersonalPromoNotice.entryAnswer(vm.accountEntryAnswer, entry: 3), .pending)
-    }
-
-    /// 회귀(2026-09-27 리뷰 2차, 안드로이드 `PersonalPromoLedger.recordAccountAnswer` 의 순번): **먼저 보낸 요청의 응답이 늦게
-    /// 오면 방금 반영한 새 답을 덮지 않는다.** 결제 직후 갱신이 프로모를 걷어 냈는데, 그보다
-    /// 먼저 떠난 전경 복귀의 `/auth/me` 가 뒤늦게 옛 프로모를 되살리면 결제한 사람에게 "곧
-    /// 끝나요" 가 다시 뜬다.
-    func testOlderAccountResponseDoesNotOverwriteNewerSessionPromo() async {
-        let api = MockAuthAPI()
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        entries.enter()
-        vm.appEntryState = { entries.counter }
-        var session = makeEmailSession()
-        session.user.plan = "plus"
-        let promo = PersonalPromo(
-            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date()
-        )
-        session.user.personalPromo = promo
         vm._setSessionForTesting(session)
         addTeardownBlock { KeychainStore.deleteSession() }
 
         var paidUser = session.user
-        paidUser.personalPromo = nil
+        paidUser.plan = "plus"
         let paid = paidUser
-        // 첫 요청(옛 답 — 프로모 있음)이 떠 있는 사이 두 번째 요청(새 답 — 결제로 프로모 없음)이
-        // 먼저 끝난다.
+        // 첫 요청(옛 답 — free)이 떠 있는 사이 두 번째 요청(새 답 — 결제로 plus)이 먼저 끝난다.
         api.meResult = .success(session.user)
         api.meRolledToken = "rolled-by-older"
         api.beforeMeResponse = {
@@ -525,175 +378,103 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertEqual(api.meCallCount, 2)
-        XCTAssertNil(vm.session?.user.personalPromo, "늦게 도착한 옛 답이 새 답을 덮었다")
-        XCTAssertEqual(vm.session?.user.purchasedPlan, "plus")
+        XCTAssertEqual(vm.session?.user.plan, "plus", "늦게 도착한 옛 답이 새 답을 덮었다")
         XCTAssertEqual(
             vm.session?.token, "rolled-by-older",
-            "지키는 것은 plan·프로모 짝뿐이다 — 옛 답이 굴린 토큰까지 버리면 rolling refresh 가 한 회차 빠진다"
-        )
-        XCTAssertEqual(
-            vm.accountEntryAnswer, AccountEntryAnswer(entry: 1, outcome: .answered),
-            "건너뛴 옛 답도 이 진입의 응답이 왔다는 사실은 같다"
+            "지키는 것은 plan 뿐이다 — 옛 답이 굴린 토큰까지 버리면 rolling refresh 가 한 회차 빠진다"
         )
     }
 
     /// 세션 밖의 `/auth/me`·결제 전 조회(`applyFreshPlan`)도 **같은 순번** 위에서 가른다.
     func testFreshPlanFromOlderRequestIsDropped() throws {
         let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        entries.enter()
-        vm.appEntryState = { entries.counter }
-        var session = makeEmailSession()
-        session.user.plan = "plus"
+        let session = makeEmailSession()
         vm._setSessionForTesting(session)
         addTeardownBlock { KeychainStore.deleteSession() }
-        let promo = PersonalPromo(
-            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date()
-        )
 
         let older = vm.beginAccountRequest()
         let newer = vm.beginAccountRequest()
-        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: nil, request: newer)
-        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: promo, request: older)
-        XCTAssertNil(vm.session?.user.personalPromo, "먼저 보낸 요청의 답은 버린다")
+        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", request: newer)
+        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "free", request: older)
+        XCTAssertEqual(vm.session?.user.plan, "plus", "먼저 보낸 요청의 답은 버린다")
         // 권한 스냅샷도 같은 순번으로 가른다(Codex #803) — 반영한 자기 답은 여전히 최신, 옛 답은 아니다.
         XCTAssertTrue(vm.isPlanAnswerCurrent(newer), "방금 반영한 자기 답은 최신이다(경계 `>=`)")
         XCTAssertFalse(vm.isPlanAnswerCurrent(older), "세션이 거절한 옛 답을 스냅샷에 쓰지 않는다")
 
         let latest = vm.beginAccountRequest()
         XCTAssertTrue(vm.isPlanAnswerCurrent(latest), "아직 반영 전이어도 더 새 요청이면 최신이다")
-        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: promo, request: latest)
-        XCTAssertEqual(vm.session?.user.personalPromo, promo, "나중에 보낸 요청의 답은 반영한다")
+        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "free", request: latest)
+        XCTAssertEqual(vm.session?.user.plan, "free", "나중에 보낸 요청의 답은 반영한다")
     }
 
-    /// 로그아웃은 진입 기록과 순번을 계정별로 되돌린다 — 앞 계정의 응답으로 새 계정의 안내를
-    /// 판정하지 않고, 떠 있던 앞 계정의 응답은 버린다.
-    func testSignOutClearsEntryAnswerAndSupersedesInFlightRequests() {
+    /// 로그아웃은 순번을 앞지른다 — 떠 있던 앞 계정(앞 로그인)의 응답은 버린다.
+    func testSignOutSupersedesInFlightRequests() {
         let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        entries.enter()
-        vm.appEntryState = { entries.counter }
         let session = makeEmailSession()
         vm._setSessionForTesting(session)
         addTeardownBlock { KeychainStore.deleteSession() }
         let inFlight = vm.beginAccountRequest()
 
         vm.signOut(revokeOnServer: false)
-        XCTAssertNil(vm.accountEntryAnswer)
 
         vm._setSessionForTesting(session)
-        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: nil, request: inFlight)
+        vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", request: inFlight)
         XCTAssertEqual(vm.session?.user.plan, session.user.plan, "로그아웃 전에 떠난 요청의 답은 버린다")
-        XCTAssertNil(vm.accountEntryAnswer, "끝난 로그인의 답은 이 진입의 응답도 아니다")
-        XCTAssertEqual(vm.planAnsweredEntry, 0)
+        XCTAssertFalse(vm.isPlanAnswerCurrent(inFlight), "끝난 로그인의 표는 권한 스냅샷에도 쓰지 않는다")
     }
 
-    /// 회귀(2026-09-27 리뷰 3차, D11): 세션 밖의 `/auth/me`(`SocialFeatureViewModel.refreshAll` →
-    /// `applyFreshPlan`)도 **이 진입의 계정 응답**이다. 그 경로는 plan 을 반영한 뒤 곧바로 토큰을
-    /// 굴리므로(`applyRolledToken`), 떠 있던 `refreshUser` 의 답은 에폭 가드에 걸린다. 어느 쪽도
-    /// 적지 않으면 이 진입이 '응답 전' 으로 남아, 같은 진입의 뒤 응답(제어 센터를 닫을 때의
-    /// 재조회·결제 신호)이 세션 한가운데서 종료 안내를 판정한다.
-    func testFreshPlanFromSocialRefreshEndsThisEntry() async {
+    /// 세션 밖의 `/auth/me`(`SocialFeatureViewModel.refreshAll` → `applyFreshPlan`)가 plan 을 반영한 뒤 곧바로 토큰을
+    /// 굴리면(`applyRolledToken`) 떠 있던 `refreshUser` 의 답은 토큰만 구른 갈래로 온다. 그 답은 **먼저 보낸** 요청의 것이라
+    /// 방금 반영한 plan 을 되돌리지 않는다.
+    func testRefreshUserAnswerSupersededBySocialRefreshKeepsNewerPlan() async {
         let api = MockAuthAPI()
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        entries.enter()
-        vm.appEntryState = { entries.counter }
-        var session = makeEmailSession()
-        session.user.plan = "plus"
-        let base = session
+        let base = makeEmailSession()
         vm._setSessionForTesting(base)
         addTeardownBlock { KeychainStore.deleteSession() }
-        let promo = PersonalPromo(
-            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date()
-        )
-        var answered = base.user
-        answered.personalPromo = promo
-        api.meResult = .success(answered)
+        api.meResult = .success(base.user)
         api.meRolledToken = "rolled-by-refresh-user"
 
         // `refreshUser` 의 요청이 떠 있는 사이 세션 밖의 갱신이 답을 반영하고 토큰을 굴린다
         // (`SocialFeatureViewModel.refreshAll` 의 순서 그대로 — plan 먼저, 토큰 나중).
         api.beforeMeResponse = {
             let social = vm.beginAccountRequest()
-            vm.applyFreshPlan(
-                userID: base.user.id, from: base.token, plan: "plus", personalPromo: promo, request: social
-            )
-            XCTAssertEqual(
-                vm.accountEntryAnswer, AccountEntryAnswer(entry: 1, outcome: .answered),
-                "세션 밖의 답도 반영하는 순간 이 진입의 답이다"
-            )
+            vm.applyFreshPlan(userID: base.user.id, from: base.token, plan: "plus", request: social)
             vm.applyRolledToken(userID: base.user.id, from: base.token, to: "rolled-by-social")
         }
         await vm.refreshUser()
 
         XCTAssertEqual(api.meCallCount, 1)
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 1, outcome: .answered))
-        XCTAssertEqual(vm.planAnsweredEntry, 1)
-        XCTAssertEqual(vm.session?.user.personalPromo, promo)
+        XCTAssertEqual(vm.session?.user.plan, "plus", "먼저 보낸 `refreshUser` 의 옛 free 가 새 plan 을 덮었다")
         XCTAssertEqual(vm.session?.token, "rolled-by-social", "에폭 가드에 걸린 답은 토큰을 바꾸지 않는다")
     }
 
-    /// 회귀(2026-09-27 리뷰 3차, D11): 응답을 기다리는 사이 **이 계정의 토큰만** 굴렀으면(이 진입의
-    /// 답을 적지 않는 경로 — 배경 갱신·앞 진입에 보낸 세션 밖 갱신) 그 답을 통째로 버리지 않는다.
-    /// plan·프로모 짝은 지금 세션에 반영하고 이 진입의 결과를 적는다. 실패도 같다 — 첫 결과가
-    /// 진입을 끝낸다. 전경 잠금이 기다리는 plan 반영(`planAnsweredEntry`)은 뒤 성공도 적는다.
-    func testRefreshDroppedOnlyByTokenRollStillRecordsThisEntry() async {
+    /// 회귀(2026-09-27 리뷰 3차): 응답을 기다리는 사이 **이 계정의 토큰만** 굴렀으면(배경 갱신·세션 밖 갱신) 그 답을
+    /// 통째로 버리지 않는다 — plan 은 지금 세션에 반영하고, 토큰은 지금 살아 있는 것을 지킨다.
+    func testRefreshDroppedOnlyByTokenRollStillAppliesThePlan() async {
         let api = MockAuthAPI()
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        entries.enter()
-        vm.appEntryState = { entries.counter }
-        var session = makeEmailSession()
-        session.user.plan = "plus"
-        let base = session
+        let base = makeEmailSession()
         vm._setSessionForTesting(base)
         addTeardownBlock { KeychainStore.deleteSession() }
-        let promo = PersonalPromo(
-            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date()
-        )
         var answered = base.user
-        answered.personalPromo = promo
-        let answeredUser = answered
-        api.meResult = .success(answeredUser)
+        answered.plan = "plus"
+        api.meResult = .success(answered)
         api.meRolledToken = "rolled-by-refresh-user"
         api.beforeMeResponse = {
             vm.applyRolledToken(userID: base.user.id, from: base.token, to: "rolled-elsewhere")
         }
         await vm.refreshUser()
 
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 1, outcome: .answered))
-        XCTAssertEqual(vm.planAnsweredEntry, 1)
-        XCTAssertEqual(vm.session?.user.personalPromo, promo, "이 진입의 답(프로모)은 지금 세션에 반영한다")
+        XCTAssertEqual(vm.session?.user.plan, "plus", "그 답의 plan 은 지금 세션에 반영한다")
         XCTAssertEqual(vm.session?.token, "rolled-elsewhere", "토큰은 지금 살아 있는 것을 지킨다")
-
-        // 다음 진입 — 실패가 토큰 회전과 겹쳐도 이 진입의 결과다.
-        entries.leaveAndReturn()
-        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
-        api.beforeMeResponse = {
-            vm.applyRolledToken(userID: base.user.id, from: "rolled-elsewhere", to: "rolled-again")
-        }
-        await vm.refreshUser()
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 2, outcome: .failed))
-        XCTAssertEqual(vm.planAnsweredEntry, 1, "실패는 plan 을 반영하지 않는다")
-
-        // 같은 진입의 뒤 성공은 안내 판정을 되살리지 않는다(첫 결과). plan 반영은 적는다 —
-        // 실패한 진입에서 전경 잠금이 영영 미뤄지지 않게(안드로이드 `recordPlanApplied`).
-        api.beforeMeResponse = nil
-        api.meResult = .success(answeredUser)
-        await vm.refreshUser()
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 2, outcome: .failed))
-        XCTAssertEqual(vm.planAnsweredEntry, 2)
     }
 
     /// 로그아웃 뒤 **같은 계정**으로 다시 로그인한 사이에 도착한 답은 '토큰만 구른 같은 로그인' 이
-    /// 아니다 — 계정 id 가 같아도 끝난 로그인의 답이라 세션에도 진입 기록에도 남기지 않는다.
+    /// 아니다 — 계정 id 가 같아도 끝난 로그인의 답이라 세션에 남기지 않는다.
     func testResponseFromEndedSignInIsNotTreatedAsTokenRoll() async {
         let api = MockAuthAPI()
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        entries.enter()
-        vm.appEntryState = { entries.counter }
         let base = makeEmailSession()
         vm._setSessionForTesting(base)
         addTeardownBlock { KeychainStore.deleteSession() }
@@ -706,96 +487,8 @@ final class AuthViewModelTests: XCTestCase {
         }
         await vm.refreshUser()
 
-        XCTAssertNil(vm.accountEntryAnswer)
-        XCTAssertEqual(vm.planAnsweredEntry, 0)
         XCTAssertEqual(vm.session?.user.plan, "free", "로그아웃 전 토큰으로 받은 plan 을 새 세션에 박지 않는다")
         XCTAssertEqual(vm.session?.token, "relogin-token")
-    }
-
-    /// D12: 전경 무료 잠금은 무료의 근거가 낡은 프로모뿐이면 **이 진입의 plan 반영**을 기다린다.
-    /// 그 신호(`planAnsweredEntry`)는 진입마다 새로 세워진다 — 지난 진입의 답은 이번 진입의 답이
-    /// 아니고(그 사이 다른 기기에서 결제했을 수 있다), 로그아웃하면 지운다.
-    func testPlanAnsweredEntryFollowsThisEntrysAppliedAnswer() async {
-        let api = MockAuthAPI()
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        vm.appEntryState = { entries.counter }
-        let session = makeEmailSession()
-        vm._setSessionForTesting(session)
-        addTeardownBlock { KeychainStore.deleteSession() }
-        func lockMayApply() -> Bool {
-            PaidVoiceGate.freePlanLockMayApply(
-                freeOnlyByPromoLapse: true, planAnsweredEntry: vm.planAnsweredEntry, entry: entries.counter.entry
-            )
-        }
-
-        // 콜드 스타트의 요청은 첫 활성 전에 떠나도 첫 진입의 답이다.
-        api.meResult = .success(session.user)
-        await vm.refreshUser()
-        XCTAssertEqual(vm.planAnsweredEntry, 1)
-        XCTAssertFalse(lockMayApply(), "아직 들어오기 전(진입 0)에는 잠그지 않는다")
-        entries.enter()
-        XCTAssertTrue(lockMayApply())
-
-        entries.leaveAndReturn()
-        XCTAssertFalse(lockMayApply(), "지난 진입의 답으로 이번 진입에 잠그지 않는다")
-        api.meResult = .failure(.server(status: 503, message: "", errorCode: nil))
-        await vm.refreshUser()
-        XCTAssertFalse(lockMayApply(), "실패는 plan 을 반영하지 않는다")
-        api.meResult = .success(session.user)
-        await vm.refreshUser()
-        XCTAssertTrue(lockMayApply())
-
-        vm.signOut(revokeOnServer: false)
-        XCTAssertEqual(vm.planAnsweredEntry, 0)
-    }
-
-    /// 회귀(2026-09-27 리뷰 3차 통합, D11): 세션 밖의 계정 요청(`SocialFeatureViewModel` 의
-    /// `/auth/me`·결제 전 조회)이 **먼저 실패**하면 그 진입은 실패로 끝난다 — 같은 진입의 뒤 성공
-    /// (`refreshUser`)으로 종료 안내를 판정하지 않는다(안드로이드 `recordAccountFailure` 와 같다).
-    /// plan 반영(`planAnsweredEntry`)은 뒤 성공도 적는다. 다른 계정·더 새 답이 반영된 요청·끝난
-    /// 로그인의 실패는 적지 않는다.
-    func testSocialRequestFailureEndsThisEntry() async {
-        let api = MockAuthAPI()
-        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
-        let entries = EntryCounterBox()
-        entries.enter()
-        vm.appEntryState = { entries.counter }
-        let base = makeEmailSession()
-        vm._setSessionForTesting(base)
-        addTeardownBlock { KeychainStore.deleteSession() }
-
-        let othersRequest = vm.beginAccountRequest()
-        vm.noteAccountRequestFailure(userID: "someone-else", request: othersRequest)
-        XCTAssertNil(vm.accountEntryAnswer, "다른 계정의 실패는 이 계정의 진입을 끝내지 않는다")
-
-        let social = vm.beginAccountRequest()
-        vm.noteAccountRequestFailure(userID: base.user.id, request: social)
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 1, outcome: .failed))
-
-        api.meResult = .success(base.user)
-        await vm.refreshUser()
-        XCTAssertEqual(
-            vm.accountEntryAnswer, AccountEntryAnswer(entry: 1, outcome: .failed),
-            "첫 결과가 실패면 같은 진입의 뒤 성공으로 다시 판정하지 않는다"
-        )
-        XCTAssertEqual(vm.planAnsweredEntry, 1, "plan 반영은 뒤 성공도 적는다")
-
-        // 다음 진입 — 더 새 답이 이미 반영된 요청의 실패는 적지 않는다.
-        entries.leaveAndReturn()
-        let older = vm.beginAccountRequest()
-        await vm.refreshUser()
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 2, outcome: .answered))
-        vm.noteAccountRequestFailure(userID: base.user.id, request: older)
-        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 2, outcome: .answered))
-
-        // 로그아웃 전에 뜬 표의 실패는 같은 계정으로 다시 로그인한 세션의 진입을 끝내지 않는다.
-        entries.leaveAndReturn()
-        let beforeSignOut = vm.beginAccountRequest()
-        vm.signOut(revokeOnServer: false)
-        vm._setSessionForTesting(AuthSession(token: "relogin-token", user: base.user))
-        vm.noteAccountRequestFailure(userID: base.user.id, request: beforeSignOut)
-        XCTAssertNil(vm.accountEntryAnswer)
     }
 
     func testLateUnauthorizedDoesNotDeleteBackgroundRenewedSession() async throws {
@@ -851,7 +544,6 @@ final class AuthViewModelTests: XCTestCase {
             user: AuthUser(
                 id: "user-1",
                 email: "tester@example.com",
-                name: "Tester",
                 plan: "free",
                 appleUserId: appleUserId
             )
@@ -864,7 +556,6 @@ final class AuthViewModelTests: XCTestCase {
             user: AuthUser(
                 id: "user-1",
                 email: "tester@example.com",
-                name: "Tester",
                 plan: "free",
                 appleUserId: nil
             )
@@ -971,6 +662,46 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNil(vm.pendingSensitiveConsent)
     }
 
+    /// 시트의 '동의' 는 빠진 법정 동의를 기록한 **뒤에** 시트를 닫고 '이 요청에 동의했다' 는 표식을 남긴다 — 등록 화면은
+    /// 그 표식을 보고 같은 녹음으로 이어서 만든다(그냥 닫은 것과 구별).
+    func test_agreeToPendingSensitiveConsent_빠진_동의를_기록하고_닫는다() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "consent-agree-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+        _ = vm.requestSensitiveConsent(types: ["voice_biometric"], registeringVoice: true)
+        let requestID = vm.pendingSensitiveConsent?.id
+
+        await vm.agreeToPendingSensitiveConsent()
+
+        XCTAssertEqual(api.lastRecordConsentsRequest?.consents.map(\.type), ["voice_biometric"], "시트가 물어본 것만 기록한다")
+        XCTAssertNil(vm.pendingSensitiveConsent)
+        XCTAssertNotNil(requestID)
+        XCTAssertEqual(vm.agreedSensitiveConsentRequestID, requestID)
+    }
+
+    /// 기록이 실패하면 시트를 남긴다 — 다시 눌러 끝낸다. 동의 표식도 남기지 않아, 사용자가 시트를 닫으면 등록이 저절로
+    /// 이어지지 않는다.
+    func test_agreeToPendingSensitiveConsent_기록이_실패하면_시트를_남긴다() async {
+        let api = MockAuthAPI()
+        api.recordConsentsResult = .failure(APIError.invalidResponse)
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "consent-fail-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+        _ = vm.requestSensitiveConsent(types: ["voice_biometric"], registeringVoice: true)
+
+        await vm.agreeToPendingSensitiveConsent()
+
+        XCTAssertNotNil(vm.pendingSensitiveConsent)
+        XCTAssertNil(vm.agreedSensitiveConsentRequestID)
+    }
+
     /// 받을 것이 없으면 막지 않는다 — 호출자가 그대로 진행한다.
     func test_requestSensitiveConsent_받을_것이_없으면_막지_않는다() {
         let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
@@ -1052,11 +783,10 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNil(vm.session, "401 은 세션 만료로 처리되어 signOut 되어야 한다")
-        XCTAssertEqual(vm.statusMessage, "세션이 만료됐어요. 다시 로그인해 주세요.")
-        XCTAssertNil(vm.lastNetworkError, "signOut 후 lastNetworkError 는 nil 로 초기화된다")
+        XCTAssertEqual(vm.statusMessage, "로그인이 만료됐어요. 다시 로그인해 주세요.")
     }
 
-    func test_refreshUser_with403_keepsSessionAndSetsLastNetworkError() async {
+    func test_refreshUser_with403_keepsSession() async {
         let api = MockAuthAPI()
         api.meResult = .failure(.server(status: 403, message: "forbidden", errorCode: nil))
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
@@ -1065,10 +795,9 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session, "403 은 세션을 유지해야 한다")
-        XCTAssertEqual(vm.lastNetworkError, "이 계정으로는 접근할 수 없는 기능이 있어요.")
     }
 
-    func test_refreshUser_with500_keepsSessionAndUsesKoreanFallbackForEnglishServerMessage() async {
+    func test_refreshUser_with500_keepsSession() async {
         let api = MockAuthAPI()
         api.meResult = .failure(.server(status: 500, message: "internal", errorCode: nil))
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
@@ -1077,10 +806,9 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session, "5xx 일시 오류는 세션을 유지해야 한다")
-        XCTAssertEqual(vm.lastNetworkError, "서버에 일시적으로 연결할 수 없어요.")
     }
 
-    func test_refreshUser_with500_blankMessage_fallsBackToGenericCopy() async {
+    func test_refreshUser_with503_blankMessage_keepsSession() async {
         let api = MockAuthAPI()
         api.meResult = .failure(.server(status: 503, message: "   ", errorCode: nil))
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
@@ -1089,7 +817,6 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session)
-        XCTAssertEqual(vm.lastNetworkError, "서버에 일시적으로 연결할 수 없어요.")
     }
 
     func test_refreshUser_withURLError_keepsSession() async {
@@ -1101,7 +828,6 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session, "URLError 는 일시 네트워크 단절로 보고 세션 유지")
-        XCTAssertEqual(vm.lastNetworkError, "네트워크 연결을 확인해 주세요.")
     }
 
     func test_refreshUser_withInvalidResponse_keepsSession() async {
@@ -1113,7 +839,6 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session)
-        XCTAssertEqual(vm.lastNetworkError, "서버 응답을 해석하지 못했어요.")
     }
 
     func test_userFacingErrorMessage_hidesEnglishServerMessageLikeAndroid() {
@@ -1219,13 +944,12 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.token, original.token)
     }
 
-    func test_refreshUser_success_clearsLastNetworkError_andPreservesAppleUserId() async {
+    func test_refreshUser_success_preservesAppleUserId() async {
         let api = MockAuthAPI()
         // 서버 응답이 appleUserId 를 누락해도 기존 세션의 값이 유지되어야 한다.
         api.meResult = .success(AuthUser(
             id: "user-1",
-            email: "tester@example.com",
-            name: "Tester (renamed)",
+            email: "renamed@example.com",
             plan: "personal",
             appleUserId: nil
         ))
@@ -1235,12 +959,11 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session)
-        XCTAssertEqual(vm.session?.user.name, "Tester (renamed)")
+        XCTAssertEqual(vm.session?.user.email, "renamed@example.com")
         XCTAssertEqual(
             vm.session?.user.appleUserId, "preserved-sub",
             "백엔드 응답이 appleUserId 누락 시 이전 세션 값이 보존되어야 한다"
         )
-        XCTAssertNil(vm.lastNetworkError)
     }
 
     // MARK: - verifyAppleCredentialStateIfNeeded
@@ -1283,7 +1006,6 @@ final class AuthViewModelTests: XCTestCase {
 
         XCTAssertEqual(credentialProvider.callCount, 1)
         XCTAssertNotNil(vm.session, ".authorized 면 세션 유지")
-        XCTAssertNil(vm.lastNetworkError, ".authorized 면 lastNetworkError 변화 없음")
     }
 
     func test_verifyAppleCredentialState_revoked_signsOut() async {
@@ -1311,7 +1033,7 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNil(vm.session, ".notFound 는 강제 signOut")
     }
 
-    func test_verifyAppleCredentialState_transferred_keepsSessionWithMessage() async {
+    func test_verifyAppleCredentialState_transferred_keepsSession() async {
         let api = MockAuthAPI()
         let credentialProvider = MockAppleCredentialProvider()
         credentialProvider.stubState = .transferred
@@ -1320,8 +1042,7 @@ final class AuthViewModelTests: XCTestCase {
 
         await vm.verifyAppleCredentialStateIfNeeded()
 
-        XCTAssertNotNil(vm.session, ".transferred 는 세션을 유지하고 사용자에게 안내만 한다")
-        XCTAssertEqual(vm.lastNetworkError, "다른 기기로 이전된 Apple ID 입니다. 다시 로그인해 주세요.")
+        XCTAssertNotNil(vm.session, ".transferred 는 세션을 유지한다")
     }
 
     func test_verifyAppleCredentialState_providerThrows_keepsSession() async {
@@ -1334,14 +1055,13 @@ final class AuthViewModelTests: XCTestCase {
         await vm.verifyAppleCredentialStateIfNeeded()
 
         XCTAssertNotNil(vm.session, "credentialState 조회 자체가 실패해도 세션 유지")
-        XCTAssertEqual(vm.lastNetworkError, "Apple 로그인 상태를 확인하지 못했어요.")
     }
 
     // MARK: - profile update payloads
 
     /// **프로필 저장은 plan 답이 아니다 — 바꾼 칸만 응답을 기다린 뒤의 세션 위에 얹는다**(2026-10-05,
     /// `docs/spec/session-and-auth.md` 「프로필 저장은 바꾼 칸만 세션에 적는다」). 저장이 떠 있는 사이 결제 전 조회·세션 밖
-    /// `/auth/me`(`applyFreshPlan` — 토큰을 굴리지 않는다)가 plus + 개인 프로모를 반영했으면 저장 뒤에도 그 짝이 남고,
+    /// `/auth/me`(`applyFreshPlan` — 토큰을 굴리지 않는다)가 plus 를 반영했으면 저장 뒤에도 그 plan 이 남는다.
     /// 닉네임 저장은 2026-10-29 에 없앴다 — 남은 프로필 저장(계정 설정)이 같은 규칙을 지킨다.
     func testProfileSaveKeepsThePlanAnsweredMeanwhile() async {
         let api = MockAuthAPI()
@@ -1349,10 +1069,9 @@ final class AuthViewModelTests: XCTestCase {
         let session = makeEmailSession()
         vm._setSessionForTesting(session)
         addTeardownBlock { KeychainStore.deleteSession() }
-        let promo = PersonalPromo(endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", fetchedAt: Date())
         api.beforeUpdateProfileResponse = {
             vm.applyFreshPlan(
-                userID: session.user.id, from: session.token, plan: "plus", personalPromo: promo,
+                userID: session.user.id, from: session.token, plan: "plus",
                 request: vm.beginAccountRequest()
             )
         }
@@ -1362,7 +1081,6 @@ final class AuthViewModelTests: XCTestCase {
         await vm.updateProfile(dynamicPromptSettings: .empty)
 
         XCTAssertEqual(vm.session?.user.plan, "plus", "요청 전의 사본이 plus 를 되돌렸다")
-        XCTAssertEqual(vm.session?.user.personalPromo?.endsAt, promo.endsAt)
         XCTAssertEqual(vm.session?.token, session.token)
         XCTAssertEqual(KeychainStore.readSession()?.user.plan, "plus")
     }
@@ -1376,7 +1094,7 @@ final class AuthViewModelTests: XCTestCase {
             let token = try XCTUnwrap(vm.session?.token)
             var recovered = try XCTUnwrap(vm.session?.user)
             recovered.deletionStatus = "active"
-            recovered.name = "다른 기기 이름"
+            recovered.email = "other-device@example.test"
             api.meResult = .success(recovered)
             api.meRolledToken = "rolled-by-refresh-user"
             var restarts = 0
@@ -1387,7 +1105,7 @@ final class AuthViewModelTests: XCTestCase {
 
             await vm.refreshUser()
 
-            XCTAssertEqual(vm.session?.user.name, "다른 기기 이름", "밀리지 않은 답의 프로필 칸은 적는다")
+            XCTAssertEqual(vm.session?.user.email, "other-device@example.test", "밀리지 않은 답의 프로필 칸은 적는다")
             XCTAssertEqual(vm.session?.token, "rolled-elsewhere")
             XCTAssertEqual(vm.session?.user.deletionStatus, "pending_deletion")
             XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "pending_deletion")
@@ -1448,7 +1166,7 @@ final class AuthViewModelTests: XCTestCase {
 
     // MARK: - signOut clears state
 
-    func test_signOut_clearsSessionAndLastNetworkError() {
+    func test_signOut_clearsSession() {
         let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
         vm._setSessionForTesting(makeEmailSession())
 
@@ -1456,7 +1174,6 @@ final class AuthViewModelTests: XCTestCase {
 
         XCTAssertNil(vm.session)
         XCTAssertEqual(vm.statusMessage, "bye")
-        XCTAssertNil(vm.lastNetworkError)
     }
 
     func test_requestAccountDeletion_signsOutAndClearsSnapshot() async {
@@ -1494,7 +1211,7 @@ final class AuthViewModelTests: XCTestCase {
         }
         let api = MockAuthAPI()
         api.meResult = .success(
-            AuthUser(id: "user-1", email: "a@b.com", name: "A", plan: "free", deletionStatus: "pending_deletion")
+            AuthUser(id: "user-1", email: "a@b.com", plan: "free", deletionStatus: "pending_deletion")
         )
         let vm = AuthViewModel(
             api: api,
@@ -1682,7 +1399,7 @@ final class AuthViewModelTests: XCTestCase {
             else { KeychainStore.deleteSession() }
         }
         let api = MockAuthAPI()
-        let user = AuthUser(id: userID, email: "recover@example.test", name: "Test", plan: "free", deletionStatus: "pending_deletion")
+        let user = AuthUser(id: userID, email: "recover@example.test", plan: "free", deletionStatus: "pending_deletion")
         api.meResult = .success(user)
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider(),
             accessSnapshotStore: AccessSnapshotStore(defaults: defaults))
@@ -1901,7 +1618,7 @@ final class AuthViewModelTests: XCTestCase {
 
     /// 시트가 물어본 유형만 기록하고, 성공하면 목록에서 지운다 —
     /// 안 지우면 목소리 등록 화면이 이미 받은 동의를 또 묻는다.
-    func test_submitSensitiveConsents_recordsAndClears() async {
+    func test_agreeToPendingSensitiveConsent_recordsAndClears() async {
         let api = MockAuthAPI()
         let vm = AuthViewModel(
             api: api,
@@ -1917,9 +1634,9 @@ final class AuthViewModelTests: XCTestCase {
         await Task.yield()
         try? await Task.sleep(nanoseconds: 50_000_000)
 
-        let ok = await vm.submitSensitiveConsents(types: ["voice_biometric"])
+        XCTAssertEqual(vm.pendingSensitiveConsent?.types, ["voice_biometric"])
+        await vm.agreeToPendingSensitiveConsent()
 
-        XCTAssertTrue(ok)
         XCTAssertEqual(api.lastRecordConsentsRequest?.consents.map(\.type), ["voice_biometric"])
         XCTAssertEqual(api.lastRecordConsentsRequest?.consents.first?.agreed, true)
         XCTAssertFalse(vm.consentSensitiveMissing.contains("voice_biometric"))
@@ -2169,26 +1886,6 @@ final class AuthViewModelTests: XCTestCase {
 }
 
 // MARK: - Mocks
-
-/// 테스트가 진입 상태를 손으로 움직이는 상자 — `AuthViewModel.appEntryState` 에 꽂는다.
-@MainActor
-private final class EntryCounterBox {
-    var counter = AppEntryCounter()
-
-    /// 콜드 스타트로 들어온다.
-    func enter() {
-        counter.observe(.inactive)
-        counter.observe(.active)
-    }
-
-    /// 홈으로 나갔다가 다시 들어온다 — 새 진입.
-    func leaveAndReturn() {
-        counter.observe(.inactive)
-        counter.observe(.background)
-        counter.observe(.inactive)
-        counter.observe(.active)
-    }
-}
 
 /// `AuthAPIProviding` mock. `me(token:)` 호출에 미리 stub 한 결과를 반환한다.
 private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {

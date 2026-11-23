@@ -582,5 +582,17 @@
   "151": {
     "name": "users-kakao-id",
     "sha": "6424a22369ef944c"
+  },
+  "152": {
+    "name": "drop-write-only-columns",
+    "sha": "78cd23a41a47fcd1"
+  },
+  "153": {
+    "name": "drop-unused-subscription-apple-columns",
+    "sha": "c0ded24b5570dc77"
+  },
+  "154": {
+    "name": "drop-retired-plan-grants-and-voice-packs",
+    "sha": "6326cfced02ea4b6"
   }
 }

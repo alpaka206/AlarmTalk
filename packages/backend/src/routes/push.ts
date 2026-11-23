@@ -63,12 +63,11 @@ export function pushRegisterStatements(
       //   되살아난다(앱은 실행마다 등록하므로 드문 경합이 아니다). 조건을 이 문장 안에 둬 원자적으로 막는다 — 0행이면
       //   아무것도 적지 않는다(요청은 200 이지만, 그 계정은 곧 모든 요청이 403 이다).
       // (SQLite 는 `INSERT … SELECT` 에 upsert 를 붙이려면 SELECT 에 WHERE 가 있어야 한다 — 아래 EXISTS 가 그 자리다.)
-      sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
-            SELECT ?, ?, ?, ?, datetime('now'), datetime('now')
+      sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at)
+            SELECT ?, ?, ?, ?, datetime('now')
             WHERE EXISTS (SELECT 1 FROM users WHERE id = ? AND deletion_status = 'active'${epochGuard})
             ON CONFLICT(user_id, token) DO UPDATE SET
-              platform = excluded.platform,
-              updated_at = datetime('now')`,
+              platform = excluded.platform`,
       args: [crypto.randomUUID(), userPk, token, platform, userPk, ...epochArgs],
     },
   ];

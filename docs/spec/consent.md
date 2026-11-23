@@ -13,13 +13,29 @@
 | `needs_consent` | 앱을 막는 게이트(필수 기준) | 화면 표시 판단에 쓰지 **말 것** |
 | `needs_collection` | 화면을 띄워야 하나 | `showConsentScreen` 이 이걸 본다 |
 | `sensitive_missing` | 목소리 라우트가 요구하는데 없는 동의 | 등록 화면 인라인 체크박스 |
-| `has_prior_consent` | 개정 재동의인가 | 제목·부제 문구를 가른다 |
+| `has_prior_consent` | 개정 재동의인가 | 제목 문구를 가른다(제목 아래 안내 문장은 두지 않는다 — 2026-11-16) |
 
 - ⚠ **`agreed=false` 를 무조건 철회로 읽지 말 것.** 민감 동의는 `optional` 이라 CTA 가 체크를
   요구하지 않는다. 이미 동의한 사람이 화면을 그냥 통과하면 false 가 제출되는데, 그걸 철회로
   처리하면 **ElevenLabs 보이스와 R2 원본이 영구 삭제된다.** 판별은 **지금 그 유형을 다시
   묻고 있었는가**(`collect` 포함 여부)로 한다 — 대상이면 기록만, 아무도 안 물었는데 온
   false 만 명시적 철회(설정 화면)다. `routes/user.ts` 의 `withdrewSensitiveConsent`.
+- **CTA 는 '확인' 하나다**(2026-11-15 오너: "확인으로 통일해" — 목소리 등록 시트와 같은 말). 동의는 체크가 하고 CTA 는
+  그 체크를 낸다. 예전에는 '동의하고 시작하기'(필수가 있을 때)·'계속하기'(선택뿐일 때)로 갈랐다 — 선택은 체크 없이
+  눌러도 눌리고 그때 기록되는 값이 거절이라, '동의' 라고 하면 기록과 어긋났다. '확인' 은 어느 쪽도 말하지 않는다
+  (안드로이드 `ConsentScreen` 의 `auth_confirm`, iOS `ConsentView`). 모양은 인증 화면군의 주 버튼(`GradientCta` — 하늘색 바탕·
+  남색 글자)이다(두 앱 — iOS 는 2026-11-22 전 시스템 `.borderedProminent` 였다).
+- **화면 모양은 두 앱이 같다**(2026-11-22 — iOS 를 안드로이드 `ConsentScreen` 에 맞췄다). 제목 24 Bold → 24 → '전체 동의' →
+  선 → 항목들. **'전체 동의' 는 스크롤 밖에 고정한다** — 항목을 펼쳐 읽다가도 한 번에 동의할 수 있다(iOS 는 그전 목록과 함께
+  스크롤됐다). 항목 행은 체크 칸 48 + 이름(행 높이 약 56, 행 사이 간격 없음)이고, 펼친 설명·전문은 그 행 바로 아래 이름과 같은
+  시작선(48)에서 읽는다. 색은 인증 배경의 장면 고정색이다(어두운 배경 위 — iOS `AuthSceneColors`).
+- **기록이 잠깐 실패하면 앱이 두 번 더 보낸다**(2026-11-16 오너 "되도록 해줘야지"). 응답이 없었거나(연결 끊김·시간 초과)
+  5xx 일 때만이고(1초·2초 뒤), 4xx 는 같은 답이 오니 곧바로 문장을 띄운다. 기록은 누적이라 앞 요청이 실제로는
+  들어갔어도 한 줄 더 남을 뿐이다. 가입 동의 화면·목소리 등록 동의 시트 둘 다(안드로이드 `recordConsentsRetrying`,
+  iOS `AuthViewModel.recordConsentsRetrying`). 세 번 다 실패하면 "동의 기록에 실패했어요. 다시 시도해 주세요" 다.
+- **약관·처리방침은 두 앱 모두 그 줄의 화살표로 그 자리에서 펼친다**(2026-11-16 오너 "통일해"). 전문은 높이 260 안에서
+  스크롤한다(안드로이드 `ConsentRow` 의 `detail`, iOS `ConsentRow.document`). iOS 는 그전까지 '보기' 로 시트를 띄웠다.
+  둘 다 번들본이다 — 기록에 싣는 버전과 보여 준 문서가 같은 빌드에서 나와야 한다.
 ## 생체정보(목소리)는 **선택 동의**이고, 묻는 자리는 하나다
 
 ⚠ **앱 전체를 막는 필수 동의로 바꾸지 말 것**(2026-09-03 검토·확정). "동의 안 하면 무료도
@@ -41,8 +57,9 @@
      `FEATURE_CONSENT_TYPES` 를 `collect` 에 담고(`routes/user.ts` 의
      `GET /user/consents/status`), 앱은 `collect` 그대로 그린다
      (`ui/auth/ConsentScreen.kt` 의 `showVoiceBiometric`, iOS `ConsentView`).
-     ② 거기서 **거절한 사람만** 목소리 등록 화면에서 `sensitive_missing` 으로 다시
-     만난다(인라인 체크박스).
+     ② 거기서 **거절한 사람만** 목소리를 등록할 때 `sensitive_missing` 으로 다시
+     만난다 — '등록' 을 누르는 순간 뜨는 시트(`VoiceConsentSheet`)다. 2026-11-15 전에는 이름
+     화면의 인라인 체크박스였다(아래 「빠진 법정 동의는 '등록' 을 누를 때 시트 하나로 받는다」).
    - ⚠ **`collect` 에 안 담긴다고 적지 말 것.** 담긴다 — 회귀 테스트가 그 모양을 고정한다
      (`test/consent.test.ts` 의 "동의 기록이 없으면 필수 4종 + 선택 2종…"). 등록하는
      순간에만 물으면 그때가 가장 거부감이 큰 자리라, 일부러 가입 화면에서 먼저 묻고
@@ -82,24 +99,49 @@
     → **그렇게 했다(2026-08-18).**
 
 - **민감 동의 2종의 설명은 접어 둔다**(2026-08-18). `음성 생체정보 처리 동의`·
-  `음성 AI 처리를 위한 국외 이전 동의` 는 설명이 길어(각각 3문장·2문장) 펼쳐 두면 목록이
+  `음성 AI 처리를 위한 국외 이전 동의` 는 설명이 길어(각각 3문장·처리자를 늘어놓은 긴 1문장) 펼쳐 두면 목록이
   설명으로 뒤덮이고 **무엇을 고르는 화면인지** 가 묻힌다. 기본은 접고 화살표로 편다.
   - ⚠ **제목과 `[선택]` 표기는 접어도 보인다.** 접히는 것은 상세 설명뿐이다 — 무엇에 동의하는
     항목인지와 필수/선택 여부는 고지 의무의 핵심이라 접으면 안 된다.
   - ⚠ **체크와 펼침은 다른 동작이다.** 화살표를 눌러 펴는 것이 체크로 이어지면, 읽으려던
-    사람이 동의해 버린다. 펼침 버튼은 체크 영역 **밖**에 둔다.
+    사람이 동의해 버린다. 펼침 버튼은 체크 영역 **밖**에 둔다. 펼친 설명도 체크 버튼 **밖**(행 아래)에 그린다 — iOS 는
+    2026-11-22 전 펼친 설명이 체크 버튼 안에 있어 설명을 눌러도 체크가 바뀌었다.
+  - **생체정보 설명은 세 문장이다** — 언제 필요한지 · 무엇에 쓰고 어떻게 처리하는지 · 지금 동의하지 않아도 기본 목소리
+    알람은 그대로라는 것(안드로이드 `auth_consent_voice_biometric_desc`). 약관 제7조(권리 보증) 문장은 이 화면에 두지 않는다 —
+    목소리를 등록할 때 생체정보 동의를 받는 시트에만 있다(아래 「목소리 권리 확인」). iOS 는 2026-11-22 전 그 문장까지 네 줄이었다.
+  - **광고성 정보 수신도 설명을 접어 둔다** — 무엇을 어디로 보내는지, 동의하지 않아도 제한이 없고 더보기에서 끌 수 있다는 것,
+    광고는 오전 8시~오후 9시에만이고 직접 맞춘 알람은 광고가 아니라는 것(안드로이드 `auth_consent_marketing_detail`, ko·en·ja 같은
+    문장 — iOS 는 2026-11-22 에 더했다).
   - 어느 쪽이든 `setAll` 과 `allChecked` 와 **마스터 행 표시 조건이 모두 같은 집합**을
     봐야 한다 — 셋이 어긋나면 체크가 안 켜지거나 영영 안 꺼진다.
 - **마케팅 재유도**는 거절자에게 **다른 이유로 화면이 이미 뜰 때만** 함께 노출한다.
   마케팅만으로 화면이 뜨면 거절자는 그 화면을 영영 보게 된다. 앱 화면에서만 유도하고
   푸시·이메일로 권하지 않는다(그 메시지 자체가 광고성 정보로 평가된다).
-- **목소리 등록 입구에서 권리 확인 모달을 받는다**(2026-10-16 오너 결정). '추가'를 누르면 등록 화면으로
-  이동하기 전에 본인 목소리 또는 목소리 주인이 음성 복제·알람 사용에 명시적으로 동의한 목소리인지 확인한다.
-  [취소][동의하기] 중 동의하기를 눌러야 등록을 시작한다. 소유·책임 확인 체크박스 두 개는 없앤다.
-  이는 이번에 등록할 목소리에 대한 이용자 확인이다. 공급자의 목소리 주인 본인 인증을 수행했다는 뜻은 아니며,
-  서버의 법정 동의 유형·버전을 새로 만들거나 이미 받은 법정 동의를 다시 기록하지 않는다.
-  생체정보·국외 이전 동의가 부족하면 기존의 별도 동의를 받고, 성공한 뒤에만 음성을 업로드한다.
-  초안 미리듣기로 돌아오는 경우는 새로운 등록 진입이 아니므로 다시 묻지 않는다.
+- **목소리 권리 확인은 따로 받지 않는다 — 약관 제7조로 갈음한다**(2026-11-15 오너: "본인이 등록해서 공유하는것도
+  아니고 본인이 쓰는거니깐", "목소리를 무단 등록하지않겠다는 내용이 약관에 있으면 되는거잖아"). 약관 제7조(음성 등록 및
+  권리 보증)는 가입 때 필수로 동의한다 — 본인 또는 적법한 권한·동의를 받은 목소리만 등록하고, 무단 등록으로 생기는
+  분쟁·책임은 이용자가 진다. 등록한 목소리는 그 사람의 알람에만 쓰여(공유 기능은 2026-10-20 에 없앴다) 등록할 때 따로
+  확인받을 이유가 없다.
+  - 예전: 2026-10-16 ~ 11-15 에는 '추가' 입구의 [취소][동의하기] 모달이 등록마다 물었고, 11-15 하루 동안은 등록 시트의
+    체크칸으로 계정마다 한 번 받았다(배포 전에 걷었다). **되살리지 말 것.**
+  - 생체정보 동의를 등록 자리에서 받는 사람에게는 그 부연이 "본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할
+    수 있어요(이용약관 제7조)" 를 함께 보여 준다(법무 문서 `docs/legal/consent-and-permission-copy.ko.md` §2).
+- **빠진 법정 동의는 '등록' 을 누를 때 시트 하나로 받는다**(2026-11-15 오너: "생성할때 모달로 떠서 한번에 다 받고
+  다음부터 안받게"). 이름 화면의 생체정보 체크칸은 없앴다.
+  - 시트는 **빠진 것만** 그린다: 생체정보(가입 때 거절한 사람)·국외 이전. 다 있으면 시트 없이 곧바로 만든다 —
+    「한 번 받은 동의는 다시 묻지 않는다」. **가입 때 다 동의한 사람은 등록할 때 아무것도 보지 않는다.**
+  - 시트의 버튼은 **[취소] [확인]** 이다(2026-11-15 오너: "체크하면 동의니깐 확인으로 해도 되지않을까?" — 예전
+    '동의하고 목소리 만들기'·'동의하고 계속하기'). 동의는 체크가 하고, 무엇이 이어지는지는 제목·본문이 말한다.
+    '확인' 은 빠진 법정 동의를 기록한 **뒤에** 같은 녹음으로 등록을 이어 간다. 기록이
+    실패하면 시트를 남긴다. 닫으면 등록하지 않는다.
+  - 업로드 **전에** 받는다 — 녹음이 나간 뒤에 받으면 이미 처리한 생체정보에 사후 동의를 받는 꼴이다.
+  - 시트 본문은 **문장마다 한 줄**이고, 생체정보 부연과 겹치던 것(쓰이는 곳·지우면 함께 삭제)은 **본문 한 곳에만**
+    둔다(2026-11-15 오너 — 같은 말이 두 번 나왔다). 부연은 생체정보 분류·권리 보증(약관 제7조)·철회 세 줄이다. 고지
+    내용은 줄지 않았다. 문안은 법무 문서 §2(안드로이드 `voice_consent_body`·`voices_register_biometric_desc`, iOS
+    `VoiceConsentSheet`).
+  - ⚠ **시트에 높이 상한을 박지 않는다.** 생체정보(부연 세 줄)와 다른 항목을 함께 받으면 예전 상한(320)을 넘어 맨 아래
+    항목이 가려진 채 동의 버튼이 꺼져 있었다(2026-11-15). 화면에 들어가면 그대로, 넘칠 때만 스크롤한다(안드로이드
+    `weight(1f, fill = false)`, iOS `ViewThatFits`).
 ## 한 번 받은 동의는 다시 묻지 않는다
 
 > 규칙(2026-08-26 확정): **받아야 하는 동의는 전부 받는다. 한 번 받은 동의는 다시 묻지
@@ -191,10 +233,17 @@
   **계정별** 직전 확인값(`MarketingConsentCache` — 다른 계정이면 모름)으로 먼저 채운다(iOS 는 2026-10-29 부터).
 - 계정이 바뀌면 값·쓰기 잠금·이어 보낼 값을 모두 비우고, 떠 있던 조회·쓰기의 답은 버린다 — 앞 계정에서 누른 값이 다음
   계정으로 나가지 않게.
-- **실패는 그 스위치 아래 빨간 글자로 남긴다**(iOS, 2026-10-29 오너 — 알림을 띄우지 않는다). 예전 iOS 는 로그인한 동안의
+- **실패는 그 스위치 아래 빨간 글자로 남긴다**(2026-10-29 오너 — 알림을 띄우지 않는다). 예전 iOS 는 로그인한 동안의
   실패 문구(`statusMessage`)를 그리는 곳이 없어 스위치만 되돌아가고 이유는 보이지 않았다. 동의 화면 제출·민감 동의 시트·
-  철회·탈퇴 신청도 같다 — 실패한 동작의 자리에 남기고, 그 동작을 다시 시작하면 지운다(`AuthViewModel.actionError`).
-  안드로이드는 앱 전체 스낵바로 알린다.
+  철회·탈퇴 신청도 같다 — 실패한 동작의 자리에 남기고, 그 동작을 다시 시작하면 지운다(iOS `AuthViewModel.actionError`).
+  **두 앱이 같다** — 안드로이드도 같은 다섯 동작의 실패를 그 자리의 빨간 글자로 남긴다(`MainViewModel.signedInActionError`·
+  `SignedInAction`, 동의 내역 화면은 행 아래 `ConsentActionErrorText`). 그 줄은 행 이름과 같은 시작선(좌우 12·아래 10)이다(안드로이드는
+  2026-11-22 전 좌우 4 라 이름보다 앞에서 시작했다). 문장은 마케팅 "수신 설정 변경에 실패했어요. 다시 시도해 주세요", 철회 "동의
+  철회에 실패했어요. 다시 시도해 주세요." 다(두 앱 같은 글자 — 2026-11-22).
+- **생체정보 동의 철회가 끝나면 화면 위쪽 안내로 말한다** — "음성 생체정보 동의를 철회했어요. 등록한 목소리가 삭제됐어요."(두 앱 —
+  안드로이드 `msg_voice_consent_withdrawn` 은 앱의 위쪽 안내 자리, iOS 는 동의 내역 화면의 위쪽 토스트 `withdrawnNotice`).
+  iOS 는 2026-11-22 전 그 문장을 `statusMessage` 에만 적어, 로그인한 동안 그리는 곳이 없어 철회가 됐는지 말하지 않았다.
+  실패는 위 줄대로 철회 행 아래다.
 
 ## 동의 화면이 보여 주는 문서는 **번들본**이다
 
@@ -208,7 +257,9 @@
 
 - **설정의 뷰어는 반대로 웹이다.** 거기서 보는 것은 "지금 유효한 방침" 이라 최신이 맞고,
   개정 사실을 앱 업데이트 없이 알릴 수 있어야 한다. 두 갈래는 **의도된 것**이니 한쪽으로
-  통일하지 말 것.
+  통일하지 말 것. 뷰어는 앱 안에서 열되, 문서 안의 **다른 사이트 링크는 기기의 브라우저**(메일 주소면 메일 앱)로 보낸다 — 같은
+  사이트 안의 이동(약관 ↔ 처리방침)과 서버 리다이렉트만 뷰어에서 연다. 인앱 뷰어가 아무 사이트나 여는 창이 되면 사용자는 자기가
+  어디에 있는지 모른다(두 앱 — 안드로이드는 2026-11-22 전 모든 링크를 뷰어 안에서 열었다).
 - **단일 출처는 `docs/legal` 하나다.** 두 앱 모두 빌드 때 거기서 복사한다(Android
   `copyLegalDocs`, iOS `project.yml` 의 resources). 사본을 만들지 말 것.
 - ⚠ **번들을 못 읽으면 동의 화면 자체를 띄우지 않는다 — 업데이트 차단 화면으로 보낸다**
@@ -242,10 +293,12 @@
 | 철회 확인 모달 | `ConsentHistoryScreen` 의 `withdrawConfirmOpen` (`IosAlertDialog`) | `ConsentHistoryView` 의 `withdrawConfirmOpen` (시스템 `.alert`) | — |
 | 철회 = 삭제 | `withdrawVoiceBiometricConsent` (`MainViewModelAuthActions`) | `AuthViewModel.withdrawVoiceBiometricConsent` | `deleteSensitiveVoiceDataForUser` |
 | 마스터 행 범위 | `masterTypes`=`shownTypes`, `setAll`·`allChecked` 도 같은 집합 (`ConsentScreen`) | 같음 (`ConsentView.masterTypes`) | — |
+| 화면 모양 — '전체 동의' 는 스크롤 밖 · 펼친 설명은 체크 버튼 밖 · 생체정보 세 문장 · 광고성 정보도 접은 설명 · CTA 는 `GradientCta` | `ui/auth/ConsentScreen.kt` 의 `ConsentRow`(`detail`·`scrollableDetail`)·`auth_consent_voice_biometric_desc`·`auth_consent_marketing_detail` | `Views/Auth/ConsentView.swift` 의 `ConsentRow`(`detail`·`document` → `detailBody`·`documentBody`) · `Views/Components/GradientCta.swift` | — |
+| 로그인한 동안의 실패는 그 동작 자리의 빨간 글자 · 철회 성공은 위쪽 안내 | `MainViewModel.signedInActionError`(`SignedInAction`) → `ui/settings/ConsentHistoryScreen.kt` 의 `ConsentActionErrorText` · 성공 `msg_voice_consent_withdrawn` | `AuthViewModel.actionErrorMessage(for:)` → `ConsentHistoryView` 의 `inlineError` · 성공 `ConsentHistoryView` 의 `withdrawnNotice`(`AuthViewModel.voiceConsentWithdrawnMessage`) | — |
 | 다시 묻는 자리 | `sensitiveConsentMissing`·`showConsentScreen` (`MainViewModel`) | `consentSensitiveMissing`·`showConsentScreen` (`AuthViewModel`) | `collect` / `sensitive_missing` (`routes/user.ts`) |
-| 묻지 않은 것 기록 금지 | `INLINE_COVERED_CONSENTS` (`MainViewModelVoiceActions`) | `inlineCoveredConsents` (`VoiceCloneUploadFlow`) | `POST /user/consents` 는 받은 것만 기록 |
+| 묻지 않은 것 기록 금지 | 시트가 그린 `types` 만 (`submitVoiceConsents` — `MainViewModelAuthActions`) | 같음 (`AuthViewModel.agreeToPendingSensitiveConsent`) | `POST /user/consents` 는 받은 것만 기록 |
 | 모르는 유형 | 필수→`consentUnsupported`, 선택→버림 (`checkConsentStatus`) | 같음 (`AuthViewModel.checkConsentStatus`) | `optional` 필드 |
-| 등록 입구 권리 확인 | `VoiceProfileManagementPanel.registrationConsentOpen` → `showCreateForm` | 같은 패널의 `registrationConsentOpen` → `route = .clone` | 별도 동의 유형을 기록하지 않음 |
+| 목소리 권리 확인 — **받지 않는다**(약관 제7조로 갈음, 2026-11-15) | — (`createVoiceProfiles` 는 `sensitiveConsentMissing` 만 본다) | — (`VoiceCloneUploadFlow.submit` 은 `consentSensitiveMissing` 만 본다) | — |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 403 뒤 목록·겹친 조회 실패 | `refreshConsentCollectAfterGate`·`applyConsentStatusFailure` (`MainViewModelAuthActions`), `consentGatePendingUserId` (`MainViewModel`) | `handleConsentRequired` → `checkConsentStatus`, `consentGatePendingUserID` (`AuthViewModel`) — `AuthViewModelTests` | `GET /user/consents/status` |
 | 동의 뒤 막혔던 알람 전송 다시 돌기 — **없다**(2026-10-29, 알람을 올리지 않는다. 옛 자리 안드로이드 `submitConsents` 의 알람 전송·iOS `consentSubmitGeneration` 을 지웠다) | — | — | — |
@@ -255,8 +308,8 @@
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `POST /user/consents` 의 `ACCEPTED_POLICY_VERSIONS`(목록 밖은 409, 받으면 그 버전으로 기록) — 게시 중 최신은 `CURRENT_POLICY_VERSION` |
 | 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |
 | 번들을 못 읽을 때 — **동의 차단** | `legalDocumentsReadable` → `UpdateRequiredScreen` (`AlarmTalkApp.kt`) | `bundledLegalDocumentsReadable` → `UpdateRequiredView` (`RootView`) | — |
-| 번들을 못 읽을 때 — 뷰어 문구 | `readLegalDocument` 의 `getOrElse` | `BundledLegalDocumentView.unavailable` | — |
-| 설정의 문서 뷰어 | 랜딩 웹 (`ui/settings/LegalDocumentScreen.kt`) | 랜딩 웹 (`Views/Settings/LegalDocumentView.swift`) | — |
+| 번들을 못 읽을 때 — 펼친 전문 자리 문구("문서를 불러오지 못했어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.") | `readLegalDocument` 의 `getOrElse` | `ConsentView` 의 `ConsentRow` 전문 폴백 | — |
+| 설정의 문서 뷰어 — 다른 사이트 링크는 기기 브라우저로 | 랜딩 웹 (`ui/settings/LegalDocumentScreen.kt` — `LegalDocumentWebViewClient`) | 랜딩 웹 (`Views/Settings/LegalDocumentView.swift` — 코디네이터의 `decidePolicyFor`) | — |
 | 번들에 넣는 파일 목록 | `copyLegalDocs` 의 `include` (`app/build.gradle.kts`) | `project.yml` 의 resources 두 줄 | `docs/legal` (원본) |
 
 ## 검증 방법

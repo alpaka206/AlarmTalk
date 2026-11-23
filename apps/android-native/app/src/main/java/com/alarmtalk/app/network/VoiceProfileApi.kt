@@ -34,7 +34,6 @@ data class VoiceProfileDraftResponse(
 // 이번 달(KST) 목소리 초안 생성 쿼터. 삭제 전 '이번 달 재생성 가능 여부' 판정에 쓴다.
 data class VoiceDraftQuotaResponse(
     val limit: Int = 0,
-    val used: Int = 0,
     val remaining: Int = 0,
     // 이번 달 '정식 등록' 쿼터 — 목소리는 한 달에 1개. 위 limit(초안 재시도 여유 3회)와 다르다.
     @SerializedName("registration_limit") val registrationLimit: Int = 0,
@@ -71,7 +70,6 @@ data class VoicePreviewPlayedRequest(
 
 data class VoicePreviewPlayedResponse(
     val success: Boolean,
-    val previewed: Boolean,
 )
 
 data class VoicePreviewTextUpdateRequest(

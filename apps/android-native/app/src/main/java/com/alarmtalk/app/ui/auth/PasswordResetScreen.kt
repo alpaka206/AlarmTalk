@@ -1,21 +1,14 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,35 +16,43 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 /**
- * 비밀번호 재설정 — 가입한 이메일로 6자리 코드를 받고, 코드 + 새 비밀번호로 변경한다.
- * 회원가입의 이메일 인증 UI를 미러링한다. 코드 발송 후([codeSentTo] == 입력 이메일)
- * 코드·새 비밀번호 입력이 노출된다. 확정은 단일 호출([onConfirm])로 검증+변경을 처리한다.
+ * 비밀번호 재설정 — 가입한 이메일로 6자리 코드를 받아 **먼저 확인하고**, 그다음 새 비밀번호를 정한다
+ * (2026-11-16 오너: "인증 코드 받고 확인한 다음에 넘어가게"). 비밀번호를 찾아 주는 것이 아니라 바꾸는 것이다 —
+ * 서버에는 비밀번호 원문이 없다(bcrypt 해시만 있다).
+ *
+ * 이메일·코드 줄은 가입 화면([AuthScreen])과 **같은 부품**이다: 이메일 칸 옆 `인증 받기`(보낸 뒤 `다시 받기`,
+ * 확인 뒤 `✓ 인증됨`), 코드 칸과 `확인`, 그 아래 안내. 새 비밀번호·비밀번호 확인·규칙 세 줄도 가입과 같다.
+ * 확인([onVerifyCode] — `POST /auth/password-reset/verify`)은 코드를 쓰지 않고, 확정([onConfirm])에서 서버가
+ * 같은 코드를 한 번 더 판정한다. iOS `PasswordResetView` 와 같다.
  */
 @Composable
 internal fun PasswordResetScreen(
     contentPadding: PaddingValues,
     busy: Boolean,
     codeSentTo: String?,
+    // 코드를 확인한 이메일(`MainViewModel.passwordResetVerified`). 입력 이메일과 같을 때만 새 비밀번호 단계다.
+    verifiedEmail: String?,
     // 인증 코드 칸을 비우라는 신호(`MainViewModel.emailCodeFieldClearTick`) — 값이 바뀌면 비운다.
     codeFieldClearTick: Int = 0,
     onBack: () -> Unit,
     onRequestCode: (String) -> Unit,
+    onVerifyCode: (email: String, code: String) -> Unit,
     onConfirm: (email: String, code: String, newPassword: String) -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    // '인증 코드 받기' 를 눌렀는데 이메일이 형식에 안 맞았는가 — **누른 뒤에만** 뜬다.
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
+    // `인증 받기` 를 눌렀는데 이메일이 형식에 안 맞았는가 — **누른 뒤에만** 뜬다.
     // 치는 도중에 빨갛게 만들면 아직 다 치지도 않은 주소를 틀렸다고 하는 셈이다.
     // 로그인 화면(`AuthScreen` 의 `emailFormatError`)과 같은 규칙이다.
     var emailFormatError by remember { mutableStateOf(false) }
@@ -60,13 +61,16 @@ internal fun PasswordResetScreen(
     // 여기만 `Patterns.EMAIL_ADDRESS` 로 두면 로그인은 되는데 비밀번호 재설정만 막히는
     // 계정이 생긴다(아포스트로피가 든 주소가 실제로 그랬다).
     val normalizedEmail = normalizeAuthEmail(email)
+    // 보낸 것도 확인한 것도 **그 주소에** 묶인다 — 주소를 고치면 `인증 받기` 로 돌아간다(가입과 같다).
     val codeSent = codeSentTo != null && codeSentTo == normalizedEmail
+    val verified = codeSent && verifiedEmail == normalizedEmail
     // 서버 정책(@alarmtalk/shared PasswordSchema)과 일치: 8~128자 + 영문·숫자 각 1자 이상.
     val passwordAtLeastMin = password.length >= 8
     val passwordUnderMax = password.length <= 128
     val passwordHasLetterAndDigit = password.any { it.isLetter() } && password.any { it.isDigit() }
     val passwordPolicyValid = passwordAtLeastMin && passwordUnderMax && passwordHasLetterAndDigit
-    val canConfirm = codeSent && code.length == VerificationCodeLength && passwordPolicyValid
+    val passwordMatches = password.isNotBlank() && password == confirmPassword
+    val canConfirm = verified && code.length == VerificationCodeLength && passwordPolicyValid && passwordMatches
 
     // 거절된 인증 코드를 칸에 남기지 않는다 — 서버가 코드를 거절했을 때(틀림·만료·시도 상한)와 다시
     // 받기가 성공했을 때 뷰모델이 신호를 올린다. 가입 화면(`AuthScreen`)과 같은 규칙이고 이유도 같다:
@@ -78,34 +82,20 @@ internal fun PasswordResetScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding)
+                .padding(contentPadding),
+        ) {
+        // 제목 줄은 로그인·가입과 같다(`AuthTopBar` — 원형 뒤로가기 + 위쪽 가운데 제목, 스크롤 밖. 2026-11-22). 예전에는 이 화면만
+        // 뒤로가기 옆에 큰 제목을 왼쪽으로 세워 폼과 함께 스크롤됐다. iOS 짝 `PasswordResetView` 의 `WakerTopBar`.
+        AuthTopBar(title = stringResource(R.string.auth_reset_title), onBack = onBack)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 18.dp),
+                .padding(horizontal = 24.dp)
+                .padding(top = 8.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.auth_back),
-                        tint = TextOnScene,
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.auth_reset_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = TextOnScene,
-                )
-            }
-            Text(
-                text = stringResource(R.string.auth_reset_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextOnSceneDim,
-            )
+            // 제목 아래 안내('가입한 이메일로 인증 코드를 보내드려요.')는 뺐다(2026-11-16 오너) — 칸과 버튼이 같은 말을 한다.
 
             AuthTextField(
                 label = stringResource(R.string.auth_label_email),
@@ -118,96 +108,94 @@ internal fun PasswordResetScreen(
                 },
                 keyboardType = KeyboardType.Email,
                 imeAction = ImeAction.Next,
-                enabled = !busy && !codeSent,
+                enabled = !busy,
                 isError = emailFormatError,
                 supportingText = if (emailFormatError) {
                     { Text(stringResource(R.string.auth_error_email_invalid), color = AuthErrorText) }
                 } else {
                     null
                 },
+                trailingAction = {
+                    // ⚠ **형식으로 버튼을 죽이지 않는다**(CLAUDE.md) — 누를 수는 있고, 누르면 왜 안 되는지
+                    // 이메일 칸 아래에 말한다. 잠그는 것은 **보낼 것이 없을 때**(빈 칸)와 확인을 마쳤을 때뿐이다.
+                    //
+                    // ⚠ **보낸 뒤에도 눌린다**(2026-10-11) — `다시 받기` 다. 코드가 만료되거나 틀린 횟수를 다 써서
+                    // "다시 받아 주세요" 를 들은 사람이 화면을 나갔다 오지 않고 다시 받는다. 너무 잦은 요청은 서버가
+                    // 걸러 낸다(`shouldSkipEmailCodeSend` — 스펙 session-and-auth 「이메일 인증 코드」).
+                    EmailVerifyButton(
+                        verified = verified,
+                        codeSent = codeSent,
+                        enabled = !busy && canRequestEmailCode(email) && !verified,
+                        onClick = {
+                            when (authEmailSubmitOutcome(email)) {
+                                AuthEmailSubmitOutcome.ShowEmailFormatError -> emailFormatError = true
+                                AuthEmailSubmitOutcome.Submit -> onRequestCode(email)
+                            }
+                        },
+                    )
+                },
             )
 
-            // ⚠ **형식으로 버튼을 죽이지 않는다**(CLAUDE.md) — 누를 수는 있고, 누르면 왜
-            // 안 되는지 이메일 칸 아래에 말한다. 예전에는 `emailLooksValid` 로 잠가 놔서,
-            // 주소를 잘못 친 사람은 눌리지 않는 버튼 앞에서 이유를 들을 길이 없었다.
-            // 잠그는 것은 **보낼 것이 없을 때**(빈 칸)뿐이다.
-            //
-            // ⚠ **보낸 뒤에도 눌린다**(2026-10-11). 예전에는 한 번 보내면 '코드를 보냈어요' 로 잠겨,
-            // 코드가 만료되거나 틀린 횟수를 다 써서 "다시 받아 주세요" 를 들은 사람이 다시 받으려면
-            // 화면을 나갔다 와야 했다 — 문장이 시키는 일을 화면이 막고 있었다. 가입 화면과 같은 말
-            // (`auth_email_verify_resend`)로 다시 받는다. 너무 잦은 요청은 서버가 걸러 낸다 — 60초 안에 보낸
-            // 코드가 **아직 쓸 수 있으면**(만료 전·틀린 횟수가 상한 아래·쓰지 않음) 새로 보내지 않고 성공으로
-            // 답한다. 상한에 닿았거나 쓴 코드는 그 60초를 붙잡지 않으므로, "다시 받아 주세요" 를 듣고 곧바로 누른
-            // 다시 받기는 새 코드를 받는다. 하루 발급 상한을 넘긴 요청도 보내지 않는 성공이다(서버
-            // `shouldSkipEmailCodeSend` — 스펙 session-and-auth 「이메일 인증 코드」).
-            val requestEnabled = !busy && canRequestEmailCode(email)
-            OutlinedButton(
-                onClick = {
-                    when (authEmailSubmitOutcome(email)) {
-                        AuthEmailSubmitOutcome.ShowEmailFormatError -> emailFormatError = true
-                        AuthEmailSubmitOutcome.Submit -> onRequestCode(email)
-                    }
-                },
-                enabled = requestEnabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 54.dp),
-                shape = WakerButtonShape,
-                border = authOutlinedButtonBorder(requestEnabled),
-                colors = authOutlinedButtonColors(),
-            ) {
-                Text(
-                    if (codeSent) {
-                        stringResource(R.string.auth_email_verify_resend)
-                    } else {
-                        stringResource(R.string.auth_reset_send_code)
-                    },
+            if (codeSent && !verified) {
+                // 가입 화면의 코드 줄과 같은 부품이다(`AuthCodeConfirmRow` — 라벨은 줄 위, 칸과 `확인` 은 같은 높이, 안내는 줄 바로 아래).
+                AuthCodeConfirmRow(
+                    code = code,
+                    onCodeChange = { code = it },
+                    busy = busy,
+                    imeAction = ImeAction.Done,
+                    onConfirm = { onVerifyCode(email, code) },
                 )
             }
 
-            if (codeSent) {
-                AuthTextField(
-                    label = stringResource(R.string.auth_label_verification_code),
-                    value = code,
-                    onValueChange = { code = sanitizeVerificationCode(it) },
-                    keyboardType = KeyboardType.NumberPassword,
-                    imeAction = ImeAction.Next,
-                    enabled = !busy,
-                )
-
+            if (verified) {
                 AuthTextField(
                     label = stringResource(R.string.auth_reset_new_password),
                     value = password,
                     onValueChange = { password = it },
                     keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done,
+                    imeAction = ImeAction.Next,
                     enabled = !busy,
                     passwordVisible = passwordVisible,
                     onTogglePasswordVisible = { passwordVisible = !passwordVisible },
                     showPasswordLabel = stringResource(R.string.auth_password_show),
                     hidePasswordLabel = stringResource(R.string.auth_password_hide),
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PasswordRuleRow(
-                        text = stringResource(R.string.auth_password_rule_min),
-                        satisfied = passwordAtLeastMin,
-                        satisfiedColor = BrandAccentOnScene,
-                        pendingColor = AuthTextMuted,
-                    )
-                    PasswordRuleRow(
-                        text = stringResource(R.string.auth_password_rule_alnum),
-                        satisfied = passwordHasLetterAndDigit,
-                        satisfiedColor = BrandAccentOnScene,
-                        pendingColor = AuthTextMuted,
+                // 비밀번호 확인 칸 — 가입 화면과 같다(2026-11-16 오너 "비밀번호 찾기에는 비밀번호 확인 일치가 왜 없어").
+                // 잘못 친 채 바꾸면 그 비밀번호로는 로그인할 수 없어 재설정을 한 번 더 해야 한다.
+                AuthTextField(
+                    label = stringResource(R.string.auth_label_confirm_password),
+                    value = confirmPassword,
+                    onValueChange = { confirmPassword = it },
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                    enabled = !busy,
+                    isError = confirmPassword.isNotBlank() && !passwordMatches,
+                    supportingText = if (confirmPassword.isNotBlank() && !passwordMatches) {
+                        { Text(stringResource(R.string.auth_password_mismatch)) }
+                    } else {
+                        null
+                    },
+                    passwordVisible = confirmPasswordVisible,
+                    onTogglePasswordVisible = { confirmPasswordVisible = !confirmPasswordVisible },
+                    showPasswordLabel = stringResource(R.string.auth_confirm_password_show),
+                    hidePasswordLabel = stringResource(R.string.auth_confirm_password_hide),
+                )
+                PasswordRules(
+                    passwordAtLeastMin = passwordAtLeastMin,
+                    passwordHasLetterAndDigit = passwordHasLetterAndDigit,
+                    passwordMatches = passwordMatches,
+                )
+
+                // 주 버튼은 규칙에서 12 + 4 떨어진다 — iOS `PasswordResetView.confirmButton` 의 `.padding(.top, 4)` 와 같다.
+                Box(Modifier.padding(top = 4.dp)) {
+                    GradientCta(
+                        text = stringResource(R.string.auth_reset_submit),
+                        onClick = { onConfirm(email, code, password) },
+                        enabled = !busy && canConfirm,
                     )
                 }
-
-                GradientCta(
-                    text = stringResource(R.string.auth_reset_submit),
-                    onClick = { onConfirm(email, code, password) },
-                    enabled = !busy && canConfirm,
-                )
             }
+        }
         }
     }
 }

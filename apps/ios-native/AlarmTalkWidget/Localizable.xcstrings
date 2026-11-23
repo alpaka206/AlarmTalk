@@ -295,12 +295,6 @@
         }
       }
     },
-    "EULA" : {
-      "shouldTranslate" : false
-    },
-    "%lld%%" : {
-      "shouldTranslate" : false
-    },
     "알람 ID" : {
       "extractionState" : "manual",
       "localizations" : {

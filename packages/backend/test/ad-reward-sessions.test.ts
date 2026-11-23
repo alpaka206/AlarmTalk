@@ -178,7 +178,7 @@ beforeEach(async () => {
   resetAdMobKeyCacheForTest();
   vi.stubGlobal('fetch', vi.fn(async () => new Response(keysJson, { status: 200 })));
   failNextSettle = false;
-  for (const t of ['ad_reward_callbacks', 'ad_reward_sessions', 'ad_reward_credits', 'plan_grants']) {
+  for (const t of ['ad_reward_callbacks', 'ad_reward_sessions', 'ad_reward_credits']) {
     await db.execute(`DELETE FROM ${t}`);
   }
   await db.execute({ sql: `DELETE FROM users WHERE id IN (?, ?)`, args: [USER, OTHER] });
@@ -232,7 +232,7 @@ describe('발급 — 자리 예약과 한 계정 한 세션', () => {
     expect(view).toMatchObject({ can_watch: false, unavailable_reason: 'monthly_limit', next_grant_at: '2026-10-31T15:00:00Z' });
   });
 
-  it('플러스·관리자 지급 계정에는 발급하지 않는다 — 광고 제안 없음', async () => {
+  it('플러스 계정에는 발급하지 않는다 — 광고 제안 없음', async () => {
     await db.execute({ sql: `UPDATE users SET plan = 'plus' WHERE id = ?`, args: [USER] });
     const p = await prepare();
     expect(p.status).toBe(409);
@@ -342,7 +342,7 @@ describe('정산 대기 · 앱 재시작 · 지연 지급', () => {
     expect(await count(`SELECT COUNT(*) AS n FROM ad_reward_callbacks WHERE status = 'received'`)).toBe(1);
     expect((await status()).credits).toBe(0);
     vi.setSystemTime(Date.now() + 2 * 60 * 1000);
-    expect(await retryUnsettledAdRewardCallbacks(db, ENV)).toEqual({ settled: 1, failed: 0 });
+    expect(await retryUnsettledAdRewardCallbacks(db)).toEqual({ settled: 1, failed: 0 });
     expect((await status()).credits).toBe(1);
   });
 });

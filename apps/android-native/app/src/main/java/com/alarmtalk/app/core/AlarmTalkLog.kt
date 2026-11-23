@@ -112,26 +112,6 @@ object AlarmTalkLog {
     }
 
     /**
-     * Google 로그인이 사용자 행동(취소·연타)으로 끝났는가. 이슈가 아니라 브레드크럼이다 —
-     * 상태코드 10(`DEVELOPER_ERROR`, SHA 지문·클라이언트 ID 설정)·12500(`SIGN_IN_FAILED`)은
-     * 우리가 고칠 것이 있으니 그대로 올라간다.
-     */
-    /**
-     * 녹음을 시작하자마자 멈췄는가(`data/AlarmVoiceRecorder.kt` 의 [com.alarmtalk.app.data.RecordingStoppedTooSoonException]).
-     * 사용자의 동작이고 화면이 "너무 짧아요" 로 이미 말한다 — 이슈가 아니라 브레드크럼이다(2026-10-26 ANDROID-1P).
-     * 오래 녹음한 뒤의 멈춤 실패는 이 표시가 없어 그대로 이슈다.
-     */
-    internal fun isRecordingStoppedTooSoon(error: Throwable): Boolean {
-        var current: Throwable? = error
-        val seen = HashSet<Throwable>()
-        while (current != null && seen.add(current)) {
-            if (current is com.alarmtalk.app.data.RecordingStoppedTooSoonException) return true
-            current = current.cause
-        }
-        return false
-    }
-
-    /**
      * 녹음이 사용자의 동작이나 기기 사정으로 끝났는가([com.alarmtalk.app.data.RecordingEndedByUserOrDeviceException] —
      * 시작하자마자 멈춤·마이크 권한 없음·다른 앱이나 전화의 끼어듦). 화면이 이유를 말하고 다시 녹음하게 하므로 이슈가
      * 아니라 브레드크럼이다. 이유를 모르는 멈춤 실패는 이 표시가 없어 그대로 이슈다.
@@ -146,6 +126,11 @@ object AlarmTalkLog {
         return false
     }
 
+    /**
+     * Google 로그인이 사용자 행동(취소·연타)으로 끝났는가. 이슈가 아니라 브레드크럼이다 —
+     * 상태코드 10(`DEVELOPER_ERROR`, SHA 지문·클라이언트 ID 설정)·12500(`SIGN_IN_FAILED`)은
+     * 우리가 고칠 것이 있으니 그대로 올라간다.
+     */
     internal fun isGoogleSignInUserAction(error: Throwable): Boolean {
         var current: Throwable? = error
         val seen = HashSet<Throwable>()

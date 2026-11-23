@@ -81,8 +81,6 @@ internal fun WakerSelectionSheet(
     // 사라져 바깥을 눌러 닫을 곳이 없다(2026-09-30 A32, 미국 69곳). iOS `BottomSheetMetrics.maxFraction`
     // 과 같은 값이다. 드래그 핸들 몫(약 32dp)은 뺀다.
     val selfScrollingMaxHeight = (LocalConfiguration.current.screenHeightDp * 0.9f).dp - 32.dp
-    // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
-    TrackOpenModal()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -159,8 +157,6 @@ internal fun WakerFormSheet(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
-    TrackOpenModal()
     ModalBottomSheet(
         onDismissRequest = onCancel,
         sheetState = sheetState,

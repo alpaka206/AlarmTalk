@@ -1,6 +1,5 @@
 package com.alarmtalk.app
 
-import com.alarmtalk.app.data.systemVoiceDisplayName
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,31 +12,34 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.systemVoiceDisplayName
 import com.alarmtalk.app.network.VoiceProfile
-import androidx.compose.ui.text.style.TextOverflow
 
 /** 마지막 사용값이 있으면 종류보다 우선하고, 없을 때만 내 것 → 기본 순으로 고른다. */
 internal fun preferredInitialVoiceProfileId(
@@ -200,6 +202,14 @@ internal fun VoiceAudioCard(
         } else {
             editor.voiceProfileId ?: ""
         }
+        // 교체 정리 중인 목소리를 쓰던 알람을 열었으면 그 목소리는 고르기 목록에 없다(위 `readyOwnProfiles`). 목록의 첫
+        // 목소리로 보이게 두지 말고 **이름 그대로 회색 '준비 중'** 으로 말한다(2026-11-16 오너 — 저장을 눌러야 알게 하지
+        // 않는다). 저장은 그대로 막힌다("아직 준비 중이에요" — `SaveBlockReason.VOICE_SETTLING`). iOS `AlarmEditorSheet` 의
+        // `settlingSelectedVoiceName` 과 같다.
+        val settlingSelectedName = editor.voiceProfileId
+            ?.takeIf { visibleVoiceSource != VoiceSources.LOCAL_AUDIO && it in settlingVoiceProfileIds }
+            ?.let { id -> voiceProfiles.firstOrNull { it.id == id } }
+            ?.let { systemVoiceDisplayName(context, it.id, it.name) }
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = WakerCardShape,
@@ -209,6 +219,7 @@ internal fun VoiceAudioCard(
             VoiceProfileSelector(
                 options = profileOptions + recordingOption,
                 selectedId = selectorSelectedId,
+                settlingName = settlingSelectedName,
                 onSelect = { option ->
                     // 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를
                     // 비운다. 조용히 지우면 '문구가 사라졌다'가 되므로 한 번 확인받는다.
@@ -330,15 +341,9 @@ internal fun VoiceAudioCard(
         }
         }
     pendingVoiceSwitch?.let { pending ->
-        // 추가 팩은 기본 목소리가 아니다 — 같은 이유(준비된 문구로만 말한다)를 팩의 이름으로 말한다(`docs/spec/voice-packs.md` §7).
-        val toPack = com.alarmtalk.app.data.isVoicePackVoiceId(pending.id)
         IosAlertDialog(
-            title = stringResource(
-                if (toPack) R.string.voice_pack_switch_drops_text_title else R.string.editor_voice_switch_drops_text_title,
-            ),
-            message = stringResource(
-                if (toPack) R.string.voice_pack_switch_drops_text_message else R.string.editor_voice_switch_drops_text_message,
-            ),
+            title = stringResource(R.string.editor_voice_switch_drops_text_title),
+            message = stringResource(R.string.editor_voice_switch_drops_text_message),
             onDismiss = { pendingVoiceSwitch = null },
             actions = listOf(
                 IosAlertAction(
@@ -378,8 +383,11 @@ internal fun VoiceOutputSettingsPane(
     onDismiss: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+        // 편집기와 같은 밤하늘 그라데이션이다(CLAUDE.md 디자인 토큰 — 하위 전체화면 포함, iOS 편집기 pane 과 같다).
+        // 편집기 위로 밀려 들어오므로 불투명해야 하는데 그라데이션도 불투명하다. 2026-11-15 전까지 단색 `background`.
+        modifier = Modifier.fillMaxSize().background(homeGradientBrush()),
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // 상단바는 공용 `WakerTopBar` 하나다 — 화면마다 손으로 그리지 말 것
@@ -466,6 +474,8 @@ private fun NoUsableVoiceProfileCallout(
 private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
     selectedId: String,
+    /** 고른 목소리가 교체 정리 중이면 그 이름 — 목록에 없으므로 행이 회색 '준비 중' 으로 말한다. */
+    settlingName: String? = null,
     onSelect: (VoiceProfileOption) -> Unit,
     /** 행의 재생 버튼 — 고르기 전에 목소리를 들어볼 수 있게 한다(목소리 선택 화면과 동일). */
     onPreview: (VoiceProfileOption) -> Unit,
@@ -473,7 +483,15 @@ private fun VoiceProfileSelector(
     preparingVoiceId: String?,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
-    val selectedOption = options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
+    // ⚠ **고른 목소리가 목록에 없으면 아무것도 고르지 않은 것으로 그린다**(값 '목소리 선택', 시트에 체크 없음).
+    // 예전에는 목록의 첫 목소리로 떨어뜨려, 지운 목소리·쓸 수 없는 목소리를 쓰던 알람이 '시우' 가 골라진 것처럼 보였는데
+    // 저장을 누르면 "목소리를 골라주세요" 가 떴다(2026-11-22 오너 "기본으로 항상 골라져 있는 거 아냐?"). iOS 는 처음부터
+    // 자리표시자였다(`AlarmEditorSheet.voiceRowSubtitle`). 정리 중이면 위 `settlingName` 이 이름 그대로 '준비 중' 으로 말한다.
+    val selectedOption = if (settlingName != null) {
+        null
+    } else {
+        options.firstOrNull { it.id == selectedId }
+    }
     // 알람음 행과 대칭: 제목 '목소리' + 값(선택된 목소리 / 꺼짐).
     // ⚠ **`editor_voice_output_title` 을 쓰지 말 것**(2026-08-16). 그건 '목소리 크기'
     // 상세 화면의 제목이고, 하나로 묶어 뒀더니 그 화면 이름을 고치는 순간 이 행이
@@ -484,7 +502,10 @@ private fun VoiceProfileSelector(
     // 사라진다**.
     EditorChevronRow(
         title = stringResource(R.string.editor_voice_row_title),
-        value = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
+        value = settlingName?.let { stringResource(R.string.editor_voice_preparing_value, it) }
+            ?: selectedOption?.name
+            ?: stringResource(R.string.editor_voice_select),
+        valueMuted = settlingName != null,
         onClick = { sheetOpen = true },
     )
     if (sheetOpen) {
@@ -495,35 +516,45 @@ private fun VoiceProfileSelector(
             title = stringResource(R.string.editor_voice_select_title),
             onDismiss = { sheetOpen = false },
         ) { dismiss ->
-            options.forEachIndexed { index, option ->
-                WakerSheetOptionRow(
-                    title = option.name,
-                    description = option.detail,
-                    selected = option.id == selectedOption?.id,
-                    onClick = {
-                        onSelect(option)
-                        dismiss()
-                    },
-                    trailing = {
-                        // ⚠ '직접 녹음' 에는 재생 버튼을 달지 않는다. 아직 녹음한 것이 없어
-                        // `previewVoice` 가 조용히 return 하므로, 눌러도 아무 소리가 안 나는
-                        // 버튼이 된다(못 움직이는 컨트롤은 두지 않는다 — CLAUDE.md).
-                        if (option.id != VoiceSources.LOCAL_AUDIO) {
-                            VoicePreviewButton(
-                                playing = playingVoiceId == option.id,
-                                preparing = preparingVoiceId == option.id,
-                                onClick = { onPreview(option) },
-                            )
-                        }
-                    },
-                    divider = index != options.lastIndex,
-                )
+            // ⚠ **행은 `WakerSheetOptionGroup` 안에 둔다**(그 부품의 규칙). 밖에 두면 시트의 간격(14)이 행마다 끼어 구분선 아래가
+            //   비고 한 행이 83 까지 커졌다 — iOS `VoiceSelectionSheet`(행 64, 구분선만)와 달랐다(2026-11-22 두 앱 대조).
+            WakerSheetOptionGroup {
+                options.forEachIndexed { index, option ->
+                    WakerSheetOptionRow(
+                        title = option.name,
+                        description = option.detail,
+                        selected = option.id == selectedOption?.id,
+                        onClick = {
+                            onSelect(option)
+                            dismiss()
+                        },
+                        trailing = {
+                            // ⚠ '직접 녹음' 에는 재생 버튼을 달지 않는다. 아직 녹음한 것이 없어
+                            // `previewVoice` 가 조용히 return 하므로, 눌러도 아무 소리가 안 나는
+                            // 버튼이 된다(못 움직이는 컨트롤은 두지 않는다 — CLAUDE.md).
+                            if (option.id != VoiceSources.LOCAL_AUDIO) {
+                                VoicePreviewButton(
+                                    playing = playingVoiceId == option.id,
+                                    preparing = preparingVoiceId == option.id,
+                                    onClick = { onPreview(option) },
+                                )
+                            }
+                        },
+                        divider = index != options.lastIndex,
+                    )
+                }
             }
         }
     }
 }
 
-/** 선택 시트 행의 재생 버튼. 행 자체를 누르면 '선택', 이 버튼은 '들어보기'로 나눈다. */
+/**
+ * 선택 시트 행의 '들어보기' 버튼. 행 자체를 누르면 '선택', 이 버튼은 '들어보기'로 나눈다.
+ *
+ * 목소리 탭 목록(`ui/voices/VoiceProfileRowComponents.kt`)과 같은 **스피커 ↔ 정지, 주 색**이다 — "이 목소리가 어떤지 들어본다"
+ * 는 뜻이라 재생(▶)보다 스피커가 맞다. 2026-11-22 전에는 이 시트만 검정 재생(▶)이라 목소리 탭·iOS(`speaker.wave.2.fill`,
+ * 주 색)와 달랐다. 준비 중에는 돌아가는 표시다(`VoicePreviewButtonIcon` 의 준비 갈래와 같은 20dp).
+ */
 @Composable
 private fun VoicePreviewButton(
     playing: Boolean,
@@ -531,7 +562,17 @@ private fun VoicePreviewButton(
     onClick: () -> Unit,
 ) {
     IconButton(onClick = onClick) {
-        VoicePreviewButtonIcon(active = playing, preparing = preparing)
+        if (preparing) {
+            VoicePreviewButtonIcon(active = playing, preparing = true)
+        } else {
+            Icon(
+                imageVector = if (playing) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                contentDescription = stringResource(
+                    if (playing) R.string.voicesr_preview_stop else R.string.voicesr_preview_action,
+                ),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
@@ -621,6 +662,8 @@ private fun EditorChevronRow(
     onClick: () -> Unit,
     /** 값이 길어도 행을 늘리지 않고 한 줄에서 자른다. */
     singleLineValue: Boolean = false,
+    /** 값을 흐리게 — 아직 고를 수 없는 상태(정리 중인 목소리의 '준비 중'). */
+    valueMuted: Boolean = false,
 ) {
     Surface(
         onClick = onClick,
@@ -645,7 +688,7 @@ private fun EditorChevronRow(
                 Text(
                     text = value,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (valueMuted) 0.6f else 1f),
                     maxLines = if (singleLineValue) 1 else Int.MAX_VALUE,
                     overflow = if (singleLineValue) TextOverflow.Ellipsis else TextOverflow.Clip,
                 )
@@ -712,10 +755,7 @@ private fun voiceOptionLabelRes(options: List<Pair<String, Int>>, value: String)
     options.firstOrNull { it.first == value }?.second ?: options.firstOrNull()?.second
 
 private fun ownedVoiceDetail(context: android.content.Context, profile: VoiceProfile): String =
-    if (com.alarmtalk.app.data.isVoicePackVoiceId(profile.id)) {
-        // 추가 팩은 기본 목소리처럼(`isSystem`) 테마로 울지만 기본 4종이 아니다(`docs/spec/voice-packs.md` §7).
-        context.getString(R.string.voice_pack_editor_detail)
-    } else if (profile.isSystem == true) {
+    if (profile.isSystem == true) {
         context.getString(R.string.editor2_voice_detail_default)
     } else {
         context.getString(R.string.editor2_voice_detail_mine)

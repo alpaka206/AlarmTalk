@@ -93,7 +93,7 @@ async function main(): Promise<void> {
 
   // 3) users.plan 미러
   await db.execute({
-    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+    sql: `UPDATE users SET plan = ? WHERE id = ?`,
     args: [PERSONAL_USER_PLAN, userId],
   });
 

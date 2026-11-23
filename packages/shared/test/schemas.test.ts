@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  UsageEventBatchSchema,
   UsageEventSchema,
   USAGE_EVENT_TYPES,
   USAGE_EVENT_V1_TYPES,
@@ -14,7 +15,6 @@ import {
   LoginRequestSchema,
   DisplayNameSchema,
   clampDisplayName,
-  isValidEmailFormat,
   normalizeEmail,
   normalizeVerificationCode,
   VoicePitchSemitonesSchema,
@@ -47,13 +47,9 @@ const EMAIL_CASES: ReadonlyArray<readonly [string, boolean, string]> = [
 ];
 
 describe('이메일 형식 규칙', () => {
+  // 표를 스키마로 돌린다 — 로그인 스키마도 같은 답이어야 한다. 갈라지면 앱이 통과시킨 값을
+  // 서버가 거절하는 원래 사고로 되돌아간다. (판정 함수 `isValidEmailFormat` 은 테스트만 불러 2026-11-23 에 지웠다.)
   it.each(EMAIL_CASES)('%s → %s (%s)', (input, expected) => {
-    expect(isValidEmailFormat(input)).toBe(expected);
-  });
-
-  // 같은 표를 스키마로도 돌린다 — 판정과 스키마가 갈라지면 앱이 통과시킨 값을
-  // 서버가 거절하는 원래 사고로 되돌아간다.
-  it.each(EMAIL_CASES)('스키마도 같은 답을 낸다: %s → %s (%s)', (input, expected) => {
     expect(EmailSchema.safeParse(input).success).toBe(expected);
     expect(
       LoginRequestSchema.safeParse({ email: input, password: 'any-non-empty' }).success,
@@ -92,7 +88,7 @@ describe('이메일 형식 규칙', () => {
     // 표가 통째로 거절되고 있으면 이 검사는 아무것도 지키지 못한다.
     expect(acceptedByZod.length).toBeGreaterThan(50);
 
-    const narrowed = acceptedByZod.filter((c) => !isValidEmailFormat(c));
+    const narrowed = acceptedByZod.filter((c) => !EmailSchema.safeParse(c).success);
     expect(narrowed).toEqual([]);
   });
 
@@ -424,5 +420,29 @@ describe('UsageEventSchema — 2판(usage-events §7)', () => {
     const v1 = new Set<string>(USAGE_EVENT_V1_TYPES);
     expect(USAGE_EVENT_V2_TYPES.filter((t) => v1.has(t))).toEqual([]);
     expect(USAGE_EVENT_TYPES).toHaveLength(USAGE_EVENT_V1_TYPES.length + USAGE_EVENT_V2_TYPES.length);
+  });
+
+  // 추가 음성팩과 함께 없앤 종류(`pack_selected`)와 칸(`pack_id`) — 옛 큐(내부 dev 빌드)에 남아 올라와도 배치를 400 으로
+  // 막지 않는다(그 기기의 큐가 영구히 막힌다). 받고 버린다. 모르는 종류·칸은 여전히 거절한다.
+  it('은퇴한 종류는 배치에서 걷어 내고, 은퇴한 칸은 지운 채 받는다', () => {
+    const retired = { ...base, id: '33333333-3333-4333-8333-333333333333', type: 'pack_selected', props: { pack_id: 'mina' } };
+    const selected = { ...base, type: 'voice_selected', schema_version: 2, props: { pack_id: 'mina', is_first: true } };
+    const parsed = UsageEventBatchSchema.safeParse({ events: [retired, selected] });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data!.events).toHaveLength(1);
+    expect(parsed.data!.events[0]).toMatchObject({ type: 'voice_selected', props: { is_first: true } });
+    expect(parsed.data!.events[0]!.props).not.toHaveProperty('pack_id');
+    // 은퇴한 종류만 든 배치도 통과한다 — 빈 배열 400 이 아니다.
+    const onlyRetired = UsageEventBatchSchema.safeParse({ events: [retired] });
+    expect(onlyRetired.success).toBe(true);
+    expect(onlyRetired.data!.events).toEqual([]);
+    // 개수 상·하한은 받은 그대로 센다.
+    expect(UsageEventBatchSchema.safeParse({ events: [] }).success).toBe(false);
+    expect(UsageEventBatchSchema.safeParse({ events: Array.from({ length: 101 }, () => retired) }).success).toBe(false);
+    // 은퇴하지 않은 모르는 종류·칸은 그대로 거절한다.
+    expect(UsageEventBatchSchema.safeParse({ events: [{ ...base, type: 'something_new' }] }).success).toBe(false);
+    expect(
+      UsageEventSchema.safeParse({ ...base, type: 'voice_selected', props: { pack_id: 'mina', voice_key: 'mina' } }).success,
+    ).toBe(false);
   });
 });

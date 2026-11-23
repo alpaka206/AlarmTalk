@@ -26,6 +26,7 @@ struct MenuView: View {
     @State private var deleteConfirming = false
 
     var body: some View {
+        // 카드 사이 16 — 안드로이드 `MenuTabPanel` 의 `spacedBy(16.dp)`.
         VStack(alignment: .leading, spacing: 16) {
             profileCard
 
@@ -33,12 +34,17 @@ struct MenuView: View {
                 SettingsValueButton(
                     label: "화면 테마",
                     value: currentThemeMode.label,
+                    verticalPadding: 8,
                     action: { themeDialogOpen = true }
                 )
-                Divider()
+                // 좌우 8·위아래 4 들인 선 — 안드로이드 `MenuTabPanel` 의 테마·언어 사이 `HorizontalDivider` 와 같다.
+                SettingsDivider()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                 SettingsValueButton(
                     label: "앱 언어",
                     value: appLanguageLabel,
+                    verticalPadding: 8,
                     // iOS 는 앱별 언어를 시스템 설정에서만 바꾼다 — 앱 안에 고르는 화면이 없다.
                     action: { openAppSettings() }
                 )
@@ -47,43 +53,41 @@ struct MenuView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 // 코드를 넣는 행을 두지 않는다 — 유료 기능은 스토어 결제로만 연다(`docs/spec/plan-gates.md`).
-                SettingsValueButton(label: "이용권", action: onOpenBilling)
+                SettingsValueButton(label: "이용권", verticalPadding: 8, action: onOpenBilling)
             }
             .settingsCard(title: nil)
 
             VStack(alignment: .leading, spacing: 0) {
-                Button {
-                    deleteConfirming = true
-                } label: {
-                    HStack {
-                        Text(String(localized: "회원 탈퇴"))
-                            .fontWeight(.medium)
-                            .foregroundStyle(theme.palette.onSurface)
-                        Spacer(minLength: 12)
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시). 탈퇴도 이 행에서는 아무 일도 일어나지 않는다 — 확인 알럿의
+                // [탈퇴] 가 빨강이고, 거기서만 되돌릴 수 없는 일이 벌어진다(안드로이드 `MenuTabPanel` 의 탈퇴 행도 같다).
+                // 신청이 도는 동안(`auth.isBusy`)에는 행을 잠그고 꺾쇠 자리에 진행 표시를 그린다 — 안드로이드는 확인 창을 연 채
+                // 버튼을 잠그는데(`DeleteAccountConfirmDialog` 의 `busy`), 시스템 알럿은 누르는 순간 닫혀 그 자리가 없다.
+                SettingsValueButton(
+                    label: "회원 탈퇴",
+                    verticalPadding: 8,
+                    showsProgress: auth.isBusy,
+                    action: { deleteConfirming = true }
+                )
+                .disabled(auth.isBusy)
                 // 탈퇴 신청 실패 — 알럿은 이미 닫혔으니 그 행 아래에 빨간 글자로 남긴다(다시 신청하면 지운다).
+                // 행 이름과 같은 시작선이다(행 안쪽 12).
                 if let message = auth.actionErrorMessage(for: .accountDeletion) {
                     Text(message)
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.error)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 12)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
                 }
             }
             .settingsCard(title: nil)
 
+            // 버전 줄 — 안드로이드 `MenuTabPanel` 과 같은 bodySmall(12)·위 4.
             Text(String(localized: "앱 버전 \(Self.appVersion)"))
-                .font(.footnote)
+                .font(theme.typography.bodySmall)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 4)
         }
         .bottomSheet(isPresented: $themeDialogOpen, onDismiss: { themeDialogOpen = false }) {
             ThemeModePickerSheet(
@@ -106,28 +110,31 @@ struct MenuView: View {
         }
     }
 
+    /// 프로필 카드 — 안드로이드 `MenuTabPanel` 의 프로필 `Surface` 와 같은 값이다: 안쪽 여백 16, 이메일 titleMedium Bold
+    /// (길면 줄을 바꿔 다 보인다), 부제 bodySmall(12), 꺾쇠 칸 22, 사이 14. 카드 하나가 곧 행 하나라 설정 카드의 안쪽 여백(8)을
+    /// 거치지 않는다(`settingsSurface`).
     private var profileCard: some View {
         Button(action: onOpenSettings) {
-            HStack {
+            HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName)
-                        .font(.title3.weight(.bold))
+                        .font(theme.typography.titleMedium)
+                        .fontWeight(.bold)
                         .foregroundStyle(theme.palette.onSurface)
-                        .lineLimit(1)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(String(localized: "내 정보 · 앱 설정"))
-                        .font(.subheadline)
+                        .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
-                Spacer(minLength: 12)
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                SettingsChevron(size: 22)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 18)
+            .padding(16)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .settingsCard(title: nil)
+        .buttonStyle(PressScaleButtonStyle())
+        .settingsSurface()
     }
 
     private var displayName: String {

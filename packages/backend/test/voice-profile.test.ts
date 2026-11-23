@@ -27,7 +27,7 @@ const MONTHLY_REGISTRATION_READ = 'SELECT COUNT(*) AS used FROM voice_profile_ch
 
 /**
  * POST /clone 은 `c.get('userIdPK')` 가 있으면 유료 플랜 여부를 실제로 조회한다
- * (`… AS plan FROM users …` — 관리자 기간 지급을 반영한 등급 읽기). fakeAuthMiddleware 가 실제 authMiddleware 처럼
+ * (`SELECT plan FROM users …`). fakeAuthMiddleware 가 실제 authMiddleware 처럼
  * userIdPK 를 채우게 되면서 이 쿼리가 결과 큐의 맨 앞을 소비하므로, 클론 테스트는
  * 유료 플랜 행을 가장 먼저 넣어 줘야 이후 결과(한도 카운트·INSERT ...)가 한 칸씩
  * 밀리지 않는다. 무료 플랜이면 403 VOICE_FEATURE_REQUIRES_PAID_PLAN 으로 떨어진다.
@@ -107,7 +107,7 @@ function fakeExecutionCtx() {
  * 매처라 FIFO 큐 순서를 건드리지 않는다(기존 pushResult 단언 보존).
  */
 function pushReplacementGatesPass(db: ReturnType<typeof createMockDB>) {
-  db.pushResultFor('AS plan FROM users', [{ plan: 'plus' }]);
+  db.pushResultFor('SELECT plan FROM users', [{ plan: 'plus' }]);
   db.pushResultFor('INSERT OR IGNORE INTO voice_profile_change_ledger', [], 1);
 }
 
@@ -237,12 +237,11 @@ describe('GET /draft — 드래프트 조회 (voice-profile)', () => {
 
 describe('GET /draft-quota — 월 생성 쿼터 (voice-profile)', () => {
   it('사용 기록이 없으면 이번 달 등록 쿼터는 1/1', async () => {
-    mockDB.pushResult([]); // 초안 시도 used_count 조회 → 없음
     mockDB.pushResult([{ used: 0 }]); // 이번 달 정식 등록 사용량 → 0
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    // 초안 시도는 제한 없음(limit=0, 집계용). 사용자에게 보여줄 숫자는 registration_*.
+    // 초안 시도는 세지 않는다 — limit/used/remaining 은 옛 iOS 디코딩 호환으로 0 이다. 사용자에게 보여줄 숫자는 registration_*.
     expect(body).toEqual({
       limit: 0,
       used: 0,
@@ -254,14 +253,13 @@ describe('GET /draft-quota — 월 생성 쿼터 (voice-profile)', () => {
   });
 
   it('이번 달 목소리를 이미 등록했으면 등록 쿼터는 0/1', async () => {
-    mockDB.pushResult([{ used_count: 3 }]);
     mockDB.pushResult([{ used: 1 }]); // 정식 등록 1건 소진
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({
       limit: 0,
-      used: 3,
+      used: 0,
       remaining: 0,
       registration_limit: 1,
       registration_used: 1,
@@ -270,7 +268,6 @@ describe('GET /draft-quota — 월 생성 쿼터 (voice-profile)', () => {
   });
 
   it("'/:id' 보다 먼저 매칭돼 draft-quota 가 프로필 id 로 잡히지 않는다", async () => {
-    mockDB.pushResult([{ used_count: 1 }]);
     mockDB.pushResult([{ used: 0 }]);
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     // 400(잘못된 UUID) 이 아니라 200 쿼터 응답이어야 한다.
@@ -710,21 +707,18 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(queued, 'provider 보이스를 외부 삭제 큐에 적어야 한다').toBeDefined();
   });
 
-  it('초안은 월 시도 횟수로 막지 않는다 — 정식 등록 전까진 무제한 생성·삭제', async () => {
-    // 예전에는 여기서 429 VOICE_DRAFT_ATTEMPT_LIMIT_REACHED 로 막았다. 이제 사용량만 센다.
+  it('초안은 월 시도 횟수로 막지도 세지도 않는다 — 정식 등록 전까진 무제한 생성·삭제', async () => {
+    // 예전에는 여기서 429 VOICE_DRAFT_ATTEMPT_LIMIT_REACHED 로 막았고, 그 뒤에는 사용량만 셌다. 그 집계는 읽는 곳이 없어
+    // 2026-11-23 #152 에서 표째 지웠다.
     pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-draft' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '새 목소리'));
     expect(res.status).toBe(201);
-    const usageCall = mockDB.calls.find((call) => call.sql.includes('voice_draft_attempt_usage'));
-    expect(usageCall).toBeDefined();
-    // 집계는 계속하되 상한 비교(WHERE used_count < ?)는 사라졌다.
-    expect(usageCall!.sql).not.toContain('used_count <');
+    expect(mockDB.calls.some((call) => call.sql.includes('voice_draft_attempt_usage'))).toBe(false);
   });
 
   it('프로필이 없으면 통과', async () => {
@@ -745,7 +739,6 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-quota' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), '쿼터'));
     expect(res.status).toBe(201);
@@ -753,7 +746,6 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     const quotaCall = mockDB.calls.find((call) => call.sql.includes('FROM voice_profiles'));
     expect(quotaCall).toBeDefined();
     expect(quotaCall!.sql).toContain("status != 'failed'");
-    expect(mockDB.calls.some((call) => call.sql.includes('voice_draft_attempt_usage'))).toBe(true);
     // ⚠ 2026-10-11 에 **뒤집었다.** 예전에는 "초안 등록은 등록 원장을 아예 보지 않는다" 를
     // 단언했다 — 그래서 이번 달 등록을 다 쓴 사람도 초안을 만들 수 있었고, 그 초안의 저장이
     // 429 로 막혔다. 이제 초안 등록은 원장을 **읽는다**(자격 확인 — 전사 전의 읽기 전용 선검사와
@@ -799,7 +791,6 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
     const sqls = mockDB.calls.map((call) => call.sql);
     expect(sqls.some((sql) => sql.includes('INSERT INTO voice_profiles'))).toBe(false);
-    expect(sqls.some((sql) => sql.includes('voice_draft_attempt_usage'))).toBe(false);
     // 옛 초안: 소프트 삭제도, 외부 자원 삭제 예약도 없다.
     expect(sqls.some((sql) => sql.includes("SET deleted_at = datetime('now')"))).toBe(false);
     expect(sqls.some((sql) => sql.includes('pending_external_deletions'))).toBe(false);
@@ -1514,7 +1505,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 직접 입력 음원 처�
 
   it('이번 달 등록을 이미 썼으면 교체도 429 — 한 줄도 쓰지 않는다', async () => {
     pushReplaceLookups();
-    mockDB.pushResultFor('AS plan FROM users', [{ plan: 'plus' }]);
+    mockDB.pushResultFor('SELECT plan FROM users', [{ plan: 'plus' }]);
     // 원장이 이미 이번 달 행을 들고 있다 → INSERT OR IGNORE 가 0행.
     mockDB.pushResultFor('INSERT OR IGNORE INTO voice_profile_change_ledger', [], 0);
 
@@ -1534,7 +1525,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 직접 입력 음원 처�
 
   it('초안이 남아 있는 사이 무료로 내려갔으면 교체도 403', async () => {
     pushReplaceLookups();
-    mockDB.pushResultFor('AS plan FROM users', [{ plan: 'free' }]);
+    mockDB.pushResultFor('SELECT plan FROM users', [{ plan: 'free' }]);
 
     const response = await req(
       buildApp(),

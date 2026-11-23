@@ -30,7 +30,6 @@ import {
 import { sendPaymentFailedPush } from './fcm';
 import { logStructured } from './logger';
 import { planTypeToUserPlan } from '../routes/billing-helpers';
-import { personalPromoCoversFree } from './personal-promo';
 
 export class BillingStateUnavailableError extends Error {
   constructor(
@@ -211,8 +210,6 @@ export async function reconcileStoreSubscription(
   subscriptionId: string,
   now = new Date(),
 ): Promise<'applied' | 'not_store'> {
-  // 보관 판정의 기간 한정 개인 플랜 인자 — 이 실행의 시각으로 한 번 푼다.
-  const promoCoversFree = personalPromoCoversFree(env, now);
   const before = await readSubscription(db, subscriptionId);
   if (!before || before.status !== 'active') return 'not_store';
   const transactions = await readTransactions(db, subscriptionId);
@@ -293,7 +290,6 @@ export async function reconcileStoreSubscription(
         appliedAt: now,
         lastPaidAt: entitled.paidAt,
         expiresAt: entitled.expiresAt!,
-        promoCoversFree,
       });
       if (!result.ok) throw new BillingStateUnavailableError(result.errorCode, false);
       const newId = result.subscription.id;
@@ -324,7 +320,7 @@ export async function reconcileStoreSubscription(
       // 결제 실패 알림은 등급이 실제로 바뀐 회차에만 — 크론이 같은 보류를 5분마다 다시 발견한다.
       return { changed: [], holdUserPk: ownerBefore !== ownerAfter ? active.userPk : null };
     }
-    const changed = await terminateSubscription(tx, before, now, promoCoversFree);
+    const changed = await terminateSubscription(tx, before, now);
     return { changed, holdUserPk: null };
   });
   await notifyBillingStateChanged(db, env, notifications.changed);
@@ -348,8 +344,6 @@ export async function expireSubscriptionIfDue(
   id: string,
   expectedExpiry: string,
   now: Date,
-  /** 보관 판정의 기간 한정 개인 플랜 인자 — `personalPromoCoversFree(env, now)`. */
-  promoCoversFree: boolean,
   allowStore = true,
 ): Promise<string[]> {
   return withWriteTransaction(db, async (tx) => {
@@ -364,7 +358,7 @@ export async function expireSubscriptionIfDue(
       return [];
     if (!allowStore && (await readTransactions(tx, id)).length)
       throw new BillingStateChangedError();
-    return terminateSubscription(tx, current, now, promoCoversFree);
+    return terminateSubscription(tx, current, now);
   });
 }
 
@@ -373,7 +367,6 @@ async function terminateSubscription(
   tx: DbExecutor,
   current: Row,
   now: Date,
-  promoCoversFree: boolean,
 ): Promise<string[]> {
   const active = asActive(current);
   const due =
@@ -397,9 +390,7 @@ async function terminateSubscription(
       periodDays: Number(nextPlan.period_days),
       now,
     });
-  } else if (!(await hasActivePaidEntitlement(tx, active.userPk, promoCoversFree))) {
-    // 기간 한정 개인 플랜이 덮는 동안에는 걸지 않는다 — 기간 중 구독이 끝나도 목소리를
-    // 잃지 않는다. 종료 뒤에는 `transitionPersonalPromoEnd`(`lib/personal-promo-end.ts`)가 건다.
+  } else if (!(await hasActivePaidEntitlement(tx, active.userPk))) {
     await schedulePaidVoiceRetention(tx, active.userPk, now);
   }
   return [active.userPk];
@@ -412,7 +403,6 @@ export async function reconcileBillingPreflight(
   userPk: string,
   now = new Date(),
 ): Promise<void> {
-  const promoCoversFree = personalPromoCoversFree(env, now);
   const candidates = await db.execute({
     sql: `SELECT s.id FROM subscriptions s
           WHERE s.status = 'active' AND s.user_id = ? ORDER BY s.id`,
@@ -423,7 +413,7 @@ export async function reconcileBillingPreflight(
     if ((await reconcileStoreSubscription(db, env, id, now)) === 'applied') continue;
     const current = await readSubscription(db, id);
     const affected = current
-      ? await expireSubscriptionIfDue(db, id, String(current.expires_at), now, promoCoversFree, false)
+      ? await expireSubscriptionIfDue(db, id, String(current.expires_at), now, false)
       : [];
     await notifyBillingStateChanged(db, env, affected);
   }

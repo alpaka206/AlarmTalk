@@ -14,6 +14,8 @@ struct LegalDocumentView: View {
 
     var body: some View {
         LegalWebView(url: url)
+            // 네비게이션 바 아래 24 — 하위 화면 공통 간격이다(안드로이드 `LegalDocumentScreen` 도 상단바 아래 24 에서 문서가 시작한다).
+            .padding(.top, 24)
             .homeGradientBackground()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)

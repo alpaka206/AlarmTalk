@@ -173,7 +173,7 @@ export const STOCK_CLIP_PRESETS: readonly StockClipPreset[] = [
   // 응원 — **문구는 `@alarmtalk/shared` 의 `stock-content.json` 이 원본이다**(스펙 §5-4).
   // ⚠ **id 는 `cheer` 이고 예전 이름은 `love` 였다**(2026-09-02). 대사가 응원·자기돌봄으로
   //   확정되면서 개념 자체를 바꿨다 — 연애 문구가 아니다. 옛 값 `'love'` 는 이미 저장된
-  //   행·구버전 앱이 보내오므로 **읽을 때 접어 준다**(`normalizeRandomContext`,
+  //   행·구버전 앱이 보내오므로 **읽을 때 접어 준다**(`normalizeStockCategory`,
   //   `randomPromptContextForBucket`, iOS `RandomPromptContext.normalized`).
   // ⚠ `cheer` 카테고리는 **옛 응원 3개(`cheer_v1`)로 고정**이다 — 새 응원은 뒤에 이어 붙이지 않고 따로
   //   `cheer_v2` 카테고리로 둔다(이유는 스펙 §5-4 「새 응원을 이어 붙이지 않은 이유」).

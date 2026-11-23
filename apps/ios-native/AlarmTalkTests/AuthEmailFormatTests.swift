@@ -107,12 +107,4 @@ final class AuthEmailFormatTests: XCTestCase {
             .submit
         )
     }
-
-    /// 옛 입구(`LoginValidator`)도 같은 판정이어야 한다 — 여기만 갈라지면 로그인은
-    /// 되는데 비밀번호 재설정만 막히는 계정이 생긴다.
-    func testLoginValidatorDelegatesToTheSameRule() {
-        for (input, expected, why) in cases {
-            XCTAssertEqual(LoginValidator.isValidEmail(input), expected, "\(why): [\(input)]")
-        }
-    }
 }

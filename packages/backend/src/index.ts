@@ -31,7 +31,6 @@ import { Toucan } from 'toucan-js';
 import mp3EncoderWasm from 'wasm-media-encoders/wasm/mp3';
 import { registerMp3EncoderModule } from './lib/voice-pitch';
 import { getDB, initDB } from './lib/db';
-import { PERSONAL_PROMO_END_CRON } from './lib/personal-promo';
 import { timingSafeEqualStr } from './lib/timing-safe-equal';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
@@ -48,7 +47,6 @@ import adRewardSessionRoutes from './routes/ad-reward-sessions';
 import billingApple from './routes/billing-apple';
 import pushRoutes from './routes/push';
 import eventsRoutes from './routes/events';
-import voicePacksRoutes from './routes/voice-packs';
 import holidayRoutes from './routes/holiday';
 import eventRoutes from './routes/event';
 import adminRoutes from './routes/admin';
@@ -92,8 +90,6 @@ app.use('*', bodyLimitMiddleware);
 
 // CORS
 const ALLOWED_ORIGINS = [
-  'http://localhost:8081',
-  'exp://localhost:8081',
   // 랜딩 dev 서버(이벤트 좋아요 같은 공개 라우트를 로컬에서 부른다).
   'http://localhost:3100',
   'https://alarm-talk.com',
@@ -107,7 +103,7 @@ app.use(
     // (기본 origin 반사는 정책을 모호하게 만들고 localhost 출처를 프로덕션에 노출한다.
     //  토큰 인증은 Authorization 헤더 기반이라 네이티브 앱 요청에는 CORS 영향 없음.)
     origin: (origin) => (ALLOWED_ORIGINS.includes(origin) ? origin : undefined),
-    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowHeaders: ['Content-Type', 'Authorization'],
     maxAge: 86400,
   }),
@@ -297,8 +293,6 @@ api.use('*', appPresenceMiddleware);
 api.use('*', consentMiddleware);
 // 오디오 내려받기는 전용 버킷이 맡는다(일반 버킷은 이 경로를 세지 않는다 — rateLimit.ts).
 api.use('/tts/messages/:id/audio', audioDownloadRateLimitMiddleware);
-// 추가 음성팩 클립도 같은 내려받기 버킷이다(`docs/spec/voice-packs.md` §3).
-api.use('/voice-packs/:packId/clips/:clipId/audio', audioDownloadRateLimitMiddleware);
 api.use('*', rateLimitMiddleware);
 // 한도·광고 보상 현황은 저장·광고 직후 다시 묻는 값이다 — 30초 캐시를 붙이면 앱이 정산 전 응답을 계속 읽어
 // 보상이 들어왔는데도 '확인하고 있어요' 로 끝난다(코덱스 #959). **아래 전역 캐시보다 먼저** 걸어야 이긴다:
@@ -320,8 +314,6 @@ api.route('/push', pushRoutes);
 api.route('/events', eventsRoutes);
 // 광고 시청 승인 세션 — 광고를 띄우기 전 승인·시작·끝 알림(`docs/spec/ad-rewards.md` §3). 콜백(`/api/ads`)과 다른 경로다.
 api.route('/ad-rewards', adRewardSessionRoutes);
-// 추가 음성팩 — 권리를 확인한 무료 고정 목소리(`docs/spec/voice-packs.md`).
-api.route('/voice-packs', voicePacksRoutes);
 
 // 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(비밀번호 로그인·세션 쿠키)로 보호한다
 // (admin.ts 내부 미들웨어). 개요·사용자·알림 보내기 — `docs/spec/admin-console.md`.
@@ -341,8 +333,7 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal server error', error_code: 'INTERNAL_ERROR' }, 500);
 });
 
-// Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *", "* * * * *"].
-// 5분 틱이 본체이고, 1분 크론은 기간 한정 개인 플랜 종료 전용이다(아래 첫 분기).
+// Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"](5분 틱 하나).
 /**
  * 이 틱이 어느 지역 날씨 슬롯의 **마지막 틱**인가(`hasWeatherSlotLastTick`) — 그러면 날씨 작업을 5분 틱의 맨 앞에서
  * 돌린다(아래 `scheduled`). 모듈을 못 불렀으면 false — 원래 자리의 날씨 작업이 그 오류를 올린다.
@@ -449,33 +440,6 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     });
   };
 
-  // ── 기간 한정 개인 플랜 종료 전용 크론(1분) ─────────────────────────────────────
-  // 이 실행은 **이 일만** 한다 — 실행마다 subrequest(~50)를 따로 받는 것이 전용 크론을 둔 이유다
-  // (`lib/personal-promo-end.ts`). 끝 전이거나 스위치가 꺼져 있으면 DB 를 부르지 않고 끝난다.
-  if (event.cron === PERSONAL_PROMO_END_CRON) {
-    try {
-      const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
-      await runPersonalPromoEnd(db, env, now, {
-        role: 'dedicated',
-        hooks: {
-          onError: (stage, err, tags) =>
-            captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
-        },
-      });
-    } catch (err) {
-      // ⚠ **이 실행은 1분마다 돈다**(Codex #803) — DB 장애처럼 계속되는 실패를 매번 Sentry 로 올리면 하루
-      // 1,440건이 되어 다른 사고가 묻힌다. 로그는 매번 남기고, 경보는 단계별 경보와 같은 시간당 자리
-      // (`isPromoEndAlertSlot`)에서만 올린다. 모듈을 못 불렀으면(배포 사고) 그대로 올린다.
-      const alertSlot = await import('./lib/personal-promo-end')
-        .then((module) => module.isPromoEndAlertSlot(now))
-        .catch(() => true);
-      // `captureCron` 도 같은 줄을 로그로 남긴다 — 경보 자리가 아니면 로그만.
-      if (alertSlot) captureCron('scheduled.personal_promo_end', err);
-      else logStructured('error', { at: 'scheduled.personal_promo_end', error: String(err) });
-    }
-    return;
-  }
-
   // ── 날씨 슬롯의 **마지막 틱**이면 날씨를 맨 앞에서 ───────────────────────────────────────────
   // 마지막 틱(현지 분 ≥ 55) 뒤에는 그 슬롯의 틱이 없어 판정·경보(`slot_failed`)가 여기서만 나간다. 경보(Sentry)도
   // subrequest 하나라, 아래 작업들이 이 실행의 한도(~50)를 먼저 다 쓰면 판정을 해도 **언제나** 닿지 않는다(코덱스
@@ -579,20 +543,11 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     captureCron('scheduled.subscription_expiry', err);
   }
 
-  // 관리자 기간 지급의 뒷정리 — 끝났거나 회수된 지급마다 한 번(다른 권한이 없으면 클론 반납 + 3일 보관).
-  // 지급 중인 계정은 위 만료 처리·보관 스윕이 유료로 본다(`hasActivePaidEntitlement`).
-  try {
-    const { settleEndedPlanGrants } = await import('./lib/plan-grants');
-    await settleEndedPlanGrants(db, env, now);
-  } catch (err) {
-    captureCron('scheduled.plan_grant_settle', err);
-  }
-
   // 광고 보상 — 적어 두었지만 정산이 실패한 SSV 콜백을 다시 정산하고(내부 재시도), 다시 볼 일 없는 기록을 지운다
   // (`lib/ad-reward-sessions.ts`, `docs/spec/ad-rewards.md` §3).
   try {
     const { pruneAdRewardHistory, retryUnsettledAdRewardCallbacks } = await import('./lib/ad-reward-sessions');
-    const retried = await retryUnsettledAdRewardCallbacks(db, env, now.getTime());
+    const retried = await retryUnsettledAdRewardCallbacks(db, now.getTime());
     if (retried.failed > 0) captureCron('scheduled.ad_reward_settle', new Error(`${retried.failed} callbacks failed to settle`));
     await pruneAdRewardHistory(db, now.getTime());
   } catch (err) {
@@ -605,21 +560,6 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     await pruneManualRequests(db, now);
   } catch (err) {
     captureCron('scheduled.manual_request_prune', err);
-  }
-
-  // 기간 한정 개인 플랜 종료 전환 — **폴백**(틱당 3명). 본 처리는 위의 전용 크론이 하고, 이건
-  // 전용 크론이 빠져 있어도 전환이 멈추지 않게 둔다. 끝 전이면 DB 를 부르지 않는다.
-  try {
-    const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
-    await runPersonalPromoEnd(db, env, now, {
-      role: 'main',
-      hooks: {
-        onError: (stage, err, tags) =>
-          captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
-      },
-    });
-  } catch (err) {
-    captureCron('scheduled.personal_promo_end', err);
   }
 
   // 탈퇴 유예(30일) 경과 계정 영구파기 (개인정보보호법 제21조). 파기 전 결제·구독 기록은

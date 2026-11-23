@@ -52,8 +52,12 @@ struct VoiceLocalizationTests {
         let bundle = try #require(Bundle(path: path))
         let expected: [String: [String: String]] = [
             "톤 조절": ["en": "Tone", "ja": "トーン調整"],
-            "원본 듣기": ["en": "Play original", "ja": "元の声を聞く"],
-            "현재 톤 듣기": ["en": "Play current tone", "ja": "今のトーンで聞く"],
+            // 2026-11-15 시안 A — 버튼은 `원래 목소리`·`바꾼 목소리`, 값은 말로(안드로이드 `voices_tuning_*` 와 같은 번역).
+            "원래 목소리": ["en": "Original voice", "ja": "元の声"],
+            "바꾼 목소리": ["en": "Adjusted voice", "ja": "調整した声"],
+            "조금 높게": ["en": "Slightly higher", "ja": "少し高く"],
+            "원래": ["en": "Original", "ja": "元"],
+            "추천": ["en": "Suggested", "ja": "おすすめ"],
             "이전에 저장한 목소리는 삭제하고 이 목소리로 등록할게요.": [
                 "en": "Your saved voice will be deleted and this voice will be registered instead.",
                 "ja": "保存した声は削除して、この声で登録します。",
@@ -95,10 +99,11 @@ struct VoiceLocalizationTests {
         let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
         let bundle = try #require(Bundle(path: path))
         for key in [
-            "준비 중이에요", "준비됐어요", "다시 시도하기",
-            "이제 오프라인에서도 목소리로 울려요.", "목소리를 만들다 실패했어요. 다시 시도해 주세요.",
+            // '준비됐어요'·'완료' 는 없다 — 다 받으면 준비 화면이 저절로 닫힌다(2026-11-15).
+            "다시 시도하기", "백그라운드에서 계속",
+            "목소리를 만들다 실패했어요. 다시 시도해 주세요.",
             "목소리를 만들고 있어요. 몇 분 걸릴 수 있어요.", "목소리를 받고 있어요. 앱을 닫아도 계속 받아요.",
-            "녹음하려면 마이크 권한이 필요해요.", "예시 대본", "알람을 읽어줄 언어",
+            "마이크 권한이 필요해요.", "예시 대본", "알람을 읽어줄 언어",
             "선택한 파일에서 오디오를 찾지 못했어요. 다른 파일로 시도해 주세요.",
         ] {
             let value = bundle.localizedString(forKey: key, value: nil, table: nil)

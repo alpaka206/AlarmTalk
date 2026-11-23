@@ -12,6 +12,10 @@ struct AlarmsListView: View {
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var holidayStore: HolidayStore
     @State private var actionMessage: String?
+    /// 켜기·끄기·삭제가 실패했다는 안내 — 화면 **위쪽** 빨간 토스트로 띄우고 몇 초 뒤 스스로 걷는다(2026-11-22 두 앱 통일).
+    /// 안드로이드는 같은 실패를 위쪽 안내 자리(`TopMessageHost` → `PrettySnackbar` 의 오류 색)에 띄운다. 예전 iOS 는 목록 맨 위
+    /// 회색 한 줄(`actionMessage`)이라 실패가 안내처럼 읽혔다. 권한 안내는 실패가 아니라 그 줄에 남는다.
+    @State private var failureToast: String?
     /// 알람 스위치는 손을 멈춘 뒤의 마지막 값만 적용한다 — 누르는 동안에는 화면만 바뀐다(`AlarmToggleCoalescer`).
     @ObservedObject private var toggles = AlarmToggleCoalescer.shared
 
@@ -36,9 +40,8 @@ struct AlarmsListView: View {
                         // ⚠ **권한 배너를 두지 않는다**(2026-11-09 오너: 위 헤드라인이 "권한이 꺼져 있어 알람이 울리지 않아요." 라고
                         //   이미 말하는데 그 아래 "알람 권한이 없어 알람이 예약되지 않아요." 를 또 둘 필요가 없다). 고치는 길은 그
                         //   헤드라인이다 — 누르면 권한을 요청하거나 설정을 연다(`pinnedHeader`).
-                        // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
-                        // (로그인 필요 / push 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
-                        // Android syncNow / msg_sync_*_partial_failed parity.
+                        // 알람 권한 안내(만들기·켜기를 하려는데 권한이 없다)만 여기 남는다. 켜기·끄기·삭제의 **실패**는
+                        // 위쪽 빨간 토스트다(`failureToast`).
                         if let displayedMessage {
                             Text(displayedMessage)
                                 .font(.footnote)
@@ -53,10 +56,14 @@ struct AlarmsListView: View {
                         localAlarmSection
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
+                    // 오른쪽 아래 ＋FAB 가 마지막 알람 행을 가리지 않게 아래를 더 비운다 — 안드로이드 알람 탭의 목록 아래 여백
+                    // 96 과 같다(`AlarmListScreen` 의 `contentPadding`).
+                    .padding(.bottom, 96)
                 }
             }
         }
+        // 위쪽 안내 자리는 로그인 화면과 같은 토스트다(`AuthToast.swift`) — 누르는 것을 막지 않고 몇 초 뒤 걷힌다.
+        .authToast(message: failureToast, isError: true, onExpire: { failureToast = nil })
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
         .onChange(of: createRequest) { _, new in
             guard new != nil else { return }
@@ -230,7 +237,8 @@ struct AlarmsListView: View {
         Button {
             Task { await openCreateAlarm() }
         } label: {
-            HStack(alignment: .center, spacing: 16) {
+            // 글 ↔ ＋ 12 — 안드로이드 `EmptyAlarmHeroCard` 의 ＋ 앞 여백(start 12)과 같다.
+            HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(String(localized: "첫 알람 만들기"))
                         .font(.pretendard(.bold, size: 24))
@@ -261,7 +269,8 @@ struct AlarmsListView: View {
                     .stroke(theme.palette.cardBorder, lineWidth: 1)
             )
         }
-        .buttonStyle(.plain)
+        // 누르면 살짝 준다 — 안드로이드 `EmptyAlarmHeroCard` 의 `wakerPressScale`(0.97)과 같다.
+        .buttonStyle(PressScaleButtonStyle(scale: 0.97))
         .accessibilityLabel(String(localized: "첫 알람 만들기"))
     }
 
@@ -342,7 +351,8 @@ struct AlarmsListView: View {
                 // 자동으로 끄지 않는다. 권한을 되돌려도 꺼진 채라 더 위험하다.)
                 store.setEnabled(id: updated.id, enabled: false)
                 store.markFailed(id: updated.id)
-                actionMessage = alarmKit.statusMessage ?? String(localized: "알람 상태 변경에 실패했어요.")
+                // 문장은 안드로이드 `msg_alarm_toggle_failed` 그대로다(끝에 마침표 없음) — 켜기·끄기가 같은 한 문장이다.
+                failureToast = String(localized: "알람 상태 변경에 실패했어요")
                 return
             }
             actionMessage = nil
@@ -350,7 +360,7 @@ struct AlarmsListView: View {
             let canceled = await alarmKit.cancelScheduledAlarm(record: alarm)
             guard canceled else {
                 store.markFailed(id: alarm.id)
-                actionMessage = alarmKit.statusMessage ?? String(localized: "알람 상태 변경에 실패했어요.")
+                failureToast = String(localized: "알람 상태 변경에 실패했어요")
                 return
             }
             store.setEnabled(id: alarm.id, enabled: false)
@@ -358,7 +368,7 @@ struct AlarmsListView: View {
         }
     }
 
-    /// 알람 삭제 실행. 스와이프 삭제 버튼 또는 길게 누르기 메뉴에서 곧바로 호출된다
+    /// 알람 삭제 실행. 스와이프 삭제 버튼·선택 모드의 [삭제]·VoiceOver 의 '삭제' 동작에서 곧바로 호출된다
     /// (Android 즉시 삭제 미러 — 별도 확인 다이얼로그 없음, 스와이프 제스처가 안전장치).
     ///
     /// 의도적 누락: 휴지통이 없어 양 플랫폼 모두 실행취소/스낵바를 제공하지 않는다. AlarmKit 예약과 음원 캐시가
@@ -367,7 +377,8 @@ struct AlarmsListView: View {
     private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
         let deleted = await alarmKit.cancel(record: alarm, store: store)
         guard deleted else {
-            actionMessage = alarmKit.statusMessage ?? String(localized: "알람 삭제에 실패했어요.")
+            // 안드로이드 `msg_alarm_delete_failed` 그대로다(끝에 마침표 없음).
+            failureToast = String(localized: "알람 삭제에 실패했어요")
             return
         }
         // 지운 알람의 "N 후에 울려요." 가 떠 있으면 거둔다 — 남기면 없는 알람의 남은 시간을 말한다(§7). 여러 개 삭제도 이 길이다.

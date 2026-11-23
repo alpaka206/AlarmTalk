@@ -25,10 +25,7 @@ final class HolidayOffReschedulerTests: XCTestCase {
     private var stored: String? { defaults.string(forKey: HolidayOffRescheduler.markerDefaultsKey) }
 
     private func holiday(_ country: String, epochDay: Int = 20_000) -> HolidayEntity {
-        HolidayEntity(
-            countryCode: country, regionCode: "", epochDay: epochDay, localDate: "2024-10-04",
-            name: "test", source: "server_sync", updatedAtMillis: 0
-        )
+        HolidayEntity(countryCode: country, epochDay: epochDay)
     }
 
     // MARK: - 달력 표지

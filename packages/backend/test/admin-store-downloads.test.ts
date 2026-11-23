@@ -438,8 +438,8 @@ describe('크론', () => {
     expect(out.map((o) => `${o.platform}:${o.status}`)).toEqual(['android:failed', 'ios:ok']);
     expect(onError).toHaveBeenCalledTimes(1);
     expect(onError.mock.calls[0]![0]).toBe('android');
-    const state = await rows(`SELECT platform, last_error, last_success_at FROM store_download_sync ORDER BY platform`);
-    expect(state[0]).toMatchObject({ platform: 'android', last_success_at: null });
+    const state = await rows(`SELECT platform, last_error FROM store_download_sync ORDER BY platform`);
+    expect(state[0]).toMatchObject({ platform: 'android' });
     expect(String(state[0]!.last_error)).toContain('권한');
     expect(state[1]).toMatchObject({ platform: 'ios', last_error: null });
   });

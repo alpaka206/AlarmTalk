@@ -21,7 +21,6 @@ export const VoicePreviewTextUpdateSchema = z.object({
     .max(200)
     .refine((text) => !/[[\]]/.test(text), { message: 'Brackets are not allowed' }),
 });
-export type VoicePreviewTextUpdate = z.infer<typeof VoicePreviewTextUpdateSchema>;
 
 /**
  * 목소리 높이(반음) — 등록 미리듣기에서 사용자가 막대로 고른 값이다(`docs/spec/voice-and-message.md` §4-3).
@@ -46,7 +45,6 @@ export const VoicePitchSemitonesSchema = z
   .refine((value) => Number.isInteger(value / VOICE_PITCH_STEP_SEMITONES), {
     message: `Pitch must be a multiple of ${VOICE_PITCH_STEP_SEMITONES} semitones`,
   });
-export type VoicePitchSemitones = z.infer<typeof VoicePitchSemitonesSchema>;
 
 /**
  * 목소리의 결(경쾌/차분) — ⚠ **1.2.10 앱 호환용으로만 남은 계약이다.**
@@ -63,4 +61,3 @@ export type VoicePitchSemitones = z.infer<typeof VoicePitchSemitonesSchema>;
  * ⚠ 음향은 보지 않는다. Gemini 가 받는 것은 전사(글자)뿐이라, 추정하는 결도 목소리 톤이 아니라 말투다.
  */
 export const VoiceEnergySchema = z.enum(['', 'lively', 'calm']);
-export type VoiceEnergy = z.infer<typeof VoiceEnergySchema>;

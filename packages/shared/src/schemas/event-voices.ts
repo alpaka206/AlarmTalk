@@ -67,7 +67,6 @@ export const EventVoiceCatalogSchema = z.record(
 );
 
 export type EventVoice = z.infer<typeof EventVoiceSchema>;
-export type EventVoiceProject = z.infer<typeof EventVoiceProjectSchema>;
 export type EventVoiceCatalog = z.infer<typeof EventVoiceCatalogSchema>;
 
 /** JSON 을 한 번 검증해 둔 목록. 모양이 틀리면 모듈을 불러오는 순간 던진다 — 배포 전에 걸린다. */

@@ -14,7 +14,8 @@ struct HolidayOffToggle: View {
         HStack(alignment: .center, spacing: theme.spacing.sm) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("공휴일에는 끄기")
-                    .font(theme.typography.titleSmall)
+                    // 편집기의 다른 줄 제목(`AlarmSettingRow`)·안드로이드와 같은 16 SemiBold(2026-11-22 전 iOS 만 14 였다).
+                    .font(theme.typography.bodyLarge)
                     .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.onSurface)
                 // Android 는 선택 국가와 무관하게 '대체 공휴일 및 임시 공휴일 포함' 고정 안내(editor_holiday_off_subtitle).

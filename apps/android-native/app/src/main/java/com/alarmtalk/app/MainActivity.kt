@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import android.content.pm.ActivityInfo
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,6 +23,13 @@ class MainActivity : ComponentActivity() {
         // window.statusBarColor/navigationBarColor 없이 일관된 화면을 만든다. 인셋은 앱 전역
         // Scaffold(contentPadding)가 소비하고, 바 아이콘 명암은 AlarmTalkTheme 이 제어한다.
         enableEdgeToEdge()
+        // ⚠ **3버튼 내비게이션의 대비 막을 끈다.** 테마(`enforceNavigationBarContrast=false`)가 이미 끄는데,
+        // `enableEdgeToEdge()` 기본값(`SystemBarStyle.auto`)이 런타임에 다시 켠다. 그대로 두면 3버튼 폰에서만 버튼 줄·탭 바
+        // 아래에 더 어두운 띠(#05080D)가 깔려, 화면 끝까지 같은 색인 iOS 와 달랐다(2026-11-15 A32 실측). 바 뒤는 콘텐츠가
+        // 칠하고 아이콘 명암은 `AppSystemBars` 가 맞춘다 — 테마 주석의 의도 그대로다.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         inAppUpdateManager = InAppUpdateManager(this, viewModel)
         // 화면 캡처는 막지 않는다.
@@ -41,7 +49,6 @@ class MainActivity : ComponentActivity() {
                     AlarmTalkApp(
                         viewModel = viewModel,
                         onCheckInAppUpdate = inAppUpdateManager::checkForUpdates,
-                        onCompleteInAppUpdate = inAppUpdateManager::completeFlexibleUpdate,
                     )
                 }
             }

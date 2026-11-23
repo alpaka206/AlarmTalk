@@ -25,12 +25,12 @@ final class WeatherRegionSheetScreenshotUITests: XCTestCase {
         region.tap()
 
         // 행 이름과 시트 제목이 같은 문자열("지역")이라, 시트가 떴는지는 시트에만 있는 세그먼트로 가른다.
-        XCTAssertTrue(app.segmentedControls.firstMatch.waitForExistence(timeout: 10), "지역 시트가 뜨지 않았다")
+        XCTAssertTrue(app.otherElements["weather-region-country"].waitForExistence(timeout: 10), "지역 시트가 뜨지 않았다")
         XCTAssertEqual(app.textFields.count, 0, "지역 시트에 직접 입력칸이 있다 — 목록에서만 고른다")
         capture("region-sheet-kr")
 
         for country in ["일본", "미국"] {
-            let segment = app.segmentedControls.buttons[country]
+            let segment = app.buttons[country]
             if segment.waitForExistence(timeout: 3) {
                 segment.tap()
                 capture("region-sheet-\(country)")
@@ -81,7 +81,7 @@ final class WeatherRegionSheetScreenshotUITests: XCTestCase {
             weatherOption.tap()
 
             // 이미 등록한 지역은 다시 묻지 않는다 — 시트 없이 상세 카드만 뜬다.
-            XCTAssertFalse(app.segmentedControls.firstMatch.waitForExistence(timeout: 2), "등록된 지역인데 지역 시트가 떴다")
+            XCTAssertFalse(app.otherElements["weather-region-country"].waitForExistence(timeout: 2), "등록된 지역인데 지역 시트가 떴다")
             XCTAssertTrue(app.staticTexts["지역"].firstMatch.waitForExistence(timeout: 5), "상세 카드 제목이 '지역' 이 아니다")
             XCTAssertTrue(app.staticTexts[expected].firstMatch.exists, "상세 카드에 '\(expected)' 가 없다")
             capture(name)

@@ -29,7 +29,7 @@ final class SessionHealthCheckDestroyedAccountTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNil(vm.session, "계정이 없는데 세션을 들고 있으면 이후 요청이 전부 401 이 된다")
-        XCTAssertEqual(vm.statusMessage, "세션이 만료됐어요. 다시 로그인해 주세요.")
+        XCTAssertEqual(vm.statusMessage, "로그인이 만료됐어요. 다시 로그인해 주세요.")
     }
 
     /// ⚠ **404 전부가 아니라 그 코드일 때만이다.** 잘못된 베이스 URL·라우팅 실패도 404 라,
@@ -42,7 +42,6 @@ final class SessionHealthCheckDestroyedAccountTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session)
-        XCTAssertEqual(vm.lastNetworkError, "서버에 일시적으로 연결할 수 없어요.")
     }
 
     private func makeSession() -> AuthSession {

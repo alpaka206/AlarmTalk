@@ -10,11 +10,11 @@ import SwiftUI
 /// - `minute`: 0..59.
 ///
 /// UX:
-/// - 가운데 정렬된 큰 숫자 + 위아래 흐릿한 인접 항목.
+/// - 가운데 정렬된 큰 숫자 + 위아래 흐릿한 인접 항목(알파 1.0 / 0.18 / 0.08 — 끄는 동안에도 **칸 단위**).
 /// - 드래그 거리에 따른 자석 스냅 (항목 높이 `itemHeight`).
 /// - 항목 변경 시 `UISelectionFeedbackGenerator` 햅틱.
-/// - 상하단 fade gradient mask 로 wheel-edge 효과.
-/// - `snappy(duration: 0.25)` 스프링 애니메이션.
+/// - 위아래는 칼럼 테두리에서 자르기만 한다(페이드 없음 — 안드로이드 `clipToBounds`).
+/// - 오전/오후 전환은 155ms `(0.16, 1, 0.3, 1)` — 안드로이드 `AmPmWheelColumn` 의 `tween` 과 같다.
 struct TimeWheelPicker: View {
     @Binding var hour: Int
     @Binding var minute: Int
@@ -48,7 +48,9 @@ struct TimeWheelPicker: View {
         // (2026-08-10 지적 "시간 돌리는 거랑 날짜가 살짝 거리가 멀어 보인다").
         // 폭은 `onGeometryChange` 로 재고 높이는 **같은 배율을 곱해** 준다.
         let scale = wheelScale(for: measuredWidth)
-        HStack(spacing: 16 * scale) {
+        // 칼럼 간격은 **12 고정**이다(안드로이드 `spacedBy(12.dp)` — 배율을 곱하지 않는다). 안드로이드가 외곽을 맞추며
+        // 16 → 12 로 줄였을 때 iOS 만 `16 × 배율` 로 남아 있었다(2026-11-15 두 앱 대조).
+        HStack(spacing: 12) {
             AmPmWheelColumn(isPM: amPmBinding, scale: scale)
                 .frame(width: 96 * scale)
 
@@ -89,12 +91,15 @@ struct TimeWheelPicker: View {
         .frame(maxWidth: .infinity)
         // 높이도 **같은 배율**을 따른다(안드로이드 `scaledItemHeight * 3` 과 같다).
         .frame(height: Self.itemHeight * 3 * scale)
-        .onGeometryChange(for: CGFloat.self, of: \.size.width) { measuredWidth = $0 }
         // ⚠ **접근성 글꼴에서 휠은 더 커지지 않는다.** 휠은 3칸 높이가 고정된 **컨트롤**이라
         // 글자만 커지면 칸을 넘쳐 '오전' 이 "…" 으로, 분이 "0" 으로 잘린다(시뮬레이터
         // accessibility-extra-large 에서 확인). 본문 글자는 그대로 커지고 여기만 묶는다.
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .padding(.horizontal, 12)
+        // ⚠ **폭은 가로 여백 12 까지 넣어서 잰다.** 안드로이드는 `BoxWithConstraints` 가 휠 전체 폭(행 패딩 12 포함)으로
+        // 배율을 정한다. 예전 iOS 는 여백 안쪽을 재서 같은 폭에서도 배율이 작았다 — 숫자·칸이 안드로이드보다 작게
+        // 그려졌다(2026-11-15 두 앱 대조). 너비는 높이에 기대지 않으므로 순환하지 않는다.
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { measuredWidth = $0 }
         .padding(.vertical, 24)
         // ⚠ **배경을 칠하지 말 것.** 안드로이드는 `wheelBackgroundColor = Color.Transparent`
         // 다(`AlarmTimePicker.kt:48`). `primaryContainer` 파란 박스를 두면 시각이 한 덩어리
@@ -201,10 +206,11 @@ struct DraggableNumberColumn: View {
             // 안 그러면 입력창을 누르는 순간 휠이 같이 끌린다.
             .gesture(dragGesture, including: anyEditing ? .subviews : .all)
             .onTapGesture { beginTypeIn() }
-            // 고쳐 쓰는 동안에는 위아래 페이드를 걸지 않는다 — 커서와 글자 윗동이 깎인다.
-            .mask {
-                if anyEditing { Color.white } else { fadeMask }
-            }
+            // ⚠ **위아래를 페이드로 지우지 말 것 — 칼럼 테두리에서 자르기만 한다**(2026-11-15 오너: "고르는 시간 스크롤
+            // 하는쪽도 색상이 다른거 같은데"). 안드로이드는 칼럼을 `clipToBounds()` 로 자르기만 하고 이웃 숫자는 고른 알파
+            // (0.18) 그대로다(`ui/editor/DraggableTimeWheelColumn.kt`). 예전 iOS 는 여기에 위아래 22% 를 지우는 그라데이션
+            // 마스크를 씌워 같은 이웃 숫자가 더 흐리고 끝으로 갈수록 사라졌다. 고쳐 쓰는 동안의 모양(자르기만)과도 같아졌다.
+            .clipped()
         }
         .frame(height: itemHeight * 3)
         // 화면이 사라지면 굴리기를 멈춘다 — 안 그러면 `CADisplayLink` 가 사라진 뷰의
@@ -230,8 +236,10 @@ struct DraggableNumberColumn: View {
     @ViewBuilder
     private func row(offset: Int, centerY: CGFloat, width: CGFloat) -> some View {
         let yPosition = centerY + CGFloat(offset) * itemHeight + dragOffset
-        let normalized = abs(CGFloat(offset) * itemHeight + dragOffset) / itemHeight
-        let clamped = min(normalized, 1.4)
+        // ⚠ **밝기·크기는 칸 단위다** — 끄는 동안에도 그 칸의 숫자가 1.0·57 이고, 칸을 넘는 순간 바뀐다(안드로이드
+        // `DraggableTimeWheelColumn` 의 `distance` 와 같다). 예전 iOS 는 가운데에서 떨어진 거리로 밝기를 이어 바꾸고 반 칸에서
+        // 크기를 바꿔, 끄는 도중의 모양이 두 앱에서 달랐다(2026-11-15 오너: "통일할수 있으면 모두 통일해").
+        let distance = abs(offset)
 
         Group {
             if offset == 0, isEditing {
@@ -245,9 +253,9 @@ struct DraggableNumberColumn: View {
                 // ⚠ 글꼴은 **Pretendard** 다. `design: .rounded`(SF Rounded)로 두면
                 // 이 화면만 다른 서체가 되어 앱에서 가장 큰 글자가 튄다.
                 Text(formatter(wrap(value + offset)))
-                    .font(.pretendardFixed(.bold, size: (clamped < 0.5 ? 57 : 45) * scale))
+                    .font(.pretendardFixed(.bold, size: (distance == 0 ? 57 : 45) * scale))
                     .monospacedDigit()
-                    .foregroundStyle(theme.palette.onSurface.opacity(textAlpha(for: clamped)))
+                    .foregroundStyle(theme.palette.onSurface.opacity(Self.slotAlpha(distance)))
             }
         }
         .frame(maxWidth: .infinity)
@@ -437,24 +445,13 @@ struct DraggableNumberColumn: View {
         return mod + range.lowerBound
     }
 
-    private func textAlpha(for normalized: CGFloat) -> Double {
-        // 중앙(=0) -> 1.0, 한 칸 멀어질수록 0.18, 두 칸이면 0.08.
-        if normalized <= 0.05 { return 1.0 }
-        if normalized <= 1.05 { return 0.18 + (1.0 - 0.18) * Double(1.0 - normalized) }
-        return 0.08
-    }
-
-    private var fadeMask: some View {
-        LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: .clear, location: 0.0),
-                .init(color: .white, location: 0.22),
-                .init(color: .white, location: 0.78),
-                .init(color: .clear, location: 1.0),
-            ]),
-            startPoint: .top,
-            endPoint: .bottom
-        )
+    /// 칸 거리별 알파 — 가운데 1.0, 한 칸 0.18, 두 칸 0.08(안드로이드 `DraggableTimeWheelColumn` 과 같은 값).
+    private static func slotAlpha(_ distance: Int) -> Double {
+        switch distance {
+        case 0: return 1.0
+        case 1: return 0.18
+        default: return 0.08
+        }
     }
 }
 
@@ -505,7 +502,9 @@ struct AmPmWheelColumn: View {
         // 중앙 정렬(기본 자리) + 끌고 있는 만큼.
         .offset(y: baseOffset + dragOffset)
         // 시 칼럼이 11↔12 를 넘겨 밖에서 바뀔 때만 기본 자리를 애니메이션한다.
-        .animation(animateBase ? .snappy(duration: 0.25) : nil, value: isPM)
+        // 곡선·길이는 안드로이드 `AmPmWheelColumn` 의 `tween(155, AmPmWheelEasing (0.16, 1, 0.3, 1))` 과 같다 — 예전
+        // `.snappy(duration: 0.25)` 는 더 길고 결이 달랐다(2026-11-15 두 앱 대조).
+        .animation(animateBase ? .timingCurve(0.16, 1, 0.3, 1, duration: 0.155) : nil, value: isPM)
         .accessibilityElement()
         .accessibilityLabel(Text(isPM ? String(localized: "오후 선택됨") : String(localized: "오전 선택됨")))
         .accessibilityAdjustableAction { direction in

@@ -191,8 +191,9 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
 ## 5. 사용중/비사용중은 **폰이 판정한다**
 
 그 오디오를 쓰는 알람이 **이 기기에** 남아 있는가 — 이건 기기만 알 수 있다(참조 카운트).
-서버는 그 결과를 받아 적을 뿐이고, 추측하지 않는다. 추측하면 기기마다 다른 사실이 서로를
-덮어쓴다.
+서버는 그 결과를 **사용 기록(`usage_events`)으로만** 남기고, 추측하지 않는다. 추측하면 기기마다 다른 사실이 서로를
+덮어쓴다. ⚠ 그 사실을 문구 보관함 행에 따로 적던 `message_library.in_use`·`in_use_updated_at`·`last_used_at` 은 읽는 곳이
+없어 2026-11-23 에 지웠다(마이그레이션 #152). 되살리지 말 것 — 아래 이유로 그 값만으로는 아무것도 지울 수 없었다.
 
 - ⚠ **놓음도 붙임과 같은 선으로 가른다** — 판정은 `isManualMessageAlarm` 하나이고, 그것은
   기존 `usesCustomMessageVoice` 에서 **유도한다**(거기에 `stock_` 캐시 키 제외와
@@ -207,22 +208,19 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
   - ⚠ **파일 삭제 여부와는 다르다.** 지울 때는 파일도 사라지지만, **고쳐서 놓아 준
     오디오는 지우지 않는다** — 기기의 30일 sweep 에 맡긴다. 그 사이 같은 문구를 다시 고르면
     서버 호출도 월 한도 차감도 없이 재사용되기 때문이다(`docs/spec/voice-and-message.md` §8).
-    그러니 언젠가 `in_use = 0` 을 보고 정리하는 것을 만들 때, **오디오가 기기에서
+    그러니 언젠가 이 기록을 보고 정리하는 것을 만들 때, **오디오가 기기에서
     사라졌다고 가정하지 말 것.**
-  - ⚠ **`in_use` 는 마지막으로 보고한 *한 기기의* 사실이다.** 두 기기가 같은 문구를 쓰면
-    한쪽의 참조 카운트 0 이 계정 전체를 0 으로 만든다 — 위의 시각 비교는 **순서만** 정하지
-    두 기기의 상태를 합치지 못한다(합치려면 기기 식별자가 필요한데, 그건 새로 수집하는
-    개인정보라 처리방침·릴리스와 묶인다). 그래서 **`in_use = 0` 을 삭제의 근거로 단독으로
+  - ⚠ **해제는 *한 기기의* 사실이다.** 두 기기가 같은 문구를 쓰면 한쪽의 참조 카운트 0 이
+    계정 전체의 0 이 아니다 — 두 기기의 상태를 합치려면 기기 식별자가 필요한데, 그건 새로 수집하는
+    개인정보라 처리방침·릴리스와 묶인다. 그래서 **해제 기록을 삭제의 근거로 단독으로
     쓰지 말 것.** 지우는 문은 목소리 삭제 하나다(`docs/product/manual-message-reuse-plan.md` §1-4). 서버도 그렇다 —
     직접 입력 음성은 기한 없이 두고 그 목소리를 지울 때·탈퇴할 때만 지운다(2026-10-29, [voice-and-message.md](voice-and-message.md) §11).
   - ⚠ **문구가 그대로면 적지 않는다.** 오디오만 다시 만든 경우까지 해제로 적으면, 해제와
-    붙임이 같은 시각에 찍혀 순서가 뒤집히고(정렬 키가 시각 하나뿐이다) 아래 비교가 늦게
-    온 해제를 받아들여 **붙어 있는 문구가 비사용중으로** 뒤집힌다.
-- ⚠ **늦게 도착한 기록이 최신 사실을 덮지 않는다 — 붙임·해제 양쪽 다.** 오프라인 큐는
+    붙임이 같은 시각에 찍혀 순서가 뒤집힌다(정렬 키가 시각 하나뿐이다) — 기록을 읽는 쪽이
+    **붙어 있는 문구를 비사용중으로** 읽는다.
+- **기록을 읽을 때는 도착 순서가 아니라 `occurred_at` 순서로 본다 — 붙임·해제 양쪽 다.** 오프라인 큐는
   며칠 밀릴 수 있고 같은 문구를 두 기기가 함께 쓸 수 있다(캐시 히트가 같은 `message_id`
-  를 돌려준다). 서버가 `in_use_updated_at` 을 비교해 **더 최근 사실만** 남긴다.
-  한쪽에만 가드를 두면 뒤늦게 도착한 '붙임' 이 최신 '해제' 를 되돌려 그 문구가 영원히
-  사용중으로 남는다.
+  를 돌려준다).
 
 ## 6. 보관 기간
 
@@ -247,14 +245,13 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 첫 경험 | `sample_started` / `sample_completed` | 샘플(목소리 미리듣기)이 **실제로 재생을 시작**했다 / **끝까지** 갔다. 화면 노출이 아니다 | 재생기(재생 시작 콜백·끝 콜백) |
 | | `onboarding_step` | 로그인 뒤 첫 경험의 한 단계를 지났다(`step`) | 그 단계 화면 |
 | | `auth_result` | 로그인 결과(`outcome`·`method`). 계정이 생긴 **뒤**에만 적힌다(§7.4) — 실패는 계정이 없어 적히지 않는다 | 로그인 처리 |
-| 목소리 선택 | `voice_selected` | 알람에 쓸 목소리를 **골랐다**(미리 골라 둔 값은 아니다). `is_first`(이 계정 첫 선택)·`prepared`(그 순간 기기에 준비돼 있었나)·`pack_id` | 편집기 |
+| 목소리 선택 | `voice_selected` | 알람에 쓸 목소리를 **골랐다**(미리 골라 둔 값은 아니다). `is_first`(이 계정 첫 선택)·`prepared`(그 순간 기기에 준비돼 있었나). 2026-11-23 전에는 추가 음성팩의 `pack_id` 도 실었다 — 음성팩과 함께 지웠다(같은 날 `pack_selected` 종류도) | 편집기 |
 | 음성 준비 | `voice_preparation_started` / `_ready` / `_failed` | 범위(`scope`)·언어·`revision`·시작 캐시(`cache_state`)·대상/완료 수·바이트·`duration_ms`·`error_code` | **작업 소유자 한 곳**(§7.3) |
 | 알람 저장 | `alarm_save_attempt` / `alarm_save_blocked` / `alarm_ready` | 저장을 눌렀다 / 요청 전에 막혔다(`reason`) / OS 예약과 오디오 파일이 **둘 다** 갖춰졌다 | 편집기 저장 흐름 |
 | 직접 입력 | `manual_result_reused` | 이미 만든 결과를 다시 썼다(`reuse_location` = `local` 기기 캐시 / `server` 서버 재사용). `local` 은 서버를 타지 않아 차감 없음(`charged_source` `none`). `server` 는 2026-10-27 부터 **한 번 센다** — 서버 응답의 `charged_source`(base/ad, 같은 요청의 재시도면 none)·`usage_month` 를 그대로 싣는다(voice-and-message §8) | 직접 입력 생성 흐름 |
 | | `generation_outcome` | 새 제작의 결과 — `outcome`·`charged_source`(base/ad/none)·`usage_month`(실제 원래 사용월)·`result_id`·`request_id`·`char_count` | 같음 |
 | 광고 | `reward_offer` / `reward_view_started` / `reward_pending` / `reward_granted` / `reward_spent` | 제안을 보였다 / 시청 시작 / 시청이 끝나 서버 확인(SSV) 대기 / 적립 확인(`duration_ms` = 대기) / 보상을 썼다 | 광고 보상 흐름 |
 | 콘텐츠 | `content_selected` | 응원의 고정/다양하게(`content_mode` = `fixed`/`varied`, voice-and-message §5-4). **저장에 성공한** 응원 알람의 선택이다 — 편집기에서 눌러만 보고 취소한 것은 적지 않는다. 고정한 문구 ID 는 싣지 않는다(담을 정해진 칸이 없다) | 알람 저장 성공 한 곳(「직전 선택 유지」와 같은 시점), 저장을 **시작한** 계정으로 |
-| | `pack_selected` | 추가 음성팩 목소리로 우는 알람을 **저장에 성공했다**(`voice-packs.md`). 칸은 `pack_id`(팩 id) 하나 — 원문·문구·클립 id 를 싣지 않는다. 편집기에서 눌러만 보고 취소한 것, 알람 모드·직접 녹음으로 저장한 것은 적지 않는다 | `content_selected` 와 같은 자리(알람 저장 성공 한 곳), 저장을 **시작한** 계정으로 — 안드로이드 `recordPackSelected`, iOS `VoicePacks.packSelectionProps` |
 | 결제 | `paywall_viewed` / `store_purchase_verified` / `entitlement_changed` | 결제 화면(`surface`) / 스토어 구매를 서버가 확인했다(`product_id`·`store_offer`·`outcome`) / 앱이 본 플랜이 바뀌었다(`from_plan`→`to_plan`) | 결제 화면·구매 흐름·플랜 갱신 |
 
 ⚠ **기존 `alarm_created` 를 저장 시도로 재해석하지 않는다.** `alarm_created` 는 '로컬 행이 생겼다' 이고, 저장 시도·막힘·
@@ -269,11 +266,13 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
   ⚠ 큰 JSON 을 `detail`(120자)에 끼워 넣지 않는다.
 - 칸은 모양을 막는다: 사유·단계·수단·코드 칸은 영문 소문자 코드(`^[a-z0-9][a-z0-9_.-]{0,63}$`)만, 수는 범위를 둔다.
   **모르는 칸·모르는 종류는 400** 이다 — 앱이 서버보다 앞서 나가도 조용히 버려지지 않게(§1 과 같은 이유). 새 칸·종류는
-  **서버를 먼저** 올린다.
+  **서버를 먼저** 올린다. **예외는 은퇴한 종류·칸뿐이다** — 기기 큐에 남아 다시 오는 옛 기록이 배치를 막지 않게 받고 버린다
+  (`packages/shared` 의 `usage-event.ts` — `RETIRED_USAGE_EVENT_TYPES` = `pack_selected`, `RETIRED_USAGE_EVENT_PROPS` = `pack_id`,
+  2026-11-23 추가 음성팩과 함께 은퇴).
 - 1판 기록의 `platform` 은 요청 헤더(`X-App-Platform`)로 채운다 — 같은 기기라 큐를 건너도 바뀌지 않는다. `app_version` 은
   채우지 않는다 — 업데이트를 건너 남은 큐의 사건은 보내는 앱의 버전에서 일어나지 않았다.
 - **권한 출처(`entitlement_source`)는 서버가 찍는다** — 앱은 보내지 않는다(보내면 400). 받는 순간의 계정 상태로 하나를 고르고
-  (`paid` > `trial` > `admin` > `promo` > `free`), 한 기록에 값이 하나라 출처별 사람을 더해도 같은 사람이 두 번 세지지 않는다.
+  (`paid` > `trial` > `free` — `admin`·`promo` 는 관리자 기간 지급·기간 한정 개인 플랜과 함께 2026-11-23 에 뺐다), 한 기록에 값이 하나라 출처별 사람을 더해도 같은 사람이 두 번 세지지 않는다.
   ⚠ 서버의 구독 행에는 아직 스토어 무료 체험 구간 표식이 없어 **`trial` 은 찍히지 않고 체험 구독은 `paid` 로 섞인다.**
   체험과 결제는 `store_purchase_verified` 의 `store_offer`(앱이 스토어에서 읽은 조건)로 가른다. 표식이 생기면
   `lib/usage-entitlement.ts` 에 갈래 하나를 더한다. 며칠 밀린 배치는 '받은 시각의 권한' 이다.
@@ -348,7 +347,7 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 울림 중복 판정 | — (울림 서비스가 그 자리에서 적어 갈림길이 없다) | `ObservedRingMarkerStore.swift` 의 `beginObservation`·`commit`·`consume`·`staleAfter`(디스크 표시 = 벽시계)·`lateMarkWindow`(메모리 = 단조 시계 `monotonicNow`) | — (사건 `id` 가 달라 `INSERT OR IGNORE` 로는 안 걸린다) |
 | 알람 생성·수정·삭제 | `data/AlarmRepository.kt` 의 `recordAlarmEvent` | `Views/Editor/AlarmEditorSheet.swift` 의 `recordSaveUsageEvent`, `AlarmKitViewModel.deleteLocalAlarm` | — |
 | 알람 저장의 문구 종류(`detail` — 만들고 고칠 때만 · 원문 없음) | `recordAlarmEvent` ← `AlarmEntity.messageKindForUsage`(`data/AlarmRepository.kt`) — 회귀 `ServerCopyRemovalTest` | `recordSaveUsageEvent` ← `LocalAlarmRecord.messageKindForUsage` | 8판 전 동의자는 비운다 `routes/events.ts` 의 `toV1`(`V2_DETAIL_TYPES`) — `usage-events.test.ts` · 집계 `lib/admin/metrics.ts` 의 `loadOverview` · 라벨 `lib/admin/pages.ts` 의 `THEME_LABELS` — `admin-console.test.ts` |
-| 사용중/비사용중 | 붙임 `recordAlarmEvent` / 놓음 `deleteAlarmLocked`·`updateAlarm`(`manualMessageReleasedByEdit`) | 붙임·놓음 모두 `AlarmEditorSheet.recordSaveUsageEvent`, 삭제는 `AlarmKitViewModel.deleteLocalAlarm` | `message_library.in_use` |
+| 사용중/비사용중 | 붙임 `recordAlarmEvent` / 놓음 `deleteAlarmLocked`·`updateAlarm`(`manualMessageReleasedByEdit`) | 붙임·놓음 모두 `AlarmEditorSheet.recordSaveUsageEvent`, 삭제는 `AlarmKitViewModel.deleteLocalAlarm` | `usage_events` 에만(`routes/events.ts` — 보관함 표시 칸은 #152 에서 지웠다) |
 | 해제 | `alarm/RingingService.kt` 의 `dismiss` — Intent 의 알람 id 로 **무조건** 적는다 | `Shared/AlarmIntents.swift` 의 `StopAlarmIntent` — **누른 자리**에서 적고(`handleAlarmStopped` 는 알람을 지우거나 끌 때도 불린다) **조회에 매달지 않는다**(콜드 부팅에서는 기록을 못 찾는다) | — |
 | 다시 울림 | `alarm/RingingService.kt` 의 `snooze` — `repository.snooze` 의 **결과를 보고** 적는다(null 이면 해제 + `SNOOZE_DENIED_DETAIL`, 던지면 결과를 몰라 미룸 + `SNOOZE_FAILED_DETAIL` 이고 알람은 끝내지 않는다) | `Shared/AlarmIntents.swift` 의 `SnoozeAlarmIntent` — `.deny` 면 해제 + `"snooze_denied"`, 아니면 `AlarmAppContext.rearmCountdown` 이 **돌아온 뒤에** 미룸으로 적고, 던지면 stop + 해제 + `"snooze_failed"` | — |
 | 계정이 바뀌면 멈춤 | `sync/UsageEventUploadWorker.kt` 의 `startGeneration` 비교 | `UsageEventUploader.swift` 의 `runIfCurrentSession`(세대 카운터가 없어 **토큰을 에폭으로** 쓴다) | — |
@@ -370,7 +369,6 @@ v1.3 지시서 10장. 1판(위 §1~§6)은 그대로 두고 **종류와 칸을 �
 | 직접 입력 재사용·생성 결과 | 기기 `AlarmEditorScreen.kt` 의 `manualAudioReuse` `onFound`, 서버·결과 `UsageSignals.recordManualGenerationResult`(실패는 `startGeneration` 의 `onFailure`) | 기기 `VoiceStudioViewModel.recordManualLocalReuse`, 서버·결과 `recordManualGenerationAnswer`·`recordManualGenerationFailure` | `routes/tts.ts` 응답의 `cache_hit`·`charged_source`·`usage_month` |
 | 광고 보상 | `data/UsageSignals.kt` 의 `AdRewardAttempts` ← 편집기 플랜 게이트·`AlarmEditorScreen.watchRewardedAd`(지급은 서버 적립을 확인했을 때만) | `UsageEventQueue.swift` 의 `AdRewardAttempts` ← `AlarmEditorSheet` 의 광고 제안(`offered`, surface `editor_gate`)·`watchRewardedAd`(`viewStarted` 는 광고가 실제로 뜨는 순간, `pending`, `granted` 는 이 화면이 서버 적립을 확인했을 때만), 사용은 `VoiceStudioViewModel.recordManualGenerationAnswer`(응답의 `charged_source` 가 `ad` 면 `spent`). 2026-10-29 전 iOS 는 흐름이 있는데도 다섯 종류를 하나도 적지 않아 관리자 광고 퍼널이 iOS 를 0 으로 셌다 | — |
 | 응원 고정/다양하게(`content_selected`) — 저장 성공 때만 | `data/UsageSignals.kt` 의 `contentSelectionProps`·`recordContentSelected` ← `ui/main/MainViewModelAlarmActions.kt` 의 `createAlarm`·`updateAlarm` `onSuccess`(계정은 시작할 때 잡은 `ownerUserId`) — 회귀 `ContentSignalsTest`·`ContentSignalWiringTest` | `CheerVariety.contentSelectionProps(for:)` ← `AlarmEditorSheet.finishScheduling` 의 성공 끝(`userID: ownerID`) — 회귀 `ContentSignalsTests` | — |
-| 팩 목소리 사용(`pack_selected`) — 저장 성공 때만, `pack_id` 하나 | `data/UsageSignals.kt` 의 `packSelectionProps`·`recordPackSelected` ← 같은 `onSuccess`(`recordContentSelected` 옆, `ownerUserId`) — 회귀 `ContentSignalsTest`·`ContentSignalWiringTest` | `VoicePacks.packSelectionProps(for:held:)` ← `AlarmEditorSheet.finishScheduling` 의 `contentSelected` 옆(`userID: ownerID`) — 회귀 `ContentSignalsTests` | — |
 | 결제 화면·구매 확인·플랜 변경 | `ui/alarms/AlarmListScreen.kt`(이용권 탭)·편집기 플랜 게이트, `MainViewModelBillingActions.recordStorePurchaseVerified`(`store_offer` 는 `PlayBillingManager.launchPurchase` 가 고른 오퍼), `MainViewModelAuthActions.refreshAppSessionNow` | `BillingPanel` 의 `.onAppear` · 편집기 플랜 게이트(`AlarmEditorSheet` 의 `voiceGateAlert` 가 결제 액션을 내보일 때, 무료만 — surface `editor_gate`, 2026-10-29 전에는 이용권 탭에서만 적었다), `SubscriptionManager.purchase` → `recordPurchaseVerified`(`transaction.offer`), `AuthViewModel.persistSession` → `recordPlanChangeIfNeeded` | — |
 | 2판 열 | — | — | 마이그레이션 #142(`usage-events-v2-fields`), `routes/events.ts` 의 `PROP_COLUMNS` — `usage-events.test.ts` 「2판」 |
 | 권한 출처(서버가 찍음) | — | — | `lib/usage-entitlement.ts` 의 `loadEntitlementSource` — `admin-usage-metrics.test.ts` 「권한 출처」 |

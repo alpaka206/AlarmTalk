@@ -15,7 +15,6 @@ final class LocalAlarmStoreRecoveryTests: XCTestCase {
             minute: 0,
             fireAtMillis: millis(2026, 5, 18, 8, 0),
             repeatDaysMask: RepeatDay.wednesday.mask,
-            snoozeCount: 2,
             enabled: true,
             state: AlarmRuntimeState.failed.rawValue,
             alarmKitID: oldKitID
@@ -30,7 +29,6 @@ final class LocalAlarmStoreRecoveryTests: XCTestCase {
 
         XCTAssertEqual(prepared?.fireAtMillis, millis(2026, 5, 20, 8, 0))
         XCTAssertEqual(prepared?.runtimeStateEnum, .armed)
-        XCTAssertEqual(prepared?.snoozeCount, 0)
         XCTAssertTrue(prepared?.enabled == true)
         XCTAssertEqual(prepared?.alarmKitID, oldKitID)
     }
@@ -101,7 +99,6 @@ final class LocalAlarmStoreRecoveryTests: XCTestCase {
             minute: 0,
             fireAtMillis: millis(2026, 5, 19, 8, 0),
             repeatDaysMask: RepeatDay.wednesday.mask,
-            snoozeCount: 2,
             remoteAlarmId: "remote-1",
             syncState: AlarmSyncState.synced.rawValue,
             enabled: false,
@@ -119,9 +116,8 @@ final class LocalAlarmStoreRecoveryTests: XCTestCase {
 
         let updated = store.record(id: alarm.id)
         XCTAssertEqual(updated?.fireAtMillis, millis(2026, 5, 20, 8, 0))
-        XCTAssertEqual(updated?.snoozeCount, 0)
         XCTAssertEqual(updated?.runtimeStateEnum, .armed)
-        XCTAssertEqual(updated?.syncStateEnum, .dirty)
+        XCTAssertEqual(updated?.syncState, AlarmSyncState.dirty.rawValue)
         XCTAssertNil(updated?.alarmKitID)
     }
 
@@ -150,7 +146,7 @@ final class LocalAlarmStoreRecoveryTests: XCTestCase {
         let updated = store.record(id: alarm.id)
         XCTAssertFalse(updated?.enabled == true)
         XCTAssertEqual(updated?.runtimeStateEnum, .disabled)
-        XCTAssertEqual(updated?.syncStateEnum, .dirty)
+        XCTAssertEqual(updated?.syncState, AlarmSyncState.dirty.rawValue)
         XCTAssertNil(updated?.alarmKitID)
     }
 

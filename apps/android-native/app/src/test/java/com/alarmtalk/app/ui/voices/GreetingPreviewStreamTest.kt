@@ -10,8 +10,7 @@ import java.io.File
  * CLAUDE.md 「미리듣기는 울림과 같은 스트림」). 예전에는 인사말만 `MediaPlayer.create` 로 만들어 미디어 볼륨으로 났고,
  * 같은 화면의 등록 미리듣기는 알람 볼륨이라 버튼마다 다른 볼륨 축에서 들렸다.
  *
- * 플레이어를 만드는 곳이 컴포저블 안의 지역 함수라 단위 테스트에서 띄울 수 없어(`VoicePackTest` 의 진입 구독 검사와 같은
- * 사정) 배선을 소스로 고정한다:
+ * 플레이어를 만드는 곳이 컴포저블 안의 지역 함수라 단위 테스트에서 띄울 수 없어 배선을 소스로 고정한다:
  *  1. 인사말 두 갈래(내장 인사말 `playGreeting`·받은 클립 `playGreetingClip`)는 `MediaPlayer.create` 를 쓰지 않고
  *     `createPreviewPlayer` 로 연다.
  *  2. `createPreviewPlayer` 는 알람 용도·말소리 속성을 **데이터를 넣고 prepare 하기 전에** 건다 — `MediaPlayer.create` 는

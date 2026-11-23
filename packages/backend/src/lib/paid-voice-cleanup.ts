@@ -115,7 +115,7 @@ function evictClonedVoicesStatement(ownerIds: string[]): InStatement {
  *  - `evicted_provider_voice_id`: 캐시 키가 provider voice id 를 포함하므로, 옛 id 를 남겨
  *    두면 보관 중인 오디오를 재클론 없이 그대로 서빙할 수 있다.
  *
- * **문장으로 돌려준다** — 호출부(`downgradeUserToFree`·기간 한정 개인 플랜 종료 전환)가 읽기(`providerVoiceIds`)를
+ * **문장으로 돌려준다** — 호출부(`downgradeUserToFree`)가 읽기(`providerVoiceIds`)를
  * 미리 모아 두고 쓰기를 `batch` 하나로 보낸다. 사람마다·클론마다 왕복하면 해지 요청이 워커
  * subrequest 한도(~50)를 넘는다(2026-09-20).
  * ⚠ 구 스키마 폴백(#77 이전 배포 창)은 없다 — 컬럼이 없으면 묶음이 통째로 실패한다(fail-closed).
@@ -143,23 +143,8 @@ export async function deleteSensitiveVoiceDataForUser(
   userPk: string,
   userLoginId?: string | null,
 ): Promise<VoiceRevocationNotifications> {
-  return deleteSensitiveVoiceDataForOwners(db, [userPk, userLoginId]);
-}
-
-/**
- * [deleteSensitiveVoiceDataForUser] 의 본체 — **주인 id 집합**(여러 사람의 PK·로그인 id)을 한 번에
- * 받는다. 모든 문장이 `IN (주인 id…)` 집합 조건이라 한 사람을 넘기든 여럿을 넘기든 **같은 문장**
- * 이고, 여럿이면 사람마다 돌린 것의 합집합과 같은 결과다(삭제·강등·알림 대상).
- *
- * 여럿을 넘기는 곳은 보관 기한 스윕의 묶음(`lib/personal-promo-end.ts`)뿐이다 — 사람마다 스무 번
- * 남짓 왕복하던 것을 묶음마다로 줄인다(워커 subrequest ~50). 한 문장이 실패하면 묶음 전체가
- * 롤백된다(호출부가 한 트랜잭션으로 감싼다).
- */
-export async function deleteSensitiveVoiceDataForOwners(
-  db: DbExecutor,
-  ownerUserIds: Array<string | null | undefined>,
-): Promise<VoiceRevocationNotifications> {
-  const ids = uniqueIds(ownerUserIds);
+  // 주인 id 는 PK 와 로그인 id 둘 다다 — `voice_profiles.user_id` 에 로그인 id(google_id)가 적힌 옛 행이 있다.
+  const ids = uniqueIds([userPk, userLoginId]);
   if (ids.length === 0) return { downgradedAlarms: [], voiceAccessRevokedUserIds: [] };
   const ph = placeholders(ids);
   const downgraded = new Map<string, DowngradedAlarm>();

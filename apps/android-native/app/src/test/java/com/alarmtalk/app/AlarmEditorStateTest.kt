@@ -53,7 +53,7 @@ class AlarmEditorStateTest {
      * 아니라 *기본 목소리에 운세·사랑 클립이 없었다*는 사정이었고, 클립을 채우고 나니 남을
      * 이유가 없었다. 다시 손으로 적기 시작하면 한쪽만 늘어나는 사고가 그대로 돌아온다.
      *
-     * 등급으로 갈리는 것은 **직접 입력 잠금 하나뿐**이다(`manualLocked = freeVoiceTier`).
+     * 직접 입력도 등급으로 잠그지 않는다 — 무료는 월 한도·광고 보상으로 쓴다(`docs/spec/ad-rewards.md`).
      */
     @Test
     fun freeBucketOrderIsDerivedFromTheOneMessageList() {
@@ -395,21 +395,18 @@ class AlarmEditorStateTest {
 
     @Test
     fun stockClipAudioIsTrackedWithoutListenerTitle() {
-        val editor = AlarmEditorState.from(alarm = null)
-        editor.voiceListenerTitleOverride = "old-listener"
-
-        editor.setStockClipAudio(
-            audio = CachedAlarmAudio(
+        // 옛 단일 스톡 클립 행 — 버킷 없이 `stock_<messageId>` 클립 하나를 물린 채 저장됐다. 열면 그 클립을 고른 상태다.
+        val editor = AlarmEditorState.from(
+            alarm = bucketAlarmEntity(voiceRandomContext = null, bucketId = "unused").copy(
                 localAudioUri = "file://stock.mp3",
+                audioCacheKey = "stock_message-1",
                 rawAudioUri = "r2://stock.mp3",
-                displayName = "stock clip",
-                durationMillis = null,
-                cacheKey = "stock_message-1",
-                messageId = "message-1",
+                voiceProfileId = "system-profile",
+                voiceText = "wake up",
+                ttsMessageId = "message-1",
+                bucketId = null,
+                bucketClipKeysJson = null,
             ),
-            profileId = "system-profile",
-            messageId = "message-1",
-            text = "wake up",
         )
 
         assertEquals("", editor.voiceListenerTitleOverride)

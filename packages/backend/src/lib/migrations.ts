@@ -3777,6 +3777,75 @@ export const migrations: Migration[] = [
         WHERE kakao_id IS NOT NULL`,
     ],
   },
+  {
+    // **쓰기만 하고 아무도 읽지 않는 칸을 지운다**(2026-11-23, #149 의 다음 회차 — `docs/ops/unused-schema-audit-2026-11.md`).
+    //  - `users.updated_at`·`push_tokens.updated_at`: 고칠 때마다 적기만 했다.
+    //  - 표 `voice_draft_attempt_usage`: 목소리 초안 시도를 세기만 했다(아무것도 막지 않고, 두 앱 모두 그 수를 읽지 않는다 —
+    //    `GET /voice/draft-quota` 는 옛 iOS 디코딩 호환으로 `limit/used/remaining` 을 0 으로 싣는다). ⚠ **이 표를 부르는 코드
+    //    (탈퇴 파기의 DELETE 포함)를 먼저 걷어낸 배포 뒤에 돈다** — 표가 사라진 뒤에 그 DELETE 가 남아 있으면 파기 트랜잭션이 통째로
+    //    실패한다. 그래서 같은 회차의 코드에서 모두 뺐다.
+    //  - `message_library.in_use`·`in_use_updated_at`·`last_used_at`: 사용 기록(`manual_message_attached`·`released`)을 받아
+    //    적던 '사용중' 표시. 읽는 곳이 없고(지우는 문은 목소리 삭제 하나다 — `docs/spec/usage-events.md` §5), 같은 사실은
+    //    `usage_events` 에 그대로 남는다.
+    //  - `weather_region_daily_official.dust_level`(먼지 원천을 쓰지 않아 늘 NULL), `store_download_sync.last_success_at`(관리자 화면이
+    //    읽지 않는다), `store_report_instances.ingested_at`(중복 거르기는 `instance_id`, 정리는 `processing_date` 로 한다).
+    // 배포 → 마이그레이션 창: 새 코드는 이 칸들을 부르지 않고, 남은 칸은 nullable 이거나 기본값이 있어 옛 스키마에서도 INSERT·
+    // UPDATE 가 그대로 통과한다. 이 칸들을 부르는 색인·뷰·트리거·CHECK·외래 키는 없다.
+    // **non-atomic** 이다 — 다시 돌 때 이미 지운 칸은 'no such column' 관용(`isIdempotentDDLError`)으로 지나간다(#149 와 같다).
+    id: 152,
+    name: 'drop-write-only-columns',
+    statements: [
+      `ALTER TABLE users DROP COLUMN updated_at`,
+      `ALTER TABLE push_tokens DROP COLUMN updated_at`,
+      `DROP TABLE IF EXISTS voice_draft_attempt_usage`,
+      `ALTER TABLE message_library DROP COLUMN in_use`,
+      `ALTER TABLE message_library DROP COLUMN in_use_updated_at`,
+      `ALTER TABLE message_library DROP COLUMN last_used_at`,
+      `ALTER TABLE weather_region_daily_official DROP COLUMN dust_level`,
+      `ALTER TABLE store_download_sync DROP COLUMN last_success_at`,
+      `ALTER TABLE store_report_instances DROP COLUMN ingested_at`,
+    ],
+  },
+  {
+    // **아무도 쓰지도 읽지도 않는 애플 구독 칸을 지운다**(2026-11-23, 같은 감사). #96 이 StoreKit 2 를 위해 되살렸지만 애플 결제는
+    // `store_transactions`(provider='apple')에 적는 것으로 구현됐다 — 그 뒤 이 칸을 쓰는 코드가 한 번도 없다(이 칸을 쓴 코드는
+    // 2026-05-19~20 하루뿐이었고, 그 뒤 #82 가 dev·prod 전부 NULL 을 확인하고 지웠다). 그러니 운영 값도 전부 NULL 이다.
+    // 이름으로 부르는 곳이 없고, `SELECT s.*` 한 곳(`billing-reconciliation.ts` 의 `readSubscription`)은 응답으로 나가지 않는다.
+    // **색인을 먼저 지운다** — DROP COLUMN 은 그 칸을 부르는 색인이 남아 있으면 실패한다(#82 와 같은 순서). 칸 DROP 과 같은 회차인
+    // 것은 색인이 칸을 지우는 선행 조건이라서다. non-atomic — 다시 돌면 'no such index'·'no such column' 관용으로 지나간다.
+    id: 153,
+    name: 'drop-unused-subscription-apple-columns',
+    statements: [
+      `DROP INDEX IF EXISTS idx_subscriptions_apple_transaction`,
+      `DROP INDEX IF EXISTS idx_subscriptions_apple_original`,
+      `ALTER TABLE subscriptions DROP COLUMN apple_transaction_id`,
+      `ALTER TABLE subscriptions DROP COLUMN apple_original_transaction_id`,
+      `ALTER TABLE subscriptions DROP COLUMN apple_product_id`,
+    ],
+  },
+  {
+    // **은퇴한 기능의 표·칸을 지운다**(2026-11-23 오너 — 플러스를 무료로 얻는 길은 스토어의 1개월 무료 체험 하나다).
+    //  - `plan_grants`(#134, 관리자 기간 지급): 운영에 나간 적이 없다(prod 는 #132). 지급·회수·뒷정리 크론·응답의 `plan_grant`
+    //    칸·탈퇴 파기의 DELETE 를 같은 회차의 코드에서 모두 뺐다.
+    //  - `voice_pack_events`·`voice_pack_clips`·`voice_packs`(#144, 추가 음성팩): 스토어 앱에 실린 적이 없고 운영에 게시한 팩도
+    //    0개다. 앱 API·관리자 검수 화면·가져오기 스크립트를 같은 회차에서 뺐다. 외래 키는 없지만 자식(사건·클립)부터 지운다.
+    //  - `usage_events.pack_id`(#142): 음성팩 칸이다 — 사용 기록 스키마에서 뺐고(옛 큐가 실어 오면 받고 버린다,
+    //    `packages/shared` 의 `usage-event.ts`) 쓰는 곳도 읽는 곳도 없다. nullable 이라 옛 스키마에서도 INSERT 가 그대로 통과한다.
+    //  ⚠ **남기는 것** — `promo_codes`·`promo_code_redemptions`: 프로모 코드는 2026-10-12 에 없앴지만 처리방침이 그 기록을 적고
+    //    있고 전자상거래법상 5년 보존 대상일 수 있어, 오너가 확인하기 전에는 지우지 않는다(탈퇴 파기의 사용 기록 DELETE 도 그대로).
+    // 배포 → 마이그레이션 창: 새 코드는 이 표·칸을 부르지 않는다(지운 표를 부르는 문장이 남으면 그 트랜잭션이 통째로 실패한다 —
+    // 탈퇴 파기의 `plan_grants` DELETE 를 같은 회차에서 뺀 이유다). 이 칸을 부르는 색인·뷰·트리거·CHECK 는 없고, 표의 색인은
+    // 표와 함께 지워진다. **non-atomic** — 다시 돌면 `IF EXISTS` 와 'no such column' 관용(`isIdempotentDDLError`)으로 지나간다.
+    id: 154,
+    name: 'drop-retired-plan-grants-and-voice-packs',
+    statements: [
+      `DROP TABLE IF EXISTS plan_grants`,
+      `DROP TABLE IF EXISTS voice_pack_events`,
+      `DROP TABLE IF EXISTS voice_pack_clips`,
+      `DROP TABLE IF EXISTS voice_packs`,
+      `ALTER TABLE usage_events DROP COLUMN pack_id`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
