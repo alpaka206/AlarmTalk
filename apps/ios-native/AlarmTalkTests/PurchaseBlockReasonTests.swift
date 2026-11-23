@@ -48,7 +48,7 @@ final class PurchaseBlockReasonTests: XCTestCase {
     }
 
     func test_스토어_결제가_없으면_통과한다() {
-        // 기간 한정 개인 플랜 — 갱신을 쥔 스토어가 없다.
+        // 스토어 밖에서 준 이용권(예전의 기간 한정 개인 플랜 같은) — 갱신을 쥔 스토어가 없다.
         XCTAssertNil(reason(.personal, response(renewalProviders: [])))
     }
 

@@ -42,7 +42,6 @@ final class SessionHealthCheckDestroyedAccountTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session)
-        XCTAssertEqual(vm.lastNetworkError, "서버에 일시적으로 연결할 수 없어요.")
     }
 
     private func makeSession() -> AuthSession {

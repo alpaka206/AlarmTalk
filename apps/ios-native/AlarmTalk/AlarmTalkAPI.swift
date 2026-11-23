@@ -29,14 +29,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return encoder
     }
 
-    /// **서버 응답**을 읽는 디코더. 저장본(키체인·스냅샷)을 읽는 기본 디코더와 다른 점은 둘:
-    /// 스네이크 키, 그리고 기간 한정 개인 플랜의 계산 시각을 받은 순간으로 찍어도 된다는 표시
-    /// (`PersonalPromo.stampsReceiptKey` — 서버가 `computed_at` 을 안 줄 때만 쓰인다).
+    /// **서버 응답**을 읽는 디코더 — 저장본(키체인·스냅샷)을 읽는 기본 디코더와 달리 스네이크 키를 바꾼다.
     /// 테스트도 서버 응답을 흉내 낼 때 이걸 쓴다.
     static func makeResponseDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.userInfo[PersonalPromo.stampsReceiptKey] = true
         return decoder
     }
 
@@ -53,19 +50,17 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     func loginWithApple(
         idToken: String,
-        name: String?,
-        email: String?,
         nonce: String?,
         authorizationCode: String?
     ) async throws -> AuthSession {
         // ⚠ 필드명은 서버 `AppleLoginRequestSchema`(@alarmtalk/shared) 와 정확히 같아야 한다:
-        //   identity_token / nonce / full_name.  (`convertToSnakeCase` 로 변환된다.)
+        //   identity_token / nonce.  (`convertToSnakeCase` 로 변환된다.)
         //   예전에는 idToken/name/email 을 보내 **모든 애플 로그인이 400** 이었다.
-        //   email 은 서버가 토큰에서 직접 읽으므로 보내지 않는다.
+        //   email 은 서버가 토큰에서 직접 읽으므로 보내지 않는다. 이름(`full_name`)은 2026-10-29 닉네임을 없애면서
+        //   보내지 않는다 — 애플이 처음 한 번 주는 이름도 받지 않는다.
         struct Body: Encodable {
             var identityToken: String
             var nonce: String?
-            var fullName: String?
             /// 탈퇴 때 애플 연결을 끊으려면 서버가 refresh token 을 갖고 있어야 하고,
             /// 그걸 얻는 유일한 재료가 이 코드다(애플 심사 5.1.1(v)).
             /// ⚠ **5분·1회용**이라 로그인 요청에 같이 실어야 한다 — 나중에 쓰려고
@@ -80,7 +75,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 // **raw nonce** 를 보낸다 — 서버가 SHA-256 해싱해 토큰의 nonce 클레임과 맞춘다
                 // (NonceGenerator.swift 가 선언한 계약).
                 nonce: nonce?.nilIfBlank,
-                fullName: name.nilIfBlank,
                 authorizationCode: authorizationCode?.nilIfBlank
             )
         )
@@ -455,30 +449,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         baseRequest("tts/messages/\(id)/audio", method: "GET", token: token)
     }
 
-    // MARK: 추가 음성팩(`docs/spec/voice-packs.md` §3)
-    //
-    // 받을 수 없는 팩(비게시·권리 끝·지역·빌드)은 404 `VOICE_PACK_NOT_FOUND` 다. 빌드는 공통 헤더(`X-App-Version`)로 간다.
-
-    /// 지금 받을 수 있는 팩 목록 + 게시가 끝난 팩의 기존 재생 기한.
-    func getVoicePacks(token: String) async throws -> VoicePackListResponse {
-        try await request("voice-packs", token: token)
-    }
-
-    /// 팩 상세(다운로드 상태를 셀 클립 목록).
-    func getVoicePack(packID: String, token: String) async throws -> VoicePackDetailResponse {
-        try await request("voice-packs/\(Self.pathSegment(packID))", token: token)
-    }
-
-    /// 팩 클립 하나의 오디오(base64 + 해시·크기).
-    func getVoicePackClipAudio(packID: String, clipID: String, token: String) async throws -> VoicePackAudioResponse {
-        try await request("voice-packs/\(Self.pathSegment(packID))/clips/\(Self.pathSegment(clipID))/audio", token: token)
-    }
-
-    /// 경로 한 칸 — 서버가 준 id 라도 슬래시·물음표가 경로를 바꾸지 못하게 인코딩한다.
-    private static func pathSegment(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_"))) ?? value
-    }
-
     /// 사전렌더 테마(날씨)의 **어느 클립을 틀지**를 서버에 물어본다.
     ///
     /// 서버가 그 지역·그 날짜의 실제 예보(서버가 지역마다 미리 계산 — 원천은 서버가 정한다)로
@@ -561,19 +531,10 @@ final class AlarmTalkAPI: @unchecked Sendable {
             path += "&lang=\(lang)"
         }
         let response: HolidayApiResponse = try await request(path)
-        let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         return response.holidays.compactMap { item -> HolidayEntity? in
             guard item.type == "public" else { return nil }
             guard let epochDay = Self.holidayEpochDay(from: item.date) else { return nil }
-            return HolidayEntity(
-                countryCode: cc,
-                regionCode: "",
-                epochDay: epochDay,
-                localDate: item.date,
-                name: item.name,
-                source: "server_sync",
-                updatedAtMillis: nowMillis
-            )
+            return HolidayEntity(countryCode: cc, epochDay: epochDay)
         }
     }
 

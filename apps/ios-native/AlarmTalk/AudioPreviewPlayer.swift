@@ -4,16 +4,16 @@ import Foundation
 @MainActor
 final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
-    /// 호출자가 `setPreparing` 으로 켜는 준비 표시 — 네트워크 미리듣기의 다운로드/생성 구간에
-    /// 스피너를 띄우고, 실제 재생이 시작되거나 멈추면 false 로 내린다.
-    /// Android `previewPreparing`(`AlarmEditorScreen.kt`) 미러.
+    /// 준비 표시 — 실제 재생이 시작되거나 멈추면 false 로 내린다. Android `previewPreparing`(`AlarmEditorScreen.kt`) 미러.
+    /// ⚠ **지금은 켜는 곳이 없다**(늘 false — 켜던 `setPreparing` 은 호출부가 없어 2026-11-23 에 지웠다). 편집기 목소리 시트의
+    /// 스피너(`VoiceSelectionSheet.preparingID`)를 살리려면 네트워크 미리듣기 호출자가 여기서 켜야 한다.
     @Published private(set) var isPreparing = false
 
     /// 끝까지 들었을 때, 그리고 **다른 미리듣기가 시작돼 끊겼을 때** 부른다(`stop()` 으로 직접 멈출 때는 부르지 않는다).
     var onFinish: (() -> Void)?
 
-    /// 지금 소리를 낼 수 있는 미리듣기 — **한 번에 하나만** 운다. 플레이어가 여럿이라(목소리 탭·추가 팩·편집기·랜딩) 서로를
-    /// 모르면 샘플이 겹친다(코덱스 #960 — 팩 샘플과 기본·클론 샘플). 안드로이드는 미리듣기 플레이어가 하나다.
+    /// 지금 소리를 낼 수 있는 미리듣기 — **한 번에 하나만** 운다. 플레이어가 여럿이라(목소리 탭·편집기·랜딩) 서로를
+    /// 모르면 샘플이 겹친다(코덱스 #960). 안드로이드는 미리듣기 플레이어가 하나다.
     private static weak var current: AudioPreviewPlayer?
     /// **끝까지** 재생됐을 때만 한 번 부른다 — 정지·다음 재생·오류로 끊기면 부르지 않는다(샘플 완료 기록,
     /// `docs/spec/usage-events.md` §7.1). [play] 가 성공한 **뒤**에 건다 — [play]·[stop] 이 지운다.
@@ -26,12 +26,6 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     /// Swift 6 엄격 동시성: @Sendable DispatchWorkItem 에서 @MainActor stop() 을 직접
     /// 호출하면 데이터 레이스 오류가 나므로 @MainActor Task 로 정지를 예약한다.
     private var autoStopTask: Task<Void, Never>?
-
-    /// 네트워크 미리듣기 호출자가 다운로드 시작 직전에 스피너를 켜고, 재생/실패 시 끄기
-    /// 위해 노출한다. play(...) 가 호출되면 자동으로 false 로 내려간다.
-    func setPreparing(_ preparing: Bool) {
-        isPreparing = preparing
-    }
 
     /// 재생 중인 소리의 **크기만** 바꾼다(다시 틀지 않는다). 슬라이더를 끄는 동안
     /// 소리가 그 자리에서 커지고 작아진다.

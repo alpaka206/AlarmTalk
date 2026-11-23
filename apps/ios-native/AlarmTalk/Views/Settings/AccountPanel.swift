@@ -43,7 +43,6 @@ private struct AccountPanelPreviewHost: View {
                 user: AuthUser(
                     id: "u1",
                     email: "preview@alarmtalk.app",
-                    name: "AlarmTalk",
                     plan: "free"
                 ),
                 onSignOut: {}

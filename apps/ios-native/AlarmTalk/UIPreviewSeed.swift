@@ -112,31 +112,6 @@ enum UIPreviewSeed {
         #endif
     }
 
-    /// 기간 한정 개인 플랜을 쓰는 계정으로 띄운다 — `-UIPreviewPersonalPromo <남은 일수>`.
-    ///
-    /// 서버 없이 이용권 화면의 '무료 이용 중' 문구(개인 카드 또는 카드 위 한 줄)와 **종료 안내 알럿**을
-    /// 보려고 둔다. 종료는 지금부터 그 일수 뒤, 안내 시작은 그 7일 전이다(서버 계약과 같은 간격).
-    /// 남은 일수를 7 이하로 주면 실행하자마자 안내가 뜬다. 이때 plan 은 서버가 주는 계산값(`plus`)이다.
-    /// `-UIPreviewPromoKeepsVoices` 를 함께 주면 종료 전환 대상이 아닌 계정
-    /// (`deletes_voices_at_end: false` — 보류 중인 구독 행이 남은 계정)으로 심는다 — 이용권 화면은
-    /// 그 계정의 문구를 카드 위 한 줄로 두고 '현재 이용권' 은 무료 카드다(스펙 D4).
-    static var previewPersonalPromo: PersonalPromo? {
-        #if DEBUG
-        guard let days = argValue("-UIPreviewPersonalPromo").flatMap(Double.init) else { return nil }
-        let end = Date().addingTimeInterval(days * 86_400)
-        let from = end.addingTimeInterval(-7 * 86_400)
-        let iso = ISO8601DateFormatter()
-        return PersonalPromo(
-            endsAt: iso.string(from: end),
-            noticeFrom: iso.string(from: from),
-            deletesVoicesAtEnd: !ProcessInfo.processInfo.arguments.contains("-UIPreviewPromoKeepsVoices"),
-            fetchedAt: Date()
-        )
-        #else
-        return nil
-        #endif
-    }
-
     /// 계정에 심어 둘 날씨 지역 — `-UIPreviewWeather "<나라>|<도시>"`(예: `대한민국|서울`, 옛 값이면 `대한민국|속초`).
     ///
     /// 설정 '지역' 행·문구 화면 상세 카드의 값과 **목록에 없는 옛 값의 안내**를 실기기 계정 없이 보려고 둔다.
@@ -262,17 +237,13 @@ enum UIPreviewSeed {
 
     /// 화면을 채울 가짜 세션.
     static func makeSession() -> AuthSession {
-        let promo = previewPersonalPromo
-        return AuthSession(
+        AuthSession(
             token: "ui-preview-token",
             user: AuthUser(
                 id: "ui-preview-user",
                 email: "preview@alarm-talk.com",
-                name: "김규원",
-                // 프로모 계정은 서버가 계산값 `plus` 를 준다 — 원시 plan 은 free 다.
-                plan: promo == nil ? previewPlan : "plus",
-                dynamicPromptSettings: previewWeather.map { DynamicPromptSettings(weather: $0) },
-                personalPromo: promo
+                plan: previewPlan,
+                dynamicPromptSettings: previewWeather.map { DynamicPromptSettings(weather: $0) }
             )
         )
     }

@@ -31,7 +31,6 @@ final class AuthUserDecodingTests: XCTestCase {
         let user = try decoder().decode(AuthUser.self, from: json)
 
         XCTAssertEqual(user.id, "user-1")
-        XCTAssertEqual(user.name, "")
         XCTAssertEqual(user.plan, "free")
         XCTAssertEqual(try XCTUnwrap(user.dynamicPromptSettings), .empty)
     }
@@ -56,7 +55,6 @@ final class AuthUserDecodingTests: XCTestCase {
 
         XCTAssertEqual(session.token, "stored-token")
         XCTAssertEqual(session.user.id, "user-1")
-        XCTAssertEqual(session.user.name, "Tester")
         XCTAssertEqual(session.user.plan, "plus")
         XCTAssertEqual(session.user.deletionStatus, "active")
     }

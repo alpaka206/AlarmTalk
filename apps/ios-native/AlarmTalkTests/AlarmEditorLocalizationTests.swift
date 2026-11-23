@@ -36,7 +36,7 @@ final class AlarmEditorLocalizationTests: XCTestCase {
     }
 
     func testWeekdaysAndTimeColumnsHaveTranslatedLabels() throws {
-        for key in ["일", "월", "화", "수", "목", "금", "토", "일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "오전", "오후", "시", "분", "평일", "주말", "매일", "없음"] {
+        for key in ["일", "월", "화", "수", "목", "금", "토", "일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "오전", "오후", "시", "매일"] {
             for language in ["en", "ja"] {
                 XCTAssertNotEqual(try localized(key, language: language), key, "\(language): \(key)")
             }

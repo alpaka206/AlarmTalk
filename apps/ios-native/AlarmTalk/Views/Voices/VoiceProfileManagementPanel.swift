@@ -126,11 +126,6 @@ struct VoiceProfileManagementPanel: View {
                 // 기본 제공 목소리는 맨 아래 — 내 목소리가 먼저다.
                 systemVoicesSection
             }
-            // 추가 음성팩 — 기본 목소리 **아래**(`docs/spec/voice-packs.md` §7). 받기는 고른 팩만이다.
-            // 지금은 숨긴다(`VoicePacks.isVisible`).
-            if VoicePacks.isVisible {
-                VoicePackSection()
-            }
         }
         // ⚠ **다른 화면이 남긴 문장을 이 탭에 띄우지 않는다**(2026-10-29 두 앱 비교). `statusMessage` 는 편집기도 쓴다 —
         //   직접 입력 알람을 저장하고 이 탭에 오면 "새 음성을 생성하고 로컬에 저장했어요." 가 맨 위에 남아 있었다. 안드로이드는

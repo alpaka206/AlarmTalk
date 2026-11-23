@@ -1,15 +1,12 @@
 import Foundation
 
 // MARK: - HolidayEntity
-// Android `HolidayEntity.kt:9-21` 의 데이터 구조를 1:1 이식.
+// 공휴일 캐시 한 줄 — 판정(`HolidayStore.isHoliday`·`calendarMarker`)이 읽는 **나라·날짜만** 둔다. 안드로이드
+// `HolidayEntity` 의 이름·출처·원문 날짜·갱신 시각·지역 칸은 iOS 에서 읽는 곳이 없어 2026-11-23 에 뺐다 — 그 키가 든 옛
+// 캐시 파일도 그대로 읽힌다(모르는 키는 무시한다).
 struct HolidayEntity: Codable, Hashable, Equatable {
     let countryCode: String     // ex: "KR"
-    let regionCode: String      // 빈 문자열이면 전국 공휴일
     let epochDay: Int           // LocalDate.toEpochDay 동일 (1970-01-01 = 0)
-    let localDate: String       // "yyyy-MM-dd"
-    let name: String
-    let source: String          // "bundled_seed" / "server_sync" / ...
-    let updatedAtMillis: Int64
 }
 
 /// HolidayDate (이름 + Date) — 시드 입력용 보조 구조.
@@ -494,7 +491,6 @@ final class HolidayStore: ObservableObject {
 
     /// 시드 데이터를 영속 캐시에 upsert. 본 phase 는 KR 2026 한 해 분만 채워둠.
     func seedDefaultsIfNeeded() async {
-        let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         let calendar = Calendar.current
         let currentYear = calendar.component(.year, from: Date())
         // currentYear..currentYear+2 까지 시드 (캘린더가 연말을 넘겨도 다음다음 해 시드가 닿도록).
@@ -506,12 +502,7 @@ final class HolidayStore: ObservableObject {
                 collected.append(
                     HolidayEntity(
                         countryCode: Self.defaultCountryCode,
-                        regionCode: "",
-                        epochDay: Self.epochDay(of: date.date),
-                        localDate: Self.formatDate(date.date),
-                        name: date.name,
-                        source: "bundled_seed",
-                        updatedAtMillis: nowMillis
+                        epochDay: Self.epochDay(of: date.date)
                     )
                 )
             }
@@ -525,7 +516,6 @@ final class HolidayStore: ObservableObject {
         for item in items {
             if let idx = bucket.firstIndex(where: {
                 $0.countryCode == item.countryCode &&
-                    $0.regionCode == item.regionCode &&
                     $0.epochDay == item.epochDay
             }) {
                 bucket[idx] = item

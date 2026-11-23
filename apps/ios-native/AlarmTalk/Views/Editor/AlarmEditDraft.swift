@@ -446,11 +446,8 @@ struct AlarmEditDraft: Equatable {
             snoozeEnabled: snoozeEnabled,
             snoozeMinutes: snoozeMinutes,
             snoozeRepeatLimit: snoozeRepeatLimit.rawValue,
-            // Android `AlarmRepository.updateAlarm` 과 동일하게, 생성/수정 시 스누즈 횟수를 0 으로 초기화한다.
-            snoozeCount: 0,
             vibrationPattern: vibrationPattern.rawValue,
             playMode: playMode.rawValue,
-            defaultAlarmSoundId: existing?.defaultAlarmSoundId ?? DefaultAlarmSounds.bundledDefault,
             localAudioUri: alarmOnly ? nil : existing?.localAudioUri,
             audioCacheKey: alarmOnly ? nil : existing?.audioCacheKey,
             rawAudioUri: alarmOnly ? nil : existing?.rawAudioUri,

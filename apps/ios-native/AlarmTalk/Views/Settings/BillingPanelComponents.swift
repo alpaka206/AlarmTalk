@@ -60,10 +60,10 @@ func formatPassDate(_ value: String?) -> String? {
     parsePassDate(value).map { BillingDisplayDateFormatter.string(from: $0) }
 }
 
-/// 해지 알럿의 날짜 — "12월 9일"(기기 로케일의 '월 일'). 체험 첫 결제일·기간 한정 개인 플랜의 날짜와 같은 꼴이다
-/// (`PersonalPromo.dayLabel`, 안드로이드 해지 알럿도 같은 꼴로 맞춘다 — 2026-11-22 두 앱 통일).
+/// 해지 알럿의 날짜 — "12월 9일"(기기 로케일·시간대의 '월 일'). 체험 첫 결제일과 같은 꼴이다
+/// (안드로이드 해지 알럿도 같은 꼴로 맞춘다 — 2026-11-22 두 앱 통일).
 func formatPassDay(_ value: String?) -> String? {
-    parsePassDate(value).map { PersonalPromo.dayLabel($0) }
+    parsePassDate(value).map { $0.formatted(.dateTime.month(.wide).day()) }
 }
 
 private func parsePassDate(_ value: String?) -> Date? {
@@ -138,7 +138,7 @@ enum PlanCard {
 
 /// 플러스 큰 카드(A안, 2026-11-15 오너 — 캔버스 proposal-10). 안드로이드 `PlusPlanHeroCard` 와 같다.
 /// 배지는 지금 쓰는 중이면 '현재 이용권', 체험을 줄 수 있으면 'n개월 무료'. 가격 줄은 체험이 있으면
-/// "1개월 무료, 이후 월 ₩3,900", 없으면 "월 ₩3,900". 상태 한 줄(프로모)은 가격 아래다. 시작 버튼은 카드가 아니라
+/// "1개월 무료, 이후 월 ₩3,900", 없으면 "월 ₩3,900". 상태 한 줄(만료·해지 예정)은 가격 아래다. 시작 버튼은 카드가 아니라
 /// 화면 아래 고정 영역(`BillingPanel.bottomBar`)에 있다.
 struct PlusPlanHeroCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
@@ -188,7 +188,7 @@ struct PlusPlanHeroCard: View {
                         .foregroundStyle(theme.palette.primary)
                 }
                 if isCurrent, let statusText {
-                    // 상태 줄(만료·해지 예정·프로모) 14 SemiBold — 안드로이드 `bodyMedium` + SemiBold.
+                    // 상태 줄(만료·해지 예정) 14 SemiBold — 안드로이드 `bodyMedium` + SemiBold.
                     Text(statusText)
                         .font(theme.typography.bodyMedium)
                         .fontWeight(.semibold)
@@ -216,7 +216,7 @@ struct PlusPlanHeroCard: View {
             RoundedRectangle(cornerRadius: theme.shapes.large, style: .continuous)
                 .stroke(theme.palette.primary.opacity(0.48), lineWidth: 1)
         )
-        // UI 테스트가 '현재 이용권' 배지·상태 문구가 **어느 카드에** 있는지 가리는 자리다(`PersonalPromoNoticeUITests`).
+        // '현재 이용권' 배지·상태 문구가 **어느 카드에** 있는지 UI 테스트가 가릴 수 있게 둔다.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("planCard.personal")
     }

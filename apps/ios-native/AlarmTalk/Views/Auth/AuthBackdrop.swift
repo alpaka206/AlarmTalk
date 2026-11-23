@@ -57,10 +57,9 @@ enum AuthSceneColors {
     /// `AuthTextMuted` — 보조 설명.
     static let textMuted = Color.white.opacity(0x99 / 255.0)
 
-    /// `AuthErrorText` / `AuthNoticeText` — 이 화면은 고정 다크라 테마 error/primary 대신
-    /// 밝은 고정색을 쓴다. **성공 안내를 오류색으로 그리지 말 것**(iOS 가 그러고 있었다).
+    /// `AuthErrorText` — 이 화면은 고정 다크라 테마 error 대신 밝은 고정색을 쓴다.
+    /// **성공 안내를 오류색으로 그리지 말 것**(iOS 가 그러고 있었다).
     static let error = Color.hex(0xFFB4AB)
-    static let notice = Color.hex(0xA8C8FF)
 
     /// `GlassFill` / `GlassBorder` — 씬 위 글라스 카드.
     static let glassFill = Color.white.opacity(0x21 / 255.0)

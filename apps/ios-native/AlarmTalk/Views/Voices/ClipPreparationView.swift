@@ -107,7 +107,7 @@ struct ClipPreparationView: View {
     private var standardPreparation: some View {
         VStack(spacing: 0) {
             Text(headline)
-                // 36 · 굵기 400 — M3 displaySmall 그대로(안드로이드와 같다). 앱 토큰 `displaySmall` 은 SemiBold 라 쓰지 않는다.
+                // 36 · 굵기 400 — M3 displaySmall 그대로(안드로이드와 같다).
                 .font(.pretendard(.regular, size: 36, relativeTo: .largeTitle))
                 .foregroundStyle(theme.palette.onSurface)
                 // 숫자가 흔들리지 않게 — 퍼센트가 오르내릴 때 폭이 변하면 시선이 튄다.

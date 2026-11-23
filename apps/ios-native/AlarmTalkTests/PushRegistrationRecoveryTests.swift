@@ -8,7 +8,7 @@ final class PushRegistrationRecoveryTests: XCTestCase {
 
     private func session(_ userID: String) -> AuthSession {
         AuthSession(token: "token-\(userID)", user: AuthUser(
-            id: userID, email: "\(userID)@example.test", name: "Test", plan: "free"
+            id: userID, email: "\(userID)@example.test", plan: "free"
         ))
     }
 

@@ -102,8 +102,8 @@ struct DynamicPromptPreferenceStore {
     /// 저장한 뒤에는 테마 저장이 그 기록을 지우지 못해 새 알람이 매번 그 옛 문구로 열렸다. 종류를 적으면 직접 입력 기록이
     /// 지워진다(`saveLastMessageContext`) — 마지막 선택은 하나다.
     func saveBucketChoice(userID: String?, bucket: String, voiceProfileID: String?, randomContext: String?) {
-        if isFreeFixedVoiceID(voiceProfileID) {
-            // 기본 목소리·추가 팩: 고른 것이 테마 그 자체다 — 테마와 그 종류를 함께 적는다.
+        if isSystemVoiceId(voiceProfileID) {
+            // 기본 목소리: 고른 것이 테마 그 자체다 — 테마와 그 종류를 함께 적는다.
             saveLastFreeBucket(userID: userID, bucket: bucket)
             if let context = RandomPromptContext.forBucket(bucket)?.rawValue {
                 saveLastMessageContext(userID: userID, context: context)

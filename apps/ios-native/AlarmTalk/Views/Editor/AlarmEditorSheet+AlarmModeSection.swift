@@ -138,8 +138,8 @@ extension AlarmEditorSheet {
                         // 두면 알람을 만들 때마다 "너는 무료다" 를 읽게 된다.
                         //
                         // ⚠ **"기본 목소리는 준비된 문구로만" 안내도 지웠다**(2026-09-02).
-                        // 유료 사용자는 기본 목소리로도 직접 입력을 쓸 수 있고(`manualLocked`
-                        // 은 무료 단독), 문구 목록도 이제 같다 — 그 안내는 사실이 아니었다.
+                        // 기본 목소리로도 직접 입력을 쓸 수 있고(잠그는 행이 없다 — 무료도 월 한도로 쓴다),
+                        // 문구 목록도 이제 같다 — 그 안내는 사실이 아니었다.
                     } else {
                         LocalAlarmAudioEditor(
                             isRecording: localRecorder.isRecording,

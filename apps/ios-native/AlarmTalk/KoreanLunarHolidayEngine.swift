@@ -6,8 +6,8 @@ import Foundation
 // 서버 동기화/번들 시드 없이 ON-DEVICE 로 계산하는 엔진.
 //
 // === 폴백 체인에서의 위치 (LocalHolidayCalendar 내부, OR 결합) ===
-//   1. server cache    (source == "server_sync")          — HolidayStore.isHoliday 가 먼저 검사
-//   2. bundled seed     (source == "bundled_seed")          — HolidayStore.isHoliday 가 먼저 검사
+//   1. server cache    (서버에서 받은 공휴일)                 — HolidayStore.isHoliday 가 먼저 검사
+//   2. bundled seed     (번들 시드 — 같은 캐시에 들어간다)       — HolidayStore.isHoliday 가 먼저 검사
 //   3. COMPUTED ENGINE  (본 파일: 음력 + 대체공휴일)         — LocalHolidayCalendar 내부
 //   4. fixed-solar      (isKoreanFixedHoliday)               — LocalHolidayCalendar 내부
 //

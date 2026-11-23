@@ -25,8 +25,6 @@ struct AlarmEditorSheet: View {
     /// 여기서 `HolidayStore()` 를 새로 만들어, 편집기에서 지역을 골라 공휴일 국가를 바꾸면 그 사본만 바뀌고
     /// 앱의 달력(공휴일off 재예약·울림 뒤 재무장이 보는 것)은 옛 나라에 남았다.
     @EnvironmentObject var holidayStore: HolidayStore
-    /// 받은 추가 음성팩(`docs/spec/voice-packs.md` §7 「편집기」) — 목소리 목록·테마 클립에 합친다.
-    @ObservedObject var voicePacks = VoicePackStore.shared
     @StateObject var localRecorder = VoiceRecorder()
     /// 에디터의 단일 미리듣기 플레이어(change 4). 기존의 두 플레이어
     /// (voiceStudio.previewPlayer 사용분 + localPreviewPlayer)를 이 하나로 통합한다.
@@ -154,7 +152,7 @@ struct AlarmEditorSheet: View {
 
     /// 스톡 클립 messageId → 그 클립의 테마(카테고리). 매니페스트에 없으면 nil.
     private func stockCategory(messageID: String) -> String? {
-        editorStockClips.first { $0.messageId == messageID }?.category?.nilIfBlank
+        voiceStudio.stockClips.first { $0.messageId == messageID }?.category?.nilIfBlank
     }
 
     /// 저장 중 음원 준비·생성이 실패했을 때. **조용히 `return` 하지 말 것** —
@@ -451,13 +449,6 @@ struct AlarmEditorSheet: View {
                     : MessageSettingsPane.allContextIDs.filter { $0 != RandomPromptContext.wake.rawValue },
                 // ⚠ **직접 입력을 잠그지 않는다**(2026-10-26). 무료도 기본 목소리로 월 3회 만든다 — 입력·편집은 막지 않고,
                 // 새로 만들어야 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(`voice-and-message.md` §8).
-                manualLocked: false,
-                // 추가 음성팩 목소리는 직접 입력에 쓸 수 없다 — 항목을 감춘다(`docs/spec/voice-packs.md` §7).
-                manualAvailable: !isVoicePackVoiceID(voiceStudio.selectedProfileID),
-                // ⚠ **문구 화면을 닫지 말 것**(2026-08-15 지시). 잠긴 행을 눌렀을 뿐인데
-                // 고르던 화면 밖으로 튕기면 안 된다 — 알럿은 편집기(스택 루트)에 붙어
-                // 있어 밀어 올린 이 화면 위에 그대로 뜬다.
-                onManualLocked: { showVoicePlanLockedAlert() },
                 onSave: applyMessageSettings,
                 // 응원의 다양하게 / 이 문구로 고정(스펙 voice-and-message §5-4). 고정 목록은 이 목소리·언어로 매니페스트에
                 // 있는 새 응원뿐이다 — 하나도 없으면(공개 전·보충 전) 카드를 그리지 않는다.
@@ -580,8 +571,7 @@ struct AlarmEditorSheet: View {
             // 단 유료 사용자의 마지막 선택이 클론이면 그 목소리가 서버에서 올 때까지 기다린다 —
             // 여기서 시스템 목소리를 먼저 넣으면 성공 응답 뒤에도 마지막 선택이 밀려난다.
             let lastUsedVoiceID = voiceStudio.lastUsedVoiceId
-            // 받은 추가 음성팩도 기기에 있는 목록이라 곧바로 고를 수 있다.
-            if freeVoiceTier || lastUsedVoiceID == nil || isFreeFixedVoiceID(lastUsedVoiceID) {
+            if freeVoiceTier || lastUsedVoiceID == nil || isSystemVoiceId(lastUsedVoiceID) {
                 selectDefaultVoiceProfileIfNeeded()
             }
             // 진입 갱신이다 — 탭 진입·앞 편집기가 1분 안에 받아 둔 목록이 있으면 다시 받지
@@ -596,9 +586,7 @@ struct AlarmEditorSheet: View {
             Task { await voiceStudio.loadStockClips(session: auth.session) }
         }
         .alert(
-            isVoicePackVoiceID(pendingVoiceSwitch?.id)
-                ? String(localized: "추가 팩 목소리로 바꿀까요?")
-                : String(localized: "기본 목소리로 바꿀까요?"),
+            String(localized: "기본 목소리로 바꿀까요?"),
             isPresented: Binding(
                 get: { pendingVoiceSwitch != nil },
                 set: { if !$0 { pendingVoiceSwitch = nil } }
@@ -612,11 +600,7 @@ struct AlarmEditorSheet: View {
             .keyboardShortcut(.defaultAction)
             Button(String(localized: "닫기"), role: .cancel) { pendingVoiceSwitch = nil }
         } message: {
-            if isVoicePackVoiceID(pendingVoiceSwitch?.id) {
-                Text(String(localized: "추가 팩 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요."))
-            } else {
-                Text(String(localized: "기본 목소리로 바꾸면 지금 입력한 문구가 지워져요."))
-            }
+            Text(String(localized: "기본 목소리로 바꾸면 지금 입력한 문구가 지워져요."))
         }
         // 플랜이 시트 오픈 후 비동기로 free 로 확정되는 경우(socialFeatures.subscription
         // 가 늦게 채워질 때) freeVoiceTier 가 뒤늦게 flip 된다. Android 가
@@ -1003,7 +987,7 @@ struct AlarmEditorSheet: View {
         // 날짜만 있으면 "8월 7일" 이 오늘인지 내일인지 머릿속으로 계산해야 한다 —
         // 알람은 '언제 울리나' 가 전부라 그 한 단어가 실제로 정보를 준다.
         let fireDate = Date(timeIntervalSince1970: TimeInterval(fireAt) / 1000.0)
-        let label = Self.repeatSummaryDateFormatter.string(from: fireDate)
+        let label: String = Self.repeatSummaryDateFormatter.string(from: fireDate)
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = .autoupdatingCurrent
         if calendar.isDateInToday(fireDate) { return String(localized: "오늘 · \(label)") }
@@ -1098,7 +1082,7 @@ struct AlarmEditorSheet: View {
         // ⚠ 정리 중인 목소리는 **저장도 막는다**(Codex #703 P1) — 이미 선택돼 있던 경우가
         // 남기 때문이다(자동 선택을 막아도 편집기를 열기 전부터 골라져 있을 수 있다).
         // 말하는 자리는 `saveFlow` 첫머리의 "아직 준비 중이에요" 알럿이다.
-        let profileReady = editorProfiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
+        let profileReady = voiceStudio.profiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
         let preparedForProfile = voiceStudio.preparedAlarm?.voiceProfileID == profileID
         // ⚠ **정리 중으로는 버튼을 죽이지 않는다**(Codex #703 P1 — CLAUDE.md 「잠그는 것은
         // '저장 중' 일 때뿐이다」). 곧 풀리는 상태라 죽은 버튼은 고장으로 읽힌다 —
@@ -1123,7 +1107,7 @@ struct AlarmEditorSheet: View {
     var selectedVoiceUnusable: Bool {
         let profileID = (voiceStudio.selectedProfileID).nilIfBlank
         let profileReady = profileID.map { id in
-            editorProfiles.contains { $0.id == id && $0.isReadyForAlarmSelection }
+            voiceStudio.profiles.contains { $0.id == id && $0.isReadyForAlarmSelection }
         } ?? false
         return AlarmEditDraft.selectedVoiceUnusable(
             playMode: draft.playMode,
@@ -1254,25 +1238,7 @@ struct AlarmEditorSheet: View {
         let system = voiceStudio.profiles
             .filter { $0.isReadyForAlarmSelection && isSystemVoice($0) }
             .map { VoiceSelectionSheet.Option(id: $0.id, name: $0.displayName, detail: String(localized: "alarm.editor.defaultVoice", defaultValue: "기본 목소리")) }
-        // 받은 추가 음성팩 — 기본 목소리 **다음**(`docs/spec/voice-packs.md` §7). 무료 고정 콘텐츠라 잠그지 않는다.
-        let packs = editorVoicePackEntries.profiles
-            .map { VoiceSelectionSheet.Option(id: $0.id, name: $0.name, detail: String(localized: "voicePack.editor.detail", defaultValue: "추가 팩")) }
-        return own + system + packs
-    }
-
-    /// 편집기에 합치는 추가 음성팩 — 다 받았고 게시 중인 팩 + **이 알람이 이미 쓰는 팩**(대체 전까지 그대로 보인다).
-    var editorVoicePackEntries: (profiles: [VoiceProfile], clips: [StockClip]) {
-        voicePacks.editorEntries(keepingVoiceID: editingAlarm?.voiceProfileId)
-    }
-
-    /// 편집기가 고를 수 있는 목소리 프로필 = 서버 목록 + 받은 추가 음성팩.
-    var editorProfiles: [VoiceProfile] {
-        voiceStudio.profiles + editorVoicePackEntries.profiles
-    }
-
-    /// 편집기가 묶는 테마 클립 = 기본 목소리·클론 매니페스트 + 받은 추가 음성팩 클립(캐시 키는 `StockClip.cacheKey`).
-    var editorStockClips: [StockClip] {
-        voiceStudio.stockClips + editorVoicePackEntries.clips
+        return own + system
     }
 
     /// 목소리 시트가 실제로 그리는 목록 = 프로필들 + **마지막에 '직접 녹음'**.
@@ -1316,7 +1282,7 @@ struct AlarmEditorSheet: View {
         guard voiceSourceMode != .localAudio,
               let id = voiceStudio.selectedProfileID.nilIfBlank,
               voiceStudio.isReplacementSettling(id) else { return nil }
-        return editorProfiles.first { $0.id == id }?.displayName
+        return voiceStudio.profiles.first { $0.id == id }?.displayName
     }
 
     var selectedVoiceName: String? {
@@ -1383,15 +1349,11 @@ struct AlarmEditorSheet: View {
     func applyVoiceSelection(_ option: VoiceSelectionSheet.Option) {
         // 사용자가 직접 골랐다 — 목소리 탭에서 넘겨받은 목소리를 다시 덮어쓰지 않는다.
         didApplyPreferredVoice = true
-        // ⚠ **추가 음성팩은 직접 입력을 쓸 수 없다**(`docs/spec/voice-packs.md` §1·§7) — 쳐 둔 문구를 버리고 직전 테마
-        // (없으면 추가 입력이 필요 없는 첫 테마 = 응원)로 잇는다. 확인 알럿(`pendingVoiceSwitch`)을 지난 뒤에만 여기 온다.
-        // ⚠ **기본 목소리도 같다** — 알럿이 "지금 입력한 문구가 지워져요" 라고 말한 그 경우(`losesManualText`)에는 실제로
-        // 지운다. 예전에는 팩만 지워서 알럿을 지나도 직접 입력이 남았고, 저장하면 월 한도가 깎였다(안드로이드
+        // ⚠ **알럿이 "지금 입력한 문구가 지워져요" 라고 말한 그 경우(`losesManualText`)에는 실제로 지운다** — 쳐 둔 문구를
+        // 버리고 직전 테마(없으면 추가 입력이 필요 없는 첫 테마 = 응원)로 잇는다. 확인 알럿(`pendingVoiceSwitch`)을 지난 뒤에만
+        // 여기 온다. 예전에는 지우지 않아 알럿을 지나도 직접 입력이 남았고, 저장하면 월 한도가 깎였다(안드로이드
         // `AlarmEditorState.selectVoiceProfile` 은 지운다 — `docs/spec/voice-and-message.md` §3).
-        let dropsManualText = !voiceStudio.randomPrompt
-            && selectedBucketDraft == nil
-            && option.id != voiceStudio.selectedProfileID
-            && (isVoicePackVoiceID(option.id) || losesManualText(switchingTo: option))
+        let dropsManualText = losesManualText(switchingTo: option)
         if dropsManualText {
             voiceStudio.ttsText = ""
             voiceStudio.preparedAlarm = nil
@@ -1550,7 +1512,7 @@ struct AlarmEditorSheet: View {
     /// 말없이 버려졌다(기존 알람에서는 반대로 잃을 게 없는데 경고가 떴다).
     func losesManualText(switchingTo option: VoiceSelectionSheet.Option) -> Bool {
         // 같은 목소리를 다시 고르면 바뀌는 게 없다 — 지운다고 묻지 않는다(지우지도 않는다).
-        isFreeFixedVoiceID(option.id)
+        isSystemVoiceId(option.id)
             && option.id != voiceStudio.selectedProfileID
             && !voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !voiceStudio.randomPrompt
@@ -1569,12 +1531,9 @@ struct AlarmEditorSheet: View {
     /// 안드로이드도 `emptyList()` 다.
     var availableFreeBuckets: [FreeBucket] {
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return [] }
-        // 추가 음성팩은 언어가 하나라 그 언어로 운다(`docs/spec/voice-packs.md` §2) — 기기 언어로 거르면 다른 언어 팩은 테마가 비어 보인다.
-        let language = isVoicePackVoiceID(profileID)
-            ? (editorStockClips.first { $0.voiceProfileId == profileID }?.language ?? VoiceStudioViewModel.appVoiceLanguage())
-            : VoiceStudioViewModel.appVoiceLanguage()
+        let language = VoiceStudioViewModel.appVoiceLanguage()
         var variantsByCategory: [String: Set<Int>] = [:]
-        for clip in editorStockClips
+        for clip in voiceStudio.stockClips
         where clip.voiceProfileId == profileID && (clip.language ?? "ko") == language {
             guard let category = clip.category, let variant = clip.variant else { continue }
             variantsByCategory[category, default: []].insert(variant)
@@ -1599,7 +1558,7 @@ struct AlarmEditorSheet: View {
     /// 테마 이어받기를 시도할 시점을 알리는 합성 키.
     /// 스톡 매니페스트 도착과 제한 여부 확정이 각각 다른 때에 오므로 둘을 묶는다.
     var freeBucketReadinessKey: String {
-        "\(editorStockClips.count)|\(usesStockClips)|\(voiceStudio.selectedProfileID ?? "")"
+        "\(voiceStudio.stockClips.count)|\(usesStockClips)|\(voiceStudio.selectedProfileID ?? "")"
     }
 
     /// 이 테마가 **아직 없는 입력**을 요구하는가(날씨=지역, 운세=사주).
@@ -1633,7 +1592,7 @@ struct AlarmEditorSheet: View {
             selectedBucket: selectedBucketDraft,
             ttsText: voiceStudio.ttsText
         ) else { return }
-        guard !editorStockClips.isEmpty, voiceStudio.selectedProfileID != nil else { return }
+        guard !voiceStudio.stockClips.isEmpty, voiceStudio.selectedProfileID != nil else { return }
 
         let buckets = availableFreeBuckets
         guard !buckets.isEmpty else { return }
@@ -1855,7 +1814,7 @@ struct AlarmEditorSheet: View {
     func stockClips(forCategory category: String) -> [StockClip] {
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return [] }
         let language = bucketClipLanguage(forCategory: category, profileID: profileID)
-        return editorStockClips.filter {
+        return voiceStudio.stockClips.filter {
             $0.voiceProfileId == profileID
                 && $0.category == category
                 && ($0.language ?? "ko") == language
@@ -1870,7 +1829,7 @@ struct AlarmEditorSheet: View {
     func bucketClipLanguage(forCategory category: String, profileID: String) -> String {
         let appLanguage = VoiceStudioViewModel.appVoiceLanguage()
         let languages = Set(
-            editorStockClips
+            voiceStudio.stockClips
                 .filter { $0.voiceProfileId == profileID && $0.category == category }
                 .map { $0.language ?? "ko" }
         )
@@ -2240,7 +2199,6 @@ struct AlarmEditorSheet: View {
         selectedBucketDraft = FreeBucket.stored(alarm?.bucketId)
         stopAllEditorPreviews()
         voiceStudio.ttsText = alarm?.voiceText ?? ""
-        voiceStudio.ttsCategory = alarm?.voiceCategory ?? "morning"
         voiceStudio.ttsLanguage = alarm?.voiceLanguage ?? "ko"
         // 신규 알람은 랜덤 문구 ON 으로 열려 한-탭 저장이 가능해야 한다
         // (Android `AlarmEditorState.from` line 331-333). 기존 알람은 저장값을 따른다.
@@ -2529,15 +2487,9 @@ struct AlarmEditorSheet: View {
 
     /// 자동으로 골라도 되는 목소리 — 준비됐고 교체 정리 중이 아닌 것.
     /// 프리셀렉트와 그 재실행 키가 같은 목록을 본다.
-    private var readySelectableOwnVoices: [VoiceProfile] {
-        // 받은 추가 팩까지 든 편집기 목록에서 고른다(`editorProfiles`).
-        editorProfiles.filter {
-            $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
-        }
-    }
+    private var readySelectableOwnVoices: [VoiceProfile] { Self.readySelectableVoices(in: voiceStudio) }
 
-    /// 지금 자동으로 고를 수 있는 목소리 — 준비됐고 교체 정리 중이 아니다. 알람 설정 관문도 같은 목록을 본다(팩은 관문이 보지
-    /// 않는다 — 팩은 고른 경우에만 받고, 받은 팩만 편집기 목록에 든다).
+    /// 지금 자동으로 고를 수 있는 목소리 — 준비됐고 교체 정리 중이 아니다. 알람 설정 관문도 같은 목록을 본다.
     static func readySelectableVoices(in voiceStudio: VoiceStudioViewModel) -> [VoiceProfile] {
         voiceStudio.profiles.filter {
             $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
@@ -2665,17 +2617,6 @@ struct AlarmEditorSheet: View {
         // ⚠ **빈 직접 입력은 여기서 막는다 — 권한 확인·한도 조회·생성 요청보다 먼저다.**
         // 만들 문장이 없으니 서버를 부를 이유가 없고, 불러서 실패를 기다리면 사용자는 한도가
         // 깎였는지부터 걱정한다. 버튼은 살려 두고 이유를 말한다(`editorSaveBlockReason` 주석).
-        // 추가 음성팩 목소리로는 직접 입력 문구를 만들지 않는다(서버가 그 목소리를 모른다 — `docs/spec/voice-packs.md` §1).
-        if draft.playMode != .alarmOnly,
-           voiceSourceMode == .ttsProfile,
-           isVoicePackVoiceID(voiceStudio.selectedProfileID),
-           currentMessageContext == MessageSettingsResult.manualContext {
-            validationAlert = ValidationAlertContent(
-                title: String(localized: "직접 입력을 쓸 수 없어요"),
-                message: String(localized: "추가 팩 목소리는 직접 입력에 쓸 수 없어요. 문구 화면에서 테마를 골라 주세요.")
-            )
-            return
-        }
         if manualTextMissing {
             validationAlert = ValidationAlertContent(
                 title: String(localized: "직접 입력 문구가 비어 있어요"),
@@ -3170,11 +3111,6 @@ struct AlarmEditorSheet: View {
                 props: props,
                 userID: ownerID
             )
-        }
-        // 팩 목소리 사용(`pack_selected`) — 같은 자리·같은 계정. 팩 목록은 그 계정의 것일 때만 본다.
-        if voicePacks.activeUserID == ownerID,
-           let props = VoicePacks.packSelectionProps(for: merged, held: voicePacks.held) {
-            UsageEventQueue.shared.record(.packSelected, alarmID: merged.id, props: props, userID: ownerID)
         }
         recordAlarmReadyIfComplete(store.record(id: merged.id) ?? merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)

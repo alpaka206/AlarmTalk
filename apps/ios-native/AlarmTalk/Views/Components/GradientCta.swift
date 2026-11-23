@@ -57,38 +57,6 @@ struct GradientCta: View {
     }
 }
 
-/// 인증 화면군의 **보조 버튼**(이메일 인증, 코드 확인) — 씬 위 외곽선 버튼.
-/// 안드로이드 `AuthScreen.kt:129-135` `authOutlinedButtonColors`/`authOutlinedButtonBorder`.
-struct AuthOutlinedButton: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-
-    // 라벨은 `LocalizedStringKey` — 이유는 위 `GradientCta.title` 주석 참조.
-    let title: LocalizedStringKey
-    var enabled: Bool = true
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(theme.typography.labelLarge)
-                // 비활성일 때도 흰 계열을 유지한다 — 회색으로 떨어뜨리면 남색 배경에 묻힌다.
-                // ⚠ 35%(0x59)는 대비 3.15:1 이라 읽기 어려웠다 — 55%(0x8C)로 올린다
-                // (2026-08-17). 안드로이드 `authOutlinedButtonColors` 도 같은 값이다.
-                .foregroundStyle(enabled ? AuthSceneColors.text : Color.white.opacity(0x8C / 255.0))
-                .frame(maxWidth: .infinity, minHeight: AuthControlHeight)
-                // 채움이 없고 테두리만 있는 버튼이라 **속이 통째로 비어 있다** — 없으면
-                // 글자만 눌린다(위 `GradientCta` 와 같은 이유).
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(AuthPlainButtonStyle())
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(enabled ? AuthSceneColors.line : AuthSceneColors.lineSoft, lineWidth: 1)
-        )
-        .disabled(!enabled)
-    }
-}
-
 /// 인증 화면 버튼의 평 모양 — 누르면 살짝 옅어지고, **꺼져도 스스로 흐리지 않는다.** 꺼진 모양은 각 버튼이 정한 색·불투명도
 /// 하나로만 낸다(안드로이드 `authOutlinedButtonColors` 의 55% 글자, `GradientCta` 의 0.6).
 ///

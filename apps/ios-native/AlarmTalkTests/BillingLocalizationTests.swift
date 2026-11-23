@@ -55,12 +55,4 @@ struct BillingLocalizationTests {
         let failedVerification = "결제를 확인하지 못했어요. '이전 구매 복원'을 눌러 다시 시도해 주세요."
         #expect(bundle.localizedString(forKey: failedVerification, value: nil, table: nil) != failedVerification)
     }
-
-    /// 이용권 새로고침 오류는 '무엇: 왜' 한 줄이다(`SocialFeatureViewModel.scopedRefreshErrorMessage`).
-    @Test("이용권 새로고침 오류의 '라벨: 이유' 서식은 언어와 무관하다", arguments: ["en", "ja"])
-    func scopedRefreshErrorFormat(language: String) throws {
-        let bundle = try bundle(language)
-        let scoped = bundle.localizedString(forKey: "%1$@: %2$@", value: nil, table: nil)
-        #expect(String(format: scoped, "Plan", "Error") == "Plan: Error")
-    }
 }

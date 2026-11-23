@@ -39,12 +39,6 @@ struct BottomSheetHost<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let onDismiss: () -> Void
-    /// 화면의 몇 %까지 차지할 수 있는가. 넘으면 안에서 스크롤한다.
-    ///
-    /// ⚠ **호출부마다 다른 값을 주지 말 것.** 2026-08-12 에 날씨 시트만 0.9 로 올렸다가
-    /// 같은 종류의 시트끼리 높이가 달라졌다. 상한을 낮게 잡을 이유도 없다 —
-    /// 짧은 시트는 어차피 자연 높이고, 낮추면 **긴 목록만 반쪽으로 잘린다.**
-    var maxFraction: CGFloat = BottomSheetMetrics.maxFraction
     @ViewBuilder var content: () -> Content
 
     @State private var dragOffset: CGFloat = 0
@@ -175,17 +169,15 @@ extension View {
     ///
     /// ⚠ `.sheet` 가 아니라 `.fullScreenCover` 위에 직접 그린다 — 시스템 시트의 들여쓴
     /// 표현을 피하고 배경·모서리를 우리가 정하기 위해서다.
-    /// - Parameter maxFraction: 높이 **상한**. 기본값을 그대로 쓰는 것이 정상이다 —
-    ///   시트는 `SheetScrollingContent` 로 자기 자연 높이를 가지므로, 짧으면 알아서 작게 뜬다.
-    ///   ⚠ **시트마다 다른 값을 주지 말 것**(`BottomSheetHost.maxFraction` 주석 참조).
+    /// 높이 상한은 `BottomSheetMetrics.maxFraction` 하나다 — 시트는 `SheetScrollingContent` 로 자기 자연 높이를 가지므로,
+    /// 짧으면 알아서 작게 뜬다.
     func bottomSheet<Content: View>(
         isPresented: Binding<Bool>,
         onDismiss: @escaping () -> Void,
-        maxFraction: CGFloat = BottomSheetMetrics.maxFraction,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         fullScreenCover(isPresented: isPresented) {
-            BottomSheetHost(onDismiss: onDismiss, maxFraction: maxFraction, content: content)
+            BottomSheetHost(onDismiss: onDismiss, content: content)
                 .presentationBackground(.clear)
         }
         // ⚠ **커버 자체의 전환을 끈다.** `fullScreenCover` 는 내용을 통째로 아래에서

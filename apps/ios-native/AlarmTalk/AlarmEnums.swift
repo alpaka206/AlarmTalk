@@ -291,9 +291,3 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
 
     var usesFortune: Bool { self == .wakeFortune }
 }
-
-// MARK: - Default Alarm Sound IDs
-// Android: `AlarmEntity.kt:174-176` `DefaultAlarmSounds`
-enum DefaultAlarmSounds {
-    static let bundledDefault = "bundled_default"
-}

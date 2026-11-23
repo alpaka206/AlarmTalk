@@ -253,7 +253,7 @@ final class AlarmKitViewModel: ObservableObject {
         // 화면 확인 모드에서는 권한 팝업이 화면을 가린다(스크립트로 탭할 방법이 없다).
         if UIPreviewSeed.isEnabled { return }
         do {
-            // 시스템 팝업이 떠 있는 동안에는 우리 안내 알럿을 올리지 않는다(`SystemPermissionPrompts`).
+            // 권한 요청이 떠 있는 동안을 센다 — 걷히면 루트의 안내 판정이 다시 돈다(`SystemPermissionPrompts`).
             let state = try await SystemPermissionPrompts.shared.track {
                 try await AlarmManager.shared.requestAuthorization()
             }
@@ -994,7 +994,6 @@ final class AlarmKitViewModel: ObservableObject {
         let bucketRotationIndex: Int?
         let contextVariantIndex: Int?
         let voiceRandomPrompt: Bool
-        let defaultAlarmSoundId: String
         let alarmSoundUri: String?
         let voiceVolumePercent: Int
         let alarmVolumePercent: Int
@@ -1019,7 +1018,6 @@ final class AlarmKitViewModel: ObservableObject {
             bucketRotationIndex = r.bucketRotationIndex
             contextVariantIndex = r.contextVariantIndex
             voiceRandomPrompt = r.voiceRandomPrompt
-            defaultAlarmSoundId = r.defaultAlarmSoundId
             alarmSoundUri = r.alarmSoundUri
             voiceVolumePercent = r.voiceVolumePercent
             alarmVolumePercent = r.alarmVolumePercent
@@ -1200,9 +1198,7 @@ final class AlarmKitViewModel: ObservableObject {
     /// 어긋난 것으로 읽혀 `AlarmScheduleReconciler` 가 무한히 다시 예약한다.
     func effectiveRecordForScheduling(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
         let snapshot = KeychainStore.readSession().map { accessSnapshotStore.read(userID: $0.user.id) } ?? .empty
-        // 울릴 시각을 넘긴다 — 기간 한정 개인 플랜만으로 열린 목소리는 끝 뒤에 울릴 예약이면 기본 목소리로
-        // 건다(`PaidVoiceGate.shouldDowngrade` 의 `fireAt`). 지난 시각이면 지금으로 본다.
-        return PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot, fireAt: record.nextFireDate)
+        return PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot)
             ? defaultVoiceSubstitute(for: record)
             : record
     }
@@ -1415,9 +1411,7 @@ final class AlarmKitViewModel: ObservableObject {
 
     private func deleteLocalAlarm(_ record: LocalAlarmRecord, store: LocalAlarmStore) {
         let releasedAudioCacheKey = store.delete(record)
-        // 받은 추가 팩의 클립은 알람이 없어도 팩이 쥔다 — 팩 지우기·개정 정리·기한 대체가 놓는다(코덱스 #960).
-        if let releasedAudioCacheKey,
-           !VoicePackStore.heldClipCacheKeysOnDevice().contains(releasedAudioCacheKey) {
+        if let releasedAudioCacheKey {
             try? audioCache.deleteCachedAudio(cacheKey: releasedAudioCacheKey)
         }
         UsageEventQueue.shared.record(
@@ -1509,8 +1503,7 @@ final class AlarmKitViewModel: ObservableObject {
             resumeButton: AlarmButton(text: LocalizedStringResource("다시 시작"), textColor: .white, systemImageName: "play.fill")
         )
         let presentation = AlarmPresentation(alert: alert, countdown: countdown, paused: paused)
-        // Phase 2-B4: 메타데이터에 playMode + voiceCacheKey 를 실어 LiveActivity /
-        // alarmUpdates handler 가 어떤 in-app 폴백 전략을 쓸지 식별 가능.
+        // 메타데이터에는 Live Activity 가 읽는 값만 싣는다(`AlarmTalkMetadata`) — playMode 는 부제 문구가 읽는다.
         // GROUP 3: alarmKitID 를 실어 LiveActivity 가 Stop/Snooze 인텐트를 구성할 수
         // 있게 하고, voiceText 는 Android RingingActivity parity 로 alarm_only 가 아니고
         // 비어있지 않을 때만 실어 LA 가 ring-moment 인용 문구를 보여 줄 수 있게 한다.
@@ -1526,10 +1519,8 @@ final class AlarmKitViewModel: ObservableObject {
             return DeliveryTags.strip(trimmed, generated: generated)
         }()
         let metadata = AlarmTalkMetadata(
-            localAlarmID: record.id,
             label: record.label,
             playMode: record.playMode,
-            voiceCacheKey: record.audioCacheKey,
             alarmKitID: alarmKitID.uuidString,
             voiceText: quotedVoiceText,
             hour: record.hour,

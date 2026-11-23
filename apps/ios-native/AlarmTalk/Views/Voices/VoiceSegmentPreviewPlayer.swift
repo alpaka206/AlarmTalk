@@ -68,7 +68,6 @@ struct VoiceSegmentPreviewPlayer: View {
 @MainActor
 final class SegmentPlayerController: ObservableObject {
     @Published var isPlaying: Bool = false
-    @Published var elapsedSec: Double = 0
     @Published var progress: Double = 0
 
     private var player: AVPlayer?
@@ -113,7 +112,6 @@ final class SegmentPlayerController: ObservableObject {
         player?.replaceCurrentItem(with: nil)
         player = nil
         isPlaying = false
-        elapsedSec = 0
         progress = 0
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
@@ -136,7 +134,6 @@ final class SegmentPlayerController: ObservableObject {
         }()
         let fallbackCurrent = segmentStartSec + Date().timeIntervalSince(startedAt)
         let elapsed = max(0, (currentSeconds ?? fallbackCurrent) - segmentStartSec)
-        elapsedSec = elapsed
         let totalSec = Double(max(1, endMs - startMs)) / 1000.0
         progress = min(1.0, elapsed / totalSec)
         // 종료 시각에 도달하면 정지.

@@ -206,10 +206,11 @@ struct DynamicPromptPreferences: Codable, Equatable {
 
 }
 
+/// 로그인한 계정. ⚠ **이름 칸이 없다** — 닉네임은 2026-10-29 에 없앴고, 서버가 옛 앱 때문에 싣는 빈 `name` 은 읽지 않는다
+/// (모르는 키는 무시한다 — 그 칸이 든 옛 키체인 세션도 그대로 읽힌다).
 struct AuthUser: Codable, Equatable, Identifiable {
     var id: String
     var email: String
-    var name: String
     var plan: String
     /// Apple `sub` (user identifier). Apple 로그인 사용자만 비-nil.
     /// `ASAuthorizationAppleIDProvider.credentialState(forUserID:)` 호출에 사용.
@@ -221,11 +222,6 @@ struct AuthUser: Codable, Equatable, Identifiable {
     /// 백엔드 `/auth/me` 가 `deletion_status` 키로 전달한다. legacy 세션(키 없음)
     /// 호환을 위해 기본값 `"active"`. Android `AuthApi.kt:53`.
     var deletionStatus: String = "active"
-    /// **기간 한정 개인 플랜**(`personal_promo`). 원시 plan 이 free 이고 프로모가 켜져 있을 때만
-    /// 서버가 준다 — 그때 `plan` 은 이미 계산값(`plus`)이다. 구버전 서버·옛 세션에는 없다.
-    /// 등급은 `PlanTier.bestKnown(user:)`·판정은 `PaidVoiceGate`, 이용권 화면은 `purchasedPlan` 을
-    /// 쓴다(`PersonalPromo.swift`).
-    var personalPromo: PersonalPromo? = nil
 
     /// 30일 유예 탈퇴 진행 중인지. RootView 게이팅에 사용. Android `pendingDeletion`.
     var isPendingDeletion: Bool { deletionStatus == "pending_deletion" }
@@ -233,32 +229,28 @@ struct AuthUser: Codable, Equatable, Identifiable {
     init(
         id: String,
         email: String,
-        name: String = "",
         plan: String = "free",
         appleUserId: String? = nil,
         dynamicPromptSettings: DynamicPromptSettings? = nil,
-        deletionStatus: String = "active",
-        personalPromo: PersonalPromo? = nil
+        deletionStatus: String = "active"
     ) {
         self.id = id
         self.email = email
-        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         self.plan = Self.normalizedPlan(plan)
         self.appleUserId = (appleUserId).nilIfBlank
         self.dynamicPromptSettings = dynamicPromptSettings ?? .empty
         self.deletionStatus = deletionStatus.nilIfBlank ?? "active"
-        self.personalPromo = PersonalPromo.normalized(personalPromo)
     }
 
+    /// ⚠ 옛 키체인 세션에 남은 기간 한정 개인 플랜 칸(2026-10-31 종료)은 읽지 않는다 — 모르는 키라
+    /// 무시되고, 다음 세션 저장에서 빠진다. `plan` 은 서버가 주는 원시 plan 그대로다.
     private enum CodingKeys: String, CodingKey {
         case id
         case email
-        case name
         case plan
         case appleUserId
         case dynamicPromptSettings
         case deletionStatus
-        case personalPromo
     }
 
     init(from decoder: Decoder) throws {
@@ -266,31 +258,11 @@ struct AuthUser: Codable, Equatable, Identifiable {
         self.init(
             id: try container.decode(String.self, forKey: .id),
             email: try container.decode(String.self, forKey: .email),
-            name: try container.decodeIfPresent(String.self, forKey: .name) ?? "",
             plan: try container.decodeIfPresent(String.self, forKey: .plan) ?? "free",
             appleUserId: try container.decodeIfPresent(String.self, forKey: .appleUserId),
             dynamicPromptSettings: try container.decodeIfPresent(DynamicPromptSettings.self, forKey: .dynamicPromptSettings),
-            deletionStatus: try container.decodeIfPresent(String.self, forKey: .deletionStatus) ?? "active",
-            // ⚠ **`try?` 로 받는다.** 표시·컷오프용 추가 필드라, 모양이 어긋났다고 로그인
-            // 응답 전체를 버리면 안 된다(`PersonalPromo.init(from:)` 도 던지지 않는다).
-            personalPromo: (try? container.decodeIfPresent(PersonalPromo.self, forKey: .personalPromo))
-                ?? Self.decodePlanGrant(from: decoder)
+            deletionStatus: try container.decodeIfPresent(String.self, forKey: .deletionStatus) ?? "active"
         )
-    }
-
-    /// **관리자 기간 지급**(`plan_grant { ends_at, computed_at }`, `docs/spec/billing-lifecycle.md` 「관리자 기간 지급」)을
-    /// 기간 한정 개인 플랜과 **같은 자리**(`personalPromo`)로 읽는다. 둘은 같은 계약이다 — 원시 plan 은 free 이고, 서버가
-    /// 기간 동안 `plus` 로 계산해 주며, 끝(배타) 전에 계산된 `plus` 캐시는 끝 뒤에 무료로 읽는다(`PersonalPromo.isStale`).
-    /// 서버는 둘을 함께 보내지 않는다. 종료 안내(`noticeFrom`)는 지급에 없으므로 뜨지 않고, 이용권 화면은 같은 "플러스 무료
-    /// 이용 중 · …까지" 를 말한다. 안드로이드는 같은 기한을 `limitedPlanEndsAt` 으로 묶는다(Codex #941 P2).
-    private static func decodePlanGrant(from decoder: Decoder) -> PersonalPromo? {
-        guard let container = try? decoder.container(keyedBy: GrantKey.self) else { return nil }
-        let grant: PersonalPromo?? = try? container.decodeIfPresent(PersonalPromo.self, forKey: .planGrant)
-        return PersonalPromo.normalized(grant ?? nil)
-    }
-
-    private enum GrantKey: String, CodingKey {
-        case planGrant
     }
 
     private static func normalizedPlan(_ value: String?) -> String {
@@ -596,6 +568,9 @@ struct StockClip: Codable, Identifiable, Equatable {
     /// 테마별로 모을 때 쓰는 값. 안드로이드 `data.bucketTheme` 와 같은 규칙.
     var bucketTheme: String? { theme ?? category }
 
+    /// 이 클립의 캐시 키 — `stock_<messageId>`(`AudioCacheStore.stockCacheKey`).
+    var cacheKey: String { AudioCacheStore.stockCacheKey(messageId: messageId) }
+
     var id: String { messageId }
 }
 
@@ -616,23 +591,13 @@ struct BillingSubscriptionResponse: Codable, Equatable {
      (`BillingPanel.purchaseBlockReason`).
      */
     var storeRenewalProviders: [String]?
-    /// 결제 전 조회에서 구독과 같은 DB 스냅샷으로 받은 users.plan.
-    /// 프로모 기간에는 **계산값**(원시 free → `plus`)이다 — `personalPromo` 가 그 표시다.
+    /// 결제 전 조회에서 구독과 같은 DB 스냅샷으로 받은 users.plan(원시 plan 그대로).
+    /// ⚠ 옛 스냅샷에 남은 기간 한정 개인 플랜·관리자 기간 지급 칸은 모르는 키라 읽히지 않는다 — 둘 다 끝난 기능이다.
     var userPlan: String? = nil
-    /// 기간 한정 개인 플랜(`personal_promo`). `userPlan` 과 **같은 응답에서** 온 값이라
-    /// 스냅샷에 적을 때도 둘을 함께 적는다(`SocialFeatureViewModel`).
-    /// ⚠ 이게 있어도 `subscription` 은 null 이다 — 가짜 구독을 만들지 않는다(해지 버튼 없음).
-    var personalPromo: PersonalPromo? = nil
-    /// 관리자 기간 지급(`plan_grant`) — 프로모와 같은 계약의 기한이다(`AuthUser.decodePlanGrant`). 스냅샷에 적을 때는
-    /// `limitedPlan` 하나로 읽는다.
-    var planGrant: PersonalPromo? = nil
 
     /// 해지 예약 뒤 바뀔 플랜(`next_plan`) — 이용권 카드의 상태 줄이 "…이후 …이용권으로 변경돼요" 를 고른다
     /// (안드로이드 `BillingSubscriptionResponse.nextPlan`). 없으면 nil(옛 스냅샷·구버전 서버도 nil 로 읽힌다).
     var nextPlan: BillingPlan? = nil
-
-    /// `userPlan` 과 짝인 **기한**(기간 한정 개인 플랜 또는 관리자 기간 지급). 서버는 둘을 함께 보내지 않는다.
-    var limitedPlan: PersonalPromo? { PersonalPromo.normalized(personalPromo) ?? PersonalPromo.normalized(planGrant) }
 }
 
 struct BillingSubscription: Codable, Identifiable, Equatable {
@@ -683,7 +648,6 @@ struct CancelSubscriptionResponse: Decodable, Equatable {
 }
 
 struct UpdateProfileRequest: Encodable {
-    var name: String?
     var dynamicPromptSettings: DynamicPromptSettings?
 }
 

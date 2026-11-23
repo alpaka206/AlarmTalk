@@ -13,10 +13,8 @@ import UIKit
 ///   - "이전 구매 복원" 버튼이 하단에 추가됨 — Apple 심사 가이드라인 3.1.1 요구.
 ///   - free 플랜 카드는 정보 표시만 (구매 버튼 없음).
 ///
-/// 유료 플랜은 개인 하나다. **산** 이용권의 현재 카드에는 **버튼이 아예 없다**(안드로이드와 같다).
-/// 단 기간 한정 개인 플랜만 쓰는 계정은 개인 카드가 '현재 이용권' 이어도 '결제하기' 가 남는다 —
-/// 프로모는 산 이용권이 아니다(`PlanScreenCurrent.showsPurchase`, 스펙 D4).
-/// (해지는 우리 백엔드가 처리하므로 '지금/종료일' 두 갈래가 그대로 있다.)
+/// 유료 플랜은 개인 하나다. 현재 이용권 카드에는 **결제 버튼이 아예 없다**(안드로이드와 같다 —
+/// `PlanScreenCurrent.showsPurchase`). (해지는 우리 백엔드가 처리하므로 '지금/종료일' 두 갈래가 그대로 있다.)
 struct BillingPanel: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
@@ -27,8 +25,8 @@ struct BillingPanel: View {
     /// `TopMessageHost` 와 같은 자리·같은 모양 — `AuthToastModifier`). 성공·오류·안내로 색을 가른다.
     ///
     /// ⚠ **스크롤 맨 아래 각주로 되돌리지 말 것**(2026-11-22 두 앱 통일). 예전에는 결과 문장이 약관 각주 밑에 남아 사라지지
-    /// 않았고, 화면이 길면 보이지도 않았다. 해지 결과·조회 실패는 아예 그리는 곳이 없었다(`SocialFeatureViewModel.statusMessage`).
-    /// 배경 재동기화의 실패(`SubscriptionManager.lastError`)는 띄우지 않는다 — 사용자가 누른 일의 결과만 말한다.
+    /// 않았고, 화면이 길면 보이지도 않았다. 해지 결과·조회 실패는 아예 그리는 곳이 없었다(옛 `SocialFeatureViewModel.statusMessage` —
+    /// 아무도 읽지 않아 2026-11-23 에 지웠다). 배경 재동기화의 실패는 띄우지 않는다 — 사용자가 누른 일의 결과만 말한다.
     @State private var toast: BillingToast?
     @State private var showCancelSubscriptionSheet = false
     @State private var showCancelImmediateConfirm = false
@@ -62,47 +60,18 @@ struct BillingPanel: View {
         billingTaskInFlight || socialFeatures.isBusy || subscriptions.isPurchasing
     }
 
-    /// **산 이용권**의 등급 — 기간 한정 개인 플랜은 여기 들어가지 않는다(`purchasedPlan`).
-    ///
-    /// ⚠ **`bestKnown(user:)` 로 바꾸지 말 것**(2026-09-27). 이 값은 결제 차단 판정
-    /// (`purchaseBlockReason`)과 '현재 이용권' 카드가 쓴다. 프로모를 산 이용권으로 치면 개인
-    /// 카드에서 결제 버튼이 사라진다 — 끝난 뒤 이어 쓰려면 사야 한다.
-    ///
-    /// '현재 이용권' **뱃지**는 이 값에서 한 번 더 간다(`planScreen` — 2026-09-29): 프로모만 쓰는
-    /// 계정은 개인 카드가 현재이고 문구가 그 카드에 앉는다. 산 이용권으로 치는 것은 아니다 —
-    /// 결제는 계속 이 값으로만 가른다(안드로이드 `planScreenCurrentOf` 와 같은 규칙, 스펙 D4).
+    /// **산 이용권**의 등급 — 결제 차단 판정(`purchaseBlockReason`)과 '현재 이용권' 카드(`planScreen`)가 쓴다.
     private var currentTier: PlanTier {
         PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
             storeTier: subscriptions.currentTier,
-            userPlan: auth.session?.user.purchasedPlan
+            userPlan: auth.session?.user.plan
         )
     }
 
-    /// 기간 한정 개인 플랜을 쓰는 중이면 그 사실과 **마지막 날**. 끝났거나 없으면 nil.
-    ///
-    /// 날짜는 서버 값(`ends_at − 1초`)을 기기 로케일로 찍는다 — 앱에 날짜를 두지 않는다.
-    /// 근거는 **세션 하나**다 — `/auth/me` 와 결제 전 조회가 plan 과 짝으로 갱신한다
-    /// (`applyFreshPlan`). 구독 응답의 사본을 따로 보면 결제 직후 둘이 잠깐 어긋난다.
-    private var personalPromoLastDay: String? {
-        let now = Date()
-        guard let promo = auth.session?.user.personalPromo,
-              !promo.hasEnded(at: now),
-              let last = promo.lastFreeDate else { return nil }
-        return PersonalPromo.dayLabel(last)
-    }
-
-    /// '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 `PlanScreenCurrent.resolve` 한 곳이다(스펙 D4).
-    /// 결제 차단은 이걸 보지 않는다 — `currentTier`(산 이용권)다.
-    ///
-    /// `promoActive` 는 부르는 쪽이 **같은 순간에 읽은** `personalPromoLastDay` 로 넘긴다 — 따로 읽으면
-    /// 끝 시각 경계에서 '개인 카드에 앉는다' 와 '문구가 없다' 가 한 프레임 어긋날 수 있다.
-    private func planScreen(promoActive: Bool) -> PlanScreenCurrent {
-        PlanScreenCurrent.resolve(
-            purchasedTier: currentTier,
-            promoActive: promoActive,
-            hasHeldSubscriptionRow: auth.session?.user.personalPromo?.deletesVoicesAtEnd == false
-        )
+    /// '현재 이용권' 카드와 결제 버튼 — 규칙은 `PlanScreenCurrent.resolve` 한 곳이다.
+    private var planScreen: PlanScreenCurrent {
+        PlanScreenCurrent.resolve(purchasedTier: currentTier)
     }
 
     /// 해지 버튼을 그리는가 — **산** 이용권(구독 응답의 구독과 플랜)이 있을 때만. 안드로이드 `SubscriptionPanel` 의 `hasActive`.
@@ -117,25 +86,15 @@ struct BillingPanel: View {
         //
         // ⚠ **상단 '현재 이용권' 요약 카드를 되살리지 말 것**(2026-08-11 요청) — 카드의 '현재 이용권' 배지가 이미 말한다.
         // ⚠ '이용권 선택' 머리말도 뺐다 — 화면 제목이 이미 '이용권' 이다.
-        //
-        // 기간 한정 개인 플랜 — **한 번만** 말한다. 가짜 구독 카드·해지 버튼을 만들지 않는다(서버도 `subscription: null` 이다).
-        // 프로모만 쓰는 계정은 플러스 카드의 상태 문구로 말하고(`planScreen.promoOnPersonalCard`), 산 이용권·보류 행이 있는
-        // 계정만 예전처럼 카드 위 한 줄이다. 카드는 상품을 받기 전·못 받았을 때도 언제나 그린다(가격은 폴백) — 그래서 카드
-        // 위로 되돌리는 갈래가 없다(안드로이드와 같다).
-        let promoLastDay = personalPromoLastDay
-        let screen = planScreen(promoActive: promoLastDay != nil)
-        let statusText = currentStatusText(screen: screen, promoLastDay: promoLastDay)
+        // 카드는 상품을 받기 전·못 받았을 때도 언제나 그린다(가격은 폴백 — 안드로이드와 같다).
+        let screen = planScreen
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if screen.drawsPromoLineAboveList(cardsVisible: true), let promoLastDay {
-                        personalPromoLine(lastDay: promoLastDay)
-                    }
                     PlusPlanHeroCard(
                         isCurrent: screen.isCurrent(.personal),
-                        // ⚠ '현재' 와 따로 본다 — 프로모로 현재가 된 플러스에도 시작 버튼이 남는다.
                         showsPurchase: screen.showsPurchase(.personal),
-                        statusText: statusText
+                        statusText: currentStatusText
                     )
                     FreePlanSummaryCard(isCurrent: screen.isCurrent(.free))
 
@@ -254,18 +213,9 @@ struct BillingPanel: View {
     /// 구독 목록이 열린다.
     static let playSubscriptionsURL = URL(string: "https://play.google.com/store/account/subscriptions")!
 
-    /// "플러스 무료 이용 중 · {lastDay}까지" — 카드 위 한 줄과 플러스 카드의 상태 문구가 **같은 글자**를
-    /// 쓰도록 한 곳에서 만든다. 문구는 안드로이드 `personal_promo_plan_line` 이 원본이다(ko·en·ja).
-    nonisolated static func personalPromoLineText(lastDay: String) -> String {
-        String(localized: "플러스 무료 이용 중 · \(lastDay)까지")
-    }
-
     /// 플러스 카드의 상태 한 줄 — 안드로이드 `SubscriptionPanel` 의 `currentStatusText` 와 같은 판정·문장이다:
-    /// 프로모만 쓰면 프로모 한 줄, 산 이용권이면 해지 예정(다음 플랜 / 종료) · 기한 · '사용 중' 순이다.
-    private func currentStatusText(screen: PlanScreenCurrent, promoLastDay: String?) -> String? {
-        if screen.promoOnPersonalCard {
-            return promoLastDay.map { Self.personalPromoLineText(lastDay: $0) }
-        }
+    /// 산 이용권이면 해지 예정(다음 플랜 / 종료) · 기한 · '사용 중' 순이다.
+    private var currentStatusText: String? {
         guard let response = socialFeatures.subscription,
               let subscription = response.subscription,
               response.plan != nil else { return nil }
@@ -294,17 +244,6 @@ struct BillingPanel: View {
             return String(localized: "\(expiresAt)까지 사용할 수 있어요.")
         }
         return String(localized: "사용 중인 이용권이에요.")
-    }
-
-    /// 카드 위 한 줄 — 산 이용권·보류 행이 있는 계정의 프로모 줄(`PlanScreenCurrent.promoLineAboveList`).
-    /// 글자만 둔다 — 안드로이드(`BillingPanels.kt` 의 `personal_promo_plan_line`)에 아이콘이 없다. 14 SemiBold primary·좌우 4.
-    private func personalPromoLine(lastDay: String) -> some View {
-        Text(Self.personalPromoLineText(lastDay: lastDay))
-            .font(theme.typography.bodyMedium)
-            .fontWeight(.semibold)
-            .foregroundStyle(theme.palette.primary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 4)
     }
 
     /// 결제 직전 조회(또는 상품 다시 받기)가 실패했다 — 진행하지 않고 위쪽 빨간 안내로 말한다. 안드로이드

@@ -12,30 +12,30 @@ final class LoginViewModelTests: XCTestCase {
     // MARK: - Email
 
     func testValidEmailsAreAccepted() {
-        XCTAssertTrue(LoginValidator.isValidEmail("user@example.com"))
-        XCTAssertTrue(LoginValidator.isValidEmail("a.b+tag@sub.example.co"))
-        XCTAssertTrue(LoginValidator.isValidEmail("WITH-CAPS@DOMAIN.COM"))
+        XCTAssertTrue(AuthEmailFormat.isValid("user@example.com"))
+        XCTAssertTrue(AuthEmailFormat.isValid("a.b+tag@sub.example.co"))
+        XCTAssertTrue(AuthEmailFormat.isValid("WITH-CAPS@DOMAIN.COM"))
         // 서버(`@alarmtalk/shared` 의 `EMAIL_PATTERN`)가 받는 주소다. 예전 자체
         // 정규식은 이걸 거부해서, 이 주소로 가입한 사람은 로그인이 불가능했다.
-        XCTAssertTrue(LoginValidator.isValidEmail("o'brien@example.com"))
+        XCTAssertTrue(AuthEmailFormat.isValid("o'brien@example.com"))
     }
 
     func testInvalidEmailsAreRejected() {
-        XCTAssertFalse(LoginValidator.isValidEmail(""))
-        XCTAssertFalse(LoginValidator.isValidEmail("no-at-sign"))
-        XCTAssertFalse(LoginValidator.isValidEmail("@no-local.com"))
-        XCTAssertFalse(LoginValidator.isValidEmail("missing@tld"))
-        XCTAssertFalse(LoginValidator.isValidEmail("space in@local.com"))
+        XCTAssertFalse(AuthEmailFormat.isValid(""))
+        XCTAssertFalse(AuthEmailFormat.isValid("no-at-sign"))
+        XCTAssertFalse(AuthEmailFormat.isValid("@no-local.com"))
+        XCTAssertFalse(AuthEmailFormat.isValid("missing@tld"))
+        XCTAssertFalse(AuthEmailFormat.isValid("space in@local.com"))
     }
 
     // MARK: - Password length
 
     func testPasswordLengthBoundary() {
-        XCTAssertFalse(LoginValidator.isValidPasswordLength(""))
-        XCTAssertFalse(LoginValidator.isValidPasswordLength("1234567")) // 7 chars
-        XCTAssertTrue(LoginValidator.isValidPasswordLength("12345678")) // 8 chars
-        XCTAssertTrue(LoginValidator.isValidPasswordLength(String(repeating: "a", count: 128)))
-        XCTAssertFalse(LoginValidator.isValidPasswordLength(String(repeating: "a", count: 129)))
+        XCTAssertFalse(PasswordPolicy.lengthRange.contains("".count))
+        XCTAssertFalse(PasswordPolicy.lengthRange.contains("1234567".count)) // 7 chars
+        XCTAssertTrue(PasswordPolicy.lengthRange.contains("12345678".count)) // 8 chars
+        XCTAssertTrue(PasswordPolicy.lengthRange.contains(String(repeating: "a", count: 128).count))
+        XCTAssertFalse(PasswordPolicy.lengthRange.contains(String(repeating: "a", count: 129).count))
     }
 
     /// 가입과 재설정이 쓰는 한 벌(`PasswordPolicy`) — 서버 `PasswordSchema` 와 같은

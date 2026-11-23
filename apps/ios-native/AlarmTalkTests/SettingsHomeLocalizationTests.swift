@@ -22,12 +22,11 @@ struct SettingsHomeLocalizationTests {
         #expect(String(format: format, "10/5", "Mina") == (language == "en" ? "10/5 · Mina" : "10/5 · Minaの声"))
     }
 
-    @Test("설정·동기화 결과·권한 안내의 문장을 번역 번들에서 조회한다", arguments: ["en", "ja"])
-    func settingsAndSyncMessages(language: String) throws {
+    @Test("설정·권한 안내의 문장을 번역 번들에서 조회한다", arguments: ["en", "ja"])
+    func settingsMessages(language: String) throws {
         let bundle = try bundle(language)
         for key in ["시스템 설정과 같이", "밝은 모드", "어두운 모드", "내 계정", "미설정",
-                    "문구 정보", "법적 정보", "라이선스 전문을 불러오지 못했어요.",
-                    "동기화하려면 먼저 로그인해 주세요", "알람 변경사항 일부를 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."] {
+                    "문구 정보", "법적 정보", "라이선스 전문을 불러오지 못했어요."] {
             #expect(bundle.localizedString(forKey: key, value: nil, table: nil) != key)
         }
         let format = bundle.localizedString(forKey: "알람 권한을 허용해야 알람을 켤 수 있어요. %@", value: nil, table: nil)

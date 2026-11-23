@@ -843,8 +843,8 @@ struct AuthEmailVerifyButton: View {
 
     // 셋 다 `String(localized:)` 로 번역한 뒤 넘긴다 — 날 리터럴을 `String` 으로 돌려주면 `Text(변수)` 가 번역하지 않아
     // en/ja 기기에서 한국어가 그대로 뜬다.
-    // ⚠ '다시 받기' 는 **키를 따로 둔다**(`auth.email.resendShort`). 카탈로그의 같은 글자 "다시 받기" 는 음성팩을 **다시
-    //   내려받는** 버튼의 것이라(en "Download again"), 같은 키를 쓰면 영어·일본어 기기에서 코드 재발송이 '다시 다운로드' 가 된다.
+    // ⚠ '다시 받기' 는 **키를 따로 둔다**(`auth.email.resendShort`). 글자 그대로를 키로 쓰면 같은 글자의 다른 버튼('다시
+    //   내려받기' — en "Download again")과 번역을 함께 써, 영어·일본어 기기에서 코드 재발송이 '다시 다운로드' 가 됐다.
     private var label: String {
         if verified { return String(localized: "인증됨") }
         if codeSent { return String(localized: "auth.email.resendShort", defaultValue: "다시 받기") }
@@ -952,27 +952,11 @@ struct PasswordRules: View {
 
 // MARK: - Validation helpers
 
-/// 본 화면이 직접 사용하는 작은 검증 helper. 테스트에서 재사용한다.
+/// 본 화면이 직접 사용하는 작은 검증 helper.
+///
+/// ⚠ **이메일 형식 규칙을 여기 다시 박지 말 것.** 단일 출처는 `AuthEmailFormat` 이고(서버 `@alarmtalk/shared` 의
+/// `EMAIL_PATTERN` 과 같은 문자열), 비밀번호 규칙은 `PasswordPolicy` 다 — 화면과 테스트가 그 둘을 직접 부른다.
 enum LoginValidator {
-    /// ⚠ **자체 정규식을 여기 다시 박지 말 것.** 형식 규칙의 단일 출처는
-    /// `AuthEmailFormat` 이고, 그 값은 서버 `@alarmtalk/shared` 의 `EMAIL_PATTERN`·
-    /// 안드로이드 `AuthEmailPattern` 과 **같은 문자열**이다.
-    ///
-    /// 예전에는 여기 `^[A-Z0-9._%+-]+@…` 가 박혀 있었다. 서버보다 좁아
-    /// **아포스트로피를 거부**했고(`o'brien@example.com` 으로 가입한 사람은 로그인
-    /// 자체가 불가능했다), 동시에 서버가 거부하는 `%` 는 통과시켰다.
-    ///
-    /// 화면들은 이제 `AuthEmailFormat` 을 직접 부른다 — 이 입구는 테스트가 "갈라지지
-    /// 않았다" 를 확인하는 자리로만 남는다.
-    static func isValidEmail(_ value: String) -> Bool {
-        AuthEmailFormat.isValid(value)
-    }
-
-    /// 비밀번호 길이 정책. 본 함수는 LoginViewModelTests 가 사용한다.
-    static func isValidPasswordLength(_ value: String) -> Bool {
-        PasswordPolicy.lengthRange.contains(value.count)
-    }
-
     /// 인증코드 = 정확히 **ASCII 숫자** 6자리 — 서버 `EmailVerificationCodeSchema` 가 받는 모양이다.
     /// 가입·재설정 두 화면의 확인 버튼이 이 판정으로 열린다(`AuthCodeConfirmRow.confirmEnabled`·
     /// `PasswordResetView.canConfirm`).

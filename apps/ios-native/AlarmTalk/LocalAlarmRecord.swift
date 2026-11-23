@@ -25,10 +25,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var snoozeEnabled: Bool
     var snoozeMinutes: Int          // 1..30
     var snoozeRepeatLimit: Int      // 0/3/5 (0 == 무제한)
-    var snoozeCount: Int
     var vibrationPattern: String    // VibrationPattern.rawValue
     var playMode: String            // AlarmPlayMode.rawValue (alarm_only / voice_only / sound_then_voice)
-    var defaultAlarmSoundId: String
     var localAudioUri: String?      // file:// path
     var audioCacheKey: String?      // SHA-256 hex
     var rawAudioUri: String?
@@ -52,8 +50,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var remoteAlarmId: String?
     var lastSyncedAtMillis: Int64?
     var syncState: String           // AlarmSyncState.rawValue
-    /// `AlarmOrigin.rawValue`. ⚠ **관대한 문자열로 둔다** — 모르는 값도 던지지 않고 읽는다
-    /// (`originEnum`). 옛 받은 알람(`received_remote`)은 로드할 때 내 알람으로 바뀐다
+    /// `AlarmOrigin.rawValue`. ⚠ **관대한 문자열로 둔다** — 모르는 값도 던지지 않고 읽는다.
+    /// 옛 받은 알람(`received_remote`)은 로드할 때 내 알람으로 바뀐다
     /// (`ReceivedAlarmConversion`).
     var origin: String
     var alarmVolumePercent: Int     // 0..100
@@ -146,8 +144,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     // MARK: Convenience accessors (Phase 2-B2/B3 가 사용)
 
     var playModeEnum: AlarmPlayMode { AlarmPlayMode.decode(playMode) }
-    var syncStateEnum: AlarmSyncState { AlarmSyncState(rawValue: syncState) ?? .localOnly }
-    var originEnum: AlarmOrigin { AlarmOrigin(rawValue: origin) ?? .localOwned }
     var runtimeStateEnum: AlarmRuntimeState { AlarmRuntimeState.decode(state) }
     var voiceSourceEnum: VoiceSource { VoiceSource(rawValue: voiceSource) ?? .ttsProfile }
     var vibrationPatternEnum: VibrationPattern { VibrationPattern(rawValue: vibrationPattern) ?? .default }
@@ -189,13 +185,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 시스템 스톡 보이스 클립 알람인지 — 무료 플랜에서도 보존되어야 한다.
     /// 스톡 클립은 저장 시 스테이징된 `stock_<messageId>` 캐시 파일을 가지므로
     /// `localAudioUri`/`rawAudioUri` 가 NON-blank 다. 따라서 빈 음원 가정에 의존하지 않고
-    /// `audioCacheKey` 의 `stock_` prefix(저장 경로 AlarmEditorSheet 1127 / Android
-    /// `setStockClipAudio` 와 동일 술어)를 1차 신호로 쓴다. 미래의 비-시스템 server_tts
+    /// `audioCacheKey` 의 고정 클립 접두(`stock_` — 편집기 저장 경로가 클립을 묶을 때 붙이는 키, 안드로이드
+    /// `StockClip.clipCacheKey` 와 같은 축)를 1차 신호로 쓴다. 미래의 비-시스템 server_tts
     /// 알람이 우연히 stock 모양 key 를 가져도 새지 않도록 `isSystemVoiceId(voiceProfileId)`
     /// 를 함께 요구한다. `ttsMessageId` 는 생성 TTS 도 채우므로 단독 신호로 쓰지 않는다.
-    /// 추가 음성팩 클립(`pack_<clipId>` + 팩 목소리)도 같다 — 무료 고정 콘텐츠다(`docs/spec/voice-packs.md` §1).
     var isStockVoiceClip: Bool {
-        AudioCacheStore.isFixedClipCacheKey(audioCacheKey) && isFreeFixedVoiceID(voiceProfileId)
+        AudioCacheStore.isFixedClipCacheKey(audioCacheKey) && isSystemVoiceId(voiceProfileId)
     }
 
     var isGeneratedFreeSystemPresetVoice: Bool {
@@ -219,11 +214,11 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // ⚠ 이 술어와 `PaidVoiceGate.usesFreeSystemVoice` 는 **한 쌍이다 — 항상 같이 고친다.**
         // 한쪽만 고치면 '예약은 목소리로 되는데 앱을 껐다 켜면 잠긴다'(또는 그 반대)가 된다.
         if voiceSourceEnum == .localAudio, localAudioUri?.nilIfBlank != nil { return false }
-        // ⚠ **기본(시스템) 목소리·추가 음성팩 알람은 무엇을 말하든 무료다** — `PaidVoiceGate.usesFreeSystemVoice` 의
-        // `isFreeFixedVoiceID` 짝(2026-11-09 iOS 출시 검토 blocker). 1.3 에서 짝 쪽만 바뀌어, 무료가 만든 '기본 목소리 +
+        // ⚠ **기본(시스템) 목소리 알람은 무엇을 말하든 무료다** — `PaidVoiceGate.usesFreeSystemVoice` 의
+        // `isSystemVoiceId` 짝(2026-11-09 iOS 출시 검토 blocker). 1.3 에서 짝 쪽만 바뀌어, 무료가 만든 '기본 목소리 +
         // 직접 입력' 알람이 다음 실행의 무료 잠금에서 유료로 읽혀 음성을 잃고 인사말로 울렸다. 안드로이드는
-        // `lockPaidAlarmTalks` 가 `usesFreeSystemVoiceAlarm()`(같은 `isFreeFixedVoiceId`)으로 건너뛴다.
-        if voiceSourceEnum != .localAudio, isFreeFixedVoiceID(voiceProfileId) { return false }
+        // `lockPaidAlarmTalks` 가 `usesFreeSystemVoiceAlarm()` 으로 건너뛴다.
+        if voiceSourceEnum != .localAudio, isSystemVoiceId(voiceProfileId) { return false }
         let stockVoiceOnly =
             localAudioUri.nilIfBlank == nil &&
             rawAudioUri.nilIfBlank == nil &&
@@ -249,10 +244,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// makeSchedule / recoverScheduledAlarms 후보 필터 / markStopped / BackgroundSyncTask
     /// 가 모두 이 헬퍼로 동일한 분기를 표현해 inline 술어 분기 발산을 막는다.
     var isHolidayOffRecurring: Bool { repeatDaysMask != 0 && holidayOff }
-
-    var timeString: String {
-        String(format: "%02d:%02d", hour, minute)
-    }
 
     /// 알람 행에 쓰는 **12시간제** 시각(오전/오후는 [meridiemLabel] 로 따로 그린다).
     /// 안드로이드 `alarmRowClockLabel` 과 같다 — 시계 화면과 같은 읽기 방식이라
@@ -326,10 +317,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         snoozeEnabled: Bool = true,
         snoozeMinutes: Int = 5,
         snoozeRepeatLimit: Int = SnoozeRepeatLimit.three.rawValue,
-        snoozeCount: Int = 0,
         vibrationPattern: String = VibrationPattern.default.rawValue,
         playMode: String = AlarmPlayMode.alarmOnly.rawValue,
-        defaultAlarmSoundId: String = DefaultAlarmSounds.bundledDefault,
         localAudioUri: String? = nil,
         audioCacheKey: String? = nil,
         rawAudioUri: String? = nil,
@@ -373,10 +362,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.snoozeEnabled = snoozeEnabled
         self.snoozeMinutes = snoozeMinutes
         self.snoozeRepeatLimit = snoozeRepeatLimit
-        self.snoozeCount = snoozeCount
         self.vibrationPattern = vibrationPattern
         self.playMode = playMode
-        self.defaultAlarmSoundId = defaultAlarmSoundId
         self.localAudioUri = localAudioUri
         self.audioCacheKey = audioCacheKey
         self.rawAudioUri = rawAudioUri
@@ -422,10 +409,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case snoozeEnabled
         case snoozeMinutes
         case snoozeRepeatLimit
-        case snoozeCount
         case vibrationPattern
         case playMode
-        case defaultAlarmSoundId
         case localAudioUri
         case audioCacheKey
         case rawAudioUri
@@ -496,7 +481,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.snoozeMinutes = try c.decodeIfPresent(Int.self, forKey: .snoozeMinutes) ?? 5
         self.snoozeRepeatLimit = try c.decodeIfPresent(Int.self, forKey: .snoozeRepeatLimit)
             ?? SnoozeRepeatLimit.three.rawValue
-        self.snoozeCount = try c.decodeIfPresent(Int.self, forKey: .snoozeCount) ?? 0
         self.vibrationPattern = try c.decodeIfPresent(String.self, forKey: .vibrationPattern)
             ?? VibrationPattern.default.rawValue
 
@@ -506,9 +490,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         } else {
             self.playMode = AlarmPlayMode.alarmOnly.rawValue
         }
-
-        self.defaultAlarmSoundId = try c.decodeIfPresent(String.self, forKey: .defaultAlarmSoundId)
-            ?? DefaultAlarmSounds.bundledDefault
 
         self.localAudioUri = try c.decodeIfPresent(String.self, forKey: .localAudioUri)
 
@@ -606,10 +587,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encode(snoozeEnabled, forKey: .snoozeEnabled)
         try c.encode(snoozeMinutes, forKey: .snoozeMinutes)
         try c.encode(snoozeRepeatLimit, forKey: .snoozeRepeatLimit)
-        try c.encode(snoozeCount, forKey: .snoozeCount)
         try c.encode(vibrationPattern, forKey: .vibrationPattern)
         try c.encode(playMode, forKey: .playMode)
-        try c.encode(defaultAlarmSoundId, forKey: .defaultAlarmSoundId)
         try c.encodeIfPresent(localAudioUri, forKey: .localAudioUri)
         try c.encodeIfPresent(audioCacheKey, forKey: .audioCacheKey)
         try c.encodeIfPresent(rawAudioUri, forKey: .rawAudioUri)
@@ -688,7 +667,6 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
     case unknownPlayMode
     case unknownVoiceSource
     case voiceAudioRequired
-    case duplicateTime
 
     var errorDescription: String? {
         switch self {
@@ -703,7 +681,6 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
         case .unknownPlayMode: return String(localized: "지원하지 않는 재생 방식이에요.")
         case .unknownVoiceSource: return String(localized: "지원하지 않는 음성 소스예요.")
         case .voiceAudioRequired: return String(localized: "음성 알람은 음원을 먼저 캐싱해야 해요.")
-        case .duplicateTime: return String(localized: "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요.")
         }
     }
 }

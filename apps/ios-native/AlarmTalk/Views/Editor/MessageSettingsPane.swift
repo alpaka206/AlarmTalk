@@ -44,22 +44,10 @@ struct MessageSettingsPane: View {
     ///
     /// ⚠ **여기서 '무료라서' 빼지 않는다.** 2026-09-02 전에는 무료·기본 목소리에 아예 다른
     /// 화면(`FreeBucketSettingsPane`)을 보여 주며 목록을 날씨·약으로 잘랐는데, 그건 등급
-    /// 정책이 아니라 **클립이 없다**는 사정이었다. 등급으로 갈리는 것은 [manualLocked] 하나다.
+    /// 정책이 아니라 **클립이 없다**는 사정이었다. 등급으로 가르는 행은 없다 — 무료도 직접 입력을 월 한도·광고
+    /// 보상으로 쓴다(`docs/spec/ad-rewards.md`). 잠긴 '직접 입력' 행(`manualLocked`·`onManualLocked`)은 잠그는 호출이
+    /// 없어 2026-11-23 에 지웠다(안드로이드 `RandomPromptSettingsPane` 과 같다).
     var availableContexts: [String] = MessageSettingsPane.allContextIDs
-
-    /// **직접 입력이 잠기는가.** ⚠ 판정은 **무료 플랜 단독**이다 — 기본(시스템) 목소리를
-    /// 골랐다는 것은 이유가 되지 않는다. 유료면 기본 목소리로도 직접 입력을 쓸 수 있고
-    /// 횟수만 차감된다(2026-08-11 확정).
-    var manualLocked: Bool = false
-    /// '직접 입력' 을 그릴 것인가. 추가 음성팩 목소리면 false — 그 목소리로는 직접 입력을 만들 수 없다
-    /// (`docs/spec/voice-packs.md` §7). 잠금(`manualLocked`)과 다르다: 잠긴 항목은 남아 이유를 말하고, 이건 아예 없다.
-    var manualAvailable: Bool = true
-
-    /// 잠긴 '직접 입력' 행을 눌렀을 때 — 호출부가 유료 안내로 보낸다.
-    ///
-    /// ⚠ **이 행을 목록에서 빼지 말 것.** 빼면 유료에 무엇이 있는지 알 길이 없다 —
-    /// 안드로이드도 잠긴 행을 남긴다("유료 전환 동기 중 가장 강한 것을 잃는다").
-    var onManualLocked: () -> Void = {}
 
     let onSave: (MessageSettingsResult) -> Void
 
@@ -123,38 +111,13 @@ struct MessageSettingsPane: View {
     /// 목록에 둘 수 있는 모든 종류의 id — [availableContexts] 의 기본값.
     static let allContextIDs: [String] = options.map(\.id)
 
-    /// 잠긴 '직접 입력' 행 — 라디오 대신 자물쇠 배지를 그린다.
-    ///
-    /// ⚠ **잠기지 않았는데 자물쇠를 그리지 말 것.** 예전에는 플랜과 무관하게 늘 자물쇠였고,
-    /// 유료 사용자가 눌러도 "기본 목소리로는 직접 입력을 쓸 수 없어요" 로 막혔다.
-    @ViewBuilder
-    private func lockedManualRow(label: String) -> some View {
-        Button(action: onManualLocked) {
-            // 자물쇠는 **고른 표시 자리(글자 왼쪽)** 다 — 안드로이드 `SnoozeLockedRow`(자물쇠 24 → 12 → 글자, 좌우 14 · 최소 56)와
-            // 같다. 2026-11-22 전 iOS 만 자물쇠가 글자 오른쪽 끝이라, 같은 목록에서 이 행만 표시 자리가 반대였다.
-            HStack(spacing: RadioRow.markSpacing) {
-                // ⚠ 라디오 점보다 크게 둔다(2026-08-15 지시). 안드로이드 `SnoozeLockedRow` 와 같은 값.
-                FeatureLockBadge(size: 24, iconSize: 14)
-                Text(label)
-                    .font(theme.typography.bodyLarge)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                Spacer(minLength: 8)
-            }
-            .padding(.horizontal, RadioRow.horizontalPadding)
-            .padding(.vertical, 8)
-            .frame(minHeight: 56)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// 실제로 그릴 행. '직접 입력' 은 잠겨 있어도 **언제나 남는다**([onManualLocked] 주석).
+    /// 실제로 그릴 행. '직접 입력' 은 **언제나 남는다**.
     ///
     /// ⚠ **접지 않는다 — 전부 편다**(2026-11-09 오너). v1.3 W04 에서 운세·약을 '더 보기' 뒤로 접었다가 출시 전에
     /// 되돌렸다 — 다 펴도 다섯 줄이고, 접어 두면 있는 줄도 모른다. 안드로이드 `ui/editor/AlarmRandomPromptSettings.kt` 짝.
     private var visibleOptions: [(id: String, label: String)] {
         Self.options.filter {
-            ($0.id == MessageSettingsResult.manualContext && manualAvailable) || availableContexts.contains($0.id)
+            $0.id == MessageSettingsResult.manualContext || availableContexts.contains($0.id)
         }
     }
 
@@ -167,12 +130,8 @@ struct MessageSettingsPane: View {
                     EditorCard(verticalPadding: 0, horizontalPadding: 0, cornerRadius: theme.shapes.medium) {
                         ForEach(Array(visibleOptions.enumerated()), id: \.element.id) { index, option in
                             if index > 0 { AlarmSettingDivider(leadingInset: RadioRow.textInset) }
-                            if option.id == MessageSettingsResult.manualContext, manualLocked {
-                                lockedManualRow(label: option.label)
-                            } else {
-                                RadioRow(label: rowLabel(option), selected: draftContext == option.id) {
-                                    select(option.id)
-                                }
+                            RadioRow(label: rowLabel(option), selected: draftContext == option.id) {
+                                select(option.id)
                             }
                         }
                     }

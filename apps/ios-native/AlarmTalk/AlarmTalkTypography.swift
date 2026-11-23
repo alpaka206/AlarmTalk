@@ -11,10 +11,6 @@ import SwiftUI
 ///   - Pretendard-SemiBold
 ///   - Pretendard-Bold
 struct AlarmTalkTypography {
-    let displayLarge: Font
-    let displayMedium: Font
-    let displaySmall: Font
-
     let headlineLarge: Font
     let headlineMedium: Font
     let headlineSmall: Font
@@ -116,9 +112,6 @@ extension AlarmTalkTypography {
     /// `.body`(17)에 묶은 글자보다 덜 커진다. 아무 스타일에나 묶으면 같은 화면 안에서
     /// 글자들이 서로 다른 속도로 자라 위계가 뒤집힌다.
     static let `default` = AlarmTalkTypography(
-        displayLarge: .pretendard(.bold, size: 57, relativeTo: .largeTitle),
-        displayMedium: .pretendard(.bold, size: 45, relativeTo: .largeTitle),
-        displaySmall: .pretendard(.semibold, size: 36, relativeTo: .largeTitle),
 
         headlineLarge: .pretendard(.semibold, size: 32, relativeTo: .title),
         headlineMedium: .pretendard(.semibold, size: 28, relativeTo: .title),

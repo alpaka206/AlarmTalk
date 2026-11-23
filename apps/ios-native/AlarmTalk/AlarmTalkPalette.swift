@@ -27,14 +27,11 @@ struct AlarmTalkPalette: Equatable {
     let onPrimaryContainer: Color
 
     let secondary: Color
-    let onSecondary: Color
     let secondaryContainer: Color
     let onSecondaryContainer: Color
 
     let tertiary: Color
     let onTertiary: Color
-    let tertiaryContainer: Color
-    let onTertiaryContainer: Color
 
     let background: Color
     let onBackground: Color
@@ -65,13 +62,10 @@ extension AlarmTalkPalette {
         primaryContainer: .hex(0xD6E9FF),
         onPrimaryContainer: .hex(0x0A2740),
         secondary: .hex(0x5F8FAF),
-        onSecondary: .hex(0xFFFFFF),
         secondaryContainer: .hex(0xE3F4FA),
         onSecondaryContainer: .hex(0x12303C),
         tertiary: .hex(0x5E7D70),
         onTertiary: .hex(0xFFFFFF),
-        tertiaryContainer: .hex(0xE2F2EA),
-        onTertiaryContainer: .hex(0x163226),
         background: .hex(0xF7F7FA),
         onBackground: .hex(0x181922),
         surface: .hex(0xFFFFFF),
@@ -94,13 +88,10 @@ extension AlarmTalkPalette {
         primaryContainer: .hex(0x1E4263),
         onPrimaryContainer: .hex(0xD9ECFF),
         secondary: .hex(0xB9DDEB),
-        onSecondary: .hex(0x0F2B36),
         secondaryContainer: .hex(0x243F49),
         onSecondaryContainer: .hex(0xE2F5FC),
         tertiary: .hex(0xC7E5D6),
         onTertiary: .hex(0x123226),
-        tertiaryContainer: .hex(0x28483B),
-        onTertiaryContainer: .hex(0xE3F6EC),
         // 배경/표면 계열은 랜딩(일출 씬)의 **딥 네이비** 축과 같은 색조로 맞춘다 —
         // 무채색 회흑 대신 밤바다 톤이라 랜딩 → 앱 진입 시 톤이 이어진다.
         // 카드(surface)는 탭 배경 그라데이션(#1A2A52→#070C1D)보다 어두우면 '검은 박스' 로
@@ -136,13 +127,10 @@ extension AlarmTalkPalette {
         primaryContainer: .dynamicScheme(light: light.primaryContainer, dark: dark.primaryContainer),
         onPrimaryContainer: .dynamicScheme(light: light.onPrimaryContainer, dark: dark.onPrimaryContainer),
         secondary: .dynamicScheme(light: light.secondary, dark: dark.secondary),
-        onSecondary: .dynamicScheme(light: light.onSecondary, dark: dark.onSecondary),
         secondaryContainer: .dynamicScheme(light: light.secondaryContainer, dark: dark.secondaryContainer),
         onSecondaryContainer: .dynamicScheme(light: light.onSecondaryContainer, dark: dark.onSecondaryContainer),
         tertiary: .dynamicScheme(light: light.tertiary, dark: dark.tertiary),
         onTertiary: .dynamicScheme(light: light.onTertiary, dark: dark.onTertiary),
-        tertiaryContainer: .dynamicScheme(light: light.tertiaryContainer, dark: dark.tertiaryContainer),
-        onTertiaryContainer: .dynamicScheme(light: light.onTertiaryContainer, dark: dark.onTertiaryContainer),
         background: .dynamicScheme(light: light.background, dark: dark.background),
         onBackground: .dynamicScheme(light: light.onBackground, dark: dark.onBackground),
         surface: .dynamicScheme(light: light.surface, dark: dark.surface),

@@ -17,10 +17,8 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             snoozeEnabled: true,
             snoozeMinutes: 7,
             snoozeRepeatLimit: SnoozeRepeatLimit.five.rawValue,
-            snoozeCount: 1,
             vibrationPattern: VibrationPattern.heartbeat.rawValue,
             playMode: AlarmPlayMode.voiceOnly.rawValue,
-            defaultAlarmSoundId: DefaultAlarmSounds.bundledDefault,
             localAudioUri: "file:///tmp/audio.m4a",
             audioCacheKey: "abc123",
             rawAudioUri: "https://example.com/raw.mp3",
@@ -79,10 +77,8 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertTrue(decoded.snoozeEnabled)
         XCTAssertEqual(decoded.snoozeMinutes, 5)
         XCTAssertEqual(decoded.snoozeRepeatLimit, SnoozeRepeatLimit.three.rawValue)
-        XCTAssertEqual(decoded.snoozeCount, 0)
         XCTAssertEqual(decoded.vibrationPattern, VibrationPattern.default.rawValue)
         XCTAssertEqual(decoded.playMode, AlarmPlayMode.alarmOnly.rawValue)
-        XCTAssertEqual(decoded.defaultAlarmSoundId, DefaultAlarmSounds.bundledDefault)
         XCTAssertNil(decoded.localAudioUri)
         XCTAssertEqual(decoded.voiceSource, VoiceSource.ttsProfile.rawValue)
         XCTAssertFalse(decoded.voiceRandomPrompt)
@@ -201,7 +197,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         let loaded = try JSONDecoder().decode([LocalAlarmRecord].self, from: json)
         XCTAssertEqual(loaded.map(\.id), ["recv", "mine"], "모르는 칸·값 때문에 행을 버리지 않는다")
         XCTAssertEqual(loaded[0].origin, ReceivedAlarmConversion.legacyReceivedOrigin, "저장값은 그대로 읽는다")
-        XCTAssertEqual(loaded[1].originEnum, .localOwned, "모르는 origin 은 내 알람으로 읽는다")
+        XCTAssertEqual(loaded[1].origin, "some_future_origin", "모르는 origin 도 던지지 않고 그대로 읽는다")
 
         let outcome = ReceivedAlarmConversion.convert(loaded, nowMillis: 1_760_000_000_000)
         XCTAssertEqual(outcome.converted.map(\.id), ["recv"])
@@ -219,9 +215,8 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertEqual(converted.ownerUserId, "me")
         XCTAssertEqual(converted.playModeEnum, .voiceOnly)
         // 보낸 사람의 목소리·문구·이름과 서버 연결은 걷어 내고, 미나의 아직 안 올린 내 알람이 된다.
-        XCTAssertEqual(converted.originEnum, .localOwned)
         XCTAssertEqual(converted.origin, AlarmOrigin.localOwned.rawValue)
-        XCTAssertEqual(converted.syncStateEnum, .localOnly)
+        XCTAssertEqual(converted.syncState, AlarmSyncState.localOnly.rawValue)
         XCTAssertNil(converted.remoteAlarmId)
         XCTAssertNil(converted.lastSyncedAtMillis)
         XCTAssertEqual(converted.voiceSourceEnum, .ttsProfile)

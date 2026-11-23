@@ -2,20 +2,11 @@ import SwiftUI
 
 /// 화면별 카드 표면 modifier 모음.
 ///
-/// ContentView 1606 줄 분해 과정에서 곳곳에 흩어진 `sectionSurface()` /
-/// `settingsCard()` 헬퍼를 한 곳으로 모았다. `View` 확장으로 두면 분리된
-/// 화면 파일들이 동일한 표면 스타일을 공유할 수 있다.
+/// `View` 확장으로 두면 분리된 화면 파일들이 동일한 표면 스타일을 공유할 수 있다.
 ///
-/// 다크 모드 대응: 정적 `AlarmTalkTheme.*`(라이트 전용) 대신
-/// `@Environment(\.voiceAlarmTheme).palette` 토큰을 읽는 `ViewModifier` 로
-/// 구현해, `VocaCardSurfaceModifier` 와 동일하게 색 구성표 변화에 자동으로
-/// 적응한다.
+/// 다크 모드 대응: `@Environment(\.voiceAlarmTheme).palette` 토큰을 읽는 `ViewModifier` 로
+/// 구현해 색 구성표 변화에 자동으로 적응한다.
 extension View {
-    /// 화면의 주요 콘텐츠 블록을 감싸는 표면 스타일. 패딩·라운드·테두리를 모두 포함.
-    func sectionSurface() -> some View {
-        modifier(SectionSurfaceModifier())
-    }
-
     /// 설정 화면 전용 카드 — title 이 있을 경우 라벨을 위에 띄운다.
     func settingsCard(title: String?) -> some View {
         modifier(SettingsCardModifier(title: title))
@@ -30,24 +21,6 @@ extension View {
 
 // MARK: - Modifiers
 
-private struct SectionSurfaceModifier: ViewModifier {
-    @Environment(\.voiceAlarmTheme) private var theme
-
-    func body(content: Content) -> some View {
-        content
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.palette.surface)
-            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
-                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
-            )
-    }
-}
-
-/// 목소리 등록 화면의 예시 대본·업로드·구간 자르기 상자와 문구 고치기 칸이 쓴다. 테두리는 안드로이드 그 자리들의
-/// `wakerCardBorder()`(`ui/components/VoiceInputControls.kt`) 와 같은 카드 테두리다 — 다크에서 `outlineVariant` 보다 한 단계 밝다.
 /// 설정 카드 — **제목이 카드 안에 들어간다.**
 ///
 /// 안드로이드 `ui/settings/SettingsScreenComponents.kt` 의 `SettingsCard` 대응.
