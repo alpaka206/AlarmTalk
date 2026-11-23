@@ -16,6 +16,8 @@ export default tseslint.config(
       'apps/ios-native/DerivedData/**',
       '**/.wrangler/**',
       '.ralph/**',
+      // 로컬 도구·작업 사본(추적하지 않는다). 그 안의 워크트리 사본이 tsconfig 를 가지고 있어 린트가 루트를 헷갈렸다.
+      '.claude/**',
       '**/test/**',
     ],
   },
@@ -23,6 +25,11 @@ export default tseslint.config(
   js.configs.recommended,
 
   ...tseslint.configs.recommended,
+
+  {
+    // 저장소 루트를 못 박는다 — typescript-eslint 8.73 부터 tsconfig 후보 루트가 여럿이면 모든 파일을 파싱 오류로 막는다.
+    languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } },
+  },
 
   {
     files: ['**/*.cjs', '**/*.mjs', '**/babel.config.js', '**/metro.config.js'],
