@@ -94,7 +94,7 @@ class HolidayCalendarStore(
         countryCode: String = DEFAULT_COUNTRY_CODE,
         regionCode: String = "",
         from: LocalDate,
-        count: Int = 5,
+        count: Int,
     ): List<HolidayDate> {
         for (year in from.year..(from.year + 1)) {
             seedDefaultHolidaysIfAvailable(countryCode, regionCode, year)

@@ -41,15 +41,10 @@ internal fun MainViewModel.login(email: String, password: String) {
         authNotice = null
         // 앞선 로그아웃의 서버 뒷정리가 끝난 뒤에 보낸다 — 늦은 폐기가 이 세션을 죽이지 않게([awaitServerSignOutCleanup]).
         awaitServerSignOutCleanup()
-        // 표는 **보내기 직전에** 뜬다 — 응답이 다음 진입에 도착하면 그 진입의 답으로 세지 않게(D11).
-        val accountRequest = beginAccountRequest()
         runCatching {
             api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
-            // 세션을 올리는 순간 로그인 뒤 계정 조회(`checkAccountStatus`)가 뜬다 — 멈추는 로그인 뒤 정리
-            // (`onSignedIn`)보다 **먼저** 적어야 이 응답이 이번 진입의 첫 결과다(Codex #803).
-            recordSignInAnswer(response.user, accountRequest)
             recordAuthSuccess(method = "email")
             onSignedIn()
         }.onFailure { error ->
@@ -228,7 +223,6 @@ internal fun MainViewModel.register(
         registerError = null
         // 앞선 로그아웃의 서버 뒷정리가 끝난 뒤에 보낸다 — 늦은 폐기가 이 세션을 죽이지 않게([awaitServerSignOutCleanup]).
         awaitServerSignOutCleanup()
-        val accountRequest = beginAccountRequest()
         runCatching {
             api.register(
                 RegisterRequest(
@@ -241,7 +235,6 @@ internal fun MainViewModel.register(
             authSession = authSessionStore.saveAppSession(response)
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
-            recordSignInAnswer(response.user, accountRequest)
             recordAuthSuccess(method = "email_register")
             onSignedIn()
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
@@ -382,12 +375,10 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
         authBusy = true
         // 앞선 로그아웃의 서버 뒷정리가 끝난 뒤에 보낸다 — 늦은 폐기가 이 세션을 죽이지 않게([awaitServerSignOutCleanup]).
         awaitServerSignOutCleanup()
-        val accountRequest = beginAccountRequest()
         runCatching {
             api.loginGoogle(GoogleLoginRequest(idToken = idToken))
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
-            recordSignInAnswer(response.user, accountRequest)
             recordAuthSuccess(method = "google")
             onSignedIn()
             message = null
@@ -413,12 +404,10 @@ internal fun MainViewModel.finishKakaoLogin(accessToken: String) {
         authBusy = true
         // 앞선 로그아웃의 서버 뒷정리가 끝난 뒤에 보낸다 — 늦은 폐기가 이 세션을 죽이지 않게([awaitServerSignOutCleanup]).
         awaitServerSignOutCleanup()
-        val accountRequest = beginAccountRequest()
         runCatching {
             api.loginKakao(KakaoLoginRequest(accessToken = accessToken))
         }.onSuccess { response ->
             authSession = authSessionStore.saveKakaoSession(response)
-            recordSignInAnswer(response.user, accountRequest)
             recordAuthSuccess(method = "kakao")
             onSignedIn()
             message = null
@@ -449,25 +438,6 @@ internal fun MainViewModel.showKakaoSignInFailed() {
  * 애초에 들어오지 않는다 — 사용자가 직접 켜야 돌아온다. 예전 이 주석은 "행은 켜진 채로
  * 둔다" 를 재예약이 필요한 근거로 댔는데, 그 전제가 뒤집혔다.
  */
-/**
- * **로그인·가입 응답도 이 진입의 계정 응답이다**(D11 — iOS `AuthViewModel` 의 로그인·가입이
- * `recordAccountAnswer` 로 적는 것과 같다). 안 적으면 이 진입의 첫 결과가 로그인 뒤의
- * `checkAccountStatus` 가 되어, 로그인은 됐는데 그 조회가 실패한 진입에서 안드로이드만 종료 안내를
- * 건너뛴다. 로그인 **실패**는 적지 않는다 — 계정이 아직 없고, 같은 진입에서 다시 시도해 성공하면
- * 그게 첫 결과여야 한다. 뒤이은 `checkAccountStatus` 는 더 옛 순번이라 장부가 버린다.
- */
-private fun MainViewModel.recordSignInAnswer(
-    user: com.alarmtalk.app.network.AuthUser,
-    request: AccountRequest,
-) {
-    if (authSession?.user?.id != user.id) return
-    // 표는 요청을 **보내기 직전에** 뜬 것이다(Codex #803) — 느린 로그인 중에 앱을 내렸다 올리면 응답은
-    // 다음 진입에 도착한다. 도착해서 표를 뜨면 앞 진입의 요청이 이번 진입의 답이 된다(장부가 보낸 진입과
-    // 도착한 진입을 대조한다 — `accountAnswerEntryFor`). 세션 정리(`resetForAccountSwitch`)는 로그아웃
-    // 쪽에만 있어 로그인 전에 뜬 표가 앞질러지지 않는다.
-    recordAccountAnswer(request, user.personalPromo)
-}
-
 /**
  * 로그인 결과(`auth_result`, `docs/spec/usage-events.md` §7.1). 세션을 저장한 **뒤**라 기록기가 이 계정으로 적는다.
  * ⚠ 실패는 적지 않는다 — 계정이 없어 기록기가 버리고, 가입 전 사건을 모아 두었다 붙여 보내는 길은 만들지 않는다(§7.4).
@@ -671,7 +641,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
     }
 }
 
-// 로그인 후 계정 상태를 확인한다(기간 한정 개인 플랜 안내의 근거). 실패 시 앱 진입을 막지 않는다.
+// 로그인 후 계정 상태를 확인한다(탈퇴 유예 계정인가). 실패 시 앱 진입을 막지 않는다.
 //
 // ⚠ **탈퇴 유예 계정이면 이 기기에서 그 계정을 떠난다**(2026-10-15). 다시 로그인하면 서버가 탈퇴를 철회하므로
 //   (`docs/spec/session-and-auth.md` 「탈퇴 유예 — 다시 로그인하면 철회」) 유예 상태의 세션은 끝난 세션이다.
@@ -682,8 +652,6 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
 internal fun MainViewModel.checkAccountStatus() {
     val session = authSession ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
-    // 보낸 진입·순번을 응답까지 들고 간다(`MainViewModel.recordAccountAnswer`).
-    val accountRequest = beginAccountRequest()
     viewModelScope.launch {
         runCatching {
             api.me(authorization)
@@ -693,14 +661,6 @@ internal fun MainViewModel.checkAccountStatus() {
                 leaveAccountForPendingDeletion(session)
                 return@launch
             }
-            // 기간 한정 개인 플랜 종료 안내는 **가장 최근 계정 응답**으로 판정한다
-            // (`MainViewModel.latestAccountPromo`). 그 사이 계정이 바뀌었으면 남의 값이라 적지 않는다.
-            // 더 새 계정 응답이 이미 적혔으면 장부가 이 옛 답을 버린다.
-            if (authSession?.user?.id == session.user.id &&
-                !recordAccountAnswer(accountRequest, response.user.personalPromo)
-            ) {
-                Log.i(TAG, "Account status answer superseded by a later account answer")
-            }
         }.onFailure { error ->
             // 탈퇴 신청으로 끊긴 세션은 서버가 401 이 아니라 403 `ACCOUNT_PENDING_DELETION` 으로 답한다(`/auth/me`).
             if (AlarmTalkLog.isAccountPendingDeletion(error)) {
@@ -708,14 +668,6 @@ internal fun MainViewModel.checkAccountStatus() {
                 return@launch
             }
             Log.w(TAG, "Failed to check account status", error)
-            // **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11) — 같은 진입의
-            // 뒤 성공(쿠폰·`plan_changed` 뒤의 갱신)으로 세션 한가운데 뜨지 않게 실패도 적는다.
-            // 계정이 바뀌었으면 적지 않는다. 401 로 세션이 끝나는 중이면 적혀도 곧 세션 정리가 장부를
-            // 비우고(`PersonalPromoLedger.resetForAccountSwitch`), 정리가 먼저 끝났으면 앞지른 순번이
-            // 이 실패를 버린다.
-            if (!signingOut && authSession?.user?.id == session.user.id) {
-                recordAccountFailure(accountRequest)
-            }
         }
         // 성공·실패 모두 '확인은 끝났다'. 네트워크 실패로 영영 false 면 1회성 오버레이가
         // 영영 안 뜬다 — 계정 상태를 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다.
@@ -801,14 +753,14 @@ private suspend fun MainViewModel.uploadDynamicPromptSettings(userId: String) {
         // 읽었을 수 있다 — 표시를 내린 뒤 그 응답이 오면 받아 적기가 옛 설정을 이 기기에 적는다. 그 응답들은
         // 설정만 지금 세션의 값(아래에서 올린 값으로 갈아 끼운다)을 지킨다(`refreshAppSessionNow`). 울타리 안의
         // 응답이 올리기 **뒤의** 다른 기기 변경을 싣고 있었을 수도 있으므로, 끝에서 울타리 뒤의 조회를 한 번 더 한다.
-        promptSettingsAnswerFence = personalPromoLedger.latestRequestSeq()
+        promptSettingsAnswerFence = accountRequestLedger.latestRequestSeq()
         // ⚠ **세션을 갈아 끼우기 전에** 표시를 내린다. 새 세션이 곧바로
         // [onAccountPromptSettingsReceived] 를 부르는데, 그때 표시가 남아 있으면 방금 올린 값을
         // '아직 안 올라간 변경' 으로 보고 한 번 더 올린다.
         dynamicPromptStore.markPushed(session.user.id, settings)
         val updatedSettings = response.dynamicPromptSettings ?: settings
         // 올린 값(계정 설정)만 **지금 세션** 위에 — 차례가 온 뒤 잡은 `session` 도 요청 전의 사본이라, 그대로 되쓰면 그 사이
-        // `/auth/me` 가 적은 plan·프로모·받은 시각과 다른 칸을 되돌린다([saveProfileEdit]).
+        // `/auth/me` 가 적은 plan 과 다른 칸을 되돌린다([saveProfileEdit]).
         val saved = saveProfileEdit(session.user.id, startGeneration) { it.copy(dynamicPromptSettings = updatedSettings) }
             ?.also { authSession = it }
         // **울타리 뒤의 조회로 확인한다**(Codex #837) — 울타리는 올리기 전에 떠난 조회를 모두 가리므로, 그중 올리기
@@ -1505,8 +1457,8 @@ internal fun MainViewModel.clearMessage() {
  * 저장소가 지금 세션을 같은 락 안에서 읽어 [change] 만 얹는다(`AuthSessionStore.updateUserIfAlive`).
  *
  * ⚠ **요청 전에 잡은 세션의 사본을 다시 저장하지 말 것**(2026-10-05). 예전에는 `session.copy(user = …)` 를 통째로
- * 저장해, 요청이 도는 사이 `/auth/me`(결제 뒤의 갱신, `plan_changed`, 복귀 갱신)가 적은 plan·프로모·받은
- * 시각과 다른 칸(다른 기기에서 바꾼 이름)을 다음 `/auth/me` 까지 되돌렸다. 판정 스냅샷은 그대로였지만
+ * 저장해, 요청이 도는 사이 `/auth/me`(결제 뒤의 갱신, `plan_changed`, 복귀 갱신)가 적은 plan 과 다른 칸(다른 기기에서
+ * 바꾼 이름)을 다음 `/auth/me` 까지 되돌렸다. 판정 스냅샷은 그대로였지만
  * 세션 plan 을 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리(`paidVoiceAccess`)가 방금 유료가 된 사람을 무료로
  * 그렸다. 계정 설정 한 칸만 지키던 것(Codex #837 검증)을 안 바꾼 칸 전부로 넓혔다.
  *
@@ -1516,7 +1468,7 @@ internal fun MainViewModel.clearMessage() {
  *
  * 저장이 끝나면 부르는 쪽이 **확인 조회**를 한다(토큰은 굴리지 않는다) — 저장 **전에** 떠나 옛 이름을 읽은
  * `/auth/me` 가 늦게 와도, 확인 조회가 뒤에 덮거나 그 옛 답이 확인 조회의 순번에 밀려 버려진다
- * (`PersonalPromoLedger.claimPlanAnswer`). iOS `updateProfile` 뒤의 `refreshUser` 와 같다.
+ * (`AccountRequestLedger.claimPlanAnswer`). iOS `updateProfile` 뒤의 `refreshUser` 와 같다.
  */
 internal fun MainViewModel.saveProfileEdit(
     userId: String,
@@ -1585,7 +1537,7 @@ internal fun isDestroyedAccountFailure(error: Throwable): Boolean {
  * @param rollToken 서버가 굴려 준 새 토큰으로 갈아 끼우는가. **백그라운드에서 돌아올 때마다**
  *   부르는 갱신(`MainViewModel` init 의 진입 구독)과 **Play 자동 정합화 뒤의 갱신**
  *   (`confirmGooglePurchase` 의 `AutoReconcile`)은 false 다. 토큰은 예전처럼 콜드 스타트·
- *   워커(`SessionTokenRenewal`)가 굴리고 그 밖에는 plan·프로모만 새로 받는다. 서버 토큰은
+ *   워커(`SessionTokenRenewal`)가 굴리고 그 밖에는 plan 만 새로 받는다. 서버 토큰은
  *   무상태 JWT 라 버려도 잃는 것이 없다.
  *   (예전에는 앱 루트의 세션 효과가 **토큰을 키로** 써서, 굴릴 때마다 동의·계정·목소리 준비
  *   확인과 목소리·클립·구독 선로드가 전부 다시 돌았다. 키는 계정 + 세션 세대로 바꿨다 —
@@ -1596,7 +1548,7 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
     val session = authSession ?: return false
     // 시작 시점의 세션 세대 — 응답을 쓰기 전에 대조한다. 세대는 세션이 끝날 때만 바뀐다.
     val startGeneration = authSessionStore.sessionGeneration()
-    // 보낸 진입·순번을 응답까지 들고 간다(`MainViewModel.recordAccountAnswer`).
+    // 보낸 순번을 응답까지 들고 간다(`AccountRequestLedger.claimPlanAnswer`).
     val accountRequest = beginAccountRequest()
     var applied = false
     run {
@@ -1618,20 +1570,19 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                 return@onSuccess
             }
             // **나중에 보낸 요청의 답이 이미 plan 에 쓰였으면 이 답은 쓰지 않는다**
-            // (`PersonalPromoLedger.claimPlanAnswer` — iOS `AuthViewModel.applyFreshPlan` 의 순번 가드).
-            // 진입 갱신이 떠 있는 동안 쿠폰·결제·`plan_changed` 뒤의 갱신이 먼저 돌아오면, 늦게 온
-            // 진입 갱신의 옛 plan·프로모가 세션과 스냅샷의 표지를 되살린다 — 옛 plan 으로
-            // `planAnsweredEntry` 까지 세워 잠금 대기를 풀어 버린다. 버리는 것은 세션·스냅샷 쓰기와 plan 반영 표시 전부다 — 더 새 답이
-            // 모든 필드를 이미 새로 적었다. 이 답이 굴려 준 토큰도 버린다(무상태 JWT 라 지금 토큰이
-            // 그대로 유효하다). 계정 응답(종료 안내)도 이미 더 새 답이 적었다.
+            // (`AccountRequestLedger.claimPlanAnswer` — iOS `AuthViewModel.applyFreshPlan` 의 순번 가드).
+            // 진입 갱신이 떠 있는 동안 결제·`plan_changed` 뒤의 갱신이 먼저 돌아오면, 늦게 온 진입 갱신의 옛 plan 이
+            // 세션과 스냅샷을 되돌린다 — 방금 산 사람을 다음 조회까지 무료로 그린다. 버리는 것은 세션·스냅샷 쓰기와 plan
+            // 반영 표시 전부다 — 더 새 답이 모든 필드를 이미 새로 적었다. 이 답이 굴려 준 토큰도 버린다(무상태 JWT 라
+            // 지금 토큰이 그대로 유효하다).
             // ⚠ **쓰기 전에** 잡는다 — 이 블록은 멈추지 않고 메인 스레드에서 끝까지 돌아, 잡은 뒤
             //   다른 응답이 끼어들지 못한다.
-            if (!personalPromoLedger.claimPlanAnswer(accountRequest)) {
+            if (!accountRequestLedger.claimPlanAnswer(accountRequest)) {
                 Log.i(TAG, "Dropping superseded /auth/me result: a later request's answer is already applied")
                 // ⚠ **받아 적기는 다시 돌린다** — 이 답은 버려도 '응답이 왔다' 는 같다(Codex #837 검증, 스펙
                 //   「경계는 다섯이다」의 응답 경계). 더 새 답이 반영된 **뒤에** 올리기가 실패했으면, 그 뒤 처음 온 응답이
                 //   이 밀린 답일 수 있다 — 여기서 안 돌리면 밀린 변경이 다음 저장되는 응답까지 안 올라간다. 값은 지금
-                //   세션의 것(더 새 답)이다. iOS 는 밀린 답도 `recordAccountAnswer` 로 세어 같은 일이 난다.
+                //   세션의 것(더 새 답)이다.
                 com.alarmtalk.app.data.accountSettingsReceipt(authSession)?.let { receipt ->
                     onAccountPromptSettingsReceived(receipt.userId, receipt.settings)
                 }
@@ -1644,13 +1595,9 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             //
             // 세대 확인도 저장소가 쓰기와 같은 락 안에서 한다. 여기서 따로 보면 확인 뒤
             // 로그아웃이 끼어들어 비운 저장소에 끝난 세션을 되쓴다(Codex #665 P1/P2).
-            // 받은 시각을 plan·프로모와 **한 벌로** 적는다 — 기간 한정 개인 플랜의 오프라인
-            // 차단은 '종료 전에 받은 답' 만 자른다(`AuthSession.userFetchedAtMillis`).
-            // 응답이 계산 시각(`computed_at`)을 실었으면 저장소가 그것으로 바꿔 적는다(D7).
-            val receivedAt = System.currentTimeMillis()
             // 계정 설정 올리기가 끝나기 전에 보낸 요청이면 **설정만** 지금 세션의 값을 지킨다(Codex #837) —
             // 올리기 전의 설정을 읽었을 수 있고, 올리기가 끝나 '안 올라간 변경' 표시를 내린 뒤라 받아 적기가 그
-            // 옛 값을 이 기기에 적는다. 나머지(plan·프로모·토큰)는 그대로 이 응답의 것이다.
+            // 옛 값을 이 기기에 적는다. 나머지(plan·토큰)는 그대로 이 응답의 것이다.
             val fencedSettings = com.alarmtalk.app.data.fencedAccountSettings(
                 requestSeq = accountRequest.seq,
                 fenceSeq = promptSettingsAnswerFence,
@@ -1662,14 +1609,13 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                 dynamicPromptSettingsOverride = fencedSettings,
                 provider = session.provider,
                 rolledToken = sessionTokenToSave(rollToken, me.token),
-                userFetchedAtMillis = receivedAt,
             )
             if (saved == null) {
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
                 return@onSuccess
             }
             // 앱이 본 플랜이 **실제로 바뀌었을 때만**(`entitlement_changed`, `docs/spec/usage-events.md` §7.1) — 같은 계정의 앞 값과
-            // 비교한다. 로그인 직후 첫 답·계정 전환은 변경이 아니다. 출처(결제·관리자 지급·기간 한정)는 서버가 기록에 찍는다.
+            // 비교한다. 로그인 직후 첫 답·계정 전환은 변경이 아니다. 출처(결제·체험)는 서버가 기록에 찍는다.
             val previousPlan = authSession?.takeIf { it.user.id == saved.user.id }?.user?.plan
             authSession = saved
             if (previousPlan != null && previousPlan != saved.user.plan) {
@@ -1682,24 +1628,12 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                     ),
                 )
             }
-            // 종료 안내가 판정에 쓰는 '이 계정의 가장 최근 응답'. 쿠폰·결제 뒤의 갱신도 여기로
-            // 와서, 떠 있는 옛 안내를 걷는다(리뷰 지적 — 예전에는 `checkAccountStatus` 만 적었다).
-            // plan 쓰기(위의 순번)와 순번이 따로다: 나중에 보낸 `checkAccountStatus` 의 답이 먼저
-            // 적혔으면 이 답은 종료 안내에는 옛 답이지만, plan 에는 여전히 가장 새 답이다
-            // (`checkAccountStatus` 는 plan 을 쓰지 않는다 — `PersonalPromoLedger` 의 `planAnswerSeq`).
-            if (!recordAccountAnswer(accountRequest, saved.user.personalPromo)) {
-                Log.i(TAG, "Auth refresh account answer superseded by a later account answer")
-            }
             // 울림 경로는 이 값을 캐시에서만 읽는다 — `/auth/me` 가 plan 을 갱신하는 바로
             // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
             saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
-                // plan 과 그 프로모 종료 시각·받은 시각은 **한 벌로** 적는다(`AccessSnapshot.withServerUser`).
-                // ⚠ 받은 시각은 **세션에 적힌 값**을 넘긴다. `saved.user` 는 정규화돼 `computed_at` 이
-                //   빠져 있어, 기기 시각을 넘기면 세션(서버 계산 시각)과 스냅샷(기기 시각)이 갈라진다.
-                val answeredAt = saved.userFetchedAtMillis ?: receivedAt
                 var persisted: AccessSnapshot? = null
                 val planWrite = entitlementWriter.write(AccessTicket(id, startGeneration), "auth/me plan") {
-                    it.withServerUser(saved.user, answeredAt).also { snapshot -> persisted = snapshot }
+                    it.withServerUser(saved.user).also { snapshot -> persisted = snapshot }
                 }
                 // ⚠ **메모리 사본도 문을 지난 뒤에만 맞춘다**(2026-09-02 리뷰). 판정은 이 값을
                 // 먼저 보므로(`effectiveUserPlan`), 문이 거절한 등급을 여기만 심으면 캐시와
@@ -1707,10 +1641,8 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                 if (planWrite == EntitlementWrite.Applied) {
                     val snapshot = checkNotNull(persisted)
                     storeSnapshotUserPlan = snapshot.userPlan
-                    storeSnapshotUserPlanPromo = snapshot.userPlanPromoStamp()
-                    // 판정기가 읽는 plan 이 **이 진입의 답**이 됐다 — 전경 무료 잠금의 오프라인 차단
-                    // 갈래가 이걸 기다린다(`freePlanLockMayApply`).
-                    personalPromoLedger.recordPlanApplied(accountRequest)
+                    // 판정기가 읽는 plan 이 **이번 실행의 서버 답**이 됐다 — 받았던 알람의 승격이 이걸 기다린다.
+                    accountRequestLedger.recordPlanApplied(accountRequest)
                     applied = true
                     // 받았던 알람의 2단계는 이 답도 기다린다(`promoteFormerReceivedAlarms`).
                     promoteFormerReceivedAlarms(id)
@@ -1731,13 +1663,6 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                 return@onFailure
             }
             Log.w(TAG, "Auth refresh failed", error)
-            // **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11 —
-            // `MainViewModel.recordAccountFailure`). 계정이 바뀌었으면 적지 않는다. 401 은 인증기가
-            // 세션을 정리하고 그 정리가 장부를 비운다 — 정리가 먼저 끝났으면 앞지른 순번이 이 실패를
-            // 버린다(`PersonalPromoLedger.resetForAccountSwitch`).
-            if (!signingOut && authSession?.user?.id == session.user.id) {
-                recordAccountFailure(accountRequest)
-            }
         }
     }
     return applied

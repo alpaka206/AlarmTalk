@@ -80,7 +80,6 @@
     <string name="billing_plan_monthly_price_fallback">月額%1$,dウォン</string>
     <string name="billing_plan_monthly_price">月額%1$s</string>
     <string name="billing_plan_trial_headline">%1$s無料</string>
-    <string name="billing_plan_trial_then">その後%1$s</string>
     <string name="billing_plan_trial_start">%1$s無料で始める</string>
     <string name="billing_plan_trial_disclosure">%1$sから毎月%2$sが請求されます。それまでにGoogle Playでいつでも解約できます。</string>
     <string name="billing_plan_price_fallback">%1$,dウォン</string>
@@ -476,7 +475,6 @@
     <string name="voicesr_status_creating">作成中</string>
     <string name="voicesr_status_deleting">削除中</string>
     <string name="voicesr_voice_name_label">声の名前</string>
-    <string name="label_audio_file">音声ファイル</string>
     <string name="label_vibration_strong">強め</string>
     <string name="label_vibration_short">短め</string>
     <string name="label_vibration_medium">ふつう</string>
@@ -687,7 +685,6 @@
     <string name="voices_not_ready_message_progress">このアラームで使う声を先にダウンロードしています。(%1$d%%)\nほかの基本の声も続けてダウンロードします。</string>
     <string name="voices_not_ready_message">このアラームで使う声をダウンロードしています。\nインターネットに接続したまま少しお待ちください。</string>
     <string name="voices_default_download_progress">ダウンロード中 %1$d%%</string>
-    <string name="personal_promo_plan_line">プラス無料利用中 · %1$sまで</string>
     <plurals name="billing_trial_days">
         <item quantity="other">%d日間</item>
     </plurals>
@@ -700,10 +697,6 @@
     <plurals name="billing_trial_years">
         <item quantity="other">%d年</item>
     </plurals>
-    <string name="personal_promo_end_notice_title">プラスの無料利用がまもなく終了します</string>
-    <string name="personal_promo_end_notice_message">%1$sまでプラスを無料でご利用いただけます。%2$sからは無料プランに戻り、登録した声は3日間保管した後に削除されます。</string>
-    <string name="personal_promo_end_notice_message_keep_voices">%1$sまでプラスを無料でご利用いただけます。%2$sからは無料プランに戻ります。</string>
-    <string name="personal_promo_end_notice_dont_show_again">今後表示しない</string>
     <string name="system_voice_name_siwoo">シウ</string>
     <string name="system_voice_name_mina">ミナ</string>
     <string name="system_voice_name_dohyun">ドヒョン</string>
@@ -737,30 +730,4 @@
     <string name="voices_tuning_word_much_lower">かなり低く</string>
     <string name="voices_tuning_origin">元</string>
     <string name="voices_tuning_suggested_tag">おすすめ</string>
-    <!-- 추가 음성팩(docs/spec/voice-packs.md) -->
-    <string name="voice_pack_section_title">追加パック</string>
-    <string name="voice_pack_empty">利用できる追加パックはまだありません。</string>
-    <string name="voice_pack_load_failed">追加パックの一覧を読み込めませんでした。</string>
-    <string name="voice_pack_download">ダウンロード</string>
-    <string name="voice_pack_downloading">ダウンロード中 %1$d%%</string>
-    <string name="voice_pack_not_downloaded">未ダウンロード</string>
-    <string name="voice_pack_ready">ダウンロード済み</string>
-    <string name="voice_pack_delete">削除</string>
-    <string name="voice_pack_cancel">キャンセル</string>
-    <string name="voice_pack_preview">試聴</string>
-    <string name="voice_pack_usage_title">利用範囲</string>
-    <string name="voice_pack_size">サイズ %1$s</string>
-    <string name="voice_pack_apply_note">ダウンロードすると、アラームの声の一覧にこの声が加わります。天気・運勢・応援・薬のテーマで使えますが、自分で入力した文には使えません。今あるアラームは変わりません。</string>
-    <string name="voice_pack_withdrawn">公開が終了しました。%1$sまでは今あるアラームで鳴ります。</string>
-    <string name="voice_pack_withdrawn_after">その後はミナの声に変わります。</string>
-    <string name="voice_pack_delete_title">このパックを削除しますか？</string>
-    <string name="voice_pack_delete_message">この声を使っているアラーム%1$d件がミナの声に変わります。</string>
-    <string name="voice_pack_delete_message_none">ダウンロードしたファイルを削除します。もう一度ダウンロードできます。</string>
-    <string name="voice_pack_editor_detail">追加パック</string>
-    <string name="voice_pack_download_failed">ダウンロードできませんでした。もう一度お試しください。</string>
-    <string name="voice_pack_retry_download">もう一度ダウンロード</string>
-    <string name="voice_pack_manual_unavailable">追加パックの声は自分で入力した文には使えません。文言の画面でテーマを選んでください。</string>
-    <string name="voice_pack_not_available">このパックは現在ダウンロードできません。</string>
-    <string name="voice_pack_switch_drops_text_title">追加パックの声に変えますか？</string>
-    <string name="voice_pack_switch_drops_text_message">追加パックの声は用意された文だけを話すため、自分で入力した文は消えます。</string>
 </resources>

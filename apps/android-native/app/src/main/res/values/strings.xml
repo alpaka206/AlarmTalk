@@ -83,7 +83,6 @@
     <string name="billing_plan_monthly_price_fallback">월 %1$,d원</string>
     <string name="billing_plan_monthly_price">월 %1$s</string>
     <string name="billing_plan_trial_headline">%1$s 무료</string>
-    <string name="billing_plan_trial_then">이후 %1$s</string>
     <string name="billing_plan_trial_start">%1$s 무료로 시작하기</string>
     <string name="billing_plan_trial_disclosure">%1$s부터 매월 %2$s씩 결제되고, 그 전에 Google Play에서 언제든 해지할 수 있어요.</string>
     <string name="billing_plan_price_fallback">%1$,d원</string>
@@ -500,7 +499,6 @@
     <string name="voicesr_status_creating">만드는 중</string>
     <string name="voicesr_status_deleting">삭제 중</string>
     <string name="voicesr_voice_name_label">목소리 이름</string>
-    <string name="label_audio_file">음성 파일</string>
     <string name="label_vibration_strong">강하게</string>
     <string name="label_vibration_short">짧게</string>
     <string name="label_vibration_medium">보통</string>
@@ -713,9 +711,6 @@
     <string name="voices_not_ready_message_progress">이 알람에 쓸 목소리를 받고 있어요. 이 목소리부터 먼저 받아요. (%1$d%%)\n다른 기본 목소리도 이어서 받아요.</string>
     <string name="voices_not_ready_message">이 알람에 쓸 목소리를 받고 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.</string>
     <string name="voices_default_download_progress">받는 중 %1$d%%</string>
-    <!-- 기간 한정 플러스 무료 이용(personal_promo). ⚠ 날짜를 문구에 박지 말 것 — 서버 ends_at 을 기기 로케일로 그려 넣는다.
-         "…까지" 는 ends_at − 1초의 기기 날짜, "…부터" 는 그 다음 달력 날이다(한국 밖 기기에서도 하루 차이로 읽힌다). -->
-    <string name="personal_promo_plan_line">플러스 무료 이용 중 · %1$s까지</string>
     <plurals name="billing_trial_days">
         <item quantity="other">%d일</item>
     </plurals>
@@ -728,11 +723,6 @@
     <plurals name="billing_trial_years">
         <item quantity="other">%d년</item>
     </plurals>
-    <string name="personal_promo_end_notice_title">플러스 무료 이용이 곧 끝나요</string>
-    <string name="personal_promo_end_notice_message">%1$s까지 플러스를 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.</string>
-    <!-- 종료 전환 대상이 아닌 계정(deletes_voices_at_end = false, 예: 결제 보류로 활성 구독 행이 남음). 삭제 문장만 뺀다. -->
-    <string name="personal_promo_end_notice_message_keep_voices">%1$s까지 플러스를 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가요.</string>
-    <string name="personal_promo_end_notice_dont_show_again">다시 보지 않기</string>
     <string name="system_voice_name_siwoo">시우</string>
     <string name="system_voice_name_mina">미나</string>
     <string name="system_voice_name_dohyun">도현</string>
@@ -766,30 +756,4 @@
     <string name="voices_tuning_word_much_lower">많이 낮게</string>
     <string name="voices_tuning_origin">원래</string>
     <string name="voices_tuning_suggested_tag">추천</string>
-    <!-- 추가 음성팩(docs/spec/voice-packs.md) -->
-    <string name="voice_pack_section_title">추가 팩</string>
-    <string name="voice_pack_empty">준비 중인 추가 팩이 아직 없어요.</string>
-    <string name="voice_pack_load_failed">추가 팩 목록을 불러오지 못했어요.</string>
-    <string name="voice_pack_download">받기</string>
-    <string name="voice_pack_downloading">받는 중 %1$d%%</string>
-    <string name="voice_pack_not_downloaded">받기 전</string>
-    <string name="voice_pack_ready">받음</string>
-    <string name="voice_pack_delete">지우기</string>
-    <string name="voice_pack_cancel">취소</string>
-    <string name="voice_pack_preview">들어 보기</string>
-    <string name="voice_pack_usage_title">사용 범위</string>
-    <string name="voice_pack_size">크기 %1$s</string>
-    <string name="voice_pack_apply_note">받으면 알람 목소리 목록에 이 목소리가 생겨요. 날씨·운세·응원·약 테마에 쓸 수 있고, 직접 입력에는 쓸 수 없어요. 이미 있는 알람은 바뀌지 않아요.</string>
-    <string name="voice_pack_withdrawn">게시가 끝났어요. %1$s까지 기존 알람에서 울려요.</string>
-    <string name="voice_pack_withdrawn_after">그 뒤에는 미나 목소리로 바뀌어요.</string>
-    <string name="voice_pack_delete_title">이 팩을 지울까요?</string>
-    <string name="voice_pack_delete_message">이 목소리를 쓰는 알람 %1$d개가 미나 목소리로 바뀌어요.</string>
-    <string name="voice_pack_delete_message_none">받은 파일을 지워요. 다시 받을 수 있어요.</string>
-    <string name="voice_pack_editor_detail">추가 팩</string>
-    <string name="voice_pack_download_failed">받지 못했어요. 다시 시도해 주세요.</string>
-    <string name="voice_pack_retry_download">다시 받기</string>
-    <string name="voice_pack_manual_unavailable">추가 팩 목소리는 직접 입력에 쓸 수 없어요. 문구 화면에서 테마를 골라 주세요.</string>
-    <string name="voice_pack_not_available">이 팩은 지금 받을 수 없어요.</string>
-    <string name="voice_pack_switch_drops_text_title">추가 팩 목소리로 바꿀까요?</string>
-    <string name="voice_pack_switch_drops_text_message">추가 팩 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>
 </resources>

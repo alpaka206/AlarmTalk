@@ -7,7 +7,6 @@ import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.DynamicPromptWeatherSettings
-import com.alarmtalk.app.network.PersonalPromo
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -24,7 +23,7 @@ import java.io.File
  * `docs/spec/session-and-auth.md` 「프로필 저장은 바꾼 칸만 세션에 적는다」).
  *
  * 예전 프로필 저장(닉네임·계정 설정 올리기)은 요청 **전에** 잡은 세션의 사본을 통째로 저장했다. 그 사이
- * `/auth/me`(결제 뒤의 갱신, `plan_changed`, 복귀 갱신)가 plan·프로모·받은 시각을 새로 적으면 그 답을 다음
+ * `/auth/me`(결제 뒤의 갱신, `plan_changed`, 복귀 갱신)가 plan 을 새로 적으면 그 답을 다음
  * `/auth/me` 까지 되돌렸다 — 판정 스냅샷은 그대로여도 세션 plan 을 직접 읽는 편집기(`freeVoiceTier`)·목소리 관리
  * (`paidVoiceAccess`)가 방금 유료가 된 사람을 무료로 그렸다. 다른 기기에서 바꾼 이름도 같은 길로 되돌아갔다.
  *
@@ -39,7 +38,6 @@ class ProfileSaveKeepsAccountAnswerTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val prefsNames = mutableListOf<String>()
 
-    private val promo = PersonalPromo(endsAt = "2026-10-31T15:00:00Z", noticeFrom = "2026-10-24T15:00:00Z")
     private val seoul = DynamicPromptSettings(
         weather = DynamicPromptWeatherSettings(country = "대한민국", city = "서울", region = "kr-seoul"),
     )
@@ -60,7 +58,7 @@ class ProfileSaveKeepsAccountAnswerTest {
         return AuthSessionStore(context.getSharedPreferences(name, Context.MODE_PRIVATE))
     }
 
-    /** 무료 세션(받은 시각 1000, 토큰 t1) — 프로필 저장 요청을 보낼 때의 세션(뷰모델의 `authSession`)이다. */
+    /** 무료 세션(토큰 t1) — 프로필 저장 요청을 보낼 때의 세션(뷰모델의 `authSession`)이다. */
     private fun signInFree(store: AuthSessionStore): AuthSession =
         store.save(
             AuthSession(
@@ -73,19 +71,17 @@ class ProfileSaveKeepsAccountAnswerTest {
                     plan = "free",
                     dynamicPromptSettings = seoul,
                 ),
-                userFetchedAtMillis = 1_000L,
             ),
         )
 
-    /** 요청이 도는 사이 도착한 `/auth/me`(`refreshAppSessionNow` 의 저장) — plan·프로모·받은 시각과 굴린 토큰을 적는다. */
-    private fun meArrives(store: AuthSessionStore, user: AuthUser, token: String = "t2", receivedAt: Long = 2_000L) {
+    /** 요청이 도는 사이 도착한 `/auth/me`(`refreshAppSessionNow` 의 저장) — plan 과 굴린 토큰을 적는다. */
+    private fun meArrives(store: AuthSessionStore, user: AuthUser, token: String = "t2") {
         checkNotNull(
             store.saveSessionIfAlive(
                 expectedGeneration = store.sessionGeneration(),
                 user = user,
                 provider = AuthSessionStore.PROVIDER_APP,
                 rolledToken = token,
-                userFetchedAtMillis = receivedAt,
             ),
         )
     }
@@ -99,58 +95,52 @@ class ProfileSaveKeepsAccountAnswerTest {
     ): AuthSession? = store.updateUserIfAlive(generation, sent.user.id, change)
 
     @Test
-    fun 닉네임_저장은_그_사이_받은_plan_프로모_받은_시각_토큰을_되돌리지_않는다() {
+    fun 닉네임_저장은_그_사이_받은_plan_토큰을_되돌리지_않는다() {
         val store = store()
         val sent = signInFree(store)
         val generation = store.sessionGeneration()
-        // 닉네임 PATCH 가 떠 있는 사이 진입 갱신이 plus + 개인 프로모를 적고 토큰을 굴렸다.
-        meArrives(store, sent.user.copy(plan = "plus", personalPromo = promo))
+        // 닉네임 PATCH 가 떠 있는 사이 진입 갱신이 plus 를 적고 토큰을 굴렸다.
+        meArrives(store, sent.user.copy(plan = "plus"))
 
         val saved = profileSave(store, sent, generation) { it.copy(name = "새 이름") }
 
         val stored = checkNotNull(store.read())
         assertEquals("새 이름", stored.user.name)
         assertEquals("요청 전의 무료 사본이 plus 를 되돌렸다", "plus", stored.user.plan)
-        assertEquals("요청 전의 사본이 개인 프로모를 지웠다", promo, stored.user.personalPromo)
-        assertEquals("받은 시각이 옛 답의 것으로 돌아갔다 — plan·프로모와 한 벌이어야 한다", 2_000L, stored.userFetchedAtMillis)
         assertEquals("그 사이 굴린 토큰을 옛 것으로 덮었다(Codex #665 P2)", "t2", stored.token)
         // 메모리에 올릴 값(`authSession = saved`)도 저장본과 같다 — 관찰 경로와 갈라지지 않는다.
         assertEquals(stored, saved)
     }
 
     @Test
-    fun 계정_설정_올리기는_올린_값만_적고_그_사이_받은_plan_프로모는_지킨다() {
+    fun 계정_설정_올리기는_올린_값만_적고_그_사이_받은_plan_은_지킨다() {
         val store = store()
         val sent = signInFree(store)
         val generation = store.sessionGeneration()
-        meArrives(store, sent.user.copy(plan = "plus", personalPromo = promo))
+        meArrives(store, sent.user.copy(plan = "plus"))
 
         profileSave(store, sent, generation) { it.copy(dynamicPromptSettings = tokyo) }
 
         val stored = checkNotNull(store.read())
         assertEquals("jp-tokyo", stored.user.dynamicPromptSettings.weather.region)
         assertEquals("plus", stored.user.plan)
-        assertEquals(promo, stored.user.personalPromo)
-        assertEquals(2_000L, stored.userFetchedAtMillis)
     }
 
     /**
-     * plan·프로모는 plan 답에서만 온다 — 저장소가 스스로 지킨다. 부르는 쪽이 실수로 요청 전 사본을 돌려줘도(예전 저장의
-     * 모양) plan·프로모·받은 시각은 저장소의 짝 그대로다.
+     * plan 은 plan 답에서만 온다 — 저장소가 스스로 지킨다. 부르는 쪽이 실수로 요청 전 사본을 돌려줘도(예전 저장의
+     * 모양) plan 은 저장소의 값 그대로다.
      */
     @Test
-    fun 바꾼_칸이_무엇이든_plan_프로모는_저장소의_짝이다() {
+    fun 바꾼_칸이_무엇이든_plan_은_저장소의_값이다() {
         val store = store()
         val sent = signInFree(store)
-        meArrives(store, sent.user.copy(plan = "plus", personalPromo = promo))
+        meArrives(store, sent.user.copy(plan = "plus"))
 
         store.updateUserIfAlive(store.sessionGeneration(), sent.user.id) { sent.user.copy(name = "새 이름") }
 
         val stored = checkNotNull(store.read())
         assertEquals("새 이름", stored.user.name)
         assertEquals("plus", stored.user.plan)
-        assertEquals(promo, stored.user.personalPromo)
-        assertEquals(2_000L, stored.userFetchedAtMillis)
     }
 
     @Test
@@ -184,7 +174,7 @@ class ProfileSaveKeepsAccountAnswerTest {
     fun 저장_전에_떠난_조회가_늦게_와도_확인_조회가_새_이름을_남긴다() {
         for (confirmFirst in listOf(true, false)) {
             val store = store("profile-save-confirm-$confirmFirst")
-            val ledger = PersonalPromoLedger(currentEntry = { 1L })
+            val ledger = AccountRequestLedger()
             val sent = signInFree(store)
             // `refreshAppSessionNow` 의 쓰기 순서 — 순번을 먼저 잡고, 밀렸으면 쓰지 않는다.
             fun answer(request: AccountRequest, user: AuthUser) {
@@ -236,7 +226,7 @@ class ProfileSaveKeepsAccountAnswerTest {
         for (header in PROFILE_SAVES) {
             val body = bodyOf(header)
             assertFalse(
-                "$header 가 요청 전 세션 사본을 통째로 저장한다 — 그 사이 받은 plan·프로모·받은 시각을 되돌린다.",
+                "$header 가 요청 전 세션 사본을 통째로 저장한다 — 그 사이 받은 plan 을 되돌린다.",
                 SESSION_COPY_SAVE.containsMatchIn(body),
             )
             assertTrue(

@@ -117,11 +117,6 @@ internal fun IosAlertDialog(
     actions: List<IosAlertAction>,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    // 떠 있는 동안 [OpenModalRegistry] 에 '모달이 떠 있다' 고 적는가. 끄는 것은 **다른
-    // 모달이 없을 때만 뜨는 안내 자신**(개인 플랜 종료 안내)뿐이다 — 자기를 세면 떠 있는
-    // 자기 때문에 스스로 걷힌다. (⚠ `content` 뒤로 옮기지 말 것 — 호출부가 `content` 를
-    // 후행 람다로 넘긴다.)
-    tracksAsOpenModal: Boolean = true,
     // 요청이 실패한 이유 — 본문 바로 아래에 **본문과 같은 여백·정렬**로 빨갛게 그린다.
     // ⚠ **`content` 슬롯에 넣지 말 것**(2026-11-09 오너 "왼쪽 간격이 왜 달라"). 그 슬롯은 입력칸 자리라
     // 여백이 버튼 기준(16)이고 가운데 정렬이어서, 본문(30·왼쪽) 아래 한 줄만 시작선이 어긋났다.
@@ -130,7 +125,6 @@ internal fun IosAlertDialog(
     // 본문과 액션 사이에 들어가는 입력 영역. 없으면 예전과 똑같은 순수 알럿이다.
     content: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
-    if (tracksAsOpenModal) TrackOpenModal()
     val scheme = MaterialTheme.colorScheme
     Dialog(
         onDismissRequest = onDismiss,

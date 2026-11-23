@@ -382,11 +382,6 @@ class RingingService : Service() {
         // ⚠ **스토어 신호에도 기한이 있다.** 기한 없이 믿으면 한 번 유료였던 기기가 영구
         // 통행증을 갖는다 — 만료 뒤에도 클론 목소리가 계속 울린다.
         val storeStillValid = snapshot.storeSignalStillValid(now)
-        // plan 과 그 프로모 표지(종료 시각·받은 시각)는 **같은 출처에서 한 쌍으로** 꺼낸다 —
-        // 스냅샷에 plan 이 있으면 스냅샷의 짝을, 없으면 세션의 짝을. 기간 한정 개인 플랜이
-        // 끝났는데 앱을 안 연 기기에서, **끝나기 전에 받은** 캐시의 `plus` 로 클론 목소리를
-        // 계속 울리지 않게 하는 것이 이 짝의 몫이다.
-        val (cachedPlan, cachedPlanPromo) = snapshot.userPlanWithPromo(session)
         resolvePaidVoiceAccess(
             subscriptionResponse = snapshot.subscriptionResponse,
             // ⚠ **null 로 두지 말 것.** 서버가 '구독 없음' 이라 답한 경우 이 값이 없으면
@@ -396,10 +391,9 @@ class RingingService : Service() {
             // '구독 없음' 스냅샷이 `Unknown` 이 되어 낙관 통과한다 — 업데이트
             // 직후 UI 를 한 번도 안 열고 알람이 울리면, 예전 코드가 무료로 보던 것을
             // 유료로 보게 된다. 세션 저장소의 plan 으로 메운다.
-            userPlan = cachedPlan,
+            userPlan = snapshot.userPlanOr(session),
             storeEntitled = storeStillValid,
             nowMillis = now,
-            userPlanPromo = cachedPlanPromo,
         ).isEntitledOptimistic()
     }.getOrDefault(true)
 
@@ -411,7 +405,7 @@ class RingingService : Service() {
         voiceLoopActive = false
         cancelVoiceRepeatJob()
         mediaPlayer?.release()
-        val player = createAlarmTonePlayer(alarm, looping = true)
+        val player = createAlarmTonePlayer(alarm)
         // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
         if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
             player?.release()
@@ -503,7 +497,8 @@ class RingingService : Service() {
         voiceRepeatJob = null
     }
 
-    private fun createAlarmTonePlayer(alarm: AlarmEntity?, looping: Boolean): MediaPlayer? {
+    /** 알람음 플레이어 — 끌 때까지 반복한다. */
+    private fun createAlarmTonePlayer(alarm: AlarmEntity?): MediaPlayer? {
         val alarmAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -528,7 +523,7 @@ class RingingService : Service() {
 
         return player?.apply {
             setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
-            isLooping = looping
+            isLooping = true
         }
     }
 

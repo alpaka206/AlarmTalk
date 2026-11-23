@@ -28,8 +28,8 @@ class ManualMessageReleaseTest {
     @Test
     fun `같은 문구면 오디오를 다시 만들어도 놓지 않는다`() {
         // ⚠ 여기서 해제를 적으면 해제와 붙임이 **같은 밀리초**에 찍힐 수 있고, 업로드
-        // 정렬은 시각 하나뿐이라 순서가 뒤집힌다. 서버는 `in_use_updated_at <= ?` 로
-        // 늦게 온 해제를 받아들여, **붙어 있는 문구를 비사용중으로** 만든다.
+        // 정렬은 시각 하나뿐이라 순서가 뒤집힌다. 기록을 읽는 쪽이 늦게 온 해제를 마지막 사실로 읽어
+        // **붙어 있는 문구를 비사용중으로** 본다.
         val released = manualMessageReleasedByEdit(
             alarm(messageId = "m-same", cacheKey = "key-old"),
             alarm(messageId = "m-same", cacheKey = "key-new"),

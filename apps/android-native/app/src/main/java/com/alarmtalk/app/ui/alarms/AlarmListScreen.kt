@@ -76,12 +76,6 @@ internal fun AlarmListScreen(
     subscriptionResponse: BillingSubscriptionResponse?,
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
     storeEntitledNow: Boolean,
-    /**
-     * 이용권 화면에 보일 프로모(`MainViewModel.planScreenPersonalPromo`) — 계정 응답과 구독 응답 중
-     * **나중에 받은 답**의 것. 여기서 세션·구독 응답을 OR 로 다시 고르지 말 것. 개인 카드에 앉을지
-     * 카드 위 한 줄일지는 이용권 화면이 정한다(`planScreenCurrentOf`).
-     */
-    planScreenPersonalPromo: com.alarmtalk.app.network.PersonalPromo?,
     voiceDraftQuotaExhausted: Boolean = false,
     // 이번 달 목소리 생성 쿼터(추가 버튼 옆 '남은/전체' 표시).
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
@@ -120,8 +114,6 @@ internal fun AlarmListScreen(
     voiceRegistrationFailure: VoiceRegistrationFailure? = null,
     onVoiceRegistrationFailureShown: () -> Unit = {},
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
-    // 목소리 탭 '추가 팩' 섹션 — 목소리 패널에 그대로 넘긴다(`docs/spec/voice-packs.md` §7).
-    voicePacks: VoicePackPanelState = VoicePackPanelState(),
     planPrices: Map<String, String>,
     /** 플랜 key → 지금 받을 수 있는 무료 체험 기간(ISO 8601). 없으면 빈 표. */
     planTrials: Map<String, String> = emptyMap(),
@@ -250,10 +242,6 @@ internal fun AlarmListScreen(
             onPurchasePlay = onPurchasePlay,
             onCancelSubscription = onCancelSubscription,
             onRestorePurchases = onRestorePurchases,
-            personalPromo = planScreenPersonalPromo,
-            // 관리자 기간 지급의 끝 — 구독 응답이 있으면 그 값, 없으면 계정 응답의 값.
-            planGrantEndsAt = subscriptionResponse?.planGrant?.endsAt
-                ?: authSession?.user?.planGrant?.endsAt,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -319,7 +307,6 @@ internal fun AlarmListScreen(
                         voiceRegistrationFailure = voiceRegistrationFailure,
                         onVoiceRegistrationFailureShown = onVoiceRegistrationFailureShown,
                         onRegistrationWindowOpenChange = onRegistrationWindowOpenChange,
-                        voicePacks = voicePacks,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         voiceDraftQuota = voiceDraftQuota,
                         voicePrefetchProgress = voicePrefetchProgress,

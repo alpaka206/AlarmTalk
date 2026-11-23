@@ -104,7 +104,6 @@ internal fun MainViewModel.createAlarm(
             rememberVoiceUsed(draft.voiceProfileId)
             rememberMessageChoiceUsed(draft)
             com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
-            com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)
             requestCloneCheerSupplementIfNeeded(saved, previous = null)
             // '저장했어요' 같은 성공 토스트는 띄우지 않는다 — 리스트에 행이 생기는 것이 곧 결과다. 대신 그 알람이
             // 언제 우는지를 화면 아래에 잠깐 말한다(`docs/spec/alarm-editor.md` §7 — 전체의 다음 알람이 아니라 이 알람).
@@ -150,7 +149,6 @@ internal fun MainViewModel.updateAlarm(
             rememberVoiceUsed(draft.voiceProfileId)
             rememberMessageChoiceUsed(draft)
             com.alarmtalk.app.data.recordContentSelected(getApplication(), saved, ownerUserId)
-            com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)
             requestCloneCheerSupplementIfNeeded(saved, previous)
             // 생성과 동일 — 성공 토스트는 생략하고, 고친 알람이 언제 우는지만 아래에 잠깐(§7).
             noteRingInApplied(saved)

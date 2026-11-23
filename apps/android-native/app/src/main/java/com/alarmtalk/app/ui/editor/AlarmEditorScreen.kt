@@ -72,9 +72,7 @@ import com.alarmtalk.app.data.DynamicPromptPreferenceStore
 import com.alarmtalk.app.data.DynamicPromptPreferences
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
-import com.alarmtalk.app.data.clipCacheKey
 import com.alarmtalk.app.data.isSystemVoiceId
-import com.alarmtalk.app.data.isVoicePackVoiceId
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.network.AuthSession
@@ -356,12 +354,8 @@ internal fun AlarmEditorScreen(
     val appVoiceLanguage = remember(configuration) {
         val lang = configuration.locales.get(0)?.language
             ?: java.util.Locale.getDefault().language
-        supportedAppVoiceLanguage(lang)
+        com.alarmtalk.app.data.appVoiceLanguageOf(lang)
     }
-    // **고른 목소리의 클립 언어** — 기본 목소리는 앱 언어, 추가 팩은 그 팩의 언어 하나다(`docs/spec/voice-packs.md` §2).
-    // 기본 목소리에서는 [appVoiceLanguage] 와 언제나 같다. 팩에서 앱 언어로 거르면 팩 클립이 하나도 안 잡혀 테마를 못 고른다.
-    val fixedVoiceClipLanguage = com.alarmtalk.app.data.voicePackLanguageOf(stockClips, editor.voiceProfileId)
-        ?: appVoiceLanguage
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
     val legacyNicknameKeys = remember(appContext) { com.alarmtalk.app.data.LegacyNicknameKeyStore(appContext) }
@@ -648,8 +642,7 @@ internal fun AlarmEditorScreen(
             }
         }
         clips.forEachIndexed { index, clip ->
-            // 기본 목소리는 `stock_`, 추가 팩은 `pack_` 이다(`docs/spec/voice-packs.md` §7) — 한 함수가 고른다.
-            val cacheKey = clip.clipCacheKey()
+            val cacheKey = "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
             // ⚠ **캐시 확인은 IO 에서 한다**(2026-09-29). 이 함수는 테마를 누르는 순간 메인에서
             //   불린다 — 클립마다 파일을 뒤지면 그동안 화면이 멎는다.
             // 길이는 **대표(첫 클립)만** 잰다 — 편집기에 박히는 오디오는 대표 하나이고, 나머지는
@@ -975,12 +968,6 @@ internal fun AlarmEditorScreen(
             )
         ) {
             openClipPreparation(profileId)
-            return
-        }
-        // 추가 팩 목소리로는 직접 입력을 만들 수 없다(`docs/spec/voice-packs.md` §1) — 테마를 고르지 않았으면 여기서 말한다.
-        // 서버는 그 목소리를 모르므로(404) 요청을 보내지 않는다.
-        if (isVoicePackVoiceId(profileId) && !editor.hasMessageKindChoice()) {
-            audioMessage = context.getString(R.string.voice_pack_manual_unavailable)
             return
         }
         // 문구가 글자까지 똑같으면 서버를 부르지 않고 전에 만든 오디오를 그대로 쓴다.
@@ -1371,10 +1358,10 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    LaunchedEffect(fixedVoiceClipLanguage, editor.playMode, editor.voiceSource, editor.voiceRandomPrompt) {
+    LaunchedEffect(appVoiceLanguage, editor.playMode, editor.voiceSource, editor.voiceRandomPrompt) {
         if (editor.playMode != AlarmPlayModes.ALARM_ONLY && editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
-            if (editor.voiceLanguage != fixedVoiceClipLanguage) {
-                editor.voiceLanguage = fixedVoiceClipLanguage
+            if (editor.voiceLanguage != appVoiceLanguage) {
+                editor.voiceLanguage = appVoiceLanguage
                 editor.clearTtsMeta()
             }
         }
@@ -1403,7 +1390,7 @@ internal fun AlarmEditorScreen(
     // ⚠ **`editor.voiceRandomContext` 가 키에 있어야 한다**(2026-09-02). 문구 목록을 하나로
     //   합친 뒤로 스톡 클립 목소리도 다섯 종류를 고를 수 있는데, 고른 종류가 키에 없으면
     //   이 효과가 다시 돌지 않아 **방금 고른 운세가 붙지 않는다.**
-    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, fixedVoiceClipLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
+    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
         if (usesStockClips && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
@@ -1415,7 +1402,7 @@ internal fun AlarmEditorScreen(
                 val manualChosen = editor.hasTypedManualText()
                 if (manualChosen) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
-                if (editor.voiceLanguage != fixedVoiceClipLanguage) editor.voiceLanguage = fixedVoiceClipLanguage
+                if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
                 // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
                 // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
                 // 막기 위해, 허용 버킷으로 해석된 상태가 아니면 잔재를 먼저 비운다(Codex #599).
@@ -1425,7 +1412,7 @@ internal fun AlarmEditorScreen(
                 // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
                 val profileId = editor.voiceProfileId
                 if (!profileId.isNullOrBlank()) {
-                    val buckets = freeBucketsFor(stockClips, profileId, fixedVoiceClipLanguage, expectedVariants)
+                    val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage, expectedVariants)
                     // 새 알람은 마지막에 고른 테마를 이어받는다 — 이게 없으면 매번 FreeBucketOrder
                     // 첫 값(약)으로 돌아가, 날씨로 바꿔 저장해도 다음 알람이 다시 약이 된다.
                     // 기존 알람은 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). 날씨는 도시가
@@ -1691,7 +1678,7 @@ internal fun AlarmEditorScreen(
         editor.selectedBucket = null
         // 여기서는 기억하지 않는다 — 문구를 눌러만 보고 알람을 저장하지 않은 것까지 다음 알람의
         // 기본값이 되면 안 된다. 기록은 저장 성공 시(rememberMessageChoiceUsed) 한 곳에서만 한다.
-        editor.voiceLanguage = fixedVoiceClipLanguage
+        editor.voiceLanguage = appVoiceLanguage
         editor.voiceText = ""
         editor.voiceWeatherCountry = result.weatherCountry
         editor.voiceWeatherCity = result.weatherCity
@@ -2160,7 +2147,7 @@ internal fun AlarmEditorScreen(
                 //   기본 목소리는 서버에 구워 둔 카테고리만 나온다. 시딩이 끝나면 앱을
                 //   고치지 않아도 나타난다(`freeBucketsFor` 가 매니페스트와 교차한다).
                 availableContexts = if (usesStockClips) {
-                    freeBucketsFor(stockClips, editor.voiceProfileId, fixedVoiceClipLanguage, expectedVariants)
+                    freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage, expectedVariants)
                         .mapNotNull { randomPromptContextForBucket(it) }
                 } else {
                     // 기상 인사(`wake`)는 기본 목소리 전용 클립이다 — 클론의 같은 자리는 '기본 인사말'(preset)이다
@@ -2180,13 +2167,12 @@ internal fun AlarmEditorScreen(
                 }.orEmpty(),
                 // ⚠ **직접 입력을 잠그지 않는다**(2026-10-26). 무료도 기본 목소리로 월 3회 만들고, 다 쓰면 광고 보상이다 —
                 // 입력·편집은 막지 않고, 새로 만들어야 할 때 서버가 429 로 막으면 저장 흐름이 그때 말한다(스펙 voice-and-message
-                // §8, ad-rewards §1). 잠긴 행이 열던 광고 게이트는 그 429 자리로 옮겼다.
-                manualLocked = false,
-                // 추가 팩 목소리는 직접 입력을 쓸 수 없다 — 그 화자로 아무 문장이나 합성할 권한이 없다(`docs/spec/voice-packs.md` §1).
-                manualAvailable = !isVoicePackVoiceId(editor.voiceProfileId),
+                // §8, ad-rewards §1). 잠긴 행이 열던 광고 게이트는 그 429 자리로 옮겼다(잠금 인자와 잠긴 행은 2026-11-23 에 지웠다).
                 manualRewardCredits = AdRewardGate.credits(freeVoiceTier, manualQuota?.adReward),
                 selectManualRequest = selectManualRequest,
-                onSaveSettings = ::applyRandomPromptSettings,
+                // 람다로 넘긴다 — `applyRandomPromptSettings` 는 콤포지션마다 새로 만드는 `clipGate` 와 키가 걸린
+                // `appVoiceLanguage`·`editor` 를 캡처한다(CLAUDE.md 「Compose 콜백에 지역 함수 참조를 넘기지 않는다」).
+                onSaveSettings = { applyRandomPromptSettings(it) },
             )
 
             "voice_output" -> VoiceOutputSettingsPane(
@@ -2374,8 +2360,6 @@ internal fun AlarmEditorScreen(
                 onPrepareClipsFor()
             }
         }
-        // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
-        TrackOpenModal()
         // 손으로 닫으면('백그라운드에서 계속'·바깥 탭) 고른 목소리를 붙이지 않는다 — 지금 목소리가 그대로 남는다.
         androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null; preparationAppliesVoice = false }) {
             androidx.compose.material3.Surface(
@@ -2440,8 +2424,6 @@ internal fun editorFreeVoiceTier(
         userPlan = authSession.user.plan,
         storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
-        // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
-        userPlanPromo = authSession.planPromoStamp(),
     ).isEntitledOptimistic()
 
 /** 편집기가 보여 주고 고를 수 있는 목소리 — 무료면 기본 목소리만. */

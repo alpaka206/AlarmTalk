@@ -22,7 +22,6 @@ object AlarmSyncStates {
     const val LOCAL_ONLY = "local_only"
     const val SYNCED = "synced"
     const val DIRTY = "dirty"
-    const val FAILED = "sync_failed"
 }
 
 object AlarmOrigins {

@@ -22,30 +22,13 @@ data class BillingSubscriptionResponse(
      * 구버전 서버는 이 필드를 주지 않는다(null) — 그때는 막지 않는다(예전 동작).
      */
     @SerializedName("store_renewal_providers") val storeRenewalProviders: List<String>? = null,
-    /**
-     * 결제 전 조회에서 구독과 같은 DB 스냅샷으로 받은 users.plan.
-     * 서버가 **계산한** 값이라, 기간 한정 개인 플랜 동안은 원시 free 도 `plus` 로 온다.
-     */
+    /** 결제 전 조회에서 구독과 같은 DB 스냅샷으로 받은 `users.plan` — 저장된 값 그대로다(계산값이 아니다). */
     @SerializedName("user_plan") val userPlan: String? = null,
-    /**
-     * 기간 한정 개인 플랜([PersonalPromo]). 원시 plan 이 free 이고 기간 중일 때만 붙는다.
-     *
-     * ⚠ **이 계정의 [subscription] 은 그대로 null 이다.** 서버는 가짜 구독 객체를 만들지
-     * 않는다 — 만들면 해지 버튼이 뜨고 `/billing/cancel` 은 404 를 낸다. 이용권 화면은
-     * 이 필드로 '무료 이용 중' 문구만 보여 준다 — 프로모만 쓰는 계정은 개인 카드('현재 이용권')의
-     * 상태 문구, 산 이용권·보류 행이 있는 계정은 카드 목록 위 한 줄이다
-     * (`ui/billing/BillingPanels.kt` 의 `planScreenCurrentOf`, 스펙 billing-lifecycle D4).
-     */
-    @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
-    /** 관리자 기간 지급([PlanGrant]) — [userPlan] 과 같은 스냅샷의 끝. 구독 행은 만들지 않는다. */
-    @SerializedName("plan_grant") val planGrant: PlanGrant? = null,
 )
 
 data class BillingSubscription(
     val id: String,
-    @SerializedName("plan_id") val planId: String,
     val status: String,
-    @SerializedName("starts_at") val startsAt: String,
     @SerializedName("expires_at") val expiresAt: String,
     @SerializedName("cancel_at_period_end") val cancelAtPeriodEnd: Boolean = false,
     /**
@@ -62,8 +45,6 @@ data class BillingPlan(
     val key: String,
     val name: String,
     @SerializedName("plan_type") val planType: String,
-    @SerializedName("period_days") val periodDays: Int,
-    @SerializedName("price_krw") val priceKrw: Int,
 )
 
 data class BillingPlanSummary(
@@ -82,7 +63,6 @@ data class GooglePlayConfirmRequest(
 
 data class GooglePlayConfirmResponse(
     val success: Boolean,
-    @SerializedName("plan_key") val planKey: String? = null,
     val subscription: BillingSubscription? = null,
 )
 
@@ -93,9 +73,6 @@ data class CancelSubscriptionRequest(
 data class CancelSubscriptionResponse(
     val success: Boolean,
     val mode: String,
-    @SerializedName("subscription_id") val subscriptionId: String? = null,
-    // immediate 해지 성공 시에만 내려온다 — 유료 음성 데이터 30일 보관 만료 시점(ISO).
-    @SerializedName("voice_retention_until") val voiceRetentionUntil: String? = null,
 )
 
 

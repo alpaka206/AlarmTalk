@@ -418,8 +418,6 @@ internal fun VoiceProfileManagementPanel(
     onVoiceRegistrationFailureShown: () -> Unit = {},
     // 등록 창이 열리고 닫히는 것을 뷰모델에 알린다 — 닫힌 뒤에 온 실패는 스낵바로 가야 한다.
     onRegistrationWindowOpenChange: (Boolean) -> Unit = {},
-    // 기본 목소리 아래 '추가 팩' 섹션(`docs/spec/voice-packs.md` §7).
-    voicePacks: VoicePackPanelState = VoicePackPanelState(),
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -570,8 +568,6 @@ internal fun VoiceProfileManagementPanel(
         userPlan = authSession?.user?.plan,
         storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
-        // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
-        userPlanPromo = authSession?.planPromoStamp(),
     )
     // **표시와 생성 게이트를 함께 움직인다** — 목록만 숨기고 '생성 가능 n/m회' 와 등록
     // 흐름을 열어 두면 교체 대상이 비어 버려 확정에서 거절당한다(2026-08-31 리뷰).
@@ -776,44 +772,6 @@ internal fun VoiceProfileManagementPanel(
                 AlarmTalkLog.reportError(failureLog, error)
                 if (greetingPreviewRequestId == requestId) {
                     if (playingGreetingVoiceId == voiceId) playingGreetingVoiceId = null
-                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
-                }
-            }
-        }
-    }
-
-    // 추가 팩 미리듣기 샘플 — 인사말 미리듣기와 같은 플레이어·같은 '트는 중' 표시를 쓴다(겹쳐 울리지 않게).
-    // 받기 전에도 샘플 클립 하나만 받아 캐시한다(`MainViewModel.ensureVoicePackSample`).
-    fun playVoicePackSample(summary: com.alarmtalk.app.network.VoicePackSummary) {
-        if (playingGreetingVoiceId == summary.voiceId) {
-            stopMediaPreview()
-            return
-        }
-        val requestId = greetingPreviewRequestId + 1
-        greetingPreviewRequestId = requestId
-        scope.launch {
-            stopMediaPreview(invalidateGreetingPreview = false)
-            playingGreetingVoiceId = summary.voiceId
-            runCatching {
-                val cached = voicePacks.ensureSample(summary)
-                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
-                    ?: error("Failed to create voice pack sample player.")
-                if (greetingPreviewRequestId != requestId) {
-                    player.release()
-                    return@runCatching
-                }
-                mediaPlayer = player.apply {
-                    setOnCompletionListener {
-                        it.release()
-                        if (mediaPlayer === it) mediaPlayer = null
-                        if (playingGreetingVoiceId == summary.voiceId) playingGreetingVoiceId = null
-                    }
-                    start()
-                }
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to play voice pack sample", error)
-                if (greetingPreviewRequestId == requestId) {
-                    if (playingGreetingVoiceId == summary.voiceId) playingGreetingVoiceId = null
                     localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
                 }
             }
@@ -2248,21 +2206,6 @@ internal fun VoiceProfileManagementPanel(
             )
         }
         // 기본 목소리 받기 진행은 위 헤더 옆으로 옮겼다(2026-09-17).
-
-        // 추가 팩은 기본 목소리 **아래**다(`docs/spec/voice-packs.md` §7). 기본 4종 받기·관문과 섞지 않는다.
-        // 지금은 숨긴다(`VOICE_PACKS_VISIBLE`).
-        if (com.alarmtalk.app.data.VOICE_PACKS_VISIBLE) VoicePackSection(
-            catalog = voicePacks.catalog,
-            held = voicePacks.held,
-            progress = voicePacks.progress,
-            catalogLoaded = voicePacks.catalogLoaded,
-            catalogFailed = voicePacks.catalogFailed,
-            playingVoiceId = playingGreetingVoiceId,
-            onPlaySample = { summary -> playVoicePackSample(summary) },
-            onDownload = { packId -> voicePacks.onDownload(packId) },
-            onDelete = { packId -> voicePacks.onDelete(packId) },
-            countAlarmsUsing = { voiceId -> voicePacks.countAlarmsUsing(voiceId) },
-        )
     }
 
 
@@ -2321,10 +2264,6 @@ internal fun VoiceProfileManagementPanel(
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
             selectedFileUri != null &&
             (cropEndMillis - cropStartMillis) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
-        // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
-        // 녹음 파일을 고르러 문서 선택기에 다녀오면 **진입**으로 세어지는데, 그때 이 창이
-        // 열려 있다 — 여기서 빠지면 개인 플랜 종료 안내가 등록 창 위에 겹쳐 뜬다.
-        TrackOpenModal()
         Dialog(
             onDismissRequest = {
                 when {
@@ -2376,7 +2315,11 @@ internal fun VoiceProfileManagementPanel(
                         WakerTopBar(
                             title = stringResource(R.string.voices_create_dialog_title),
                             onBack = when (currentStep) {
-                                VoiceRegistrationStep.Source -> ::closeCreateDialog
+                                // 람다로 넘긴다 — `closeCreateDialog` 는 콤포지션 지역 `defaultVoiceLanguage` 와 매개변수
+                                // `onRegistrationWindowOpenChange` 를 캡처한다(CLAUDE.md 「Compose 콜백에 지역 함수 참조를 넘기지 않는다」).
+                                VoiceRegistrationStep.Source -> {
+                                    { closeCreateDialog() }
+                                }
                                 VoiceRegistrationStep.Details -> {
                                     {
                                         currentStep = VoiceRegistrationStep.Source
@@ -2535,15 +2478,13 @@ internal fun VoiceProfileManagementPanel(
                                             enabled = !voiceProfileBusy && !isRecording && !createPreparing,
                                             uploadLabel = stringResource(R.string.voices_upload_file_or_video),
                                             notice = stringResource(R.string.voices_crop_duration_notice),
-                                            noticeAfterUpload = true,
-                                            // ⚠ **길이 조건을 여기서 말하지 않는다**(2026-08-18 지시).
+                                            // ⚠ **업로드 존에서 길이 조건을 말하지 않는다**(2026-08-18 지시 — 그래서 보조 설명 칸도 없다).
                                             // 고른 파일은 길이로 막지 않는다 — `prepareSelectedFile` 이
                                             // `cropEnd` 를 2분으로 잡아 **자르기 화면**으로 넘긴다(3분짜리
                                             // 영상도 된다). "12초 이상 2분 이하 파일이면 돼요" 는 **없는
                                             // 제약을 광고**하는 문구라, 쓸 수 있는 파일을 안 쓰게 만든다.
                                             // 실제 조건은 **잘라낸 구간**에만 있고, 그건 자르기 화면이
                                             // `voices_crop_duration_notice` 로 그 자리에서 말한다.
-                                            uploadSubtitle = null,
                                             isPreviewActive = filePreviewPlaying,
                                             isPreviewPreparing = filePreviewPreparing,
                                             onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },

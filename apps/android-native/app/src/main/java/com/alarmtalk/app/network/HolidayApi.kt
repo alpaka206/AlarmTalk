@@ -19,7 +19,6 @@ data class HolidayDto(
     val date: String,
     val name: String,
     val type: String? = null,
-    val substitute: Boolean? = null,
     val source: String? = null,
 )
 

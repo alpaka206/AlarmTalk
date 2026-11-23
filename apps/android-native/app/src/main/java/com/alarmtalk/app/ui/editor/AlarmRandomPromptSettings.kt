@@ -80,31 +80,18 @@ internal fun RandomPromptSettingsPane(
      *
      * ⚠ **여기서 '무료라서' 빼지 않는다.** 2026-09-02 전에는 무료·기본 목소리에 아예 다른
      * pane(`FreeBucketSettingsPane`)을 보여 주며 목록을 날씨·약으로 잘랐는데, 그건 등급
-     * 정책이 아니라 **클립이 없다**는 사정이었다. 등급으로 갈리는 것은 아래 [manualLocked] 하나다.
+     * 정책이 아니라 **클립이 없다**는 사정이었다. 등급으로 가르는 행은 없다 — 무료도 직접 입력을 월 한도·광고
+     * 보상으로 쓴다(`docs/spec/ad-rewards.md`).
      */
     availableContexts: List<String> = EditorMessageContexts.map { it.first },
     /**
-     * '직접 입력' 이 잠겨 있는가. **잠그는 기준은 무료 플랜뿐이다.**
-     *
-     * ⚠ **기본 목소리라고 잠그지 말 것.** 유료 사용자는 기본 목소리로도 직접 입력을 쓸 수
-     * 있고, 비용은 직접 입력 월 한도가 센다(서버 `tts.ts` 의 manual-tts-quota).
-     */
-    manualLocked: Boolean = false,
-    /**
-     * '직접 입력' 을 **보일지**. 잠금([manualLocked])과 다르다 — 추가 팩 목소리는 그 화자로 아무 문장이나 합성할 권한이
-     * 없어 아예 감춘다(`docs/spec/voice-packs.md` §1). 이용권으로 풀리는 것이 아니라서 잠긴 행으로 그리지 않는다.
-     */
-    manualAvailable: Boolean = true,
-    /** 잠긴 '직접 입력' 을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
-    onManualLocked: () -> Unit = {},
-    /**
-     * 무료 사용자에게 남은 광고 보상 수(`docs/spec/ad-rewards.md`). 0 보다 크면 '직접 입력' 이 풀려 있고 행에 남은
+     * 무료 사용자에게 남은 광고 보상 수(`docs/spec/ad-rewards.md`). 0 보다 크면 '직접 입력' 행에 남은
      * 수를 붙인다. 유료는 0 이다(월 한도를 [manualRemaining]/[manualLimit] 로 따로 보여 준다).
      */
     manualRewardCredits: Int = 0,
     /**
-     * 값이 오를 때마다 '직접 입력' 을 고른다 — 광고를 보고 보상이 들어온 직후 호출부가 올린다. 잠금이 풀린 뒤에만
-     * 고르고, 처음 그릴 때의 값으로는 고르지 않는다.
+     * 값이 오를 때마다 '직접 입력' 을 고른다 — 광고를 보고 보상이 들어온 직후 호출부가 올린다. 처음 그릴 때의
+     * 값으로는 고르지 않는다.
      */
     selectManualRequest: Int = 0,
     weatherCountry: String,
@@ -259,11 +246,13 @@ internal fun RandomPromptSettingsPane(
     // 셈이라 더 나쁘다. 대신 **미완성 종류는 애초에 선택되지 않는다**(위 `selectContext` 의
     // `contextBeforeDialog` 주석). 그래서 이 시점의 값은 언제나 완성돼 있고, 편집기가
     // 하단 바에서 "…채워 주세요" 로 뒤늦게 막을 일도 없다.
-    BackHandler(onBack = ::saveResolvedSettings)
+    // ⚠ 람다로 넘긴다 — `::saveResolvedSettings` 는 콤포지션마다 캡처(`onSaveSettings`·키가 걸린 `remember` 상태)가
+    //   달라도 서로 `equals` 라 첫 콤포지션의 것이 굳는다(CLAUDE.md 「Compose 콜백에 지역 함수 참조를 넘기지 않는다」).
+    BackHandler { saveResolvedSettings() }
 
     var handledSelectManualRequest by remember { mutableStateOf(selectManualRequest) }
-    LaunchedEffect(selectManualRequest, manualLocked) {
-        if (selectManualRequest > handledSelectManualRequest && !manualLocked) {
+    LaunchedEffect(selectManualRequest) {
+        if (selectManualRequest > handledSelectManualRequest) {
             handledSelectManualRequest = selectManualRequest
             selectContext(ManualMessageContext)
         }
@@ -281,7 +270,7 @@ internal fun RandomPromptSettingsPane(
             // (알람 목록·설정·법무 문서가 모두 이걸 쓴다).
             WakerTopBar(
                 title = stringResource(R.string.editorp_random_title),
-                onBack = ::saveResolvedSettings,
+                onBack = { saveResolvedSettings() },
                 modifier = Modifier.padding(top = 24.dp),
             )
 
@@ -298,42 +287,35 @@ internal fun RandomPromptSettingsPane(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 SnoozeOptionSection {
-                    // ⚠ **'직접 입력' 은 목록에서 빼지 않는다.** 무료에게도 이런 기능이
-                    // 있다는 걸 보여 준다 — 아예 감추면 있는지조차 모르고, 유료 전환 동기
-                    // 중 가장 강한 것을 잃는다. 잠긴 행으로 그린다.
+                    // ⚠ **'직접 입력' 은 목록에서 빼지 않는다.**
                     //
                     // ⚠ **접지 않는다 — 전부 편다**(2026-11-09 오너 "꼭 더보기를 넣어야 할까"). v1.3 W04 에서 운세·약을
                     // '더 보기' 뒤로 접었다가 출시 전에 되돌렸다. 다 펴도 다섯 줄이라 한 화면에 들어가고, 접어 두면
                     // 운세·약이 있는 줄도 모른다. iOS 짝 `MessageSettingsPane.visibleOptions` 도 같다.
                     val rows = EditorMessageContexts.filter { (context, _) ->
-                        (context == ManualMessageContext && manualAvailable) || context in availableContexts
+                        context == ManualMessageContext || context in availableContexts
                     }
                     rows.forEachIndexed { index, (context, labelRes) ->
                         val baseLabel = stringResource(labelRes)
-                        val locked = context == ManualMessageContext && manualLocked
                         val label = if (
-                            context == ManualMessageContext && !locked &&
+                            context == ManualMessageContext &&
                             manualLimit != null && manualLimit > 0 && manualRemaining != null &&
                             // 무료가 기본분(3)을 다 쓰고 광고 보상이 남았으면 '(0/3)' 대신 보상 수를 말한다.
                             (manualRemaining > 0 || manualRewardCredits <= 0)
                         ) {
                             // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
                             "$baseLabel ($manualRemaining/$manualLimit)"
-                        } else if (context == ManualMessageContext && !locked && manualRewardCredits > 0) {
+                        } else if (context == ManualMessageContext && manualRewardCredits > 0) {
                             // 무료 + 광고 보상: "직접 입력 (광고 보상 1번)".
                             stringResource(R.string.editorp_random_manual_ad_credits, baseLabel, manualRewardCredits)
                         } else {
                             baseLabel
                         }
-                        if (locked) {
-                            SnoozeLockedRow(label = label, onClick = onManualLocked)
-                        } else {
-                            SnoozeRadioRow(
-                                label = label,
-                                selected = normalizedContext == context,
-                                onClick = { selectContext(context) },
-                            )
-                        }
+                        SnoozeRadioRow(
+                            label = label,
+                            selected = normalizedContext == context,
+                            onClick = { selectContext(context) },
+                        )
                         if (index != rows.lastIndex) SnoozeOptionDivider()
                     }
                 }
@@ -768,7 +750,7 @@ private fun WeatherRegionChip(name: String, selected: Boolean, onClick: () -> Un
  * 되짚지 못한 옛 값이면 부제에 그 글자와 "다시 골라 주세요" 를 보인다. 목록에 없는 것을
  * 고른 채로 둘 수는 없으므로 체크 표시는 없다.
  *
- * 시트 껍데기는 [WakerSelectionSheet] 이다 — 창을 스스로 등록한다(`TrackOpenModal`).
+ * 시트 껍데기는 [WakerSelectionSheet] 이다.
  */
 @Composable
 internal fun WeatherLocationDialog(

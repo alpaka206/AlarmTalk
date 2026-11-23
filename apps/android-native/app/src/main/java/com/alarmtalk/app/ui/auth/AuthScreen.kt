@@ -379,7 +379,6 @@ internal fun AuthCodeConfirmRow(
 internal fun authOutlinedButtonColors() = ButtonDefaults.outlinedButtonColors(
     contentColor = TextOnScene,
     // ⚠ 35%(0x59)는 대비 3.15:1 로 읽기 어려웠다 — 55%(0x8C)로 올린다(2026-08-17).
-    // iOS `AuthOutlinedButton` 도 같은 값이다.
     disabledContentColor = Color(0x8CFFFFFF),
 )
 
@@ -390,7 +389,6 @@ internal fun authOutlinedButtonBorder(enabled: Boolean) =
 internal fun authTextButtonColors() = ButtonDefaults.textButtonColors(
     contentColor = BrandAccentOnScene,
     // ⚠ 35%(0x59)는 대비 3.15:1 로 읽기 어려웠다 — 55%(0x8C)로 올린다(2026-08-17).
-    // iOS `AuthOutlinedButton` 도 같은 값이다.
     disabledContentColor = Color(0x8CFFFFFF),
 )
 
@@ -627,7 +625,7 @@ internal fun AuthScreen(
                 // 이메일 형식 갈래는 **위 이메일 칸**이 맡는다 — 같은 문구를 두
                 // 자리에 띄우지 않는다.
                 isError = showPasswordLoginError,
-                supportingText = if (showPasswordLoginError && loginError != null) {
+                supportingText = if (showPasswordLoginError) {
                     { Text(loginError, color = AuthErrorText) }
                 } else {
                     null

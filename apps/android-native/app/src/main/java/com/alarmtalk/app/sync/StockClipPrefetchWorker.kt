@@ -33,16 +33,7 @@ import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.SessionTokenRenewal
-import com.alarmtalk.app.freshPlanPromoStamp
 import com.alarmtalk.app.network.StockClip
-import com.alarmtalk.app.network.VoicePackApi
-import com.alarmtalk.app.network.VoicePackClip
-import com.alarmtalk.app.network.VoicePackSummary
-import com.alarmtalk.app.data.HeldVoicePack
-import com.alarmtalk.app.data.VoicePackStore
-import com.alarmtalk.app.data.voicePackBytesMatch
-import com.alarmtalk.app.data.voicePackCacheKey
-import com.alarmtalk.app.data.voicePackRemoteIdentity
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -236,34 +227,9 @@ class StockClipPrefetchWorker(
 
     override suspend fun doWork(): Result = try {
         StockReplacementStatus.setWorking(true)
-        val result = runWork()
-        // **받은 추가 팩은 기본 목소리 다음이다**(지시서 7.3 의 4번 '선택한 추가 팩', `docs/spec/voice-packs.md` §7).
-        // 기본 목소리 칸이 다시 시도로 넘어간 회차에는 팩을 받지 않는다 — 다음 회차가 기본 목소리부터 다시 한다.
-        // 팩 칸의 결과는 이 작업의 결과를 바꾸지 않는다: 받기 화면·알람 설정 관문은 이 작업의 상태를 보고 기본 4종만
-        // 센다. 팩의 실패는 그 팩 행이 '받는 중' 에 남는 것으로 드러나고, 다음 계기(앱 시작·받기 다시 누르기)가 이어 받는다.
-        if (result != Result.retry()) runVoicePackStage()
-        result
+        runWork()
     } finally {
         StockReplacementStatus.setWorking(false)
-    }
-
-    /** 받은 추가 팩 칸([VoicePackDownloader]). 받은 팩이 없으면 요청 하나도 내지 않는다. */
-    private suspend fun runVoicePackStage() {
-        val session = AuthSessionStore(applicationContext).read() ?: return
-        if (VoicePackStore(applicationContext).held(session.user.id).isEmpty()) return
-        try {
-            // ⚠ 빌드 번호를 싣는다 — 서버는 `X-App-Version` 이 팩의 최소 빌드 이상일 때만 팩을 준다(스펙 §3).
-            //   이 워커의 다른 요청처럼 0 으로 보내면 목록이 늘 비어 받을 수 없다.
-            val api = AlarmTalkApiClient.create(
-                appVersionCode = com.alarmtalk.app.BuildConfig.VERSION_CODE,
-                callTimeoutSeconds = AlarmTalkApiClient.CLIP_DOWNLOAD_CALL_TIMEOUT_SECONDS,
-            )
-            VoicePackDownloader.run(applicationContext, api, AlarmTalkApiClient.bearer(session.token), session.user.id)
-        } catch (error: kotlinx.coroutines.CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            AlarmTalkLog.reportError("Voice pack prefetch stage failed", error)
-        }
     }
 
     private suspend fun runWork(): Result {
@@ -316,7 +282,7 @@ class StockClipPrefetchWorker(
                 withContext(Dispatchers.IO) { api.getStockClips(auth) }
             } catch (error: Throwable) {
                 // ⚠ **판정은 못 해도 '시도는 끝났다' 는 남긴다**(2026-09-03 리뷰 22차).
-                //   준비 신호를 안 세우면 오프라인·서버 오류에서 첫 권한 안내·개인 플랜 종료 안내가
+                //   준비 신호를 안 세우면 오프라인·서버 오류에서 첫 권한 안내가
                 //   **영영 안 뜬다** — 판정을 못 한 것과 시도가 안 끝난 것은 다르다.
                 //   `manifestFetched = false` 라 앞 판정은 그대로 지켜진다.
                 StockReplacementStatus.report(
@@ -333,7 +299,7 @@ class StockClipPrefetchWorker(
                     //   곳(`loadStockClips`·`VoiceAccessSyncWorker`)에 `report` 가 없다.
                     //   게다가 그쪽이 같이 건 `enqueue` 는 **이 실행이 아직 안 끝나** `KEEP`
                     //   에 버려지므로, 여기서 조용히 성공하면 `checkedUserId` 가 그 세션 내내
-                    //   null 로 남아 첫 권한 안내·개인 플랜 종료 안내가 **영영 안 뜬다** — 위 조회
+                    //   null 로 남아 첫 권한 안내가 **영영 안 뜬다** — 위 조회
                     //   실패 갈래와 같은 이유다(`docs/spec/gates-and-overlays.md`
                     //   「준비 신호는 성공·실패 모두 true」).
                     // ⚠ **`manifestFetched` 를 true 로 바꾸지 말 것.** false 라야 앞 판정이
@@ -420,9 +386,7 @@ class StockClipPrefetchWorker(
                     //   안 보면 문이 버린 값이 그대로 선다운로드 여부를 정한다.
                     //   낙관 기본값으로 물러난다 — 선다운로드는 더 받아도 손해가 없고,
                     //   덜 받으면 오프라인에서 소리가 안 난다.
-                    // plan 과 프로모 종료 시각·받은 시각은 한 벌이다(`AccessSnapshot.withServerUser`).
-                    val fetchedAt = System.currentTimeMillis()
-                    if (entitlement.write(ticket, "prefetch plan") { it.withServerUser(me.user, fetchedAt) }
+                    if (entitlement.write(ticket, "prefetch plan") { it.withServerUser(me.user) }
                         != EntitlementWrite.Applied
                     ) {
                         return@runCatching true
@@ -434,8 +398,6 @@ class StockClipPrefetchWorker(
                         userPlan = plan,
                         storeEntitled = snapshot.storeSignalStillValid(now),
                         nowMillis = now,
-                        // 방금 받은 답이다 — 기기 시계로 뒤집지 않는다(`freshPlanPromoStamp`).
-                        userPlanPromo = freshPlanPromoStamp(me.user, now),
                     ).isEntitledOptimistic()
                 }.getOrDefault(true)
             }
@@ -455,7 +417,7 @@ class StockClipPrefetchWorker(
             // 쓰지 않으므로 답은 한 키씩 물은 것과 같다(`AlarmAudioStore.snapshot`).
             val cache = withContext(Dispatchers.IO) { audioStore.snapshot() }
             val clips = allClips.filter {
-                val isDefaultVoiceClip = it.targetsDefaultVoices(language)
+                val isDefaultVoiceClip = it.isDefaultVoiceTarget(language)
                 // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
                 // 거르면 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다.
                 val isOwnedCloneClip = it.voiceProfileId in ownedProfileIds
@@ -572,7 +534,6 @@ class StockClipPrefetchWorker(
                                 language = language,
                                 // 이 자리는 매니페스트를 **받은 뒤**다 — 비어 있어도 그건
                                 // '성공적으로 빈 카탈로그'(은퇴 직후 게시 전)라 미완료다.
-                                manifestFetched = true,
                                 legacyHints = legacyHints,
                                 callerUserId = session.user.id,
                             ),
@@ -601,7 +562,7 @@ class StockClipPrefetchWorker(
             }
 
             val missing = clips.mapNotNull { clip ->
-                val prefetchStock = clip.targetsDefaultVoices(language) || clip.voiceProfileId in ownedProfileIds
+                val prefetchStock = clip.isDefaultVoiceTarget(language) || clip.voiceProfileId in ownedProfileIds
                 val keys = AlarmAudioStore.messageCacheKeys(clip.messageId).filter { key ->
                     cache.isStale(key, clip.audioUrl) ||
                         (prefetchStock && key == cacheKeyFor(clip) &&
@@ -858,17 +819,6 @@ class StockClipPrefetchWorker(
         return appVoiceLanguageOf((if (!locales.isEmpty) locales[0] else null)?.language)
     }
 
-    /**
-     * 받을 대상: 기본 목소리 × 기기 언어 × 무료 버킷 카테고리.
-     *  - 언어를 하나로 좁힌다. 3개 언어를 다 받으면 약 3배(≈30MB)인데 앱은 한 번에 한 언어만
-     *    쓰고, 언어를 바꾸면 이 워커가 다시 돌아 부족분을 채운다.
-     *  - **고를 수 있는 카테고리를 전부 받는다**(2026-09-02). 기본 목소리도 운세·사랑을
-     *    고를 수 있게 되면서(`docs/spec/voice-and-message.md` §2), 안 받는 종류가 있으면
-     *    **고를 수는 있는데 오프라인에서 소리가 안 나는** 알람이 생긴다.
-     *  - greeting 은 받지 않는다 — 알람 테마가 아니고(§2), 미리듣기용은 APK 에 내장돼 있다.
-     */
-    private fun StockClip.targetsDefaultVoices(language: String): Boolean = isDefaultVoiceTarget(language)
-
     companion object {
         private const val WORK_NAME = "stock_clip_prefetch"
         private const val PARALLELISM = 4
@@ -895,7 +845,15 @@ class StockClipPrefetchWorker(
         private val FREE_BUCKET_CATEGORIES: Set<String> =
             com.alarmtalk.app.FreeBucketOrder.toSet()
 
-        /** 기본 목소리 선다운로드 대상인가 — 기본 목소리 × 기기 언어 × 무료 테마. */
+        /**
+         * 기본 목소리 선다운로드 대상인가 — 기본 목소리 × 기기 언어 × 무료 테마.
+         *  - 언어를 하나로 좁힌다. 3개 언어를 다 받으면 약 3배(≈30MB)인데 앱은 한 번에 한 언어만
+         *    쓰고, 언어를 바꾸면 이 워커가 다시 돌아 부족분을 채운다.
+         *  - **고를 수 있는 카테고리를 전부 받는다**(2026-09-02). 기본 목소리도 운세·사랑을
+         *    고를 수 있게 되면서(`docs/spec/voice-and-message.md` §2), 안 받는 종류가 있으면
+         *    **고를 수는 있는데 오프라인에서 소리가 안 나는** 알람이 생긴다.
+         *  - greeting 은 받지 않는다 — 알람 테마가 아니고(§2), 미리듣기용은 APK 에 내장돼 있다.
+         */
         internal fun StockClip.isDefaultVoiceTarget(language: String): Boolean =
             isSystemVoiceId(voiceProfileId) &&
                 (this.language ?: "ko") == language &&
@@ -1021,195 +979,6 @@ class StockClipPrefetchWorker(
             items.firstOrNull { !state(it).isFinished }
                 ?: items.lastOrNull()
     }
-}
-
-/**
- * **받은 추가 팩을 받는다** — 선다운로드의 마지막 칸(`docs/spec/voice-packs.md` §5·§7). 새 워커를 만들지 않고
- * [StockClipPrefetchWorker] 가 기본 목소리 다음에 부른다. 화면(뷰모델)은 기한 지난 팩 대체만 [retireDuePacks] 로 직접 부른다.
- *
- *  1. 카탈로그를 받아 받아 둔 팩에 게시 끝 기한을 적는다(못 받으면 저장된 기한으로만 판단한다).
- *  2. 기한이 지난 팩은 그 목소리 알람을 미나로 바꾸고 파일을 지운다.
- *  3. 개정이 바뀐 팩은 상세를 다시 받는다 — 이미 저장한 알람은 묶은 클립 그대로 운다(옛 파일은 알람이 놓을 때 지운다).
- *  4. 빠지거나 해시가 다른 클립만 받는다. 받은 바이트는 해시·크기를 대조하고 맞을 때만 캐시에 넣는다.
- *  5. 다 있으면 '받음'. 이 회차 도중 새로 받기를 누른 팩도 같은 회차가 받는다(유니크 작업이라 새 큐잉은 버려진다).
- *
- * iOS 짝은 `StockClipPrefetcher.swift` 의 팩 칸.
- */
-internal object VoicePackDownloader {
-    /** 한 회차에서 받은 팩 목록을 다시 읽는 횟수 — 도는 동안 '받기' 를 누른 팩까지 받는다. */
-    private const val ROUNDS = 3
-
-    /** 한 클립을 같은 회차 안에서 받아 보는 횟수. */
-    private const val CLIP_ATTEMPTS = 2
-
-    suspend fun run(
-        context: Context,
-        api: VoicePackApi,
-        auth: String,
-        userId: String,
-        nowMillis: () -> Long = System::currentTimeMillis,
-    ): Unit = withContext(Dispatchers.IO) {
-        val store = VoicePackStore(context)
-        val catalog = try {
-            api.listVoicePacks(auth)
-        } catch (error: kotlinx.coroutines.CancellationException) {
-            throw error
-        } catch (_: Throwable) {
-            null
-        }
-        val listed = catalog?.packs.orEmpty().associateBy { it.packId }
-        if (catalog != null) store.applyCatalog(userId, listed.keys, catalog.withdrawn.orEmpty())
-        retireDuePacks(context, userId, nowMillis())
-
-        val processed = HashSet<String>()
-        for (round in 0 until ROUNDS) {
-            val pending = store.held(userId).filter { pack -> pack.packId !in processed && !pack.withdrawn }
-            if (pending.isEmpty()) break
-            for (pack in pending) {
-                processed += pack.packId
-                // 카탈로그를 받았는데 거기 없는 팩(최소 빌드·허용 지역)은 서버가 클립도 404 로 답한다 — 받으려 하지 않는다.
-                // 받아 둔 파일·알람은 그대로 둔다(스펙 §5-5).
-                if (catalog != null && pack.packId !in listed) continue
-                downloadPack(context, api, auth, userId, refreshDetailIfNeeded(context, api, auth, userId, pack, listed))
-            }
-        }
-    }
-
-    /**
-     * 개정이 바뀌었거나 클립 목록이 비면 상세를 다시 받는다. 카탈로그에 없는 팩(빌드·지역)은 상세도 404 라 그대로 둔다.
-     * 놓은 옛 클립은 어떤 알람도 안 쓸 때만 지운다.
-     */
-    private suspend fun refreshDetailIfNeeded(
-        context: Context,
-        api: VoicePackApi,
-        auth: String,
-        userId: String,
-        pack: HeldVoicePack,
-        listed: Map<String, VoicePackSummary>,
-    ): HeldVoicePack {
-        val summary = listed[pack.packId]
-        val stale = pack.clipList.isEmpty() || (summary != null && summary.contentRevision != pack.contentRevision)
-        if (!stale) return pack
-        val detail = try {
-            api.getVoicePack(auth, pack.packId).pack
-        } catch (error: kotlinx.coroutines.CancellationException) {
-            throw error
-        } catch (_: Throwable) {
-            return pack
-        }
-        val store = VoicePackStore(context)
-        // 그 사이 지웠으면 되살리지 않는다.
-        if (store.find(userId, pack.packId) == null) return pack
-        val next = HeldVoicePack.fromDetail(detail, previous = pack)
-        store.upsert(userId, next)
-        val released = pack.clipList.map { voicePackCacheKey(it.clipId) }.toSet() -
-            next.clipList.map { voicePackCacheKey(it.clipId) }.toSet()
-        if (released.isNotEmpty()) AlarmAppContainer.repository(context).releaseUnusedAudio(released)
-        return next
-    }
-
-    private suspend fun downloadPack(
-        context: Context,
-        api: VoicePackApi,
-        auth: String,
-        userId: String,
-        pack: HeldVoicePack,
-    ) {
-        val store = VoicePackStore(context)
-        val audioStore = AlarmAudioStore(context)
-        val clips = pack.clipList
-        if (clips.isEmpty()) return
-        fun missingNow(): List<VoicePackClip> {
-            val cache = audioStore.snapshot()
-            return clips.filter { clip -> cache.isMissingOrStale(voicePackCacheKey(clip.clipId), identity(pack, clip)) }
-        }
-        var missing = missingNow()
-        var done = clips.size - missing.size
-        VoicePackStore.reportProgress(pack.packId, done, clips.size)
-        for (clip in missing) {
-            // 지웠거나 게시가 끝났으면 그만둔다 — 지운 팩의 파일을 다시 채우지 않는다.
-            val current = store.find(userId, pack.packId) ?: return
-            if (current.withdrawn) return
-            if (downloadClip(api, auth, audioStore, pack, clip)) done += 1
-            VoicePackStore.reportProgress(pack.packId, done, clips.size)
-        }
-        missing = missingNow()
-        val ready = missing.isEmpty()
-        store.update(userId) { list ->
-            list.map { if (it.packId == pack.packId && it.contentRevision == pack.contentRevision) it.copy(ready = ready) else it }
-        }
-        // 회차가 끝났으면 다 받았든 못 받았든 진행률을 내린다 — 남기면 상세가 '받는 중' 으로 읽고 '다시 받기' 를 감춘다(코덱스 #960).
-        VoicePackStore.clearProgress(pack.packId)
-        Log.i(TAG, "Voice pack prefetch pack=${pack.packId} ready=$ready missing=${missing.size}")
-    }
-
-    /** 클립 하나 — 해시·크기가 맞을 때만 캐시에 넣는다. 성공하면 true. */
-    private suspend fun downloadClip(
-        api: VoicePackApi,
-        auth: String,
-        audioStore: AlarmAudioStore,
-        pack: HeldVoicePack,
-        clip: VoicePackClip,
-    ): Boolean {
-        for (attempt in 0 until CLIP_ATTEMPTS) {
-            try {
-                val response = api.getVoicePackClipAudio(auth, pack.packId, clip.clipId)
-                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                if (!voicePackBytesMatch(bytes, clip)) {
-                    Log.w(TAG, "Voice pack clip hash mismatch pack=${pack.packId} clip=${clip.clipId}")
-                    continue
-                }
-                audioStore.cacheGeneratedAudio(
-                    bytes = bytes,
-                    format = response.audioFormat ?: clip.audioFormat ?: "mp3",
-                    rawAudioUri = identity(pack, clip),
-                    displayName = voicePackCacheKey(clip.clipId),
-                    cacheKey = voicePackCacheKey(clip.clipId),
-                    messageId = null,
-                )
-                return true
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                // 404(게시가 끝났다)·401 은 다시 해 봐야 같다.
-                if (classifyClipFailure(error) != ClipFailure.TRANSIENT) {
-                    Log.i(TAG, "Voice pack clip not available pack=${pack.packId} clip=${clip.clipId}")
-                    return false
-                }
-                if (attempt == CLIP_ATTEMPTS - 1) {
-                    AlarmTalkLog.reportError("Voice pack clip download failed pack=${pack.packId}", error)
-                }
-            }
-        }
-        return false
-    }
-
-    /**
-     * 게시 끝 기한이 지난 팩을 정리한다 — 그 목소리 알람을 미나로 바꾸고(`AlarmRepository.degradeAlarmsUsingVoicePack`),
-     * 어떤 알람도 안 쓰는 팩 파일을 지우고, 받은 목록에서 뺀다. 네트워크를 쓰지 않는다(저장된 기한으로 판단한다).
-     * 계정이 그 사이 바뀌었으면 아무것도 하지 않는다.
-     */
-    suspend fun retireDuePacks(context: Context, userId: String, nowMillis: Long): Int {
-        var retired = 0
-        for (pack in VoicePackStore(context).held(userId).filter { it.retirementDue(nowMillis) }) {
-            if (removePack(context, userId, pack)) retired += 1
-        }
-        return retired
-    }
-
-    /** 팩 하나를 놓는다(기한 지남·사용자가 지움 공통). 지금 계정이 [userId] 가 아니면 false. */
-    suspend fun removePack(context: Context, userId: String, pack: HeldVoicePack): Boolean {
-        if (AuthSessionStore(context).read()?.user?.id != userId) return false
-        val repository = AlarmAppContainer.repository(context)
-        repository.degradeAlarmsUsingVoicePack(pack.voiceId, userId)
-        VoicePackStore(context).remove(userId, pack.packId)
-        repository.releaseUnusedAudio(pack.clipList.map { voicePackCacheKey(it.clipId) }.toSet())
-        Log.i(TAG, "Removed voice pack pack=${pack.packId}")
-        return true
-    }
-
-    private fun identity(pack: HeldVoicePack, clip: VoicePackClip) =
-        voicePackRemoteIdentity(pack.packId, clip.clipId, clip.sha256)
 }
 
 /** 준비 기록 한 쪽(기본 목소리 또는 내 목소리)의 시도와 그 쪽의 받은 수·바이트·실패 수. */

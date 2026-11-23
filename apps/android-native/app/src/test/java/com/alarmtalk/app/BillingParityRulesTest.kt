@@ -86,7 +86,7 @@ class BillingParityRulesTest {
 
     @Test
     fun `해지 알럿의 날짜는 월 일 꼴이다`() {
-        // 체험 안내·기간 한정 플랜과 같은 꼴이다(`formatPersonalPromoDay`). 예전에는 이 자리만 "11/22" 였다.
+        // 체험 안내와 같은 꼴이다(`formatMonthDay`). 예전에는 이 자리만 "11/22" 였다.
         val expiresAt = "2026-11-22T03:00:00Z"
         assertEquals("11월 22일", formatPassDay(expiresAt, Locale.KOREAN, ZoneOffset.UTC))
         assertEquals("November 22", formatPassDay(expiresAt, Locale.ENGLISH, ZoneOffset.UTC))
@@ -95,6 +95,11 @@ class BillingParityRulesTest {
         assertEquals("11월 23일", formatPassDay("2026-11-22T16:00:00Z", Locale.KOREAN, ZoneOffset.ofHours(9)))
         assertNull(formatPassDay(null, Locale.KOREAN))
         assertNull(formatPassDay("not-a-date", Locale.KOREAN))
+        // 월·일만, 기기 로케일로 — 연도는 싣지 않는다.
+        val day = java.time.LocalDate.of(2026, 10, 31)
+        assertEquals("10월 31일", formatMonthDay(day, Locale.KOREAN))
+        assertEquals("October 31", formatMonthDay(day, Locale.ENGLISH))
+        assertEquals("10月31日", formatMonthDay(day, Locale.JAPANESE))
     }
 
     @Test

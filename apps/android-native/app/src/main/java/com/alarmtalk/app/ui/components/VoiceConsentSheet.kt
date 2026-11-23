@@ -60,8 +60,6 @@ internal fun VoiceConsentSheet(
     // 이미 유효한 법정 동의는 다시 묻지 않는다.
     val allChecked = (!asksBiometric || biometric) && (!asksOverseas || overseas)
 
-    // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
-    TrackOpenModal()
     Dialog(onDismissRequest = { if (!busy) onDismiss() }) {
         Surface(
             shape = WakerDialogShape,

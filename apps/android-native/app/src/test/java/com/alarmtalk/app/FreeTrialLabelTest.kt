@@ -40,7 +40,11 @@ class FreeTrialLabelTest {
         val monthly = context.getString(R.string.billing_plan_monthly_price, "₩3,900")
         assertEquals("월 ₩3,900", monthly)
         assertEquals("1개월 무료", context.getString(R.string.billing_plan_trial_headline, trialPeriodLabel(context, "P1M")))
-        assertEquals("이후 월 ₩3,900", context.getString(R.string.billing_plan_trial_then, monthly))
+        // 카드의 가격 줄(`BillingPanels` 의 `billing_plan_trial_price_line`) — 무료 기간 뒤에 주기 붙은 가격이 온다.
+        assertEquals(
+            "1개월 무료, 이후 월 ₩3,900",
+            context.getString(R.string.billing_plan_trial_price_line, trialPeriodLabel(context, "P1M"), monthly),
+        )
         assertEquals("1개월 무료로 시작하기", context.getString(R.string.billing_plan_trial_start, trialPeriodLabel(context, "P1M")))
     }
 

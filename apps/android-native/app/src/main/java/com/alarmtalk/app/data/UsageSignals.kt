@@ -57,8 +57,6 @@ internal object UsageSignals {
             UsageEvents.VOICE_SELECTED,
             voiceProfileId = voiceProfileId,
             props = UsageEventProps(
-                // 기본 목소리는 id 가 곧 팩 키다. 내 목소리(UUID 가 아닌 값이 올 일은 없다)도 같은 칸 — 모양이 아니면 비운다.
-                packId = UsageEventProps.code(voiceProfileId).takeIf { isSystemVoiceId(voiceProfileId) },
                 isFirst = isFirst,
                 prepared = prepared,
                 surface = "editor",
@@ -73,8 +71,8 @@ internal object UsageSignals {
  * 같은 시점). 편집기에서 눌러만 보고 취소한 것은 적지 않는다.
  *
  * 응원 알람이 아니면(테마가 다르거나 저장값이 없다) 적지 않는다 — 응원 테마가 아닌 알람은 모드를 저장하지 않는다.
- * ⚠ 고정한 문구 ID(`cheer_v2_05`)는 싣지 않는다. 그 ID 를 담을 정해진 칸이 없고(`pack_id` 는 팩·테마·목소리 키다), 칸을 새로
- *   만들려면 서버를 먼저 올려야 한다(§7.2). 모드만 남긴다.
+ * ⚠ 고정한 문구 ID(`cheer_v2_05`)는 싣지 않는다. 그 ID 를 담을 정해진 칸이 없고, 칸을 새로 만들려면 서버를 먼저 올려야 한다
+ *   (§7.2). 모드만 남긴다.
  */
 internal fun contentSelectionProps(bucketId: String?, cheerMode: String?): UsageEventProps? {
     if (bucketId != CHEER_BUCKET_ID || cheerMode == null) return null
@@ -97,28 +95,6 @@ internal fun recordContentSelected(context: Context, saved: AlarmEntity, ownerUs
         props = props,
         ownerUserId = ownerUserId,
     )
-}
-
-/**
- * 팩 목소리로 운 알람을 저장했다(`pack_selected`, `docs/spec/usage-events.md` §7.1 · `voice-packs.md`) — 칸은 `pack_id`(팩 id)
- * 하나다. 원문·문구·클립 id 는 싣지 않는다. [contentSelectionProps] 와 같은 시점(저장 성공 한 곳)에 적고, 편집기에서 눌러만 보고
- * 취소한 것은 적지 않는다. 팩 목소리가 아니거나, 그 목소리로 울지 않거나(알람 모드·직접 녹음), 받은 팩 목록에서 그 목소리의 팩을
- * 못 찾으면 적지 않는다.
- */
-internal fun packSelectionProps(saved: AlarmEntity, heldPacks: List<HeldVoicePack>): UsageEventProps? {
-    val voiceId = saved.voiceProfileId
-    if (!isVoicePackVoiceId(voiceId)) return null
-    if (saved.voiceSource != VoiceSources.TTS_PROFILE || AlarmPlayModes.normalize(saved.playMode) == AlarmPlayModes.ALARM_ONLY) {
-        return null
-    }
-    val packId = UsageEventProps.code(heldPacks.firstOrNull { it.voiceId == voiceId }?.packId) ?: return null
-    return UsageEventProps(packId = packId)
-}
-
-/** [packSelectionProps] 를 적는다. [ownerUserId] 는 저장을 **시작한** 계정이고, 팩 목록도 그 계정의 것을 본다. */
-internal fun recordPackSelected(context: Context, saved: AlarmEntity, ownerUserId: String?) {
-    val props = packSelectionProps(saved, VoicePackStore(context).held(ownerUserId)) ?: return
-    UsageSignals.record(context, UsageEvents.PACK_SELECTED, alarmId = saved.id, props = props, ownerUserId = ownerUserId)
 }
 
 /**
@@ -145,7 +121,6 @@ internal class SamplePlayback private constructor(
             props = UsageEventProps(
                 surface = surface,
                 durationMs = UsageSignals.monotonicNow() - startedAt,
-                packId = packIdOf(voiceProfileId),
             ),
         )
     }
@@ -158,12 +133,9 @@ internal class SamplePlayback private constructor(
                     UsageEvents.SAMPLE_STARTED,
                     voiceProfileId = voiceProfileId,
                     attemptId = sample.attemptId,
-                    props = UsageEventProps(surface = surface, packId = packIdOf(voiceProfileId)),
+                    props = UsageEventProps(surface = surface),
                 )
             }
-
-        private fun packIdOf(voiceProfileId: String): String? =
-            UsageEventProps.code(voiceProfileId).takeIf { isSystemVoiceId(voiceProfileId) }
     }
 }
 

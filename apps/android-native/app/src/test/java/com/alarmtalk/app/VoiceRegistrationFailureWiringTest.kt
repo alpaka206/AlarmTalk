@@ -284,7 +284,7 @@ class VoiceRegistrationFailureWiringTest {
         )
         // ① 그리는 조건이 그 값이다 — 따로 쓴 조건이 남아 있으면 '그려지지 않았는데 열려 있다' 가 다시 생긴다.
         val drawn = functionBody(panel, "if (registrationWindowShown)")
-        assertTrue("등록 창(`Dialog`)을 그 값으로 그리지 않는다.", drawn.contains("TrackOpenModal()") && drawn.contains("Dialog("))
+        assertTrue("등록 창(`Dialog`)을 그 값으로 그리지 않는다.", drawn.contains("Dialog("))
         assertFalse(panel.contains("if (showCreateForm && (inDraftDecisionFlow"))
         // ② 뷰모델에 알리는 열림과 ③ 거절 라우터는 위 두 테스트가 본다(`theWindowTellsTheViewModelWhenItOpensAndCloses`,
         // `theWindowDrawsTheFailureInsideItselfAndEndsTheFlowOnTheMonthlyLimit`).

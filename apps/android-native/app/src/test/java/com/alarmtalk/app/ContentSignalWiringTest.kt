@@ -28,25 +28,6 @@ class ContentSignalWiringTest {
         assertFalse(readSource("ui/editor/AlarmRandomPromptSettings.kt").contains("recordContentSelected"))
     }
 
-    @Test
-    fun `팩 사용은 저장 성공 갈래에서만 응원 선택 옆에서 시작한 계정으로 적는다`() {
-        val source = withoutLineComments(readSource("ui/main/MainViewModelAlarmActions.kt"))
-        listOf("internal fun MainViewModel.createAlarm(", "internal fun MainViewModel.updateAlarm(").forEach { signature ->
-            val body = functionBody(source, signature)
-            assertEquals("$signature 에서 한 번만 적는다", 1, Regex("recordPackSelected\\(").findAll(body).count())
-            val success = braceBlock(body, ".onSuccess { saved ->")
-            assertTrue(
-                "$signature 의 성공 갈래가 응원 선택 바로 옆에서 적어야 한다",
-                success.contains(
-                    "recordContentSelected(getApplication(), saved, ownerUserId)\n" +
-                        "            com.alarmtalk.app.data.recordPackSelected(getApplication(), saved, ownerUserId)",
-                ),
-            )
-            assertFalse("$signature 의 실패 갈래는 적지 않는다", braceBlock(body, ".onFailure { error ->").contains("recordPackSelected"))
-        }
-        assertFalse("편집기는 적지 않는다", readSource("ui/editor/AlarmEditorScreen.kt").contains("PACK_SELECTED"))
-    }
-
     /** [marker] 에서 시작하는 첫 중괄호 블록(람다 하나). */
     private fun braceBlock(source: String, marker: String): String {
         val start = source.indexOf(marker)

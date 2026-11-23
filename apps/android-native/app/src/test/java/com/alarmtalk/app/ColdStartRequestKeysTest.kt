@@ -99,7 +99,6 @@ class ColdStartRequestKeysTest {
             user = user,
             provider = AuthSessionStore.PROVIDER_APP,
             rolledToken = "t-entry",
-            userFetchedAtMillis = System.currentTimeMillis(),
         )
         assertEquals("t-entry", store.read()?.token)
         assertEquals("진입 갱신이 토큰을 굴렸더니 세션 키가 바뀌었다.", signedIn, key())

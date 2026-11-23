@@ -2,7 +2,6 @@ package com.alarmtalk.app.data
 
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.DynamicPromptSettings
-import com.alarmtalk.app.network.DynamicPromptWeatherSettings
 
 // 날씨 지역을 **값으로** 다루는 손으로 쓴 도우미. 목록·되짚기 규칙은 생성 파일
 // `WeatherRegions.kt` 에 있고(손으로 고치지 말 것), 여기는 그걸 앱의 저장 모양
@@ -19,10 +18,6 @@ import com.alarmtalk.app.network.DynamicPromptWeatherSettings
  */
 fun weatherRegionFor(country: String?, city: String?): WeatherRegion? =
     WeatherRegions.resolveAlias(country, city)
-
-/** 계정 설정의 날씨 → 지역. 알맞은 `region` 키가 먼저, 없으면 옛 글자를 되짚는다(서버 `normalizeSetting` 과 같은 순서). */
-fun DynamicPromptWeatherSettings.resolvedRegion(): WeatherRegion? =
-    WeatherRegions.byKey(region) ?: weatherRegionFor(country, city)
 
 /**
  * 공휴일 국가 = **지역의 나라**(docs/spec/alarm-lifecycle.md 「공휴일 국가는 지역의 나라다」).
@@ -105,9 +100,8 @@ object WeatherRegionHolidaySync {
  * ⚠ **응답마다 다른 순번이 축에 있어야 한다**(Codex #837). 값만 축으로 두면, 이 기기의 변경을 올리다 실패한 뒤
  * 서버가 **같은 옛 값**을 다시 줄 때(다음 `/auth/me`) 다시 돌지 않는다 — 그 변경은 '안 올라간 변경' 으로
  * 남은 채 프로세스가 다시 뜰 때까지 올라가지 않고, 그 사이 다른 기기는 옛 지역을 본다.
- * ⚠ 받은 시각([AuthSession.userFetchedAtMillis])은 순번이 아니다 — 개인 프로모 계정은 서버 계산 시각(초 단위)
- * 으로 바뀌어 같은 초의 두 응답이 같은 값이 된다. 순번은 세션 저장소가 저장마다 올린다
- * ([AuthSession.accountAnswerSeq]). 받아 적기는 멱등이라 프로필만 고친 저장으로 한 번 더 돌아도 해가 없다.
+ * 순번은 세션 저장소가 저장마다 올린다([AuthSession.accountAnswerSeq]). 받아 적기는 멱등이라 프로필만 고친 저장으로
+ * 한 번 더 돌아도 해가 없다.
  */
 data class AccountSettingsReceipt(
     val userId: String,

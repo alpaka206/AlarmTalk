@@ -412,7 +412,7 @@ private fun UploadIcon() {
 
 /**
  * 파일 업로드 컨트롤 — 업로드 존(파일 선택 전/후 상태 표시)과 자르기 카드.
- * [uploadSubtitle] 은 파일 선택 전 업로드 존에 보일 보조 설명(없으면 생략).
+ * [notice] 는 파일을 고른 뒤 자르기 카드 위에만 보인다(자를 구간 선택 등 업로드 후에만 의미 있는 안내다).
  */
 @Composable
 internal fun VoiceFileControls(
@@ -424,8 +424,6 @@ internal fun VoiceFileControls(
     enabled: Boolean,
     uploadLabel: String,
     notice: String,
-    noticeAfterUpload: Boolean = false,
-    uploadSubtitle: String? = null,
     isPreviewActive: Boolean = false,
     isPreviewPreparing: Boolean = false,
     onPickFile: () -> Unit,
@@ -433,10 +431,6 @@ internal fun VoiceFileControls(
     onPreviewCrop: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // 업로드 후에만 의미 있는 안내(자를 구간 선택 등)는 파일 선택 전까지 숨긴다.
-        if (!noticeAfterUpload) {
-            MutedText(notice)
-        }
         Surface(
             onClick = onPickFile,
             enabled = enabled,
@@ -466,9 +460,6 @@ internal fun VoiceFileControls(
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center,
                         )
-                        if (uploadSubtitle != null) {
-                            MutedText(uploadSubtitle)
-                        }
                     }
                 }
             } else {
@@ -497,9 +488,7 @@ internal fun VoiceFileControls(
             }
         }
         durationMillis?.let { duration ->
-            if (noticeAfterUpload) {
-                MutedText(notice)
-            }
+            MutedText(notice)
             AudioCropRangeSelector(
                 durationMillis = duration,
                 cropStartMillis = cropStartMillis,

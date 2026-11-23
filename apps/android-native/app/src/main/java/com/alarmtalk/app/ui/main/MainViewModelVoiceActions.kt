@@ -296,7 +296,7 @@ internal fun MainViewModel.promoteFormerReceivedAlarms(listOwner: String?) {
     // 이용권 판정이 섰는가 — **이번 실행에서 서버로 받은 답**(구독 + `/auth/me` 의 plan)으로만 정한다. 저장해 둔
     // 판정만 있으면 미룬다: 그 사이 결제했을 수 있고, 미나 확정은 되돌릴 수 없다. 유료면 클론을 쓸 수 있고, 확실히
     // 무료면 못 쓴다. 그 밖(판정 전)은 다음에 다시 본다.
-    val serverAnswered = subscriptionAnsweredThisRun && planAnsweredEntry > 0L
+    val serverAnswered = subscriptionAnsweredThisRun && planAnsweredThisRun
     val cloneEntitled = when {
         !serverAnswered -> null
         paidVoiceAccess() == PaidVoiceAccess.Entitled -> true
@@ -847,9 +847,6 @@ internal fun TtsGenerateRequest.isFreeSystemManualRequest(): Boolean =
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
     val session = authSession ?: throw UserFacingException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
-    // 받은 추가 팩의 클립은 문구(`messages`)가 아니다 — 팩 API 로 받는다(`docs/spec/voice-packs.md` §3). 편집기가 캐시를
-    // 못 찾았을 때 기본 목소리 클립과 같은 이 길로 부르므로 여기서 가른다.
-    downloadVoicePackClipIfHeld(messageId)?.let { return it }
     return api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
 }
 
@@ -925,7 +922,7 @@ internal fun MainViewModel.deviceAppVoiceLanguage(): String {
     val locales = getApplication<Application>().resources.configuration.locales
     val language = (if (!locales.isEmpty) locales[0] else null)?.language
         ?: Locale.getDefault().language
-    // 매핑 단일 출처(data.appVoiceLanguageOf) — 편집기 supportedAppVoiceLanguage 와 같은 함수라 divergence 없음.
+    // 매핑 단일 출처(data.appVoiceLanguageOf) — 편집기도 같은 함수를 부른다.
     return com.alarmtalk.app.data.appVoiceLanguageOf(language)
 }
 

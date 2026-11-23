@@ -135,7 +135,7 @@ class AlarmAudioStore(
 
     fun cachedRecording(file: File): CachedAlarmAudio {
         val bytes = file.readBytes()
-        val cacheKey = audioCacheKeyForBytes(bytes)
+        val cacheKey = sha256(bytes)
         val extension = file.extension.takeIf { it.isNotBlank() } ?: "m4a"
         val cachedFile = findCachedFile(cacheKey) ?: File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { target ->
             if (target.absolutePath != file.absolutePath) {
@@ -346,7 +346,7 @@ class AlarmAudioStore(
         messageId: String? = null,
     ): CachedAlarmAudio {
         val extension = format.lowercase(Locale.US).substringBefore(';').takeIf { it.length in 2..5 } ?: "mp3"
-        val resolvedCacheKey = cacheKey ?: audioCacheKeyForBytes(bytes)
+        val resolvedCacheKey = cacheKey ?: sha256(bytes)
         // 같은 클립을 두 경로가 동시에 받을 수 있다(프리페치 워커 ↔ 편집기/수신 동기화).
         // 키별 lock 이 없으면 한쪽이 staging 을 rename 하는 사이 다른 쪽이 같은 staging 을
         // 건드려, 늦은 쪽이 target 이 이미 있는데도 IOException 으로 실패한다 —
@@ -392,7 +392,7 @@ class AlarmAudioStore(
         if (superseded && existing == null) throw SupersededAudioException()
         // 지나간 응답이면 낡음 판정을 하지 않는다 → 아래에서 기존 캐시를 그대로 돌려준다.
         val stale = existing != null && !superseded &&
-            (cachedAudioIsStale(resolvedCacheKey, rawAudioUri) ||
+            (isCachedAudioStale(resolvedCacheKey, rawAudioUri) ||
                 cachedAudioNeedsRevisionRefresh(resolvedCacheKey, rawAudioUri))
         if (existing != null && !stale) {
             val cached = existing
@@ -551,17 +551,14 @@ class AlarmAudioStore(
             hasFile(cacheKey) && metadataSaysStale(cacheKey, remoteAudioUri)
     }
 
-    fun isCachedAudioStale(cacheKey: String, incomingRawAudioUri: String?): Boolean =
-        cachedAudioIsStale(cacheKey, incomingRawAudioUri)
-
     /**
      * **세대 표식이 아예 없는 옛 캐시인가**(Codex #703 P1).
      *
      * 낡음 판정은 `audio_url` 비교 하나인데, `rawAudioUri` 를 적기 **전에** 받아 둔 캐시는
-     * 비교할 값이 없어 [cachedAudioIsStale] 이 늘 false 를 준다 — 제자리 목소리 교체가
+     * 비교할 값이 없어 [isCachedAudioStale] 이 늘 false 를 준다 — 제자리 목소리 교체가
      * 일어나도 그 프리셋만 **영영 다시 받지 않고**, 알람이 회수된 옛 목소리로 계속 운다.
      *
-     * ⚠ **[cachedAudioIsStale] 을 고치지 않는 이유**: 그 판정은 재생 경로도 본다.
+     * ⚠ **[isCachedAudioStale] 을 고치지 않는 이유**: 그 판정은 재생 경로도 본다.
      * "모르면 낡지 않았다" 를 뒤집으면 알람마다 네트워크를 타고 **오프라인에서는 아예 못
      * 쓴다**(그게 그 규칙의 존재 이유다). 그래서 **새로고침 선택**에서만 이 값을 함께 보고,
      * 한 번 받아 두면 그때 표식이 적혀 다시 걸리지 않는다 — **한 번뿐인 보정**이다.
@@ -590,7 +587,7 @@ class AlarmAudioStore(
     }
 
     /** 같은 message ID라도 서버의 R2 주소가 바뀌면 제자리 목소리 교체로 게시된 새 음원이다. */
-    private fun cachedAudioIsStale(cacheKey: String, incomingRawAudioUri: String?): Boolean {
+    fun isCachedAudioStale(cacheKey: String, incomingRawAudioUri: String?): Boolean {
         if (findCachedFile(cacheKey) == null) return false
         return metadataSaysStale(cacheKey, incomingRawAudioUri)
     }
@@ -678,22 +675,6 @@ class AlarmAudioStore(
         return ReusableTtsAudio(audio = audio, alias = alias)
     }
 
-    /**
-     * 캐시 키 여러 개를 **디렉터리 한 번**으로 지운다(메타 사이드카 포함). 추가 팩을 지울 때 쓴다 — 키마다
-     * [deleteCachedAudio] 를 부르면 그만큼 디렉터리를 다시 읽는다. 지운 파일 수를 돌려준다.
-     */
-    fun deleteCachedAudioKeys(cacheKeys: Set<String>): Int {
-        if (cacheKeys.isEmpty()) return 0
-        val safeKeys = cacheKeys.mapTo(HashSet()) { safeCacheKey(it) }
-        var deleted = 0
-        listAudioDirFiles(audioDir)?.forEach { file ->
-            if (file.isFile && file.extension != PARTIAL_EXTENSION && file.nameWithoutExtension in safeKeys && file.delete()) {
-                deleted += 1
-            }
-        }
-        return deleted
-    }
-
     fun deleteCachedAudio(cacheKey: String) {
         val safeKey = safeCacheKey(cacheKey)
         listAudioDirFiles(audioDir)?.forEach { file ->
@@ -769,8 +750,6 @@ class AlarmAudioStore(
             // 미리 받아둔 기본 목소리 클립은 어떤 알람도 참조하지 않으므로 in-use 집합에
             // 안 들어간다. 그대로 두면 TTL 이 지나 전부 삭제되고 오프라인 재생이 깨진다.
             if (file.nameWithoutExtension.startsWith(STOCK_CACHE_KEY_PREFIX)) return@forEach
-            // 받은 추가 팩 클립도 같다 — 팩을 지우거나 게시 끝 기한이 지나면 그 자리에서 지운다(`docs/spec/voice-packs.md` §7).
-            if (file.nameWithoutExtension.startsWith(VOICE_PACK_CACHE_KEY_PREFIX)) return@forEach
             if (file.nameWithoutExtension in inUseFileNames) return@forEach
             // 받은 알람이 받아 두었던 보낸 사람 음성은 더 생기지 않는다 — 어떤 알람도 물지 않으면
             // 나이와 무관하게 지운다(받은 알람은 업데이트하며 내 알람으로 바뀐다 — `AlarmDatabase` 27→28).
@@ -1285,8 +1264,6 @@ class AlarmAudioStore(
                     maxDurationMillis.toString(),
                 ).joinToString("|"),
             )
-
-        fun audioCacheKeyForBytes(bytes: ByteArray): String = sha256(bytes)
 
         fun safeCacheKey(cacheKey: String): String =
             cacheKey.lowercase(Locale.US).replace(Regex("[^a-z0-9_-]"), "_").take(96)

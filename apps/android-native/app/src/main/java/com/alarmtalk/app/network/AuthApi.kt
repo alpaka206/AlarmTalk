@@ -1,6 +1,5 @@
 package com.alarmtalk.app.network
 
-import com.google.gson.annotations.JsonAdapter
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -33,96 +32,12 @@ data class DynamicPromptFortuneSettings(
     @SerializedName("birth_time") val birthTime: String? = null,
 )
 
-data class DynamicPromptSettingsState(
-    @SerializedName("weather_ready") val weatherReady: Boolean = false,
-    @SerializedName("fortune_ready") val fortuneReady: Boolean = false,
-)
-
-/**
- * **기간 한정 개인 플랜**(`personal_promo`) — 서버가 원시 `users.plan = free` 인 계정을
- * 기간 동안 개인 플랜(`plus`)으로 **계산해서** 내려 줄 때만 붙는다. 그 밖에는 null 이다.
- *
- * - 날짜는 **서버 값만** 쓴다. 앱에 종료일을 박지 않는다 — 연장·조기 종료가 서버 배포만으로
- *   끝나야 한다(원본은 `packages/shared` 의 `PERSONAL_PROMO`).
- * - [endsAt] 은 **배타**다. 그 순간부터 무료다. 그래서 "…까지" 로 보여 줄 날은
- *   `endsAt − 1초` 의 기기 날짜다([personalPromoLastDay]).
- * - 필드가 없는 구버전 서버는 이 객체를 주지 않는다 — 그때는 표시만 안 한다.
- *
- * 전부 nullable 인 이유: 서버가 빠뜨리거나 모양이 틀린 필드는 없는 것으로 읽는다 — 쓰는
- * 쪽이 파싱에 실패하면 없는 것으로 본다.
- *
- * ⚠ **파싱은 [PersonalPromoJsonAdapter] 가 한다 — 관대하게.** 표시·안내에만 쓰는 필드 하나가
- *   객체가 아닌 값(문자열·배열)으로 오면 Gson 기본 어댑터는 예외를 던지고, 그러면 **로그인·
- *   `/auth/me`·구독 조회 응답 전체가** 실패한다. 그때는 이 값만 null 로 읽는다(iOS 의
- *   `PersonalPromo.init(from:)` 이 던지지 않는 것과 같은 규칙).
- */
-@JsonAdapter(PersonalPromoJsonAdapter::class)
-data class PersonalPromo(
-    @SerializedName("ends_at") val endsAt: String? = null,
-    @SerializedName("notice_from") val noticeFrom: String? = null,
-    /**
-     * 끝나는 순간 이 계정이 **종료 전환 대상**인가(원시 free · 활성 구독 행 없음) —
-     * 대상이면 등록한 목소리가 3일 보관 후 삭제된다. 결제 보류(ON_HOLD·PAUSED)처럼 활성 행이
-     * 남은 계정은 false 다.
-     *
-     * 이 값을 읽는 곳은 둘이다:
-     * - 종료 안내가 "등록한 목소리는 3일 보관 후 삭제돼요" 를 넣을지 가른다 — 대상이 아닌
-     *   사람에게 삭제를 말하면 거짓 안내다. 이 키를 주지 않던 서버(null)는 예전 문구 그대로
-     *   true 로 읽는다([personalPromoDeletesVoicesAtEnd]).
-     * - 이용권 화면이 **보류 행 신호**로 쓴다 — `false` 면 원시 free 인데 `active` 구독 행이 남은
-     *   계정(결제 보류 등)이라 개인 카드를 '현재 이용권' 으로 올리지 않고 프로모 문구를 카드 위
-     *   한 줄로 둔다(`ui/billing/BillingPanels.kt` 의 `planScreenCurrentOf` 에 넘기는
-     *   `hasHeldSubscriptionRow = deletesVoicesAtEnd == false`, 스펙 billing-lifecycle D4).
-     *   보류 행은 구독 응답에 실리지 않아 이 값이 아니면 프로모만 쓰는 계정과 구별되지 않는다.
-     *   null(키를 모르는 서버)은 보류가 아닌 것으로 읽는다.
-     */
-    @SerializedName("deletes_voices_at_end") val deletesVoicesAtEnd: Boolean? = null,
-    /**
-     * 서버가 이 plan 을 **계산한 순간**(ISO, 서버 시계). 이 키를 주지 않는 서버에서는 null.
-     *
-     * 오프라인 차단(D1)의 '받은 시각' 은 이 값이 있으면 이것이다(D7, `planAnswerStampMillis`).
-     * 기기 시계로 찍으면 기기가 서버보다 Δ 만큼 빠를 때 종료 직전에 계산된 답이 '끝난 뒤에 받은 답'
-     * 으로 찍혀 **기한 없이** 권위가 된다 — 끝나기 전의 답인지는 서버 시계로 가려야 한다.
-     *
-     * ⚠ **받는 자리에서 받은 시각으로 바뀌고 저장되지 않는다**([normalizePersonalPromo] 가 뺀다).
-     * 응답마다 값이 달라, 들고 있으면 같은 프로모가 응답마다 '다른 값' 이 된다.
-     */
-    @SerializedName("computed_at") val computedAt: String? = null,
-)
-
-/**
- * **관리자 기간 지급**(`docs/spec/billing-lifecycle.md` 「관리자 기간 지급」) — 지금 [AuthUser.plan] 이 지급으로 `plus` 일 때
- * 이어진 지급 구간의 끝([endsAt], 배타, 서버 시계)과 서버가 그 답을 계산한 시각([computedAt]). 지급이 없으면 응답에 null.
- *
- * 기간 한정 개인 플랜과 같은 **오프라인 기한**이다 — 끝나기 전에 받은 `plus` 캐시를 끝난 뒤에 읽으면 무료로 읽는다
- * (`limitedPlanEndsAt` → `PlanPromoStamp`). 둘은 함께 오지 않는다(서버는 지급 중인 계정에 프로모를 싣지 않는다).
- * 관대하게 읽는다([PlanGrantJsonAdapter]) — 표시·기한용 필드 하나가 응답 전체의 파싱을 깨면 안 된다.
- */
-@JsonAdapter(PlanGrantJsonAdapter::class)
-data class PlanGrant(
-    @SerializedName("ends_at") val endsAt: String? = null,
-    /** 받는 자리에서 받은 시각으로 바뀌고 저장되지 않는다(`normalizePlanGrant` 가 뺀다). */
-    @SerializedName("computed_at") val computedAt: String? = null,
-)
-
 data class AuthUser(
     val id: String,
     val email: String,
     val name: String = "",
-    /**
-     * 서버가 **계산한** plan. 기간 한정 개인 플랜 동안은 원시 free 도 `plus` 로 온다 —
-     * 그때는 [personalPromo] 가 함께 온다. 종료 **전에** 받은 이 값을 종료 **뒤에** 캐시로
-     * 읽으면 낡은 것이다(`resolvePaidVoiceAccess` 의 `userPlanPromo`).
-     */
+    /** 서버에 저장된 `users.plan` 그대로다(계산값이 아니다). 유료 판정은 `resolvePaidVoiceAccess` 가 한다. */
     val plan: String = "free",
-    /**
-     * 기간 한정 개인 플랜. **원시 plan 이 free 인 계정에는 기간 내내 붙는다** — 위 [plan] 이
-     * 개인 플랜으로 계산됐다는 뜻이고, 앱은 이 값이 있으면 원시 plan 이 free 라고 안다.
-     * 기간이 아니거나 결제자면 null.
-     */
-    @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
-    /** 관리자 기간 지급으로 [plan] 이 `plus` 이면 그 끝([PlanGrant]). 아니면 null. */
-    @SerializedName("plan_grant") val planGrant: PlanGrant? = null,
     @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings =
         DynamicPromptSettings(),
     @SerializedName("deletion_status") val deletionStatus: String = "active",
@@ -234,7 +149,6 @@ data class RecordConsentsRequest(
 
 data class RecordConsentsResponse(
     val success: Boolean = false,
-    val recorded: Int = 0,
 )
 
 data class ConsentRecord(
@@ -250,7 +164,6 @@ data class ConsentListResponse(
 
 data class ConsentStatusResponse(
     @SerializedName("needs_consent") val needsConsent: Boolean = false,
-    val required: List<String> = emptyList(),
     val missing: List<String> = emptyList(),
     /**
      * 이번 동의 화면에서 **실제로 받아야 하는** 유형. 서버가 유형별 최소 정책 버전으로 계산한다.
